@@ -1,0 +1,15 @@
+{
+  "name": "rpg-dos-casas",
+  "version": "1.0.0",
+  "description": "In this project i will put the tools i developed (and am developing) to play tabletop RPG with my homies.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "tmd": "^0.0.2"
+  }
+}
