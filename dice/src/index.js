@@ -3,9 +3,21 @@ document.addEventListener("DOMContentLoaded", function() {
   dice.src = '../assets/d20/20.empty.png';
 });
 
+let lastResult = null;
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
 function rollDice(sides) {
     // Gera um número aleatório entre 1 e o número de lados do dado
-    const result = Math.floor(Math.random() * sides) + 1;
+    let numbers = Array.from({ length: sides }, (_, i) => i + 1);
+    let shuffledNumbers = shuffle(numbers);
+    result = shuffledNumbers[0];
     const dice = document.getElementById('dice');
     const resultText = document.getElementById('result');
   
