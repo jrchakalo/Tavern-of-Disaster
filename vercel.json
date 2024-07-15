@@ -2,7 +2,7 @@
     "version": 2,
     "builds": [
       {
-        "src": "dice/public/**/*",
+        "src": "dice/index.html",
         "use": "@vercel/static"
       },
       {
@@ -13,7 +13,7 @@
     "routes": [
       {
         "src": "/",
-        "dest": "/dice/public/index.html"
+        "dest": "/dice/index.html"
       },
       {
         "src": "/src/index.js",
