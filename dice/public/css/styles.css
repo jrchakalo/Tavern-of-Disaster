@@ -1,62 +1,65 @@
 body {
-    font-family: Arial, sans-serif;
-    background-color: #273140;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    margin: 0;
-  }
-  
-  .container {
-    background-color: #273140;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    text-align: center;
-    h1 {
-      color: white;
-      margin-bottom: 20px;
-    }
-    p {
-      color: white;
-      margin-bottom: 20px;
-    }
-  }
-  
-  .dice-container button {
-    margin: 5px;
-    padding: 10px 20px;
-    font-size: 16px;
-    border: none;
-    border-radius: 5px;
-    background-color: #007bff;
-    color: white;
-    cursor: pointer;
-    transition: background-color 0.3s;
-  }
-  
-  .dice-container button:hover {
-    background-color: #0056b3;
-  }
-  
-  .result-container {
-    margin-top: 20px;
-  }
-  
-  .dice {
-    width: 120px;
-    height: 120px;
-    margin-bottom: 10px;
-    animation: roll 1s ease-in-out;
-  }
-  
-  @keyframes roll {
-    0% { transform: rotate(0); }
-    20% { transform: rotate(15deg); }
-    40% { transform: rotate(-15deg); }
-    60% { transform: rotate(15deg); }
-    80% { transform: rotate(-15deg); }
-    100% { transform: rotate(0); }
-  }
-  
+  font-family: Arial, sans-serif;
+  background-color: #273140;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  margin: 0;
+}
+
+.container {
+  background-color: #273140;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+h1, p {
+  color: white;
+  margin-bottom: 20px;
+}
+
+button, select {
+  margin: 5px;
+  padding: 10px 20px;
+  font-size: 16px;
+  border: none;
+  border-radius: 5px;
+  background-color: #723172 ;
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+button:hover, select:hover {
+  background-color: #562c56;
+}
+
+.dice-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.result-container {
+  margin: 10px;
+  text-align: center;
+}
+
+.dice {
+  width: 120px;
+  height: 120px;
+  margin-bottom: 10px;
+  animation: roll 1s ease-in-out;
+}
+
+@keyframes roll {
+  0% { transform: rotate(0); }
+  20% { transform: rotate(15deg); }
+  40% { transform: rotate(-15deg); }
+  60% { transform: rotate(15deg); }
+  80% { transform: rotate(-15deg); }
+  100% { transform: rotate(0); }
+}

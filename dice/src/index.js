@@ -1,40 +1,103 @@
 document.addEventListener("DOMContentLoaded", function() {
-  const dice = document.getElementById('dice');
+  const dice = document.getElementById('dice-1');
   dice.src = '../assets/d20/20.empty.png';
 });
 
-let lastResult = null;
+let lastResults = {};
+let diceCount = 1;
+const maxDiceCount = 6;
 
-function shuffle(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
+function rollDice(id) {
+  const diceTypeSelect = document.getElementById(`dice-type-${id}`);
+  const sides = parseInt(diceTypeSelect.value);
+  let result;
+  do {
+    result = Math.floor(Math.random() * sides) + 1;
+  } while (result === lastResults[id]);
+  
+  lastResults[id] = result;
+  
+  const dice = document.getElementById(`dice-${id}`);
+  const resultText = document.getElementById(`result-${id}`);
+
+  const rollImages = (sides === 8 || sides === 12) ? 7 : 8;
+  let rollCount = 0;
+
+  const rollInterval = setInterval(() => {
+    rollCount++;
+    if (rollCount <= rollImages) {
+      dice.src = `../assets/d${sides}/roll${rollCount}.png`;
+    } else {
+      clearInterval(rollInterval);
+      dice.src = `../assets/d${sides}/${sides}.${result}.png`;
+      resultText.textContent = `Resultado: ${result}`;
+    }
+  }, 100); // Muda a imagem a cada 100ms
 }
 
-function rollDice(sides) {
-    // Gera um número aleatório entre 1 e o número de lados do dado
-    let numbers = Array.from({ length: sides }, (_, i) => i + 1);
-    let shuffledNumbers = shuffle(numbers);
-    result = shuffledNumbers[0];
-    const dice = document.getElementById('dice');
-    const resultText = document.getElementById('result');
-  
-    // Define o número de imagens de rolagem baseado no tipo de dado
-    const rollImages = (sides === 8 || sides === 12) ? 7 : 8;
-  
-    let rollCount = 0;
-  
-    const rollInterval = setInterval(() => {
-      rollCount++;
-      if (rollCount <= rollImages) {
-        dice.src = `../assets/d${sides}/roll${rollCount}.png`;
-      } else {
-        clearInterval(rollInterval);
-        dice.src = `../assets/d${sides}/${sides}.${result}.png`;
-        resultText.textContent = `Resultado: ${result}`;
-      }
-    }, 100); // Muda a imagem a cada 100ms
+function addDice() {
+  if (diceCount < maxDiceCount) {
+    diceCount++;
+    const diceWrapper = document.getElementById('dice-wrapper');
+    const newDiceContainer = document.createElement('div');
+    newDiceContainer.classList.add('result-container');
+    newDiceContainer.id = `dice-container-${diceCount}`;
+
+    const newDiceImg = document.createElement('img');
+    newDiceImg.id = `dice-${diceCount}`;
+    newDiceImg.classList.add('dice');
+    newDiceImg.src = '../assets/d20/20.empty.png';
+    newDiceImg.alt = 'Dice result';
+    newDiceContainer.appendChild(newDiceImg);
+
+    const newResultText = document.createElement('p');
+    newResultText.id = `result-${diceCount}`;
+    newResultText.textContent = 'Resultado: ';
+    newDiceContainer.appendChild(newResultText);
+
+    const newDiceTypeSelect = document.createElement('select');
+    newDiceTypeSelect.id = `dice-type-${diceCount}`;
+    newDiceTypeSelect.innerHTML = `
+      <option value="4">D4</option>
+      <option value="6">D6</option>
+      <option value="8">D8</option>
+      <option value="10">D10</option>
+      <option value="12">D12</option>
+      <option value="20" selected>D20</option>
+    `;
+    newDiceContainer.appendChild(newDiceTypeSelect);
+
+    const newRollButton = document.createElement('button');
+    newRollButton.textContent = 'Rolar';
+    newRollButton.onclick = (function(id) {
+      return function() {
+        rollDice(id);
+      };
+    })(diceCount);  // Closure para capturar o valor de diceCount
+    newDiceContainer.appendChild(newRollButton);
+
+    const newRemoveButton = document.createElement('button');
+    newRemoveButton.textContent = 'Remover';
+    newRemoveButton.onclick = (function(id) {
+      return function() {
+        removeDice(id);
+      };
+    })(diceCount);  // Closure para capturar o valor de diceCount
+    newDiceContainer.appendChild(newRemoveButton);
+
+    diceWrapper.appendChild(newDiceContainer);
+  } else {
+    alert('Número máximo de dados alcançado!');
   }
-  
+}
+
+function removeDice(id) {
+  if (diceCount > 1) {
+    const diceContainer = document.getElementById(`dice-container-${id}`);
+    diceContainer.remove();
+    diceCount--;
+    delete lastResults[id];
+  } else {
+    alert('Você deve ter pelo menos um dado!');
+  }
+}
