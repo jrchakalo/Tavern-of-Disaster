@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dados dos crias 😎</title>
+  <title>RPG dos crias</title>
   <link rel="stylesheet" href="css/styles.css">
   <link rel="shortcut icon" type="dice" href="../assets/d20/d20ex.png">
 </head>
@@ -11,7 +11,7 @@
   <div class="container">
     <h1>Role o Seu Dado!</h1>
     <div class="dice-wrapper" id="dice-wrapper">
-      <div class="result-container">
+      <div class="result-container" id="dice-container-1">
         <img id="dice-1" class="dice" src="../assets/d20/20.empty.png" alt="Dice result">
         <p id="result-1">Resultado: </p>
         <select id="dice-type-1">
@@ -27,6 +27,11 @@
       </div>
     </div>
     <button id="add-dice-button" onclick="addDice()">Adicionar mais dados</button>
+  </div>
+  <button id="toggle-log-button" onclick="toggleLog()">Histórico</button>
+  <div id="log-container" class="hidden">
+    <h2>Histórico de Rolagens</h2>
+    <div id="log-content"></div>
   </div>
   <script src="../src/index.js"></script>
 </body>

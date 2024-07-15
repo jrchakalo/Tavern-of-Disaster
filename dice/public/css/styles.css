@@ -6,6 +6,7 @@ body {
   align-items: center;
   height: 100vh;
   margin: 0;
+  overflow: hidden;
 }
 
 .container {
@@ -14,9 +15,10 @@ body {
   border-radius: 10px;
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
   text-align: center;
+  z-index: 1;
 }
 
-h1, p {
+h1, p, h2 {
   color: white;
   margin-bottom: 20px;
 }
@@ -27,7 +29,7 @@ button, select {
   font-size: 16px;
   border: none;
   border-radius: 5px;
-  background-color: #723172 ;
+  background-color: #723172;
   color: white;
   cursor: pointer;
   transition: background-color 0.3s;
@@ -62,4 +64,63 @@ button:hover, select:hover {
   60% { transform: rotate(15deg); }
   80% { transform: rotate(-15deg); }
   100% { transform: rotate(0); }
+}
+
+.hidden {
+  transform: translateX(100%);
+  transition: transform 0.3s ease-in-out;
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 300px;
+  height: 100%;
+  background-color: rgba(28, 31, 36, 0.5);
+  padding: 20px;
+  border-radius: 10px 0 0 10px;
+  overflow-y: auto;
+  z-index: 2; /* Certifique-se de que a aba esteja acima da página de dados */
+}
+
+#log-container {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 300px;
+  height: 100%;
+  background-color: rgba(28, 31, 36, 0.7); /* Aplicando opacidade */
+  padding: 20px;
+  border-radius: 10px 0 0 10px;
+  max-height: 100vh;
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform 0.3s ease-in-out;
+  z-index: 3; /* Aumente o z-index para garantir que a aba esteja acima de tudo */
+}
+
+#log-container.active {
+  transform: translateX(0);
+}
+
+#log-content {
+  color: white;
+  text-align: left;
+}
+
+#toggle-log-button {
+  position: absolute;
+  top: 5px; /* Ajuste a posição para estar mais acima */
+  right: 10px;
+  z-index: 4; /* Certifique-se de que o botão esteja acima da aba */
+  padding: 5px 10px; /* Faça o botão menor */
+  font-size: 14px; /* Reduza o tamanho da fonte */
+  background-color: #723172;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+#toggle-log-button:hover {
+  background-color: #562c56;
 }

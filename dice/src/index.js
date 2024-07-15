@@ -31,6 +31,7 @@ function rollDice(id) {
       clearInterval(rollInterval);
       dice.src = `../assets/d${sides}/${sides}.${result}.png`;
       resultText.textContent = `Resultado: ${result}`;
+      logResult(id, sides, result);
     }
   }, 100); // Muda a imagem a cada 100ms
 }
@@ -99,5 +100,23 @@ function removeDice(id) {
     delete lastResults[id];
   } else {
     alert('Você deve ter pelo menos um dado!');
+  }
+}
+
+function logResult(id, sides, result) {
+  const logContent = document.getElementById('log-content');
+  const logEntry = document.createElement('div');
+  logEntry.textContent = `Dado ${id} (d${sides}): ${result}`;
+  logContent.appendChild(logEntry);
+}
+
+function toggleLog() {
+  const logContainer = document.getElementById('log-container');
+  logContainer.classList.toggle('active');
+  const toggleButton = document.getElementById('toggle-log-button');
+  if (logContainer.classList.contains('active')) {
+    toggleButton.textContent = 'Esconder Histórico';
+  } else {
+    toggleButton.textContent = 'Histórico';
   }
 }
