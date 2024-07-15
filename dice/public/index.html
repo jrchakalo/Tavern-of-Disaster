@@ -3,12 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rolagem de Dados</title>
+  <title>Dados dos crias 😎</title>
   <link rel="stylesheet" href="css/styles.css">
-</head>
+  <link rel="shortcut icon" type="dice" href="../assets/d20/d20ex.png">
 <body>
   <div class="container">
-    <h1>Kit de Dados</h1>
+    <h1>Role o seu dado</h1>
+    <div class="result-container">
+      <img id="dice" class="dice" src="" alt="Dice result">
+      <p id="result">Resultado: </p>
+    </div>
     <div class="dice-container">
       <button onclick="rollDice(4)">D4</button>
       <button onclick="rollDice(6)">D6</button>
@@ -16,10 +20,6 @@
       <button onclick="rollDice(10)">D10</button>
       <button onclick="rollDice(12)">D12</button>
       <button onclick="rollDice(20)">D20</button>
-    </div>
-    <div class="result-container">
-      <img id="dice" class="dice" src="" alt="Dice result">
-      <p id="result">Resultado: </p>
     </div>
   </div>
   <script src="../src/index.js"></script>

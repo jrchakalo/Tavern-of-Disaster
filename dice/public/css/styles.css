@@ -1,6 +1,6 @@
 body {
     font-family: Arial, sans-serif;
-    background-color: #f0f0f0;
+    background-color: #273140;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -9,11 +9,19 @@ body {
   }
   
   .container {
-    background-color: white;
+    background-color: #273140;
     padding: 20px;
     border-radius: 10px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
     text-align: center;
+    h1 {
+      color: white;
+      margin-bottom: 20px;
+    }
+    p {
+      color: white;
+      margin-bottom: 20px;
+    }
   }
   
   .dice-container button {
@@ -37,17 +45,18 @@ body {
   }
   
   .dice {
-    width: 100px;
-    height: 100px;
+    width: 120px;
+    height: 120px;
     margin-bottom: 10px;
     animation: roll 1s ease-in-out;
   }
   
   @keyframes roll {
     0% { transform: rotate(0); }
-    25% { transform: rotate(90deg); }
-    50% { transform: rotate(180deg); }
-    75% { transform: rotate(270deg); }
-    100% { transform: rotate(360deg); }
+    20% { transform: rotate(15deg); }
+    40% { transform: rotate(-15deg); }
+    60% { transform: rotate(15deg); }
+    80% { transform: rotate(-15deg); }
+    100% { transform: rotate(0); }
   }
   

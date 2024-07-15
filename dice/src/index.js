@@ -1,4 +1,10 @@
+document.addEventListener("DOMContentLoaded", function() {
+  const dice = document.getElementById('dice');
+  dice.src = '../assets/d20/20.empty.png';
+});
+
 function rollDice(sides) {
+    // Gera um número aleatório entre 1 e o número de lados do dado
     const result = Math.floor(Math.random() * sides) + 1;
     const dice = document.getElementById('dice');
     const resultText = document.getElementById('result');
@@ -11,10 +17,10 @@ function rollDice(sides) {
     const rollInterval = setInterval(() => {
       rollCount++;
       if (rollCount <= rollImages) {
-        dice.src = `../assets/dices/d${sides}/sem fundo/roll${rollCount}.png`;
+        dice.src = `../assets/d${sides}/roll${rollCount}.png`;
       } else {
         clearInterval(rollInterval);
-        dice.src = `../assets/dices/d${sides}/sem fundo/${sides}.${result}.png`;
+        dice.src = `../assets/d${sides}/${sides}.${result}.png`;
         resultText.textContent = `Resultado: ${result}`;
       }
     }, 100); // Muda a imagem a cada 100ms
