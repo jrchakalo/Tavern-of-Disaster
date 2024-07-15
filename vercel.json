@@ -4,9 +4,21 @@
       {
         "src": "dice/public/**/*",
         "use": "@vercel/static"
+      },
+      {
+        "src": "dice/src/index.js",
+        "use": "@vercel/node"
       }
     ],
     "routes": [
+      {
+        "src": "/",
+        "dest": "/dice/public/index.html"
+      },
+      {
+        "src": "/src/index.js",
+        "dest": "/dice/src/index.js"
+      },
       {
         "src": "/(.*)",
         "dest": "/dice/public/$1"
