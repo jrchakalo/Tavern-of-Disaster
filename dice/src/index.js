@@ -14,7 +14,7 @@ function playRandomRollSound() {
 }
 
 function rollDice(id) {
-  playRandomRollSound(); // Reproduz um som aleatório de rolagem
+  //playRandomRollSound(); // Reproduz um som aleatório de rolagem ; att: meio irritante com o tempo
   const diceTypeSelect = document.getElementById(`dice-type-${id}`);
   const sides = parseInt(diceTypeSelect.value);
   let result;
@@ -27,20 +27,18 @@ function rollDice(id) {
   const dice = document.getElementById(`dice-${id}`);
   const resultText = document.getElementById(`result-${id}`);
 
-  const rollImages = (sides === 8 || sides === 12) ? 7 : 8;
-  let rollCount = 0;
+  // Duração do GIF em milissegundos
+  const gifDuration = 1300;
 
-  const rollInterval = setInterval(() => {
-    rollCount++;
-    if (rollCount <= rollImages) {
-      dice.src = `../assets/d${sides}/roll${rollCount}.png`;
-    } else {
-      clearInterval(rollInterval);
-      dice.src = `../assets/d${sides}/${sides}.${result}.png`;
-      resultText.textContent = `Resultado: ${result}`;
-      logResult(id, sides, result);
-    }
-  }, 100); // Muda a imagem a cada 100ms
+  // Define o GIF animado
+  dice.src = `../assets/d${sides}/d${sides}gif.gif`;
+
+  // Aguarda a duração do GIF antes de mostrar o resultado final
+  setTimeout(() => {
+    dice.src = `../assets/d${sides}/${sides}.${result}.png`;
+    resultText.textContent = `Resultado: ${result}`;
+    logResult(id, sides, result);
+  }, gifDuration);
 }
 
 function addDice() {
