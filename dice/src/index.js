@@ -1,20 +1,29 @@
 document.addEventListener("DOMContentLoaded", function() {
   const dice = document.getElementById('dice-1');
+  const audioIcon = document.getElementById('audio-icon');
+  audioIcon.src = '../assets/audio icon/audiooff.png';
   dice.src = '../assets/d20/20.empty.png';
 });
 
 let lastResults = {};
 let diceCount = 1;
 const maxDiceCount = 6;
+let soundEnabled = false;
 
-function playRandomRollSound() {
+function playSound() {
+  if (!soundEnabled) return;
   const soundIndex = Math.floor(Math.random() * 9) + 1; // Gera um número entre 1 e 9
   const audio = new Audio(`../sfx/roll${soundIndex}.mp3`); // Assumindo que os arquivos são nomeados como roll1.mp3, roll2.mp3, etc.
   audio.play();
 }
 
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  const audioIcon = document.getElementById('audio-icon');
+  audioIcon.src = soundEnabled ? '../assets/audio icon/audioon.png' : '../assets/audio icon/audiooff.png';
+}
+
 function rollDice(id) {
-  //playRandomRollSound(); // Reproduz um som aleatório de rolagem ; att: meio irritante com o tempo
   const diceTypeSelect = document.getElementById(`dice-type-${id}`);
   const sides = parseInt(diceTypeSelect.value);
   let result;
@@ -28,7 +37,10 @@ function rollDice(id) {
   const resultText = document.getElementById(`result-${id}`);
 
   // Duração do GIF em milissegundos
-  const gifDuration = 1300;
+  const gifDuration = 1000;
+
+  // Reproduz som de rolagem
+  playSound();
 
   // Define o GIF animado
   dice.src = `../assets/d${sides}/d${sides}gif.gif`;

@@ -78,7 +78,22 @@ button:hover, select:hover {
   padding: 20px;
   border-radius: 10px 0 0 10px;
   overflow-y: auto;
-  z-index: 2; /* Certifique-se de que a aba esteja acima da página de dados */
+  z-index: 2; 
+}
+
+.audio-toggle {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  z-index: 4; 
+}
+
+.audio-toggle img {
+  width: 100%;
+  height: 100%;
 }
 
 #log-container {
@@ -87,14 +102,14 @@ button:hover, select:hover {
   right: 0;
   width: 300px;
   height: 100%;
-  background-color: rgba(28, 31, 36, 0.7); /* Aplicando opacidade */
+  background-color: rgba(28, 31, 36, 0.7); 
   padding: 20px;
   border-radius: 10px 0 0 10px;
   max-height: 100vh;
   overflow-y: auto;
   transform: translateX(100%);
   transition: transform 0.3s ease-in-out;
-  z-index: 3; /* Aumente o z-index para garantir que a aba esteja acima de tudo */
+  z-index: 3; 
 }
 
 #log-container.active {
@@ -108,11 +123,11 @@ button:hover, select:hover {
 
 #toggle-log-button {
   position: absolute;
-  top: 5px; /* Ajuste a posição para estar mais acima */
+  top: 5px; 
   right: 10px;
-  z-index: 4; /* Certifique-se de que o botão esteja acima da aba */
-  padding: 5px 10px; /* Faça o botão menor */
-  font-size: 14px; /* Reduza o tamanho da fonte */
+  z-index: 4; 
+  padding: 5px 10px; 
+  font-size: 14px; 
   background-color: #723172;
   color: white;
   border: none;
