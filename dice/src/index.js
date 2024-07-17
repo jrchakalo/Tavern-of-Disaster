@@ -1,9 +1,27 @@
 document.addEventListener("DOMContentLoaded", function() {
-  const dice = document.getElementById('dice-1');
   const audioIcon = document.getElementById('audio-icon');
   audioIcon.src = '../assets/audio icon/audiooff.png';
+  const diceSelects = document.querySelectorAll('[id^="dice-type-"]');
+  
+  diceSelects.forEach(select => {
+    select.addEventListener('change', function() {
+      const id = this.id.split('-')[2];
+      updateDiceImage(id);
+    });
+  });
+
+  // Define a imagem inicial para o primeiro dado
+  const dice = document.getElementById('dice-1');
   dice.src = '../assets/d20/20.empty.png';
+  
 });
+
+function updateDiceImage(id) {
+  const diceTypeSelect = document.getElementById(`dice-type-${id}`);
+  const sides = diceTypeSelect.value;
+  const dice = document.getElementById(`dice-${id}`);
+  dice.src = `../assets/d${sides}/${sides}.empty.png`;
+}
 
 let lastResults = {};
 let diceCount = 1;
@@ -37,7 +55,7 @@ function rollDice(id) {
   const resultText = document.getElementById(`result-${id}`);
 
   // Duração do GIF em milissegundos
-  const gifDuration = 1000;
+  const gifDuration = 800;
 
   // Reproduz som de rolagem
   playSound();
