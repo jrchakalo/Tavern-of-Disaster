@@ -1,19 +1,16 @@
 document.addEventListener("DOMContentLoaded", function() {
   const audioIcon = document.getElementById('audio-icon');
   audioIcon.src = '../assets/audio icon/audiooff.png';
+
+  // Inicializa o dado inicial
+  updateDiceImage(1);
   const diceSelects = document.querySelectorAll('[id^="dice-type-"]');
-  
   diceSelects.forEach(select => {
     select.addEventListener('change', function() {
       const id = this.id.split('-')[2];
       updateDiceImage(id);
     });
   });
-
-  // Define a imagem inicial para o primeiro dado
-  const dice = document.getElementById('dice-1');
-  dice.src = '../assets/d20/20.empty.png';
-  
 });
 
 function updateDiceImage(id) {
@@ -30,8 +27,8 @@ let soundEnabled = false;
 
 function playSound() {
   if (!soundEnabled) return;
-  const soundIndex = Math.floor(Math.random() * 9) + 1; // Gera um número entre 1 e 9
-  const audio = new Audio(`../sfx/roll${soundIndex}.mp3`); // Assumindo que os arquivos são nomeados como roll1.mp3, roll2.mp3, etc.
+  const soundIndex = Math.floor(Math.random() * 9) + 1;
+  const audio = new Audio(`../sfx/roll${soundIndex}.mp3`);
   audio.play();
 }
 
@@ -48,9 +45,9 @@ function rollDice(id) {
   do {
     result = Math.floor(Math.random() * sides) + 1;
   } while (result === lastResults[id]);
-  
+
   lastResults[id] = result;
-  
+
   const dice = document.getElementById(`dice-${id}`);
   const resultText = document.getElementById(`result-${id}`);
 
@@ -74,25 +71,27 @@ function rollDice(id) {
 function addDice() {
   if (diceCount < maxDiceCount) {
     diceCount++;
+    const currentDiceCount = diceCount; // Usando variável local para closures
+
     const diceWrapper = document.getElementById('dice-wrapper');
     const newDiceContainer = document.createElement('div');
     newDiceContainer.classList.add('result-container');
-    newDiceContainer.id = `dice-container-${diceCount}`;
+    newDiceContainer.id = `dice-container-${currentDiceCount}`;
 
     const newDiceImg = document.createElement('img');
-    newDiceImg.id = `dice-${diceCount}`;
+    newDiceImg.id = `dice-${currentDiceCount}`;
     newDiceImg.classList.add('dice');
     newDiceImg.src = '../assets/d20/20.empty.png';
     newDiceImg.alt = 'Dice result';
     newDiceContainer.appendChild(newDiceImg);
 
     const newResultText = document.createElement('p');
-    newResultText.id = `result-${diceCount}`;
+    newResultText.id = `result-${currentDiceCount}`;
     newResultText.textContent = 'Resultado: ';
     newDiceContainer.appendChild(newResultText);
 
     const newDiceTypeSelect = document.createElement('select');
-    newDiceTypeSelect.id = `dice-type-${diceCount}`;
+    newDiceTypeSelect.id = `dice-type-${currentDiceCount}`;
     newDiceTypeSelect.innerHTML = `
       <option value="4">D4</option>
       <option value="6">D6</option>
@@ -101,27 +100,29 @@ function addDice() {
       <option value="12">D12</option>
       <option value="20" selected>D20</option>
     `;
+    newDiceTypeSelect.addEventListener('change', function() {
+      updateDiceImage(currentDiceCount);
+    });
     newDiceContainer.appendChild(newDiceTypeSelect);
 
     const newRollButton = document.createElement('button');
     newRollButton.textContent = 'Rolar';
-    newRollButton.onclick = (function(id) {
-      return function() {
-        rollDice(id);
-      };
-    })(diceCount);  // Closure para capturar o valor de diceCount
+    newRollButton.addEventListener('click', function() {
+      rollDice(currentDiceCount);
+    });
     newDiceContainer.appendChild(newRollButton);
 
     const newRemoveButton = document.createElement('button');
     newRemoveButton.textContent = 'Remover';
-    newRemoveButton.onclick = (function(id) {
-      return function() {
-        removeDice(id);
-      };
-    })(diceCount);  // Closure para capturar o valor de diceCount
+    newRemoveButton.addEventListener('click', function() {
+      removeDice(currentDiceCount);
+    });
     newDiceContainer.appendChild(newRemoveButton);
 
     diceWrapper.appendChild(newDiceContainer);
+
+    // Atualiza a imagem do novo dado para o estado inicial
+    updateDiceImage(currentDiceCount);
   } else {
     alert('Número máximo de dados alcançado!');
   }
