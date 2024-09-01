@@ -20,4 +20,26 @@ model User {
   password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  tables   Table[]  @relation("UserTables")
+  players  Player[]
 }
+
+model Table {
+  id        Int      @id @default(autoincrement())
+  name      String
+  code      String   @unique
+  createdAt DateTime @default(now())
+  ownerId   Int
+  owner     User     @relation("UserTables", fields: [ownerId], references: [id])
+  players   Player[]
+}
+
+model Player {
+  id      Int    @id @default(autoincrement())
+  userId  Int
+  user    User   @relation(fields: [userId], references: [id])
+  tableId Int
+  table   Table  @relation(fields: [tableId], references: [id])
+}
+
+
