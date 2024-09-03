@@ -5,6 +5,10 @@ import './global.css';
 import { Route, Routes } from 'react-router-dom';
 import './App.css'
 import Dice from './pages/Dice.tsx'
+import Login from './pages/Login.tsx'
+import Signup from './pages/Signup.tsx'
+import Table from './pages/Table.tsx'
+import ProtectedRoute from './ProtectedRoute';
 
 function App() {
   const [count, setCount] = useState(0)
@@ -37,6 +41,16 @@ function App() {
       } 
     />
     <Route path="/dice" element={<Dice />} />
+    <Route path="/login" element={<Login />} />
+    <Route path="/signup" element={<Signup />} />
+    <Route
+          path="/table"
+          element={
+            <ProtectedRoute>
+              <Table />
+            </ProtectedRoute>
+          }
+        />
   </Routes>
   );
 }

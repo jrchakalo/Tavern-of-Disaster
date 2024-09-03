@@ -1,0 +1,50 @@
+/* Estilos globais */
+.tables-container {
+  padding: 20px;
+  background-color: #273140;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.error {
+  color: red;
+}
+
+.input-group {
+  margin-bottom: 15px;
+}
+
+.input-group label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.input-group input {
+  width: 100%;
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+}
+
+.tables-list ul {
+  list-style: none;
+  padding: 0;
+}
+
+.tables-list li {
+  background: #2c3442;
+  margin: 5px 0;
+  padding: 10px;
+  border-radius: 5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.table-code {
+  color: #bbb;
+}
+
+.join-table {
+  margin-top: 20px;
+}
