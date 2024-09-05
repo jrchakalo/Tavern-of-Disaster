@@ -22,6 +22,12 @@ export const createTable = async (req: Request, res: Response) => {
         name,
         code,
         ownerId,
+        players: {
+          create: {
+            userId: ownerId,
+            role: 'DM',
+          },
+        },
       },
     });
 
@@ -46,7 +52,10 @@ export const getTables = async (req: Request, res: Response) => {
       },
       include: {
         players: {
-          select: { user: { select: { id: true, username: true } } },
+          select: {
+            user: { select: { id: true, username: true } },
+            role: true, // Inclui o campo role
+          },
         },
       },
     });
@@ -57,6 +66,7 @@ export const getTables = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Erro no servidor.' });
   }
 };
+
 
 export const joinTable = async (req: Request, res: Response) => {
   const { code } = req.body;
@@ -93,12 +103,62 @@ export const joinTable = async (req: Request, res: Response) => {
       data: {
         userId,
         tableId: table.id,
+        role: 'PLAYER',
       },
     });
 
     res.status(200).json({ message: 'Você entrou na mesa com sucesso.' });
   } catch (error) {
     console.error('Erro ao entrar na mesa:', error);
+    res.status(500).json({ message: 'Erro no servidor.' });
+  }
+};
+
+export const transferDM = async (req: Request, res: Response) => {
+  const { tableId, newDMId } = req.body;
+  const userId = (req as any).userId; // ID do usuário atual
+
+  try {
+    // Verifica se o usuário que está tentando transferir é o DM da mesa
+    const currentDM = await prisma.player.findFirst({
+      where: {
+        userId,
+        tableId,
+        role: 'DM',
+      },
+    });
+
+    if (!currentDM) {
+      return res.status(403).json({ message: 'Apenas o DM pode transferir o título.' });
+    }
+
+    // Verifica se o novo DM é um jogador da mesa
+    const newDM = await prisma.player.findFirst({
+      where: {
+        userId: newDMId,
+        tableId,
+      },
+    });
+
+    if (!newDM) {
+      return res.status(404).json({ message: 'O novo DM deve ser um jogador da mesa.' });
+    }
+
+    // Atualiza o papel do usuário atual para PLAYER
+    await prisma.player.update({
+      where: { id: currentDM.id },
+      data: { role: 'PLAYER' },
+    });
+
+    // Atualiza o papel do novo DM
+    await prisma.player.update({
+      where: { id: newDM.id },
+      data: { role: 'DM' },
+    });
+
+    res.status(200).json({ message: 'O título de DM foi transferido com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao transferir título de DM:', error);
     res.status(500).json({ message: 'Erro no servidor.' });
   }
 };

@@ -40,6 +40,10 @@ model Player {
   user    User   @relation(fields: [userId], references: [id])
   tableId Int
   table   Table  @relation(fields: [tableId], references: [id])
+  role    Role   @default(PLAYER)
 }
 
-
+enum Role {
+  DM
+  PLAYER
+}
