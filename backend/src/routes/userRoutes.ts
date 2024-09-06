@@ -1,5 +1,5 @@
 import express from 'express';
-import { registerUser, loginUser, getProfile, updateProfile, leaveTable, removePlayer, getCharacterSheet, joinTable, transferDM } from '../controllers/userController';
+import { registerUser, loginUser, getProfile, updateProfile, leaveTable, removePlayer, getCharacterSheet, joinTable, transferDM, deleteUser } from '../controllers/userController';
 import { authenticateToken } from '../middlewares/authMiddleware';
 
 const router = express.Router();
@@ -27,5 +27,8 @@ router.post('/profile/joinTable', authenticateToken, joinTable);
 
 // Transferir DM
 router.post('/profile/transferDM', authenticateToken, transferDM);
+
+// Deletar um usuário
+router.delete('/deleteUser', authenticateToken, deleteUser);
 
 export default router;

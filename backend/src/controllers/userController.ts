@@ -326,3 +326,19 @@ export const transferDM = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Erro no servidor.' });
   }
 };
+
+export const deleteUser = async (req: Request, res: Response) => {
+  const userId = (req as any).userId;
+
+  try {
+    await prisma.user.delete({
+      where: { id: userId },
+    });
+
+    res.status(200).json({ message: 'Conta deletada com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao deletar conta:', error);
+    res.status(500).json({ message: 'Erro no servidor.' });
+  }
+};
+

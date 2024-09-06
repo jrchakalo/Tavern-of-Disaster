@@ -21,6 +21,8 @@ export const createTable = async (req: Request, res: Response) => {
       data: {
         name,
         code,
+        status: 'OPEN',
+        description: '',
         ownerId,
         players: {
           create: {
@@ -63,6 +65,60 @@ export const getTables = async (req: Request, res: Response) => {
     res.status(200).json(tables);
   } catch (error) {
     console.error('Erro ao buscar mesas:', error);
+    res.status(500).json({ message: 'Erro no servidor.' });
+  }
+};
+
+export const closeTable = async (req: Request, res: Response) => {
+  const { tableId } = req.body;
+  const userId = (req as any).userId;
+
+  try {
+    // Verifica se o usuário é o DM da mesa
+    const dm = await prisma.player.findFirst({
+      where: { userId, tableId, role: 'DM' },
+    });
+
+    if (!dm) {
+      return res.status(403).json({ message: 'Apenas o DM pode fechar a mesa.' });
+    }
+
+    // Atualiza o status da mesa para "CLOSED"
+    await prisma.table.update({
+      where: { id: tableId },
+      data: { status: 'CLOSED' },
+    });
+
+    res.status(200).json({ message: 'Mesa fechada com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao fechar mesa:', error);
+    res.status(500).json({ message: 'Erro no servidor.' });
+  }
+};
+
+export const editTableDetails = async (req: Request, res: Response) => {
+  const userId = (req as any).userId;
+  const { tableId, name, description } = req.body;
+
+  try {
+    // Verifica se o usuário é o DM da mesa
+    const dm = await prisma.player.findFirst({
+      where: { userId, tableId, role: 'DM' },
+    });
+
+    if (!dm) {
+      return res.status(403).json({ message: 'Apenas o DM pode editar a mesa.' });
+    }
+
+    // Atualiza as informações da mesa
+    const updatedTable = await prisma.table.update({
+      where: { id: tableId },
+      data: { name, description },
+    });
+
+    res.status(200).json({ message: 'Mesa atualizada com sucesso.', updatedTable });
+  } catch (error) {
+    console.error('Erro ao atualizar mesa:', error);
     res.status(500).json({ message: 'Erro no servidor.' });
   }
 };
