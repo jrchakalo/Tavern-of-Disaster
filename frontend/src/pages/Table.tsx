@@ -55,9 +55,6 @@ const Tables = () => {
       );
       setJoinCode('');
       setError('Você entrou na mesa com sucesso.');
-      // Opcionalmente, atualize a lista de mesas para refletir a nova mesa adicionada
-      // const response = await api.get('/table/getTables', { headers: { Authorization: `Bearer ${token}` } });
-      // setTables(response.data);
     } catch (err) {
       console.error(err);
       setError('Erro ao entrar na mesa');

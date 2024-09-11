@@ -19,7 +19,7 @@ const ResetPassword: React.FC = () => {
     }
 
     try {
-      const response = await api.post(`/users/reset-password/${token}`, { newPassword: password });
+      const response = await api.post(`/password/reset-password/${token}`, { newPassword: password });
       if (response.status === 200) {
         setSuccess('Senha alterada com sucesso. Você será redirecionado para o login.');
         setTimeout(() => {
