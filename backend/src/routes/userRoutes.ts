@@ -1,5 +1,5 @@
 import express from 'express';
-import { registerUser, loginUser, getProfile, updateProfile, leaveTable, removePlayer, getCharacterSheet, joinTable, transferDM, deleteUser } from '../controllers/userController';
+import { registerUser, loginUser, getProfile, updateProfile, leaveTable, removePlayer, getCharacterSheet, joinTable, transferDM, deleteUser, requestPasswordReset, resetPassword } from '../controllers/userController';
 import { authenticateToken } from '../middlewares/authMiddleware';
 
 const router = express.Router();
@@ -30,5 +30,11 @@ router.post('/profile/transferDM', authenticateToken, transferDM);
 
 // Deletar um usuário
 router.delete('/deleteUser', authenticateToken, deleteUser);
+
+// Solicitar redefinição de senha
+router.post('/request-password-reset', requestPasswordReset);
+
+// Redefinir senha
+router.post('/reset-password/:token', resetPassword);
 
 export default router;

@@ -22,6 +22,7 @@ model User {
   updatedAt DateTime @updatedAt
   tables   Table[]  @relation("UserTables")
   players  Player[]
+  passwordResetTokens   PasswordResetToken[]
 }
 
 model Table {
@@ -44,6 +45,16 @@ model Player {
   table   Table  @relation(fields: [tableId], references: [id])
   role    Role   @default(PLAYER)
 }
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  token     String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
 
 enum Role {
   DM

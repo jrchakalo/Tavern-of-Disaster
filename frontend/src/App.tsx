@@ -9,6 +9,7 @@ import Login from './pages/Login.tsx'
 import Signup from './pages/Signup.tsx'
 import Table from './pages/Table.tsx'
 import ProtectedRoute from './ProtectedRoute';
+import ResetPassword from './pages/ResetPassword.tsx';
 
 function App() {
   const [count, setCount] = useState(0)
@@ -51,6 +52,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+    <Route path="/reset-password/:token" element={<ResetPassword />} />
   </Routes>
   );
 }
