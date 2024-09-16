@@ -1,29 +1,13 @@
-/* Estilos globais */
 .tables-container {
-  padding: 20px;
   background-color: #273140;
-  border-radius: 10px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-}
-
-.error {
-  color: red;
-}
-
-.input-group {
-  margin-bottom: 15px;
-}
-
-.input-group label {
-  display: block;
-  margin-bottom: 5px;
-}
-
-.input-group input {
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  text-align: center;
   width: 100%;
-  padding: 10px;
-  border-radius: 5px;
-  border: 1px solid #ccc;
+  max-width: 500px;
+  margin: 20px auto;
+  color: #ffffff;
 }
 
 .tables-list ul {
@@ -33,18 +17,18 @@
 
 .tables-list li {
   background: #2c3442;
-  margin: 5px 0;
-  padding: 10px;
-  border-radius: 5px;
+  margin: 8px 0;
+  padding: 12px;
+  border-radius: 8px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .table-code {
-  color: #bbb;
+  color: #a3b1c6;
 }
 
 .join-table {
-  margin-top: 20px;
+  margin-top: 30px;
 }

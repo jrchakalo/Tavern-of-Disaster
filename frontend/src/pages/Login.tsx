@@ -12,7 +12,7 @@ const Login = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await api.post('/users/login', { email, password });
+      const response = await api.post('/auth/login', { email, password });
       localStorage.setItem('token', response.data.token);
       navigate('/table');
     } catch (err) {
@@ -26,7 +26,7 @@ const Login = () => {
       <h2>Login</h2>
       <form onSubmit={handleLogin}>
         {error && <p className="error">{error}</p>}
-        <div>
+        <div className="input-group">
           <label htmlFor="email">Email:</label>
           <input
             type="email"
@@ -36,7 +36,7 @@ const Login = () => {
             required
           />
         </div>
-        <div>
+        <div className="input-group">
           <label htmlFor="password">Senha:</label>
           <input
             type="password"
