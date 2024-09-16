@@ -12,21 +12,25 @@
 
 /* Botão de Olho */
 .eye-button {
+    width: 0;
+    height: 30px;
     background: none;
     border: none;
     cursor: pointer;
     padding: 0;
-    margin-left: 10px;
-    font-size: 16px;
+    margin: 0;
+    margin-right: 20px;
+    font-size: 18px;
     color: #723172;
     position: absolute;
     right: 10px;
     top: 50%;
     transform: translateY(-50%);
+    line-height: 1;
 }
 
 .eye-button:hover {
-    color: #ffffff;
+    color: #562c56 ;
 }
 
 .form {
@@ -44,5 +48,12 @@
 
 .input-with-icon input {
     width: 100%;
-    padding-right: 40px; /* Adiciona espaço para o botão */
+    padding-right: 40px;
+    padding-left: 10px;
+    height: 40px;
+    border-radius: 8px;
+    border: 1px solid #723172;
+    box-sizing: border-box;
+    font-size: 16px;
+    line-height: 40px;
 }
