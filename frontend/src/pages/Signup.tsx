@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
@@ -37,8 +38,8 @@ const Signup = () => {
       alert('Cadastro realizado com sucesso! Você será redirecionado para a página de login.');
       navigate('/login');
     } catch (err) {
-      console.error(err);
-      setError('Erro ao cadastrar. Tente novamente.');
+      console.error('Erro:', (err as any).response ? (err as any).response.data : (err as any).message);
+      setError((err as any).response ? (err as any).response.data.message : 'Erro ao cadastrar.');
     }
   };
 
