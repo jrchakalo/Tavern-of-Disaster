@@ -50,7 +50,10 @@ const Dice = () => {
 
     playSound();
 
-    dice.src = `./src/assets/d${sides}/d${sides}gif.gif`;
+    if(sides == 4)
+      dice.src = `./src/assets/d4/d${sides}gifnobg.gif`;
+    else
+      dice.src = `./src/assets/d${sides}/d${sides}gif.gif`;
 
     setTimeout(() => {
       dice.src = `./src/assets/d${sides}/${sides}.${result}.png`;
