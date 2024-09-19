@@ -1,16 +1,16 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import api from '../api';
+import { useState, useContext } from 'react';
+import { AuthContext } from '../context/AuthContext'; // Importando o contexto de autenticação
 import './Login.css';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEye, faEyeSlash } from '@fortawesome/free-solid-svg-icons';
+import api from "../api"
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const navigate = useNavigate();
+  const { login } = useContext(AuthContext); // Usando o contexto de autenticação
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,8 +22,7 @@ const Login = () => {
 
     try {
       const response = await api.post('/auth/login', { email, password });
-      localStorage.setItem('token', response.data.token);
-      navigate('/table');
+      login(response.data.token); // Armazena o token usando o contexto
     } catch (err) {
       console.error(err);
       setError('Credenciais inválidas');

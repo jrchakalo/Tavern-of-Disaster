@@ -18,17 +18,17 @@ const Signup = () => {
     e.preventDefault();
 
     if (!username || !email || !password || !confirmPassword) {
-      setError('Preencha todos os campos');
+      setError('Preencha todos os campos.');
       return;
     }
 
     if (password.length < 6) {
-      setError('A senha deve ter no mínimo 6 caracteres');
+      setError('A senha deve ter no mínimo 6 caracteres.');
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Senhas não conferem');
+      setError('Senhas não conferem.');
       return;
     }
 
