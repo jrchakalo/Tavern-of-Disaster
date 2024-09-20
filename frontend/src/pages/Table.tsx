@@ -4,9 +4,12 @@ import './Table.css';
 
 const Tables = () => {
   const [tableName, setTableName] = useState('');
-  const [tables, setTables] = useState<{ name: string; code: string }[]>([]);
+  const [tables, setTables] = useState<{ id: number; name: string; code: string; role: string }[]>([]);
   const [error, setError] = useState('');
   const [joinCode, setJoinCode] = useState('');
+  const [showJoinPopup, setShowJoinPopup] = useState(false);
+  const [showCreatePopup, setShowCreatePopup] = useState(false);
+  const [description, setDescription] = useState('');
 
   useEffect(() => {
     const fetchTables = async () => {
@@ -32,11 +35,14 @@ const Tables = () => {
       const token = localStorage.getItem('token');
       const response = await api.post(
         '/table/create',
-        { name: tableName },
+        { name: tableName, description },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      const newTable = response.data;
+      setTables([...tables, { id: newTable.id, name: newTable.name, code: newTable.code, role: 'DM' }]);
       setTableName('');
-      setTables([...tables, response.data]); // Adiciona a nova mesa com código
+      setDescription('');
+      setShowCreatePopup(false);
     } catch (err) {
       console.error(err);
       setError('Erro ao criar a mesa');
@@ -55,49 +61,78 @@ const Tables = () => {
       );
       setJoinCode('');
       setError('Você entrou na mesa com sucesso.');
+      setShowJoinPopup(false);
     } catch (err) {
       console.error(err);
       setError('Erro ao entrar na mesa');
     }
   };
+  
 
   return (
     <div className="tables-container">
-      <h1>Gerenciamento de Mesas</h1>
+      <h1>Suas Mesas</h1>
       {error && <p className="error">{error}</p>}
-      <div className="input-group">
-        <label htmlFor="table-name">Nome da Mesa:</label>
-        <input
-          type="text"
-          id="table-name"
-          value={tableName}
-          onChange={(e) => setTableName(e.target.value)}
-        />
-      </div>
-      <button onClick={createTable}>Criar Mesa</button>
-      <div className="tables-list">
-        <h2>Mesas Criadas</h2>
-        <ul>
-          {tables.map((table, index) => (
-            <li key={index}>
-              {table.name} <span className="table-code">Código: {table.code}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className="join-table">
-        <h2>Entrar em uma Mesa</h2>
-        <div className="input-group">
-          <label htmlFor="join-code">Código da Mesa:</label>
-          <input
-            type="text"
-            id="join-code"
-            value={joinCode}
-            onChange={(e) => setJoinCode(e.target.value)}
-          />
+      {tables.length === 0 ? (
+        <p>Você ainda não faz parte de nenhuma mesa</p>
+      ) : (
+        <div className="tables-list">
+          <ul>
+            {tables.map((table, index) => (
+              <li key={index}>
+                {table.name}
+                <span className="table-role"> ({table.role})</span>
+                {table.role === 'DM' && (
+                  <span className="table-code">
+                    Código: {table.code} <button onClick={() => navigator.clipboard.writeText(table.code)}>Copiar</button>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
-        <button onClick={joinTable}>Entrar na Mesa</button>
-      </div>
+      )}
+      <button onClick={() => setShowCreatePopup(true)}>Criar Mesa</button>
+      <button onClick={() => setShowJoinPopup(true)}>Entrar em uma Mesa</button>
+
+      {showJoinPopup && (
+        <div className="popup">
+          <div className="popup-content">
+            <button className="close-popup" onClick={() => setShowJoinPopup(false)}>X</button> {/* Botão "X" */}
+            <h2>Digite o código da mesa</h2>
+            <input
+              type="text"
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value)}
+            />
+            <button onClick={joinTable}>Entrar na Mesa</button>
+            <button onClick={() => setShowJoinPopup(false)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {showCreatePopup && (
+        <div className="popup">
+          <div className="popup-content">
+            <button className="close-popup" onClick={() => setShowCreatePopup(false)}>✕</button> {/* Botão "X" */}
+            <h2>Criar Nova Mesa</h2>
+            <input
+              type="text"
+              placeholder="Nome da mesa"
+              value={tableName}
+              onChange={(e) => setTableName(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Descrição"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            <button onClick={createTable}>Criar Mesa</button>
+            <button onClick={() => setShowCreatePopup(false)}>Cancelar</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -27,8 +27,69 @@
 
 .table-code {
   color: #a3b1c6;
+  width: 50%;
+  padding: 0 10px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .join-table {
   margin-top: 30px;
+}
+
+.popup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.popup-content {
+  background-color: #273140;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.popup-content h2 {
+  margin-bottom: 20px;
+}
+
+.popup-content input {
+  margin-bottom: 10px;
+}
+
+.popup-content button {
+  margin: 5px;
+  width: 50%;
+}
+
+.popup .popup-content {
+  position: relative;
+  text-align: center;
+}
+
+.popup .close-popup {
+  width: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  margin-right: 20px;
+  font-size: 18px;
+  color: red;
+  position: absolute;
+  right: 10px;
+  transform: translateY(-50%);
+  line-height: 1;
+}
+
+.popup .close-popup:hover {
+  color: #ff6666;
 }
