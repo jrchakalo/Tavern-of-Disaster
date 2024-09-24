@@ -1,0 +1,43 @@
+/* src/components/Header.css */
+.header {
+    background-color: #562c56;
+    padding: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #f0e4d7;
+    width: 100%;
+    box-sizing: border-box;
+    top: 0;
+    position: absolute;
+}
+
+.site-name {
+    font-size: 2rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+}
+
+.site-logo {
+    width: 50px; /* Ajuste o tamanho conforme necessário */
+    height: auto;
+    margin-right: 10px; /* Espaço entre o logo e o texto */
+}
+
+.nav-links {
+    display: flex;
+    align-items: center;
+    margin-right: 30px;
+}
+
+.nav-links a {
+    margin-left: 20px;
+    text-decoration: none;
+    color: #f0e4d7;
+    font-size: 1.2rem;
+}
+
+.nav-links a:hover {
+    color: #273140; 
+}

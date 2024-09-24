@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
+import Header from '../components/Header'
 import './Signup.css';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEye, faEyeSlash } from '@fortawesome/free-solid-svg-icons';
@@ -44,62 +45,66 @@ const Signup = () => {
   };
 
   return (
-    <div className="signup-container">
-      <h2>Cadastro</h2>
-      <form onSubmit={handleSignup}>
-        {error && <p className="error">{error}</p>}
-        <div>
-          <label htmlFor="username">Nome de Usuário:</label>
-          <input
-            type="text"
-            id="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
-        </div>
-        <div>
-          <label htmlFor="email">Email:</label>
-          <input
-            type="email"
-            id="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
-        <div className="password-container">
-          <label htmlFor="password">Senha:</label>
-          <div className="input-with-icon">
+    <div className="signup-page">
+      <Header />
+      <div className="signup-container">
+        <h2>Cadastro</h2>
+        <form onSubmit={handleSignup}>
+          {error && <p className="error">{error}</p>}
+          <div>
+            <label htmlFor="username">Nome de Usuário:</label>
             <input
-              type={showPassword ? 'text' : 'password'}
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              type="text"
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
             />
-            <button type="button" className="eye-button" onClick={() => setShowPassword(!showPassword)}>
-              <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} />
-            </button>
           </div>
-        </div>
-        <div className="password-container">
-          <label htmlFor="confirmPassword">Confirme a Senha:</label>
-          <div className="input-with-icon">
+          <div>
+            <label htmlFor="email">Email:</label>
             <input
-              type={showPassword ? 'text' : 'password'}
-              id="confirmPassword"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              type="email"
+              id="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
             />
-            <button type="button" className="eye-button" onClick={() => setShowPassword(!showPassword)}>
-              <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} />
-            </button>
           </div>
-        </div>
-        <button type="submit">Cadastrar</button>
-      </form>
+          <div className="password-container">
+            <label htmlFor="password">Senha:</label>
+            <div className="input-with-icon">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <button type="button" className="eye-button" onClick={() => setShowPassword(!showPassword)}>
+                <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} />
+              </button>
+            </div>
+          </div>
+          <div className="password-container">
+            <label htmlFor="confirmPassword">Confirme a Senha:</label>
+            <div className="input-with-icon">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                id="confirmPassword"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
+              <button type="button" className="eye-button" onClick={() => setShowPassword(!showPassword)}>
+                <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} />
+              </button>
+            </div>
+          </div>
+          <a href="/login">Já tem uma conta? Entre!</a>
+          <button type="submit">Cadastrar</button>
+        </form>
+      </div>
     </div>
   );
 };

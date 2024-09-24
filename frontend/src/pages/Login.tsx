@@ -1,5 +1,6 @@
 import { useState, useContext } from 'react';
-import { AuthContext } from '../context/AuthContext'; // Importando o contexto de autenticação
+import { AuthContext } from '../context/AuthContext';
+import Header from '../components/Header';
 import './Login.css';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEye, faEyeSlash } from '@fortawesome/free-solid-svg-icons';
@@ -30,37 +31,43 @@ const Login = () => {
   };
 
   return (
-    <div className="login-container">
-      <h2>Login</h2>
-      <form onSubmit={handleLogin}>
-        {error && <p className="error">{error}</p>}
-        <div className="input-group">
-          <label htmlFor="email">Email:</label>
-          <input
-            type="email"
-            id="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
-        <div className="password-container">
-          <label htmlFor="password">Senha:</label>
-          <div className="input-with-icon">
+    <div className="login-page">
+      <Header />
+      <div className="login-container">
+        <h2>Login</h2>
+        <form onSubmit={handleLogin}>
+          {error && <p className="error">{error}</p>}
+          <div className="input-group">
+            <label htmlFor="email">Email:</label>
             <input
-              type={showPassword ? 'text' : 'password'}
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              type="email"
+              id="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
             />
-            <button type="button" className="eye-button" onClick={() => setShowPassword(!showPassword)}>
-                <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} />
-            </button>
           </div>
-        </div>
-        <button type="submit">Entrar</button>
-      </form>
+          <div className="password-container">
+            <label htmlFor="password">Senha:</label>
+            <div className="input-with-icon">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <button type="button" className="eye-button" onClick={() => setShowPassword(!showPassword)}>
+                  <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} />
+              </button>
+            </div>
+          </div>
+          <a href="/signup">Ainda não tem uma conta? Cadastre-se!</a>
+          <br />
+          <a href="/reset-password">Esqueci minha senha</a>
+          <button type="submit">Entrar</button>
+        </form>
+      </div>
     </div>
   );
 };

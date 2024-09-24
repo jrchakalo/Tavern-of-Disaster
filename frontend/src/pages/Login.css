@@ -1,3 +1,11 @@
+.login-page {
+  background-color: none;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
 .login-container {
   background-color: #273140;
   padding: 30px;
@@ -70,4 +78,8 @@ input {
 
 button {
   width: 100%;
+}
+
+a{
+  color: #f0e4d7;
 }

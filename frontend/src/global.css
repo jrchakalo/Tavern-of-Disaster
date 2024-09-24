@@ -7,7 +7,7 @@ button, select {
   border: none;
   border-radius: 8px;
   background-color: #723172;
-  color: white;
+  color: #f0e4d7;
   cursor: pointer;
   transition: background-color 0.3s, box-shadow 0.3s;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
@@ -48,7 +48,7 @@ h1, h2 {
   font-size: 2rem;
   font-weight: 700;
   margin-bottom: 20px;
-  color: #ffffff;
+  color: #f0e4d7;
 }
 
 input {
