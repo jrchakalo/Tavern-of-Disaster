@@ -14,17 +14,26 @@
     align-items: center;
     color: #f0e4d7;
     width: 100vw; 
-    box-sizing: border-box; 
+    box-sizing: border-box;
 }
 
 .site-name {
     font-size: 2rem;
     font-weight: bold;
+    display: flex;
+    align-items: center;
 }
+
+.site-logo {
+    width: 50px; /* Ajuste o tamanho conforme necessário */
+    height: auto;
+    margin-right: 10px; /* Espaço entre o logo e o texto */
+  }
 
 .nav-links {
     display: flex;
     align-items: center;
+    margin-right: 30px;
 }
 
 .nav-links a {

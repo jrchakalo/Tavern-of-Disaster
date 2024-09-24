@@ -2,6 +2,7 @@ import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';  // Importando o contexto de autenticação
 import './Home.css';  // Arquivo CSS
+import logo from "../assets/logo/logotof.png"
 
 const Home: React.FC = () => {
   const { token, logout } = useContext(AuthContext);  // Usando o token e a função de logout do contexto
@@ -11,6 +12,9 @@ const Home: React.FC = () => {
     <div className="home-container">
       <header className="header">
         <div className="site-name">
+          <Link to="/">
+            <img src={logo} className="site-logo" />
+          </Link>
           Tavern of Disaster
         </div>
         <nav className="nav-links">
