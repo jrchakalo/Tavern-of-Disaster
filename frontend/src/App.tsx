@@ -9,6 +9,7 @@ import ProtectedRoute from './components/ProtectedRoute.tsx';
 import ResetPassword from './pages/ResetPassword.tsx';
 import Home from './pages/Home.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
+import BattleMap from './pages/BattleMap.tsx';
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
               }
             />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
+        <Route path="/battle-map" element={<BattleMap />} />
       </Routes>
     </AuthProvider>
   );
