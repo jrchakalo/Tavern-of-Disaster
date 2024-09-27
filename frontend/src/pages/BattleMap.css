@@ -1,45 +1,281 @@
+/* Estiliza o container principal do Battle Map */
 .battle-map-container {
-    position: relative;
-    width: 100%;
-    height: 100vh;
-    overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 20px;
+  height: 100%;
 }
 
-.map-wrapper {
-    position: relative;
-    width: 100%;
-    height: 80vh; /* Mantém altura fixa */
-    display: flex;
-    justify-content: center;
-    align-items: center;
+.tokens-panel {
+  padding-right: 10px;
+  margin: 20px;
+  text-align: center;
+  width: 300px;
+  height: 100%;
 }
 
-.battle-map-canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 1;
+.grid-container {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* Define a área do canvas do mapa */
+canvas {
+  border: 1px solid black;
+  margin-top: 10px;
+  width: auto;
+  height: auto; 
+  max-width: 1000px; 
+  max-height: 1200px;
+  overflow: hidden;
+}
+
+.load-map {
+  display: inline;
+  align-items: center; /* Alinha os itens verticalmente ao centro */
+  margin: 20px 10px; /* Espaçamento vertical */
+  gap: 30px; /* Espaçamento entre os elementos */
+  
+}
+
+.load-map label {
+  font-size: 16px; /* Aumenta o tamanho da fonte */
+  color: #fff; /* Cor do texto */
+}
+
+.load-map-button, .grid-size {
+  padding: 8px; /* Espaçamento interno */
+  border: 1px solid #ccc; /* Borda padrão */
+  border-radius: 4px; /* Bordas arredondadas */
+  font-size: 16px; /* Tamanho da fonte */
+  outline: none; /* Remove contorno ao focar */
+  transition: border-color 0.3s; /* Transição suave para mudança de borda */
+  background-color: #723172;
+  color: white;
+}
+
+.load-map-button{
+  width: 250px;
+  margin-right: 30px;
+}
+
+.grid-size {
+  width: 70px;
+}
+
+/* Garantir que o popup não ultrapasse a tela */
+.manage-tokens-popup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden; /* Impede overflow para fora da tela */
+}
+
+.manage-tokens-content {
+  background-color: #273140;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  max-width: 60%; /* Limite de largura para caber na tela */
+  max-height: 80%; /* Limite de altura para caber na tela */
+  width: 40%;
+  overflow-y: auto; /* Adiciona rolagem se o conteúdo ultrapassar a altura disponível */
+}
+
+/* Para garantir que o conteúdo interno do popup não transborde */
+.manage-tokens-content div {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+/* Adiciona limites para os botões e tokens */
+.manage-tokens-content button {
+  margin: 5px;
+}
+
+.manage-tokens-content span {
+  display: block;
+  margin-bottom: 10px;
+}
+
+/* Garantir que o popup seja responsivo em telas menores */
+@media (max-width: 600px) {
+  .manage-tokens-content {
     max-width: 100%;
-    max-height: 100%;
+    max-height: 90%;
+    padding: 15px;
+  }
 }
 
-.token {
-    position: absolute;
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-size: 20px;
-    font-weight: bold;
-    cursor: pointer;
-    z-index: 2;
+/* Estiliza a seção de criação de tokens */
+.token-creation {
+  display: flex;
+  flex-direction: column;
+  margin: 20px 0;
 }
 
-.tokens-container {
-    max-height: 200px; /* Defina a altura máxima para a lista de tokens */
-    overflow-y: auto; /* Habilita rolagem se os tokens excederem a altura */
-    margin-top: 20px; /* Espaçamento entre o mapa e a lista de tokens */
+.token-creation input {
+  padding: 5px;
+  margin: 5px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  appearance: none; /* Remove as setas nos inputs numéricos */
+}
+
+.token-creation button {
+  padding: 10px;
+  margin: 5px;
+  background-color: #723172;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.token-creation button:hover {
+  background-color: #562c56;
+}
+
+.movement-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.create-token-popup{
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.create-token-content{
+  background-color: #273140;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;   
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;  
+  max-width: 300px;     
+  width: 100%;
+}
+
+.movement-row {
+  display: flex;          
+  justify-content: center; 
+  margin-bottom: 10px;   
+}
+
+.movement-row button {
+  margin: 0 5px;        
+}
+
+/* Estiliza a lista de tokens criados */
+.tokens-list {
+  margin-top: 20px;
+}
+
+.tokens-list ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.tokens-list li {
+  padding: 10px;
+  margin: 5px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tokens-list button {
+  padding: 5px;
+  background-color: #723172;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tokens-list button:hover {
+  background-color: #562c56;
+}
+
+/* Estiliza a área de movimento e turno */
+.movement-controls {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.movement-controls button {
+  padding: 10px;
+  margin: 5px;
+  background-color: #723172;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.movement-controls button:hover {
+  background-color: #562c56;
+}
+
+.movement-controls p {
+  margin: 5px 0;
+  font-size: 16px;
+  color: #333;
+}
+
+.turn-indicator {
+  font-weight: bold;
+  color: #723172;
+}
+
+/* Ajustes para dispositivos móveis */
+@media only screen and (max-width: 768px) {
+  .battle-map-container {
+    padding: 5px;
+  }
+
+  canvas {
+    width: 100%;
+  }
+
+  .token-creation, .tokens-list {
+    width: 100%;
+  }
+
+  .tokens-list li {
+    flex-direction: column;
+  }
+
+  .movement-controls {
+    width: 100%;
+  }
 }
