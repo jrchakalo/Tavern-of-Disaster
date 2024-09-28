@@ -20,6 +20,8 @@ const BattleMap: React.FC = () => {
   const [, setCreateTokenPopupOpen] = useState(false); // Estado para controlar popup
   const [showCreateTokenPopup, setShowCreateTokenPopup] = useState(false);
   const [showManageTokensPopup, setShowManageTokensPopup] = useState(false);
+  const [showEditTokenPopup, setShowEditTokenPopup] = useState(false); // Controle do popup de edição
+  const [editingToken, setEditingToken] = useState<Token | null>(null); // Token em edição
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -34,6 +36,22 @@ const BattleMap: React.FC = () => {
   // Função para fechar o popup de criação de token
   const closeCreateTokenPopup = () => {
     setCreateTokenPopupOpen(false);
+  };
+
+  const handleEditToken = (token: Token) => {
+    setEditingToken(token);
+    setShowEditTokenPopup(true);
+  };
+
+  const handleSaveToken = () => {
+    if (editingToken) {
+      setTokens((prevTokens) =>
+        prevTokens.map((token) =>
+          token.id === editingToken.id ? editingToken : token
+        )
+      );
+    }
+    setShowEditTokenPopup(false); // Fechar popup após salvar
   };
 
   // Função para carregar a imagem do mapa
@@ -210,14 +228,15 @@ const BattleMap: React.FC = () => {
         );
         ctx.fill();
         ctx.fillStyle = '#000';
-        ctx.font = 'bold 9px Arial';
-        const tokenInicials = token.name.slice(0, 2);
+        ctx.font = 'bold 7px Arial';
+        ctx.textAlign = 'start';
+        const tokenInicials = token.name.slice(0, 3);
         ctx.fillText(tokenInicials, token.x + gridSize / 2 - 5, token.y + gridSize / 2 + 5);
         
         // Indicar o token que está com o turno atual
         if (index === currentTurn) {
           ctx.strokeStyle = 'red';
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 0.5;
           ctx.stroke();
         }
       });
@@ -294,7 +313,7 @@ const BattleMap: React.FC = () => {
               <button onClick={nextTurn}>Encerrar o turno</button>
               <div>
                 <p>Turno atual: {tokens[currentTurn]?.name}</p>
-                <p>Quantidade de movimento: {tokens[currentTurn]?.remainingMovement}</p>
+                <p>Movimento Restante: {tokens[currentTurn]?.remainingMovement}</p>
                 <div className="movement-buttons">
                   <div className="movement-row">
                     <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'up-left')}>🡴</button>
@@ -316,12 +335,12 @@ const BattleMap: React.FC = () => {
             </div>
           )}
 
-          <button onClick={toggleManageTokensPopup}>Gerenciar Tokens</button>
+          <button onClick={toggleManageTokensPopup}>Gerenciar Turnos</button>
 
           {showManageTokensPopup && (
             <div className="manage-tokens-popup">
               <div className="manage-tokens-content">
-                <h3>Gerenciar Tokens</h3>
+                <h3>Gerenciar Turnos</h3>
                 {tokens.length === 0 ? (
                   <p>Nenhum token para gerenciar</p>
                 ) : (	
@@ -329,17 +348,70 @@ const BattleMap: React.FC = () => {
                     {tokens.map((token) => (
                       <li key={token.id}>
                         {token.name}{' '}
-                        <button onClick={() => handleDeleteToken(token.id)}>Excluir</button>
-                        <button onClick={() => moveTokenInTurnOrder(token.id, 'up')}>⬆</button>
-                        <button onClick={() => moveTokenInTurnOrder(token.id, 'down')}>⬇</button>
+                        <button onClick={() => moveTokenInTurnOrder(token.id, 'up')}>⬆️</button>
+                        <button onClick={() => moveTokenInTurnOrder(token.id, 'down')}>⬇️</button>
+                        <button onClick={() => handleEditToken(token)}>✏️</button>
+                        <button onClick={() => handleDeleteToken(token.id)}>🗑️</button> 
                       </li>
                     ))}
                   </ul>
                 )}
-                <button onClick={toggleManageTokensPopup}>Fechar</button>
+                <button className="close-menage-button" onClick={toggleManageTokensPopup}>Fechar</button>
               </div>
             </div>
           )}
+
+          {showEditTokenPopup && editingToken && (
+              <div className="create-token-popup">
+                <div className="create-token-content">
+                  <h3>Editar Token</h3>
+                  <input
+                    type="text"
+                    value={editingToken.name}
+                    onChange={(e) =>
+                      setEditingToken({ ...editingToken, name: e.target.value })
+                    }
+                    placeholder="Nome"
+                  />
+                  <input
+                    type="number"
+                    value={editingToken.movement}
+                    onChange={(e) =>
+                      setEditingToken({
+                        ...editingToken,
+                        movement: Number(e.target.value),
+                        remainingMovement: Number(e.target.value),
+                      })
+                    }
+                    placeholder="Movimento"
+                  />
+                  <input
+                    type="number"
+                    value={editingToken.x / gridSize}
+                    onChange={(e) =>
+                      setEditingToken({
+                        ...editingToken,
+                        x: Number(e.target.value) * gridSize,
+                      })
+                    }
+                    placeholder="Posição X"
+                  />
+                  <input
+                    type="number"
+                    value={editingToken.y / gridSize}
+                    onChange={(e) =>
+                      setEditingToken({
+                        ...editingToken,
+                        y: Number(e.target.value) * gridSize,
+                      })
+                    }
+                    placeholder="Posição Y"
+                  />
+                  <button onClick={handleSaveToken}>Salvar</button>
+                  <button onClick={() => setShowEditTokenPopup(false)}>Cancelar</button>
+                </div>
+              </div>
+            )}
         </div>
       </div>
     </div>
