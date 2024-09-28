@@ -15,6 +15,7 @@ interface Token {
 const BattleMap: React.FC = () => {
   const [image, setImage] = useState<string | ArrayBuffer | null>(null);
   const [gridSize, setGridSize] = useState(25); // Tamanho inicial do grid
+  const [mapLoaded, setMapLoaded] = useState(false);
   const [tokens, setTokens] = useState<Token[]>([]);
   const [currentTurn, setCurrentTurn] = useState<number>(0); // Indica o token atual no turno
   const [, setCreateTokenPopupOpen] = useState(false); // Estado para controlar popup
@@ -22,6 +23,7 @@ const BattleMap: React.FC = () => {
   const [showManageTokensPopup, setShowManageTokensPopup] = useState(false);
   const [showEditTokenPopup, setShowEditTokenPopup] = useState(false); // Controle do popup de edição
   const [editingToken, setEditingToken] = useState<Token | null>(null); // Token em edição
+  const [movementHistory, setMovementHistory] = useState<Token[][]>([]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -59,7 +61,10 @@ const BattleMap: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = () => setImage(reader.result);
+      reader.onload = () => {
+        setImage(reader.result);
+        setMapLoaded(true);
+      }
       reader.readAsDataURL(file);
     }
   };
@@ -94,8 +99,11 @@ const BattleMap: React.FC = () => {
 
   const handleMoveToken = useCallback(
     (tokenId: string, direction: string) => {
-      setTokens((prevTokens) =>
-        prevTokens.map((token, idx) => {
+      setTokens((prevTokens) => {
+          const newHistory = [...movementHistory, prevTokens];
+          setMovementHistory(newHistory);
+
+          return prevTokens.map((token, idx) => {
           if (token.id === tokenId && idx === currentTurn && token.remainingMovement > 0) {
             let newX = token.x;
             let newY = token.y;
@@ -138,11 +146,20 @@ const BattleMap: React.FC = () => {
             return { ...token, x: newX, y: newY, remainingMovement: token.remainingMovement - 1 };
           }
           return token;
-        })
-      );
+        });
+      });
     },
-    [gridSize, currentTurn]
+    [gridSize, currentTurn, movementHistory]
   );
+
+  // Função para desfazer o último movimento
+  const undoLastMove = () => {
+    if (movementHistory.length > 0) {
+      const previousState = movementHistory[movementHistory.length - 1]; // Recupera o último estado salvo
+      setTokens(previousState); // Reverte o estado dos tokens
+      setMovementHistory((prevHistory) => prevHistory.slice(0, -1)); // Remove o último estado do histórico
+    }
+  };
       
   // Função para excluir um token
   const handleDeleteToken = (tokenId: string) => {
@@ -236,7 +253,7 @@ const BattleMap: React.FC = () => {
         // Indicar o token que está com o turno atual
         if (index === currentTurn) {
           ctx.strokeStyle = 'red';
-          ctx.lineWidth = 0.5;
+          ctx.lineWidth = 1;
           ctx.stroke();
         }
       });
@@ -258,162 +275,175 @@ const BattleMap: React.FC = () => {
 
   return (
     <div className="battle-map-container">
-      <h1>Mapa de Batalha</h1>
+      {mapLoaded ? (
+        <>
+          <div className='grid-configure'>
+            <label>Grid:</label>
+              <input className="grid-size"
+                type="number"
+                value={gridSize}
+                onChange={(e) => setGridSize(Number(e.target.value))}
+            />
+          </div>
 
+          <div className="grid-container">
+            <canvas ref={canvasRef}></canvas>
+            <div className="tokens-panel">
+              <button onClick={toggleCreateTokenPopup}>Inserir personagem</button>
 
-      <div className="load-map">
-      <h3>Carregar o Mapa de Batalha</h3>
-        <label>Carregar Mapa: </label>
-        <input className="load-map-button" type="file" onChange={handleImageUpload} />
+              {showCreateTokenPopup && (
+                <div className="create-token-popup">
+                  <div className="create-token-content">
+                    <h3>Insira as informações do personagem</h3>
+                    <div className="token-creation">
+                      <input type="text" placeholder="Nome" id="tokenName" />
+                      <input type="number" placeholder="Quantidade de Movimento" id="tokenMovement" />
+                      <input type="number" placeholder="Posição X" id="tokenX" />
+                      <input type="number" placeholder="Posição Y" id="tokenY" />
+                      <button
+                        onClick={() => {
+                          handleCreateToken(
+                            (document.getElementById('tokenName') as HTMLInputElement).value,
+                            Number((document.getElementById('tokenMovement') as HTMLInputElement).value),
+                            Number((document.getElementById('tokenX') as HTMLInputElement).value),
+                            Number((document.getElementById('tokenY') as HTMLInputElement).value)
+                          );
+                          toggleCreateTokenPopup(); // Fecha o pop-up
+                        }}
+                      >
+                        Inserir ao combate
+                      </button>
 
-        <label>Grid Size: </label>
-        <input className="grid-size"
-          type="number"
-          value={gridSize}
-          onChange={(e) => setGridSize(Number(e.target.value))}
-        />
-      </div>
-
-      <div className="grid-container">
-        <canvas ref={canvasRef}></canvas>
-        <div className="tokens-panel">
-          <button onClick={toggleCreateTokenPopup}>Inserir personagem</button>
-
-          {showCreateTokenPopup && (
-            <div className="create-token-popup">
-              <div className="create-token-content">
-                <h3>Insira as informações do personagem</h3>
-                <div className="token-creation">
-                  <input type="text" placeholder="Nome" id="tokenName" />
-                  <input type="number" placeholder="Quantidade de Movimento" id="tokenMovement" />
-                  <input type="number" placeholder="Posição X" id="tokenX" />
-                  <input type="number" placeholder="Posição Y" id="tokenY" />
-                  <button
-                    onClick={() => {
-                      handleCreateToken(
-                        (document.getElementById('tokenName') as HTMLInputElement).value,
-                        Number((document.getElementById('tokenMovement') as HTMLInputElement).value),
-                        Number((document.getElementById('tokenX') as HTMLInputElement).value),
-                        Number((document.getElementById('tokenY') as HTMLInputElement).value)
-                      );
-                      toggleCreateTokenPopup(); // Fecha o pop-up
-                    }}
-                  >
-                    Inserir ao combate
-                  </button>
-
-                  <button onClick={toggleCreateTokenPopup}>Cancelar</button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {tokens.length > 0 && (
-            <div>
-              <button onClick={nextTurn}>Encerrar o turno</button>
-              <div>
-                <p>Turno atual: {tokens[currentTurn]?.name}</p>
-                <p>Movimento Restante: {tokens[currentTurn]?.remainingMovement}</p>
-                <div className="movement-buttons">
-                  <div className="movement-row">
-                    <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'up-left')}>🡴</button>
-                    <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'up')}>🡱</button>
-                    <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'up-right')}>🡵</button>
-                  </div>
-                  <div className="movement-row">
-                    <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'left')}>🡰</button>
-                    <button disabled>⭯</button>
-                    <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'right')}>🡲</button>  
-                  </div>
-                  <div className="movement-row">
-                    <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'down-left')}>🡷</button>
-                    <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'down')}>🡳</button>
-                    <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'down-right')}>🡶</button>
+                      <button onClick={toggleCreateTokenPopup}>Cancelar</button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
+              )}
 
-          <button onClick={toggleManageTokensPopup}>Gerenciar Turnos</button>
+              {tokens.length > 0 && (
+                <div>
+                  <button onClick={nextTurn}>Encerrar o turno</button>
+                  <div>
+                    <p>Turno atual: {tokens[currentTurn]?.name}</p>
+                    <p>Movimento Restante: {tokens[currentTurn]?.remainingMovement}</p>
+                    <div className="movement-buttons">
+                      <div className="movement-row">
+                        <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'up-left')}>🡴</button>
+                        <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'up')}>🡱</button>
+                        <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'up-right')}>🡵</button>
+                      </div>
+                      <div className="movement-row">
+                        <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'left')}>🡰</button>
+                        <button
+                          onClick={undoLastMove}
+                          disabled={movementHistory.length === 0} // Desabilitar quando não houver movimentos no histórico
+                        >
+                          ⭯
+                        </button>
+                        <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'right')}>🡲</button>  
+                      </div>
+                      <div className="movement-row">
+                        <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'down-left')}>🡷</button>
+                        <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'down')}>🡳</button>
+                        <button onClick={() => handleMoveToken(tokens[currentTurn].id, 'down-right')}>🡶</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-          {showManageTokensPopup && (
-            <div className="manage-tokens-popup">
-              <div className="manage-tokens-content">
-                <h3>Gerenciar Turnos</h3>
-                {tokens.length === 0 ? (
-                  <p>Nenhum token para gerenciar</p>
-                ) : (	
-                  <ul>
-                    {tokens.map((token) => (
-                      <li key={token.id}>
-                        {token.name}{' '}
-                        <button onClick={() => moveTokenInTurnOrder(token.id, 'up')}>⬆️</button>
-                        <button onClick={() => moveTokenInTurnOrder(token.id, 'down')}>⬇️</button>
-                        <button onClick={() => handleEditToken(token)}>✏️</button>
-                        <button onClick={() => handleDeleteToken(token.id)}>🗑️</button> 
-                      </li>
-                    ))}
-                  </ul>
+              <button onClick={toggleManageTokensPopup}>Gerenciar Turnos</button>
+
+              {showManageTokensPopup && (
+                <div className="manage-tokens-popup">
+                  <div className="manage-tokens-content">
+                    <h3>Gerenciar Turnos</h3>
+                    {tokens.length === 0 ? (
+                      <p>Nenhum token para gerenciar</p>
+                    ) : (	
+                      <ul>
+                        {tokens.map((token) => (
+                          <li key={token.id}>
+                            {token.name}{' '}
+                            <button onClick={() => moveTokenInTurnOrder(token.id, 'up')}>⬆️</button>
+                            <button onClick={() => moveTokenInTurnOrder(token.id, 'down')}>⬇️</button>
+                            <button onClick={() => handleEditToken(token)}>✏️</button>
+                            <button onClick={() => handleDeleteToken(token.id)}>🗑️</button> 
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <button className="close-menage-button" onClick={toggleManageTokensPopup}>Fechar</button>
+                  </div>
+                </div>
+              )}
+
+              {showEditTokenPopup && editingToken && (
+                  <div className="create-token-popup">
+                    <div className="create-token-content">
+                      <h3>Editar informações do personagem</h3>
+                      <label>Nome: </label>
+                      <input
+                        type="text"
+                        value={editingToken.name}
+                        onChange={(e) =>
+                          setEditingToken({ ...editingToken, name: e.target.value })
+                        }
+                        placeholder="Nome"
+                      />
+                      <label>Movimento: </label>
+                      <input
+                        type="number"
+                        value={editingToken.movement}
+                        onChange={(e) =>
+                          setEditingToken({
+                            ...editingToken,
+                            movement: Number(e.target.value),
+                            remainingMovement: Number(e.target.value),
+                          })
+                        }
+                        placeholder="Movimento"
+                      />
+                      <label>Posição X: </label>
+                      <input
+                        type="number"
+                        value={editingToken.x / gridSize}
+                        onChange={(e) =>
+                          setEditingToken({
+                            ...editingToken,
+                            x: Number(e.target.value) * gridSize,
+                          })
+                        }
+                        placeholder="Posição X"
+                      />
+                      <label>Posição Y: </label>
+                      <input
+                        type="number"
+                        value={editingToken.y / gridSize}
+                        onChange={(e) =>
+                          setEditingToken({
+                            ...editingToken,
+                            y: Number(e.target.value) * gridSize,
+                          })
+                        }
+                        placeholder="Posição Y"
+                      />
+                      <button onClick={handleSaveToken}>Salvar</button>
+                      <button onClick={() => setShowEditTokenPopup(false)}>Cancelar</button>
+                    </div>
+                  </div>
                 )}
-                <button className="close-menage-button" onClick={toggleManageTokensPopup}>Fechar</button>
-              </div>
             </div>
-          )}
-
-          {showEditTokenPopup && editingToken && (
-              <div className="create-token-popup">
-                <div className="create-token-content">
-                  <h3>Editar Token</h3>
-                  <input
-                    type="text"
-                    value={editingToken.name}
-                    onChange={(e) =>
-                      setEditingToken({ ...editingToken, name: e.target.value })
-                    }
-                    placeholder="Nome"
-                  />
-                  <input
-                    type="number"
-                    value={editingToken.movement}
-                    onChange={(e) =>
-                      setEditingToken({
-                        ...editingToken,
-                        movement: Number(e.target.value),
-                        remainingMovement: Number(e.target.value),
-                      })
-                    }
-                    placeholder="Movimento"
-                  />
-                  <input
-                    type="number"
-                    value={editingToken.x / gridSize}
-                    onChange={(e) =>
-                      setEditingToken({
-                        ...editingToken,
-                        x: Number(e.target.value) * gridSize,
-                      })
-                    }
-                    placeholder="Posição X"
-                  />
-                  <input
-                    type="number"
-                    value={editingToken.y / gridSize}
-                    onChange={(e) =>
-                      setEditingToken({
-                        ...editingToken,
-                        y: Number(e.target.value) * gridSize,
-                      })
-                    }
-                    placeholder="Posição Y"
-                  />
-                  <button onClick={handleSaveToken}>Salvar</button>
-                  <button onClick={() => setShowEditTokenPopup(false)}>Cancelar</button>
-                </div>
-              </div>
-            )}
+          </div>
+          <button className="load-another-button" onClick={() => setMapLoaded(false)}>Carregar novo mapa</button>
+        </>
+      ) : (
+        <div className="load-map">
+          <h1>Mapa de Batalha</h1>
+          <h3>Carregue seu Mapa de Batalha!</h3>
+          <input className="load-map-button" type="file" onChange={handleImageUpload} />
         </div>
-      </div>
+      )}
     </div>
   );
 };
