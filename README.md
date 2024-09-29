@@ -1,5 +1,5 @@
 <div align="center">
-  <img align="center" alt="logogeniusx86" height="245" width="297" src="./frontend/src/assets/logo/logotof.png">
+  <img align="center" alt="logotof" height="245" width="297" src="./frontend/public/assets/logo/logotof.png">
   <h1> Tavern of Disaster</h1>
 </div>
 
