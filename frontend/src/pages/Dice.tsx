@@ -15,13 +15,13 @@ const Dice = () => {
   const updateDiceImage = (id: number) => {
     const sides = (document.getElementById(`dice-type-${id}`) as HTMLSelectElement).value;
     const dice = document.getElementById(`dice-${id}`) as HTMLImageElement;
-    dice.src = `./src/assets/d${sides}/${sides}.empty.png`;
+    dice.src = `./assets/d${sides}/${sides}.empty.png`;
   };
 
   const playSound = () => {
     if (!soundEnabled) return;
     const soundIndex = Math.floor(Math.random() * 9) + 1;
-    const audio = new Audio(`./src/sfx/roll${soundIndex}.mp3`);
+    const audio = new Audio(`./sfx/roll${soundIndex}.mp3`);
     audio.volume = 0.05;
     audio.play();
   };
@@ -29,7 +29,7 @@ const Dice = () => {
   const toggleSound = () => {
     setSoundEnabled(!soundEnabled);
     const audioIcon = document.getElementById('audio-icon') as HTMLImageElement;
-    audioIcon.src = soundEnabled ? './src/assets/audio icon/audiooff.png' : './src/assets/audio icon/audioon.png';
+    audioIcon.src = soundEnabled ? './assets/audio icon/audiooff.png' : './assets/audio icon/audioon.png';
   };
 
   const rollDice = (id: number) => {
@@ -51,10 +51,10 @@ const Dice = () => {
 
     playSound();
 
-    dice.src = `./src/assets/d${sides}/d${sides}gif.gif`;
+    dice.src = `./assets/d${sides}/d${sides}gif.gif`;
 
     setTimeout(() => {
-      dice.src = `./src/assets/d${sides}/${sides}.${result}.png`;
+      dice.src = `./assets/d${sides}/${sides}.${result}.png`;
       logResult(id, sides, result);
     }, gifDuration);
   };
@@ -100,13 +100,13 @@ const Dice = () => {
       <div className="container">
         
         <div className="audio-toggle" id="audio-toggle" onClick={toggleSound}>
-          <img id="audio-icon" src="./src/assets/audio icon/audiooff.png" alt="Toggle Audio" />
+          <img id="audio-icon" src="./assets/audio icon/audiooff.png" alt="Toggle Audio" />
         </div>
         <h1>Role o Seu Dado!</h1>
         <div className="dice-wrapper" id="dice-wrapper">
           {[...Array(diceCount)].map((_, i) => (
             <div key={i} className="result-container" id={`dice-container-${i + 1}`}>
-              <img id={`dice-${i + 1}`} className="dice" src={`./src/assets/d20/20.empty.png`} alt="Dice result" />
+              <img id={`dice-${i + 1}`} className="dice" src={`./assets/d20/20.empty.png`} alt="Dice result" />
               <select id={`dice-type-${i + 1}`} onChange={() => updateDiceImage(i + 1)}>
                 <option value="4">D4</option>
                 <option value="6">D6</option>

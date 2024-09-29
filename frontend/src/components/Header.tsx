@@ -1,7 +1,7 @@
 import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import logo from "../assets/logo/logotof.png";
+import logo from "/assets/logo/logotof.png";
 import './Header.css'; // Você pode mover o estilo do header para um arquivo separado
 
 const Header: React.FC = () => {
