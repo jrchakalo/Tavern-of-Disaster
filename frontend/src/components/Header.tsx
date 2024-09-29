@@ -28,8 +28,9 @@ const Header: React.FC = () => {
                 </>
                 ) : (
                 <>
-                    <Link to="/signup">Cadastre-se</Link>
-                    <Link to="/login">Entre</Link>
+                    {/*<Link to="/signup">Cadastre-se</Link>
+                    <Link to="/login">Entre</Link>*/}
+                    <Link to="/battle-map">Mapa de Batalha</Link>
                     <Link to="/dice">Dado</Link>
                 </>
                 )}

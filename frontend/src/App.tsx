@@ -2,11 +2,11 @@ import './global.css';
 import { Route, Routes } from 'react-router-dom';
 import './App.css'
 import Dice from './pages/Dice.tsx'
-import Login from './pages/Login.tsx'
+{/*import Login from './pages/Login.tsx'
 import Signup from './pages/Signup.tsx'
 import Table from './pages/Table.tsx'
 import ProtectedRoute from './components/ProtectedRoute.tsx';
-import ResetPassword from './pages/ResetPassword.tsx';
+import ResetPassword from './pages/ResetPassword.tsx';*/}
 import Home from './pages/Home.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
 import BattleMap from './pages/BattleMap.tsx';
@@ -18,7 +18,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/home" element={<Home />} />
         <Route path="/dice" element={<Dice />} />
-        <Route path="/login" element={<Login />} />
+        {/*<Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route
               path="/my-tables"
@@ -28,7 +28,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
-        <Route path="/reset-password/:token" element={<ResetPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />*/}
         <Route path="/battle-map" element={<BattleMap />} />
       </Routes>
     </AuthProvider>

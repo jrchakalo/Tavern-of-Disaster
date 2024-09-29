@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Header from '../components/Header';
 import './Dice.css';
 
 const Dice = () => {
@@ -21,6 +22,7 @@ const Dice = () => {
     if (!soundEnabled) return;
     const soundIndex = Math.floor(Math.random() * 9) + 1;
     const audio = new Audio(`./src/sfx/roll${soundIndex}.mp3`);
+    audio.volume = 0.05;
     audio.play();
   };
 
@@ -44,7 +46,6 @@ const Dice = () => {
     }));
 
     const dice = document.getElementById(`dice-${id}`) as HTMLImageElement;
-    const resultText = document.getElementById(`result-${id}`) as HTMLParagraphElement;
     
     const gifDuration = 1000;
 
@@ -54,7 +55,6 @@ const Dice = () => {
 
     setTimeout(() => {
       dice.src = `./src/assets/d${sides}/${sides}.${result}.png`;
-      resultText.textContent = `Resultado: ${result}`;
       logResult(id, sides, result);
     }, gifDuration);
   };
@@ -95,40 +95,43 @@ const Dice = () => {
   };
 
   return (
-    <div className="container">
-      <div className="audio-toggle" id="audio-toggle" onClick={toggleSound}>
-        <img id="audio-icon" src="./src/assets/audio icon/audiooff.png" alt="Toggle Audio" />
-      </div>
-      <h1>Role o Seu Dado!</h1>
-      <div className="dice-wrapper" id="dice-wrapper">
-        {[...Array(diceCount)].map((_, i) => (
-          <div key={i} className="result-container" id={`dice-container-${i + 1}`}>
-            <img id={`dice-${i + 1}`} className="dice" src={`./src/assets/d20/20.empty.png`} alt="Dice result" />
-            <p id={`result-${i + 1}`}>Resultado: </p>
-            <select id={`dice-type-${i + 1}`} onChange={() => updateDiceImage(i + 1)}>
-              <option value="4">D4</option>
-              <option value="6">D6</option>
-              <option value="8">D8</option>
-              <option value="10">D10</option>
-              <option value="12">D12</option>
-              <option value="20" selected>
-                D20
-              </option>
-            </select>
-            <button onClick={() => rollDice(i + 1)}>Rolar</button>
-            <button onClick={() => removeDice(i + 1)}>Remover</button>
-          </div>
-        ))}
-      </div>
-      <button id="add-dice-button" onClick={addDice}>
-        Adicionar mais dados
-      </button>
-      <button id="toggle-log-button" onClick={toggleLog}>
-        Histórico
-      </button>
-      <div id="log-container" className="hidden">
-        <h2>Histórico de Rolagens</h2>
-        <div id="log-content"></div>
+    <div className="dice-page">
+      <Header />
+      <div className="container">
+        
+        <div className="audio-toggle" id="audio-toggle" onClick={toggleSound}>
+          <img id="audio-icon" src="./src/assets/audio icon/audiooff.png" alt="Toggle Audio" />
+        </div>
+        <h1>Role o Seu Dado!</h1>
+        <div className="dice-wrapper" id="dice-wrapper">
+          {[...Array(diceCount)].map((_, i) => (
+            <div key={i} className="result-container" id={`dice-container-${i + 1}`}>
+              <img id={`dice-${i + 1}`} className="dice" src={`./src/assets/d20/20.empty.png`} alt="Dice result" />
+              <select id={`dice-type-${i + 1}`} onChange={() => updateDiceImage(i + 1)}>
+                <option value="4">D4</option>
+                <option value="6">D6</option>
+                <option value="8">D8</option>
+                <option value="10">D10</option>
+                <option value="12">D12</option>
+                <option value="20" selected>
+                  D20
+                </option>
+              </select>
+              <button onClick={() => rollDice(i + 1)}>Rolar</button>
+              <button onClick={() => removeDice(i + 1)}>Remover</button>
+            </div>
+          ))}
+        </div>
+        <button id="add-dice-button" onClick={addDice}>
+          Adicionar mais dados
+        </button>
+        <button id="toggle-log-button" onClick={toggleLog}>
+          Histórico
+        </button>
+        <div id="log-container" className="hidden">
+          <h2>Histórico de Rolagens</h2>
+          <div id="log-content"></div>
+        </div>
       </div>
     </div>
   );

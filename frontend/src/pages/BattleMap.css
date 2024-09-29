@@ -1,4 +1,13 @@
-/* Estiliza o container principal do Battle Map */
+.battle-map-page {
+  background-color: none;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  padding-top: 80px;
+}
+
 .battle-map-container {
   display: flex;
   flex-direction: column;
