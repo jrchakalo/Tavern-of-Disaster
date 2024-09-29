@@ -30,7 +30,7 @@
 <div>
   <h2> Deployiment </h2>
 
-  [Tavern of Disaster](https://tavernofdisaster.bohr.io)
+  [Tavern of Disaster](https://tavernofdisaster.vercel.app/)
 
 </div>
 
