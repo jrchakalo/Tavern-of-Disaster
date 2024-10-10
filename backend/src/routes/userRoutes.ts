@@ -11,6 +11,6 @@ router.put('/profile', authenticateToken, updateProfile);
 router.get('/profile', authenticateToken, getProfile);
 
 // Deletar um usuário
-router.delete('/deleteUser', authenticateToken, deleteUser);
+router.delete('/delete', authenticateToken, deleteUser);
 
 export default router;

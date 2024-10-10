@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../../node_modules/.prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 
 const prisma = new PrismaClient();
@@ -78,9 +78,8 @@ export const closeTable = async (req: Request, res: Response) => {
     }
 
     // Atualiza o status da mesa para "CLOSED"
-    await prisma.table.update({
-      where: { id: tableId },
-      data: { status: 'CLOSED' },
+    await prisma.table.delete({
+      where: { id: tableId }
     });
 
     res.status(200).json({ message: 'Mesa fechada com sucesso.' });

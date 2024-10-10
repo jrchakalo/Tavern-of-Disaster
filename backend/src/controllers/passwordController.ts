@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../../node_modules/.prisma/client';
 import bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 import { addMinutes } from 'date-fns';
