@@ -64,7 +64,7 @@ const Login = () => {
           </div>
           <a href="/signup">Ainda não tem uma conta? Cadastre-se!</a>
           <br />
-          <a href="/reset-password">Esqueci minha senha</a>
+          <a href="/request-reset-password">Esqueci minha senha</a>
           <button type="submit">Entrar</button>
         </form>
       </div>

@@ -61,3 +61,21 @@ input {
   font-size: 1rem;
   background-color: #ffffff;
 }
+
+a {
+  color: #f0e4d7;
+  text-decoration: none;
+  display: block;
+}
+
+.error {
+  color: #ff6b6b;
+  font-size: 0.9rem;
+  margin-bottom: 15px;
+}
+
+.success {
+  color: #38c172;
+  font-size: 0.9rem;
+  margin-bottom: 15px;
+}

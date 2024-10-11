@@ -1,3 +1,11 @@
+.table-page{
+  background-color: none;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
 .tables-container {
   background-color: #273140;
   padding: 30px;
@@ -13,6 +21,7 @@
 .tables-list ul {
   list-style: none;
   padding: 0;
+  margin: 0;
 }
 
 .tables-list li {
@@ -27,10 +36,15 @@
 
 .table-code {
   color: #a3b1c6;
-  width: 50%;
+  width: 20%;
   padding: 0 10px;
-  align-items: center;
-  justify-content: space-between;
+  
+}
+
+.table-role{
+  color: #a3b1c6;
+  width: 20%;
+  padding: 0 20px;
 }
 
 .join-table {

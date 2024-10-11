@@ -38,6 +38,68 @@ export const createTable = async (req: Request, res: Response) => {
   }
 };
 
+export const joinTable = async (req: Request, res: Response) => {
+  const { code } = req.body;
+  const userId = (req as any).userId;
+
+  try {
+    const table = await prisma.table.findFirst({
+      where: { code },
+    });
+
+    if (!table) {
+      return res.status(404).json({ message: 'Mesa não encontrada.' });
+    }
+
+    // Verifica se o usuário já está na mesa
+    const player = await prisma.player.findFirst({
+      where: { userId, tableId: table.id },
+    });
+
+    if (player) {
+      return res.status(400).json({ message: 'Você já está nessa mesa.' });
+    }
+
+    await prisma.player.create({
+      data: {
+        userId,
+        tableId: table.id,
+        role: 'PLAYER',
+      },
+    });
+
+    res.status(200).json({ message: 'Você entrou na mesa com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao entrar na mesa:', error);
+    res.status(500).json({ message: 'Erro no servidor.' });
+  }
+}
+
+export const leaveTable = async (req: Request, res: Response) => {
+  const { tableId } = req.body;
+  const userId = (req as any).userId;
+
+  try {
+    // Verifica se o usuário é o DM da mesa
+    const dm = await prisma.player.findFirst({
+      where: { userId, tableId, role: 'DM' },
+    });
+
+    if (dm) {
+      return res.status(403).json({ message: 'O DM não pode sair da mesa.' });
+    }
+
+    await prisma.player.deleteMany({
+      where: { userId, tableId },
+    });
+
+    res.status(200).json({ message: 'Você saiu da mesa com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao sair da mesa:', error);
+    res.status(500).json({ message: 'Erro no servidor.' });
+  }
+}
+
 export const getTables = async (req: Request, res: Response) => {
   const userId = (req as any).userId;
 
@@ -52,6 +114,7 @@ export const getTables = async (req: Request, res: Response) => {
     const result = tables.map((player) => ({
       id: player.table.id,
       name: player.table.name,
+      description: player.table.description,
       code: player.table.code,
       role: player.role, // Incluindo o papel do usuário (DM ou PLAYER)
     }));
@@ -77,7 +140,11 @@ export const closeTable = async (req: Request, res: Response) => {
       return res.status(403).json({ message: 'Apenas o DM pode fechar a mesa.' });
     }
 
-    // Atualiza o status da mesa para "CLOSED"
+    await prisma.player.deleteMany({
+      where: { tableId },
+    });
+
+    // Deleta a mesa
     await prisma.table.delete({
       where: { id: tableId }
     });
