@@ -5,47 +5,56 @@
   justify-content: center;
   align-items: center;
   flex-direction: column;
-  padding-top: 80px;
+  margin-top: 80px;
 }
 
 .battle-map-container {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: flex-start;
-  padding: 20px;
-  height: 100vh;
-  width: 100%;
-  box-sizing: border-box;
-  overflow: auto;
+  justify-content: center;
+  margin: 20px;
 }
 
 .tokens-panel {
-  padding-right: 10px;
-  margin: 20px;
+  position: absolute;
+  right: 0;
+  padding-right: 20px;
   text-align: center;
-  width: 300px;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+}
+
+.tokens-panel p {
+  margin: 20px;
+}
+
+.tokens-panel button {
+  width: max-content;
+}
+  
+.movement-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 20px;
 }
 
 .grid-container {
-  position: relative;
   display: flex;
   justify-content: center;
-  align-items: flex-start;
+  align-items: center;
+  height: 100vh;
   width: 100%;
-  height: auto;
 }
 
 /* Define a área do canvas do mapa */
 canvas {
-  border: 1px solid black;
-  margin-top: 10px;
-  width: 600px; 
-  height: 800px;
-  max-width: 1000px;
-  max-height: 1200px;
-  overflow: hidden;
+  border: 1px solid #000;
+  background-color: #273140;  
 }
 
 .load-map {
@@ -59,7 +68,7 @@ canvas {
   display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: center;
+  width: 200px;
   label {
     margin-right: 15px;
   }
@@ -81,7 +90,7 @@ canvas {
   color: white;
 }
 
-.grid-size, .load-another-button{ 
+.grid-size{ 
   border: 1px solid #ccc;
   background-color: #723172;
   border-radius: 4px; 
@@ -91,6 +100,10 @@ canvas {
   transition: border-color 0.3s;
   width: auto;
   margin-right: 107vh;
+}
+
+.load-another-button{
+  margin-top: 100px;
 }
 
 .load-map-button{
@@ -128,14 +141,12 @@ canvas {
   margin: 20px;
 }
 
-/* Para garantir que o conteúdo interno do popup não transborde */
+
 .manage-tokens-content div {
   width: 100%;
   margin-bottom: 10px;
-  
 }
 
-/* Adiciona limites para os botões e tokens */
 .manage-tokens-content button {
   margin: 5px;
   padding: 10px;
@@ -160,15 +171,17 @@ canvas {
 .token-creation {
   display: flex;
   flex-direction: column;
-  margin: 20px 0;
+  align-items: center;
+  justify-content: center;
+  margin: 10px 0;
 }
 
 .token-creation input {
   padding: 5px;
   margin: 5px;
   border: 1px solid #ccc;
+  margin: 10px;  
   border-radius: 4px;
-  appearance: none; /* Remove as setas nos inputs numéricos */
 }
 
 .token-creation button {
@@ -183,12 +196,6 @@ canvas {
 
 .token-creation button:hover {
   background-color: #562c56;
-}
-
-.movement-buttons {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
 }
 
 .create-token-popup{
@@ -223,93 +230,4 @@ canvas {
 
 .movement-row button {
   margin: 0 5px;        
-}
-
-/* Estiliza a lista de tokens criados */
-.tokens-list {
-  margin-top: 20px;
-}
-
-.tokens-list ul {
-  list-style-type: none;
-  padding: 0;
-}
-
-.tokens-list li {
-  padding: 10px;
-  margin: 5px 0;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.tokens-list button {
-  padding: 5px;
-  background-color: #723172;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.tokens-list button:hover {
-  background-color: #562c56;
-}
-
-/* Estiliza a área de movimento e turno */
-.movement-controls {
-  margin-top: 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.movement-controls button {
-  padding: 10px;
-  margin: 5px;
-  background-color: #723172;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.movement-controls button:hover {
-  background-color: #562c56;
-}
-
-.movement-controls p {
-  margin: 5px 0;
-  font-size: 16px;
-  color: #333;
-}
-
-.turn-indicator {
-  font-weight: bold;
-  color: #723172;
-}
-
-/* Ajustes para dispositivos móveis */
-@media only screen and (max-width: 768px) {
-  .battle-map-container {
-    padding: 5px;
-  }
-
-  canvas {
-    width: 100%;
-  }
-
-  .token-creation, .tokens-list {
-    width: 100%;
-  }
-
-  .tokens-list li {
-    flex-direction: column;
-  }
-
-  .movement-controls {
-    width: 100%;
-  }
 }
