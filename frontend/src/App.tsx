@@ -4,7 +4,8 @@ import './App.css'
 import Dice from './pages/Dice.tsx'
 import Login from './pages/Login.tsx'
 import Signup from './pages/Signup.tsx'
-import Table from './pages/Table.tsx'
+import MyTables from './pages/MyTables.tsx'
+import TableDetails from './pages/Table.tsx'
 import ProtectedRoute from './components/ProtectedRoute.tsx';
 import ResetPassword from './pages/ResetPassword.tsx';
 import RequestResetPassword from './pages/RequestResetPassword.tsx';
@@ -25,10 +26,12 @@ function App() {
               path="/my-tables"
               element={
                 <ProtectedRoute>
-                  <Table />
+                  <MyTables />
                 </ProtectedRoute>
               }
             />
+        // Rota para ver detalhes de uma mesa
+        <Route path="/:tableCode" element={<TableDetails />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/request-reset-password" element={<RequestResetPassword />} />
         <Route path="/battle-map" element={<BattleMap />} />

@@ -1,5 +1,5 @@
 import express from 'express';
-import { createTable, getTables, closeTable, editTableDetails, joinTable, leaveTable } from '../controllers/tableController';
+import { createTable, getTables, closeTable, editTableDetails, joinTable, leaveTable, getTableDetails } from '../controllers/tableController';
 import { authenticateToken } from '../middlewares/authMiddleware';
 
 const router = express.Router();
@@ -21,5 +21,8 @@ router.post('/closeTable', authenticateToken, closeTable);
 
 // Rota para editar detalhes da mesa
 router.put('/editTableDetails', authenticateToken, editTableDetails);
+
+//Rota para obter detalhes de uma mesa
+router.get('/:tableCode', authenticateToken, getTableDetails);
 
 export default router;

@@ -126,6 +126,55 @@ export const getTables = async (req: Request, res: Response) => {
   }
 };
 
+export const getTableDetails = async (req: Request, res: Response) => {
+  const userId = (req as any).userId;
+  const { tableCode } = req.params;
+
+  try {
+    const table = await prisma.table.findUnique({
+      where: { code: tableCode },
+      include: {
+        players: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+
+    if (!table) {
+      return res.status(404).json({ message: 'Mesa não encontrada.' });
+    }
+
+    // Verifica se o usuário é um jogador da mesa
+    const player = table.players.find((p) => p.userId === userId);
+
+    if (!player) {
+      return res.status(403).json({ message: 'Você não está nessa mesa.' });
+    }
+
+    const isDm = player.role === 'DM';
+    const response = {
+      id: table.id,
+      name: table.name,
+      description: table.description,
+      code: table.code,
+      status: table.status,
+      players: table.players.map((p) => ({
+        id: p.id,
+        name: p.user.username,
+        role: p.role,
+      })),
+      isDm,
+    }
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Erro ao obter detalhes da mesa:', error);
+    res.status(500).json({ message: 'Erro no servidor.' });
+  }
+}
+
 export const closeTable = async (req: Request, res: Response) => {
   const { tableId } = req.body;
   const userId = (req as any).userId;
