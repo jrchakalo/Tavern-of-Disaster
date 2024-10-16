@@ -1,217 +1,206 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect } from 'react';
-import api from '../api';
-import './MyTables.css';
-import Header from '../components/Header';
+import { useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import io from 'socket.io-client';
+import api from '../api'; // seu arquivo de API
 
-const MyTables = () => {
-  const [tableName, setTableName] = useState('');
-  const [tables, setTables] = useState<{ id: number; name: string; description: string; code: string; role: string }[]>([]);
+const socket = io('http://localhost:5000'); // Altere para a URL do seu servidor
+
+const randomColor = () => '#' + Math.floor(Math.random() * 16777215).toString(16);
+
+const TableDetails = () => {
+  const { tableCode } = useParams<{ tableCode: string }>();
+  const [table, setTable] = useState<any>(null);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [joinCode, setJoinCode] = useState('');
-  const [showJoinPopup, setShowJoinPopup] = useState(false);
-  const [showCreatePopup, setShowCreatePopup] = useState(false);
-  const [description, setDescription] = useState('');
+
+  const [buttonColors, setButtonColors] = useState([randomColor(), randomColor()]);
+  const [activeButton, setActiveButton] = useState<number>(0);
+  const [turnEnded, setTurnEnded] = useState(false);
+  const [buttonAssignments, setButtonAssignments] = useState<{ [key: number]: string | null }>({
+    0: null,
+    1: null,
+  });
 
   useEffect(() => {
-    const fetchTables = async () => {
+    const fetchTableDetails = async () => {
       try {
         const token = localStorage.getItem('token');
-        const response = await api.get('/table/getTables', {
+        const response = await api.get(`/table/${tableCode}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setTables(response.data);
+        setTable(response.data);
       } catch (err) {
-        console.error(err);
-        setError('Erro ao carregar as mesas');
+        console.error('Erro:', (err as any).response ? (err as any).response.data : (err as any).message);
+        setError((err as any).response ? (err as any).response.data.message : 'Erro ao carregar os detalhes da mesa.');
       }
     };
 
-    fetchTables();
-  }, []);
+    fetchTableDetails();
 
-  const createTable = async () => {
-    if (!tableName) return;
-
-    try {
-      const token = localStorage.getItem('token');
-      const response = await api.post(
-        '/table/create',
-        { name: tableName, description },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const newTable = response.data;
-      setTables([...tables, { id: newTable.id, name: newTable.name, description: newTable.description, code: newTable.code, role: 'DM' }]);
-      setTableName('');
-      setDescription('');
-      setShowCreatePopup(false);
-      setSuccess('Mesa criada com sucesso.');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      console.error(err);
-      setError('Erro ao criar a mesa');
-      setTimeout(() => setError(''), 3000);
-    }
-  };
-
-  const joinTable = async () => {
-    if (!joinCode) return;
-
-    try {
-      const token = localStorage.getItem('token');
-      await api.post(
-        '/table/join',
-        { code: joinCode },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setJoinCode('');
-      setSuccess('Você entrou na mesa com sucesso.');
-      setShowJoinPopup(false);
-      //carrega as mesas novamente
-      const response = await api.get('/table/getTables', {
-        headers: { Authorization: `Bearer ${token}` },
+    // Ouvir eventos de mudança de cor
+    socket.on('colorChanged', ({ index, color }) => {
+      setButtonColors((prevColors) => {
+        const newColors = [...prevColors];
+        newColors[index] = color;
+        return newColors;
       });
-      setTables(response.data);
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      console.error('Erro:', (err as any).response ? (err as any).response.data : (err as any).message);
-      setError((err as any).response ? (err as any).response.data.message : 'Erro ao cadastrar.');
-      setShowJoinPopup(false);
-      setTimeout(() => setError(''), 3000);
+    });
+
+    // Ouvir eventos de mudança de turno
+    socket.on('turnEnded', ({ newActiveButton }) => {
+      setActiveButton(newActiveButton);
+      setTurnEnded(false);
+    });
+
+    // Ouvir eventos de atribuição de botão
+    socket.on('buttonAssigned', ({ buttonIndex, player }) => {
+      setButtonAssignments((prev) => ({ ...prev, [buttonIndex]: player }));
+    });
+
+    // Ouvir eventos de remoção de botão
+    socket.on('buttonRemoved', ({ buttonIndex }) => {
+      setButtonAssignments((prev) => ({ ...prev, [buttonIndex]: null }));
+    });
+
+    return () => {
+      // Limpar os eventos do socket quando o componente for desmontado
+      socket.off('colorChanged');
+      socket.off('turnEnded');
+      socket.off('buttonAssigned');
+      socket.off('buttonRemoved');
+    };
+  }, [tableCode]);
+
+  const changeButtonColor = (index: number) => {
+    const newColor = randomColor();
+    setButtonColors((prevColors) => {
+      const newColors = [...prevColors];
+      newColors[index] = newColor;
+      return newColors;
+    });
+
+    // Enviar a mudança de cor para o servidor
+    socket.emit('changeColor', { index, color: newColor });
+  };
+
+  const endTurn = () => {
+    const newActiveButton = activeButton === 0 ? 1 : 0;
+    setActiveButton(newActiveButton);
+    setTurnEnded(false);
+
+    // Enviar o novo turno para o servidor
+    socket.emit('endTurn', { newActiveButton });
+  };
+
+  const assignButtonToPlayer = (buttonIndex: number, player: string) => {
+    if (table.isDm) {
+      setButtonAssignments((prev) => ({ ...prev, [buttonIndex]: player }));
+
+      // Enviar a atribuição para o servidor
+      socket.emit('assignButton', { buttonIndex, player });
     }
   };
 
-  const closeTable = async (tableId: number) => {
-    //pergunta se o usuário tem certeza que deseja fechar a mesa
-    if (!window.confirm('Tem certeza que deseja fechar essa mesa?')) return;
-    try {
-      const token = localStorage.getItem('token');
-      await api.post(
-        '/table/closeTable',
-        { tableId },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setTables(tables.filter((table) => table.id !== tableId));
-      setSuccess('Mesa fechada com sucesso.');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      console.error(err);
-      setError('Erro ao fechar a mesa');
-      setTimeout(() => setError(''), 3000);
+  const removeButtonFromPlayer = (buttonIndex: number) => {
+    if (table.isDm) {
+      setButtonAssignments((prev) => ({ ...prev, [buttonIndex]: null }));
+
+      // Enviar a remoção para o servidor
+      socket.emit('removeButton', { buttonIndex });
     }
   };
 
-  const leaveTable = async (tableId: number) => {
-    //pergunta se o usuário tem certeza que deseja sair da mesa
-    if (!window.confirm('Tem certeza que deseja sair dessa mesa?')) return;
-    try {
-      const token = localStorage.getItem('token');
-      await api.post(
-        '/table/leave',
-        { tableId },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setTables(tables.filter((table) => table.id !== tableId));
-      setSuccess('Você saiu da mesa com sucesso.');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      console.error(err);
-      setError('Erro ao sair da mesa');
-      setTimeout(() => setError(''), 3000);
-    }
-  }
-  
+  const canClickButton = (index: number) => {
+    if (table.isDm) return true; // DM sempre pode clicar
+    const assignedPlayer = buttonAssignments[index];
+    const currentUser = 'currentUser'; // Aqui você colocaria o nome do jogador logado
+    return assignedPlayer === currentUser; // Apenas o jogador nomeado pode clicar
+  };
+
+  if (error) return <p>{error}</p>;
+
+  if (!table) return <p>Carregando...</p>;
+
   return (
-    <div className="table-page">
-      <Header />
-      <div className="tables-container">
-        <h1>Suas Mesas</h1>
-        {error && <p className="error">{error}</p>}
-        {success && <p className="success">{success}</p>}
-        {tables.length === 0 ? (
-          <p>Você ainda não faz parte de nenhuma mesa</p>
-        ) : (
-          <div className="tables-list">
+    <div>
+      <h1>{table.name}</h1>
+      <p><strong>Descrição:</strong> {table.description}</p>
+      <p><strong>Status:</strong> {table.status}</p>
+
+      {table.isDm ? (
+        <div>
+          <p><strong>Código da Mesa:</strong> {table.code}</p>
+          <h2>Jogadores</h2>
+          {table.players.length > 0 ? (
             <ul>
-              {tables.map((table, index) => (
-                <li key={index}>
-                  <span className="table-name">{table.name}</span>
-                  <span className="table-role"> Papel: ({table.role})</span>
-                  <span className = "table-description">
-                      Descrição:
-                      <br />
-                      {table.description}
-                  </span>
-                  <span>
-                    Acessar
-                    <button onClick={() => window.location.href = `/${table.code}`}>🚪</button>
-                  </span>
-                  {table.role === 'DM' && (
-                    <span className="table-code">
-                      Código: {table.code} <button onClick={() => navigator.clipboard.writeText(table.code)}>📋</button>
-                    </span>
+              {table.players.map((player: any) => (
+                <li key={player.id}>
+                  {player.name} - <strong>{player.role}</strong>
+                  {buttonAssignments[0] === player.name ? (
+                    <span> (Botão 1)</span>
+                  ) : buttonAssignments[1] === player.name ? (
+                    <span> (Botão 2)</span>
+                  ) : (
+                    <>
+                      <button onClick={() => assignButtonToPlayer(0, player.name)}>Atribuir ao Botão 1</button>
+                      <button onClick={() => assignButtonToPlayer(1, player.name)}>Atribuir ao Botão 2</button>
+                    </>
                   )}
-                  {table.role === 'DM' && (
-                    <span className="table-delete">
-                      Exclua:
-                      <button onClick={() => closeTable(table.id)}>🗑️</button>
-                    </span>
+                  {buttonAssignments[0] === player.name && (
+                    <button onClick={() => removeButtonFromPlayer(0)}>Remover botão de "{player.name}"</button>
                   )}
-                  {table.role === 'PLAYER' && (
-                    <span className="table-leave">
-                      <button onClick={() => leaveTable(table.id)}>Sair</button>
-                    </span>
+                  {buttonAssignments[1] === player.name && (
+                    <button onClick={() => removeButtonFromPlayer(1)}>Remover botão de "{player.name}"</button>
                   )}
                 </li>
               ))}
             </ul>
-          </div>
-        )}
-        <button onClick={() => setShowCreatePopup(true)}>Criar Mesa</button>
-        <button onClick={() => setShowJoinPopup(true)}>Entrar em uma Mesa</button>
+          ) : (
+            <p>Nenhum jogador na mesa ainda.</p>
+          )}
+        </div>
+      ) : (
+        <div>
+          <p><strong>Você não é o Mestre da Mesa.</strong></p>
+          <h2>Jogadores na Mesa</h2>
+          {table.players.length > 0 ? (
+            <ul>
+              {table.players.map((player: any) => (
+                <li key={player.id}>
+                  {player.name}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>Nenhum jogador na mesa ainda.</p>
+          )}
+        </div>
+      )}
 
-        {showJoinPopup && (
-          <div className="popup">
-            <div className="popup-content">
-              <button className="close-popup" onClick={() => setShowJoinPopup(false)}>X</button> {/* Botão "X" */}
-              <h2>Digite o código da mesa</h2>
-              <input
-                type="text"
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
-              />
-              <button onClick={joinTable}>Entrar na Mesa</button>
-              <button onClick={() => setShowJoinPopup(false)}>Cancelar</button>
-            </div>
-          </div>
-        )}
-
-        {showCreatePopup && (
-          <div className="popup">
-            <div className="popup-content">
-              <button className="close-popup" onClick={() => setShowCreatePopup(false)}>✕</button> {/* Botão "X" */}
-              <h2>Criar Nova Mesa</h2>
-              <input
-                type="text"
-                placeholder="Nome da mesa"
-                value={tableName}
-                onChange={(e) => setTableName(e.target.value)}
-              />
-              <input
-                type="text"
-                placeholder="Descrição: (opcional)"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-              <button onClick={createTable}>Criar Mesa</button>
-              <button onClick={() => setShowCreatePopup(false)}>Cancelar</button>
-            </div>
-          </div>
-        )}
+      <h2>Interatividade dos Botões</h2>
+      <div>
+        {buttonColors.map((color, index) => (
+          <button
+            key={index}
+            style={{ backgroundColor: color, padding: '20px', margin: '10px' }}
+            onClick={() => {
+              if (canClickButton(index) && activeButton === index) {
+                changeButtonColor(index);
+                setTurnEnded(true);
+              }
+            }}
+            disabled={turnEnded && activeButton !== index}
+          >
+            Botão {index + 1}
+          </button>
+        ))}
       </div>
+
+      {turnEnded && (
+        <button onClick={endTurn}>Encerrar Turno</button>
+      )}
     </div>
   );
 };
 
-export default MyTables;
+export default TableDetails;

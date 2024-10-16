@@ -6,15 +6,56 @@ import tableRoutes from './routes/tableRoutes';
 import authRoutes from './routes/authRoutes';
 import passwordRoutes from './routes/passwordRoutes';
 import playerRoutes from './routes/playerRoutes';
+import http from 'http';
+import { Server } from 'socket.io';
+import { Socket } from 'dgram';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: '*',
+  },
+});
 
 // Middlewares
 app.use(cors());
 app.use(express.json());
+
+// Escute eventos de conexão
+io.on('connection', (socket) => {
+  console.log('Novo usuário conectado');
+
+  // Ouça eventos de mudança de cor
+  socket.on('changeColor', (data) => {
+    // Envie a mudança de cor para todos os outros clientes
+    socket.broadcast.emit('colorChanged', data);
+  });
+
+  // Ouça eventos de turno
+  socket.on('endTurn', (data) => {
+    // Envie a mudança de turno para todos os outros clientes
+    socket.broadcast.emit('turnEnded', data);
+  });
+
+  // Ouça eventos de atribuição de botão
+  socket.on('assignButton', (data) => {
+    socket.broadcast.emit('buttonAssigned', data);
+  });
+
+  // Ouça eventos de remoção de botão
+  socket.on('removeButton', (data) => {
+    socket.broadcast.emit('buttonRemoved', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Usuário desconectado');
+  });
+});
 
 // Rotas users
 app.use('/api/users', userRoutes);
@@ -37,6 +78,6 @@ app.get('/test', (req, res) => {
 });
 
 // Inicia o servidor
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
