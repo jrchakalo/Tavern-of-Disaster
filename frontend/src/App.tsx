@@ -5,13 +5,14 @@ import Dice from './pages/Dice.tsx'
 import Login from './pages/Login.tsx'
 import Signup from './pages/Signup.tsx'
 import MyTables from './pages/MyTables.tsx'
-import TableDetails from './pages/Table.tsx'
+import Table from './pages/Table.tsx'
 import ProtectedRoute from './components/ProtectedRoute.tsx';
 import ResetPassword from './pages/ResetPassword.tsx';
 import RequestResetPassword from './pages/RequestResetPassword.tsx';
 import Home from './pages/Home.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
 import BattleMap from './pages/BattleMap.tsx';
+import CreateSheet from './pages/CreateSheet.tsx';
 
 function App() {
   return (
@@ -30,8 +31,8 @@ function App() {
                 </ProtectedRoute>
               }
             />
-        // Rota para ver detalhes de uma mesa
-        <Route path="/:tableCode" element={<TableDetails />} />
+        <Route path="/:tableCode" element={<Table />} />
+        <Route path="/table/:tableCode/create-sheet" element={<CreateSheet />} /> {/* Criar/Editar Ficha */}
         <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/request-reset-password" element={<RequestResetPassword />} />
         <Route path="/battle-map" element={<BattleMap />} />

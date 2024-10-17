@@ -1,7 +1,59 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '../../node_modules/.prisma/client';
+import fs from 'fs';
+import path from 'path';
 
 const prisma = new PrismaClient();
+const pdfDirectory = path.join(__dirname, '../../uploads/characters');
+
+if (!fs.existsSync(pdfDirectory)) {
+    fs.mkdirSync(pdfDirectory, { recursive: true });
+}
+
+// Função para salvar a ficha de personagem
+export const saveCharacterSheet = async (req: Request, res: Response) => {
+  const { tableCode } = req.params;
+  const userId = (req as any).userId;
+
+  console.log('tableCode:', tableCode);
+  console.log('userId:', userId);
+
+  try {
+    // Verificar se o usuário é parte da mesa
+    const player = await prisma.player.findFirst({
+      where: { userId, table: { code: tableCode } },
+    });
+
+    if (!player) {
+      return res.status(403).json({ message: 'Você não faz parte dessa mesa.' });
+    }
+
+    // Verificar se o arquivo foi enviado
+    if (!req.file) {
+      return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
+    }
+
+    // Nome do arquivo no formato "ficha-*codigo da mesa*-*nome do personagem*.pdf"
+    const filename = `ficha-${tableCode}-${userId}.pdf`;
+    const filePath = path.join(pdfDirectory, filename);
+
+    // Salva o arquivo no servidor
+    fs.writeFileSync(filePath, req.file.buffer);
+
+    // Salva o caminho do arquivo no banco de dados (opcional)
+    await prisma.characterSheet.create({
+      data: {
+        filePath,
+        playerId: player.id,
+      },
+    });
+
+    res.status(200).json({ message: 'Ficha salva com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao salvar ficha:', error);
+    res.status(500).json({ message: 'Erro no servidor.' });
+  }
+};
 
 export const transferDM = async (req: Request, res: Response) => {
     const userId = (req as any).userId;
@@ -69,14 +121,4 @@ export const removePlayer = async (req: Request, res: Response) => {
       console.error('Erro ao remover jogador:', error);
       res.status(500).json({ message: 'Erro no servidor.' });
     }
-};
-
-export const getCharacterSheet = async (req: Request, res: Response) => {
-    const userId = (req as any).userId;
-    const { tableId } = req.body;
-  
-    // Placeholder de retorno
-    res.status(200).json({
-      message: `Placeholder da ficha para o usuário ${userId} na mesa ${tableId}`,
-    });
 };

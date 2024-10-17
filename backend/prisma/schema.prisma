@@ -44,6 +44,16 @@ model Player {
   tableId Int
   table   Table  @relation(fields: [tableId], references: [id], onDelete: Cascade)
   role    Role   @default(PLAYER)
+  characterSheet CharacterSheet[]
+}
+
+model CharacterSheet {
+  id          Int      @id @default(autoincrement())
+  playerId    Int
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  filePath    String   // Caminho do arquivo PDF da ficha
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model PasswordResetToken {
@@ -54,7 +64,6 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
   expiresAt DateTime
 }
-
 
 enum Role {
   DM

@@ -30,26 +30,10 @@ app.use(express.json());
 io.on('connection', (socket) => {
   console.log('Novo usuário conectado');
 
-  // Ouça eventos de mudança de cor
-  socket.on('changeColor', (data) => {
-    // Envie a mudança de cor para todos os outros clientes
-    socket.broadcast.emit('colorChanged', data);
-  });
-
   // Ouça eventos de turno
   socket.on('endTurn', (data) => {
     // Envie a mudança de turno para todos os outros clientes
     socket.broadcast.emit('turnEnded', data);
-  });
-
-  // Ouça eventos de atribuição de botão
-  socket.on('assignButton', (data) => {
-    socket.broadcast.emit('buttonAssigned', data);
-  });
-
-  // Ouça eventos de remoção de botão
-  socket.on('removeButton', (data) => {
-    socket.broadcast.emit('buttonRemoved', data);
   });
 
   socket.on('disconnect', () => {
