@@ -36,7 +36,7 @@ const CreateSheet = () => {
   
       const token = localStorage.getItem('token');
       const response = await api.post(
-        `/players/save-pdf/${tableCode}`,  // A rota agora não precisa do characterName
+        `/players/save-sheet/${tableCode}`,
         formData,
         { headers: { Authorization: `Bearer ${token}` } }
       );

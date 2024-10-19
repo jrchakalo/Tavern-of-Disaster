@@ -12,6 +12,7 @@ router.post('/profile/removePlayer', authenticateToken, removePlayer);
 // Transferir DM
 router.post('/profile/transferDM', authenticateToken, transferDM);
 
-router.post('/save-pdf/:tableCode', upload.single('file'), saveCharacterSheet);
+// Rota para salvar a ficha de personagem em PDF
+router.post('/save-sheet/:tableCode', upload.single('file'), authenticateToken, saveCharacterSheet);
 
 export default router;
