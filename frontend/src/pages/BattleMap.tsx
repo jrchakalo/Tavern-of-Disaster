@@ -73,8 +73,8 @@ const BattleMap: React.FC = () => {
 
   // Redimensionar a imagem do mapa para caber na tela
   const resizeImageToFitScreen = (img: HTMLImageElement, ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
-    const maxWidth = window.innerWidth * 0.8;
-    const maxHeight = window.innerHeight * 0.8; 
+    const maxWidth = window.innerWidth * 0.6;
+    const maxHeight = window.innerHeight * 0.6; 
 
     const ratio = Math.min(maxWidth / img.width, maxHeight / img.height);
 
