@@ -6,27 +6,27 @@
     margin-top: 50px;
 }
 
-/* Estilo global para todos os inputs do tipo file */
-input[type="file"] {
-    display: none; /* Esconder o input file original */
-  }
+
+.playtable input[type="file"] {
+    display: none;
+}
   
-  .file-upload {
-    margin: 10px 0;
-    padding: 12px 24px;
-    font-size: 16px;
-    font-weight: 600;
-    border: none;
-    border-radius: 8px;
-    background-color: #723172;
-    color: #fff;
-    cursor: pointer;
-    transition: background-color 0.3s, box-shadow 0.3s;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-  }
-  
-  .file-upload:hover {
-    background-color: #562c56; /* Cor de fundo ao passar o mouse */
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
-  }
+.file-upload {
+margin: 10px 0;
+padding: 12px 24px;
+font-size: 16px;
+font-weight: 600;
+border: none;
+border-radius: 8px;
+background-color: #723172;
+color: #fff;
+cursor: pointer;
+transition: background-color 0.3s, box-shadow 0.3s;
+box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.file-upload:hover {
+background-color: #562c56; /* Cor de fundo ao passar o mouse */
+box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
   
