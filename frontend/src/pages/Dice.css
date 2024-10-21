@@ -71,6 +71,7 @@ button:hover, select:hover {
   width: 120px;
   height: 120px;
   margin-bottom: 10px;
+  animation: roll 1s ease-in-out;
 }
 
 button-group {
@@ -133,6 +134,7 @@ button-group button {
   height: 100%;
   background-color: rgba(28, 31, 36, 0.7);
   padding: 20px;
+  padding-top: 80px;
   border-radius: 10px 0 0 10px;
   max-height: 100vh;
   overflow-y: auto;
@@ -153,6 +155,7 @@ button-group button {
 #toggle-log-button {
   margin-top: 80px;
   position: absolute;
+  width: 100px;
   top: 5px;
   right: 10px;
   z-index: 4;
