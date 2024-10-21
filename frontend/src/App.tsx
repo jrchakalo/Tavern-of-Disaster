@@ -12,7 +12,6 @@ import RequestResetPassword from './pages/RequestResetPassword.tsx';
 import Home from './pages/Home.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
 import BattleMap from './pages/BattleMap.tsx';
-import CreateSheet from './pages/CreateSheet.tsx';
 
 function App() {
   return (
@@ -32,7 +31,6 @@ function App() {
               }
             />
         <Route path="/:tableCode" element={<Table />} />
-        <Route path="/table/:tableCode/create-sheet" element={<CreateSheet />} /> {/* Criar/Editar Ficha */}
         <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/request-reset-password" element={<RequestResetPassword />} />
         <Route path="/battle-map" element={<BattleMap />} />

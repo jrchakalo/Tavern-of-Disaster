@@ -47,7 +47,7 @@ export const registerUser = async (req: Request, res: Response) => {
       });
   
       // Gera o token JWT
-      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '1h' });
+      const token = jwt.sign({ userId: user.id }, JWT_SECRET);
   
       res.status(201).json({ token });
     } catch (error) {
@@ -81,7 +81,7 @@ export const loginUser = async (req: Request, res: Response) => {
       }
   
       // Gera o token JWT
-      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '1h' });
+      const token = jwt.sign({ userId: user.id }, JWT_SECRET);
   
       res.status(200).json({ token });
     } catch (error) {

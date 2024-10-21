@@ -15,9 +15,6 @@ export const saveCharacterSheet = async (req: Request, res: Response) => {
   const { tableCode } = req.params;
   const userId = (req as any).userId;
 
-  console.log('tableCode:', tableCode);
-  console.log('userId:', userId);
-
   try {
     // Verificar se o usuário é parte da mesa
     const player = await prisma.player.findFirst({
@@ -51,6 +48,42 @@ export const saveCharacterSheet = async (req: Request, res: Response) => {
     res.status(200).json({ message: 'Ficha salva com sucesso.' });
   } catch (error) {
     console.error('Erro ao salvar ficha:', error);
+    res.status(500).json({ message: 'Erro no servidor.' });
+  }
+};
+
+export const getCharacterSheet = async (req: Request, res: Response) => {
+  const { tableCode } = req.params;
+  const userId = (req as any).userId; // ID do jogador logado
+
+  try {
+    // Verificar se o usuário faz parte da mesa
+    const player = await prisma.player.findFirst({
+      where: { userId, table: { code: tableCode } },
+    });
+
+    if (!player) {
+      return res.status(403).json({ message: 'Você não faz parte dessa mesa.' });
+    }
+
+    // Nome do arquivo no formato "ficha-*codigo da mesa*-*id do jogador*.pdf"
+    const filename = `ficha-${tableCode}-${userId}.pdf`;
+    const filePath = path.join(pdfDirectory, filename);
+
+    // Verificar se o arquivo existe
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: 'Ficha não encontrada.' });
+    }
+
+    // Ler o arquivo PDF e enviá-lo como resposta
+    const file = fs.readFileSync(filePath);
+    
+    // Definir o tipo de conteúdo como PDF e enviar o arquivo
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename=${filename}`);
+    res.send(file);
+  } catch (error) {
+    console.error('Erro ao buscar ficha:', error);
     res.status(500).json({ message: 'Erro no servidor.' });
   }
 };
