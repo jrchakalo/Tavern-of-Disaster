@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useParams } from 'react-router-dom'; // Adicionar useNavigate para navegação
+import { useParams, useNavigate } from 'react-router-dom'; // Adicionar useNavigate para navegação
 import { useEffect, useState } from 'react';
 import Header from '../components/Header';
 import api from '../api'; // seu arquivo de API
@@ -7,90 +7,70 @@ import './Table.css';
 
 const Table = () => {
   const { tableCode } = useParams<{ tableCode: string }>(); // Pega o ID da URL
+  const navigate = useNavigate();
   const [table, setTable] = useState<any>(null);
   const [error, setError] = useState('');
   const [hasCharacterSheet, setHasCharacterSheet] = useState(false); // Novo estado para verificar se há uma ficha
 
   useEffect(() => {
     const fetchTableDetails = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const response = await api.get(`/table/${tableCode}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setTable(response.data);
-        
-        const existe = await api.get(`players/get-sheet/${tableCode}`, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          },
-          responseType: 'blob', // Para tratar a resposta como um binário (blob)
-        });
-  
-        // Criar um URL para o arquivo PDF
-        const fileURL = window.URL.createObjectURL(new Blob([existe.data]));
+      const token = localStorage.getItem('token');
+      const response = await api.get(`/table/${tableCode}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setTable(response.data);
+      
+      const existe = await api.get(`players/get-sheet/${tableCode}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+      });
 
-        if(fileURL){
+        if(existe.data){
           setHasCharacterSheet(true);
         }
-      } catch (err) {
-        console.error('Erro:', (err as any).response ? (err as any).response.data : (err as any).message);
-        setError((err as any).response ? (err as any).response.data.message : 'Erro ao carregar a mesa.');
-      }
     };
 
     fetchTableDetails();
   }, [tableCode]);
 
   const handleCreateCharacterSheet = () => {
-    window.open('/assets/fichabase/fichabase.pdf', '_blank');
-  };
-
-  const handleUploadCharacterSheet = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const token = localStorage.getItem('token');
-        await api.post(`/players/save-sheet/${tableCode}`, formData, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
-          },
-        });
-
-        // Sucesso - atualizar estado
-        setHasCharacterSheet(true);
-      } catch (err) {
-        console.error('Erro ao carregar ficha:', err);
-        setError('Erro ao carregar ficha.');
-      }
-    }
+    // Vai para a página de criação de ficha
+    navigate(`/${tableCode}/create-sheet`);
   };
 
   const handleAccessCharacterSheet = async () => {
-    try {
+    // Acessa a ficha do jogador
       const token = localStorage.getItem('token');
       const response = await api.get(`players/get-sheet/${tableCode}`, {
         headers: {
           Authorization: `Bearer ${token}`
         },
-        responseType: 'blob', // Para tratar a resposta como um binário (blob)
       });
 
-      // Criar um URL para o arquivo PDF
-      const fileURL = window.URL.createObjectURL(new Blob([response.data]));
-      window.open(fileURL);
-    } catch (err) {
-      console.error('Erro ao acessar ficha:', err);
-      setError('Erro ao acessar ficha.');
-    }
+      if(response.data){
+      // Se a ficha existir, vai para a página de visualização
+        navigate(`/${tableCode}/sheet/${response.data.id}`);
+      }else{
+        setError('Ficha não encontrada.');
+      }
   };
 
-  const handleUpdateCharacterSheet = (event: React.ChangeEvent<HTMLInputElement>) => {
-    handleUploadCharacterSheet(event); // Reutiliza a função de upload
+  const handleUpdateCharacterSheet = async () => {
+    // Vai para a página de atualização de ficha
+    
+    const token = localStorage.getItem('token');
+    const response = await api.get(`players/get-sheet/${tableCode}`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+    });
+
+    if(response.data){
+      navigate(`/${tableCode}/update-sheet/${response.data.id}`);
+    }else{
+      setError('Ficha não encontrada.');
+    }
   };
 
   if (error) return <p>{error}</p>;
@@ -142,18 +122,11 @@ const Table = () => {
           {hasCharacterSheet ? (
             <>
               <button onClick={handleAccessCharacterSheet}>Acessar Ficha</button>
-              <label className='file-upload'>
-                Atualizar Ficha
-                <input type="file" onChange={handleUpdateCharacterSheet} /> {/* Input para carregar ficha */}
-              </label>
+              <button onClick={handleUpdateCharacterSheet}>Atualizar Ficha</button>
             </>
           ) : (
             <>
               <button onClick={handleCreateCharacterSheet}>Criar Ficha</button>
-              <label className='file-upload'>
-                Atualizar Ficha
-                <input type="file" onChange={handleUploadCharacterSheet} /> {/* Input para carregar ficha */}
-              </label>
             </>
           )}
         </>

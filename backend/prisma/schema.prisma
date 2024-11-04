@@ -51,7 +51,21 @@ model CharacterSheet {
   id          Int      @id @default(autoincrement())
   playerId    Int
   player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  filePath    String   // Caminho do arquivo PDF da ficha
+  name        String   @default("")
+  class       String   @default("")
+  level       Int      @default(1)
+  exp         Int      @default(0)
+  species     String   @default("")
+  background  String   @default("")
+  alignment   String   @default("")
+  str         Int      @default(0)
+  dex         Int      @default(0)
+  con         Int      @default(0)
+  inte        Int      @default(0)
+  wis         Int      @default(0)
+  char        Int      @default(0)
+  cd          Int      @default(0)
+  walk        Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

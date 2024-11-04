@@ -1,19 +1,27 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '../../node_modules/.prisma/client';
-import fs from 'fs';
-import path from 'path';
 
 const prisma = new PrismaClient();
-const pdfDirectory = path.join(__dirname, '../../uploads/characters');
 
-if (!fs.existsSync(pdfDirectory)) {
-    fs.mkdirSync(pdfDirectory, { recursive: true });
-}
-
-// Função para salvar a ficha de personagem
-export const saveCharacterSheet = async (req: Request, res: Response) => {
+// Função para criar a ficha de personagem
+export const createCharacterSheet = async (req: Request, res: Response) => {
   const { tableCode } = req.params;
   const userId = (req as any).userId;
+  const characterName = req.body.characterName;
+  const characterClass = req.body.characterClass;
+  const characterRace = req.body.characterRace;
+  const characterLevel = req.body.characterLevel;
+  const characterBackground = req.body.characterBackground;
+  const characterAlignment = req.body.characterAlignment;
+  const characterExperience = req.body.characterExperience;
+  const characterStrength = req.body.characterStrength;
+  const characterDexterity = req.body.characterDexterity;
+  const characterConstitution = req.body.characterConstitution;
+  const characterIntelligence = req.body.characterIntelligence;
+  const characterWisdom = req.body.characterWisdom;
+  const characterCharisma = req.body.characterCharisma;
+  const characterArmorClass = req.body.characterArmorClass;
+  const characterWalkSpeed = req.body.characterWalkSpeed;
 
   try {
     // Verificar se o usuário é parte da mesa
@@ -25,29 +33,31 @@ export const saveCharacterSheet = async (req: Request, res: Response) => {
       return res.status(403).json({ message: 'Você não faz parte dessa mesa.' });
     }
 
-    // Verificar se o arquivo foi enviado
-    if (!req.file) {
-      return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
-    }
-
-    // Nome do arquivo no formato "ficha-*codigo da mesa*-*nome do personagem*.pdf"
-    const filename = `ficha-${tableCode}-${userId}.pdf`;
-    const filePath = path.join(pdfDirectory, filename);
-
-    // Salva o arquivo no servidor
-    fs.writeFileSync(filePath, req.file.buffer);
-
-    // Salva o caminho do arquivo no banco de dados (opcional)
+    // Salva dados no banco de dados
     await prisma.characterSheet.create({
       data: {
-        filePath,
         playerId: player.id,
+        name: characterName,
+        class: characterClass,
+        level: characterLevel,
+        exp: characterExperience,
+        species: characterRace,
+        background: characterBackground,
+        alignment: characterAlignment,
+        str: characterStrength,
+        dex: characterDexterity,
+        con: characterConstitution,
+        inte: characterIntelligence,
+        wis: characterWisdom,
+        char: characterCharisma,
+        cd: characterArmorClass,
+        walk: characterWalkSpeed,
       },
     });
 
-    res.status(200).json({ message: 'Ficha salva com sucesso.' });
+    res.status(200).json({ message: 'Ficha criada com sucesso.' });
   } catch (error) {
-    console.error('Erro ao salvar ficha:', error);
+    console.error('Erro ao criar ficha:', error);
     res.status(500).json({ message: 'Erro no servidor.' });
   }
 };
@@ -66,22 +76,17 @@ export const getCharacterSheet = async (req: Request, res: Response) => {
       return res.status(403).json({ message: 'Você não faz parte dessa mesa.' });
     }
 
-    // Nome do arquivo no formato "ficha-*codigo da mesa*-*id do jogador*.pdf"
-    const filename = `ficha-${tableCode}-${userId}.pdf`;
-    const filePath = path.join(pdfDirectory, filename);
+    // Busca a ficha do personagem
+    const sheet = await prisma.characterSheet.findFirst({
+      where: { playerId: player.id },
+    });
 
-    // Verificar se o arquivo existe
-    if (!fs.existsSync(filePath)) {
+    
+    if (!sheet) {
       return res.status(404).json({ message: 'Ficha não encontrada.' });
     }
 
-    // Ler o arquivo PDF e enviá-lo como resposta
-    const file = fs.readFileSync(filePath);
-    
-    // Definir o tipo de conteúdo como PDF e enviar o arquivo
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename=${filename}`);
-    res.send(file);
+    res.status(200).json(sheet);
   } catch (error) {
     console.error('Erro ao buscar ficha:', error);
     res.status(500).json({ message: 'Erro no servidor.' });

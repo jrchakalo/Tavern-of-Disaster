@@ -2,13 +2,16 @@ import './global.css';
 import { Route, Routes } from 'react-router-dom';
 import './App.css'
 import Dice from './pages/Dice.tsx'
-{/*import Login from './pages/Login.tsx'
+import Login from './pages/Login.tsx'
 import Signup from './pages/Signup.tsx'
 import MyTables from './pages/MyTables.tsx'
 import Table from './pages/Table.tsx'
+import CreateSheet from './pages/CreateSheet.tsx'
+import GetSheet from './pages/GetSheet.tsx'
+import UpdateSheet from './pages/UpdateSheet.tsx'
 import ProtectedRoute from './components/ProtectedRoute.tsx';
 import ResetPassword from './pages/ResetPassword.tsx';
-import RequestResetPassword from './pages/RequestResetPassword.tsx';*/}
+import RequestResetPassword from './pages/RequestResetPassword.tsx';
 import Home from './pages/Home.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
 import BattleMap from './pages/BattleMap.tsx';
@@ -20,7 +23,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/home" element={<Home />} />
         <Route path="/dice" element={<Dice />} />
-        {/*<Route path="/login" element={<Login />} />
+        <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route
               path="/my-tables"
@@ -31,8 +34,11 @@ function App() {
               }
             />
         <Route path="/:tableCode" element={<Table />} />
+        <Route path="/:tableCode/create-sheet" element={<CreateSheet />} />
+        <Route path="/:tableCode/sheet/:sheetId" element={<GetSheet />} />
+        <Route path="/:tableCode/update-sheet/:sheetId" element={<UpdateSheet />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
-        <Route path="/request-reset-password" element={<RequestResetPassword />} />*/}
+        <Route path="/request-reset-password" element={<RequestResetPassword />} />
         <Route path="/battle-map" element={<BattleMap />} />
       </Routes>
     </AuthProvider>
