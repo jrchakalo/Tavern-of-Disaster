@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import api from '../api';
 
 const classes = [
   'Bárbaro', 'Bardo', 'Bruxo', 'Clérigo', 'Druida', 
@@ -122,6 +124,8 @@ const subSpeciesTraits: SubSpeciesTraitsType = {
 const pointBuyCosts = [0, 1, 2, 3, 4, 5, 7, 9];
 
 const CreateSheet: React.FC = () => {
+  const navigate = useNavigate();
+  const { tableCode } = useParams();
   const [step, setStep] = useState(1);
   const [selectedClass, setSelectedClass] = useState<keyof typeof hitDice | ''>('');
   const [level, setLevel] = useState(1);
@@ -130,6 +134,7 @@ const CreateSheet: React.FC = () => {
   const [selectedSubSpecies, setSelectedSubSpecies] = useState<keyof typeof subSpeciesTraits | ''>('');
   const [selectedBackground, setSelectedBackground] = useState<keyof typeof backgroundProficiencies | ''>('');
   const [distributionMode, setDistributionMode] = useState<'preset' | 'pointBuy'>('preset');
+  const [selectedAlignment, setSelectedAlignment] = useState('');
   const [attributes, setAttributes] = useState({
     strength: 8,
     dexterity: 8,
@@ -171,9 +176,55 @@ const CreateSheet: React.FC = () => {
     setStep(step - 1);
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    console.log('Sheet Created:', { selectedClass, level, hp, selectedSpecies, selectedSubSpecies, selectedBackground, attributes, selectedProficiencies });
+
+    const updatedAttributes = applyTraits();
+  
+    const characterData = {
+      characterName: characterName,
+      characterClass: selectedClass,
+      characterSpecie: selectedSpecies,
+      characterSubSpecie: selectedSubSpecies,
+      characterLevel: level,
+      characterBackground: selectedBackground,
+      characterAlignment: selectedAlignment,
+      characterExperience: 0, // Assuming experience starts at 0
+      characterStrength: updatedAttributes.strength,
+      characterDexterity: updatedAttributes.dexterity,
+      characterConstitution: updatedAttributes.constitution,
+      characterIntelligence: updatedAttributes.intelligence,
+      characterWisdom: updatedAttributes.wisdom,
+      characterCharisma: updatedAttributes.charisma,
+      characterArmorClass: calculateArmorClass(),
+      characterWalkSpeed: selectedSubSpecies ? subSpeciesTraits[selectedSubSpecies as keyof typeof subSpeciesTraits].walk : speciesTraits[selectedSpecies as keyof typeof speciesTraits].walk,
+      characterProficiencies: selectedProficiencies,
+      characterTraits: selectedSubSpecies ? subSpeciesTraits[selectedSubSpecies as keyof typeof subSpeciesTraits].traits : speciesTraits[selectedSpecies as keyof typeof speciesTraits].traits,
+      characterHP: hp
+    };
+  
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.post(`players/create-sheet/${tableCode}`, characterData, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+  
+      if (response.status === 200) {
+        const result = response.data;
+        alert(result.message);
+        navigate(`/${tableCode}`);
+      } else {
+        const error = response.data;
+        alert('Error creating character sheet: ' + error);
+        navigate(`/${tableCode}/create-sheet`);
+      }
+    } catch (error) {
+      alert('Error creating character sheet: ' + error);
+      navigate(`/${tableCode}/create-sheet`);
+    }
   };
 
   const handleAttributeChange = (attribute: keyof typeof attributes, value: number) => {
@@ -409,13 +460,27 @@ const CreateSheet: React.FC = () => {
         )}
         {step === 4 && (
           <div>
-            <h2>Choose Your Background <span style={{ color: 'red' }}>*</span></h2>
+            <h2>Choose Your Background and Alignment<span style={{ color: 'red' }}>*</span></h2>
             <select value={selectedBackground} onChange={(e) => setSelectedBackground(e.target.value as keyof typeof backgroundProficiencies)}>
               <option value="">Select a background</option>
               {backgrounds.map((bg) => (
                 <option key={bg} value={bg}>{bg}</option>
               ))}
             </select>
+            <div>
+              <select value={selectedAlignment} onChange={(e) => setSelectedAlignment(e.target.value)}>
+              <option value="">Select an alignment</option>
+              <option value="Lawful Good">Lawful Good</option>
+              <option value="Neutral Good">Neutral Good</option>
+              <option value="Chaotic Good">Chaotic Good</option>
+              <option value="Lawful Neutral">Lawful Neutral</option>
+              <option value="True Neutral">True Neutral</option>
+              <option value="Chaotic Neutral">Chaotic Neutral</option>
+              <option value="Lawful Evil">Lawful Evil</option>
+              <option value="Neutral Evil">Neutral Evil</option>
+              <option value="Chaotic Evil">Chaotic Evil</option>
+              </select>
+            </div>
           </div>
         )}
         {step === 5 && (
@@ -536,6 +601,7 @@ const CreateSheet: React.FC = () => {
               {Object.entries(applyTraits()).map(([attr, value]) => (
                 <p key={attr}>{attr.charAt(0).toUpperCase() + attr.slice(1)}: {value} (Modifier: {calculateModifier(value)})</p>
               ))}
+              <p>Alignment: {selectedAlignment}</p>
               <p>Armor Class: {calculateArmorClass()}</p>
               <p>Walk Distance: {speciesTraits[selectedSpecies as keyof typeof speciesTraits].walk} meters</p>
               <p>Traits: {selectedSubSpecies ? subSpeciesTraits[selectedSubSpecies as keyof typeof subSpeciesTraits].traits : speciesTraits[selectedSpecies as keyof typeof speciesTraits].traits}</p>
@@ -545,7 +611,7 @@ const CreateSheet: React.FC = () => {
         <div>
           {step > 1 && <button type="button" onClick={handleBack}>Back</button>}
           {step < 7 && <button type="button" onClick={handleNext}>Next</button>}
-          {step === 7 && <button type="submit">Create</button>}
+            {step === 7 && <button type="submit" onClick={handleSubmit}>Create</button>}
         </div>
       </form>
     </div>

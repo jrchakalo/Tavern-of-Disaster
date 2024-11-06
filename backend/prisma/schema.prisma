@@ -56,6 +56,7 @@ model CharacterSheet {
   level       Int      @default(1)
   exp         Int      @default(0)
   species     String   @default("")
+  subSpecies  String   @default("")    
   background  String   @default("")
   alignment   String   @default("")
   str         Int      @default(0)
@@ -64,8 +65,11 @@ model CharacterSheet {
   inte        Int      @default(0)
   wis         Int      @default(0)
   char        Int      @default(0)
-  cd          Int      @default(0)
+  hp          Int      @default(0) 
+  ac          Int      @default(0) 
   walk        Int      @default(0)
+  prof        String[] 
+  traits      String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

@@ -9,7 +9,8 @@ export const createCharacterSheet = async (req: Request, res: Response) => {
   const userId = (req as any).userId;
   const characterName = req.body.characterName;
   const characterClass = req.body.characterClass;
-  const characterRace = req.body.characterRace;
+  const characterSpecie = req.body.characterSpecie;
+  const characterSubSpecie = req.body.characterSubSpecie; 
   const characterLevel = req.body.characterLevel;
   const characterBackground = req.body.characterBackground;
   const characterAlignment = req.body.characterAlignment;
@@ -22,6 +23,9 @@ export const createCharacterSheet = async (req: Request, res: Response) => {
   const characterCharisma = req.body.characterCharisma;
   const characterArmorClass = req.body.characterArmorClass;
   const characterWalkSpeed = req.body.characterWalkSpeed;
+  const characterProficiencies = req.body.characterProficiencies; 
+  const characterTraits = req.body.characterTraits; 
+  const characterHP = req.body.characterHP; 
 
   try {
     // Verificar se o usuário é parte da mesa
@@ -41,7 +45,8 @@ export const createCharacterSheet = async (req: Request, res: Response) => {
         class: characterClass,
         level: characterLevel,
         exp: characterExperience,
-        species: characterRace,
+        species: characterSpecie,
+        subSpecies: characterSubSpecie,
         background: characterBackground,
         alignment: characterAlignment,
         str: characterStrength,
@@ -50,8 +55,11 @@ export const createCharacterSheet = async (req: Request, res: Response) => {
         inte: characterIntelligence,
         wis: characterWisdom,
         char: characterCharisma,
-        cd: characterArmorClass,
+        ac: characterArmorClass,
         walk: characterWalkSpeed,
+        prof: characterProficiencies,
+        traits: characterTraits,
+        hp: characterHP
       },
     });
 
