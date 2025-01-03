@@ -176,7 +176,7 @@ const BattleMap: React.FC = () => {
       setTokens((prevTokens) =>
         prevTokens.map((token, idx) => {
           if (idx === newTurn) {
-            return { ...token, remainingMovement: token.movement }; // Reseta o movimento do token da vez
+            return { ...token, remainingMovement: (token.movement / 1.5) }; // Reseta o movimento do token da vez
           }
           return token;
         })
