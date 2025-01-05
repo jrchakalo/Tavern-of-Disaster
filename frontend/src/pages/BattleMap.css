@@ -46,15 +46,18 @@
 .grid-container {
   display: flex;
   justify-content: center;
-  align-items: center;
   height: 100vh;
   width: 100%;
+  position: relative;
+  align-items: flex-start;
 }
 
 /* Define a área do canvas do mapa */
 canvas {
   border: 1px solid #000;
-  background-color: #273140;  
+  background-color: #273140;
+  display: block;
+  margin: 0 auto;
 }
 
 .load-map {

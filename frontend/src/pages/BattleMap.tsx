@@ -26,6 +26,37 @@ const BattleMap: React.FC = () => {
   const [showEditTokenPopup, setShowEditTokenPopup] = useState(false); // Controle do popup de edição
   const [editingToken, setEditingToken] = useState<Token | null>(null); // Token em edição
   const [movementHistory, setMovementHistory] = useState<Token[][]>([]);
+  const [zoomLevel, setZoomLevel] = useState(1);
+
+  const handleZoomIn = () => {
+    setZoomLevel((prevZoom) => {
+        const newZoom = Math.min(prevZoom + 0.1, 3); // Limite máximo de zoom
+        setGridSize((prevGridSize) => prevGridSize * (newZoom / prevZoom)); // Update grid size
+        setTokens((prevTokens) => 
+            prevTokens.map(token => ({
+                ...token,
+                x: token.x * (newZoom / prevZoom),
+                y: token.y * (newZoom / prevZoom)
+            }))
+        ); // Update token positions
+        return newZoom;
+    });
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel((prevZoom) => {
+        const newZoom = Math.max(prevZoom - 0.1, 0.5); // Limite mínimo de zoom
+        setGridSize((prevGridSize) => prevGridSize * (newZoom / prevZoom)); // Update grid size
+        setTokens((prevTokens) => 
+            prevTokens.map(token => ({
+                ...token,
+                x: token.x * (newZoom / prevZoom),
+                y: token.y * (newZoom / prevZoom)
+            }))
+        ); // Update token positions
+        return newZoom;
+    });
+  };
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -72,11 +103,12 @@ const BattleMap: React.FC = () => {
   };
 
   // Redimensionar a imagem do mapa para caber na tela
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const resizeImageToFitScreen = (img: HTMLImageElement, ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
     const maxWidth = window.innerWidth * 0.7;
     const maxHeight = window.innerHeight * 0.7; 
 
-    const ratio = Math.min(maxWidth / img.width, maxHeight / img.height);
+    const ratio = Math.min(maxWidth / img.width, maxHeight / img.height) * zoomLevel;
 
     canvas.width = img.width * ratio;
     canvas.height = img.height * ratio;
@@ -227,12 +259,12 @@ const BattleMap: React.FC = () => {
   
       // Eixo X (coordenadas horizontais)
       for (let x = 0; x <= canvas.width; x += gridSize) {
-        ctx.fillText(`${x / gridSize}`, x + gridSize / 2, 10); // Coordenadas X acima do grid
+        ctx.fillText(`${Math.round(x / gridSize)}`, x + gridSize / 2, 10); // Coordenadas X acima do grid
       }
   
       // Eixo Y (coordenadas verticais)
       for (let y = 0; y <= canvas.height; y += gridSize) {
-        ctx.fillText(`${y / gridSize}`, 5, y + gridSize / 2); // Coordenadas Y à esquerda do grid
+        ctx.fillText(`${Math.round(y / gridSize)}`, 5, y + gridSize / 2); // Coordenadas Y à esquerda do grid
       }
 
       // Tamanhos dos tokens
@@ -291,11 +323,11 @@ const BattleMap: React.FC = () => {
         }
       });
     };
-  }, [image, gridSize, tokens, currentTurn]);
+  }, [image, gridSize, tokens, currentTurn, resizeImageToFitScreen]);
 
   useEffect(() => {
     drawMap();
-  }, [drawMap]);
+  }, [zoomLevel, drawMap]);
 
   const getRandomColor = () => {
     const letters = '0123456789ABCDEF';
@@ -326,9 +358,12 @@ const BattleMap: React.FC = () => {
                     onChange={(e) => setGridSize(Number(e.target.value))}
                 />
               </div>
-
+              <div className="controls">
+                <button onClick={handleZoomIn}>🔎</button>
+                <button onClick={handleZoomOut}>🔍</button>
+              </div>
               <button onClick={toggleCreateTokenPopup}>Inserir personagem</button>
-
+              
               {showCreateTokenPopup && (
                 <div className="create-token-popup">
                   <div className="create-token-content">
