@@ -8,7 +8,6 @@ import passwordRoutes from './routes/passwordRoutes';
 import playerRoutes from './routes/playerRoutes';
 import http from 'http';
 import { Server } from 'socket.io';
-import { Socket } from 'dgram';
 
 dotenv.config();
 
@@ -28,16 +27,52 @@ app.use(express.json());
 
 // Escute eventos de conexão
 io.on('connection', (socket) => {
-  console.log('Novo usuário conectado');
+  console.log('Novo usuário conectado', socket.id);
 
-  // Ouça eventos de turno
-  socket.on('endTurn', (data) => {
-    // Envie a mudança de turno para todos os outros clientes
-    socket.broadcast.emit('turnEnded', data);
+  // Escutando o evento de carregamento de mapa de batalha
+  socket.on('load_battle_map', (imageData) => {
+    // Emitir para todos os outros clientes que o mapa foi carregado
+    socket.broadcast.emit('battle_map_loaded', imageData);
+  });
+
+  // Escutando o evento de criação de token
+  socket.on('create_token', (token) => {
+    // Emitir para todos os outros clientes 
+    socket.broadcast.emit('token_created', token);
+  });
+
+  // Escutando o evento de movimentação de token
+  socket.on('move_token', (updatedToken) => {
+    // Emitir para todos os outros clientess
+    socket.broadcast.emit('token_moved', updatedToken);
+  });
+
+  // Escutando o evento de mudança de turno
+  socket.on('next_turn', (newTurn) => {
+    // Emitir para todos os outros clientes
+    socket.broadcast.emit('turn_changed', newTurn);
+  });
+
+  // Escutando o evento de desfazer movimento
+  socket.on('undo_move', (previousState) => {
+    // Emitir para todos os outros clientes a reversão do movimento
+    socket.broadcast.emit('tokens_updated', previousState);
+  });
+
+  // Escutando o evento de exclusão de token
+  socket.on('delete_token', (tokenId) => {
+    // Emitir para todos os outros clientes que o token foi excluído
+    socket.broadcast.emit('token_deleted', tokenId);
+  });
+
+  // Escutando o evento de mover token na ordem do turno
+  socket.on('move_token_in_turn_order', (newTokens) => {
+    // Emitir para todos os outros clientes a nova ordem de tokens
+    socket.broadcast.emit('tokens_order_updated', newTokens);
   });
 
   socket.on('disconnect', () => {
-    console.log('Usuário desconectado');
+    console.log('Usuário desconectado', socket.id);
   });
 });
 

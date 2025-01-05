@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import './BattleMap.css';
 import Header from '../components/Header';
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:5000');
 
 interface Token {
   id: string;
@@ -97,6 +100,8 @@ const BattleMap: React.FC = () => {
       reader.onload = () => {
         setImage(reader.result);
         setMapLoaded(true);
+
+        socket.emit('load_battle_map', reader.result);
       }
       reader.readAsDataURL(file);
     }
@@ -128,6 +133,10 @@ const BattleMap: React.FC = () => {
       y: y * gridSize,
       color: getRandomColor(),
     };
+
+    // Emite a criação do token para o servidor
+    socket.emit('create_token', token);
+
     setTokens((prev) => [...prev, token]);
     closeCreateTokenPopup(); // Fechar o popup após a criação do token
   };  
@@ -178,7 +187,12 @@ const BattleMap: React.FC = () => {
             }
   
             // Atualiza o movimento restante do token
-            return { ...token, x: newX, y: newY, remainingMovement: token.remainingMovement - 1 };
+            const updateToken = { ...token, x: newX, y: newY, remainingMovement: token.remainingMovement - 1 };
+            
+            // Emite o evento de movimentação para o servidor
+            socket.emit('move_token', updateToken);
+
+            return updateToken;
           }
           return token;
         });
@@ -192,13 +206,23 @@ const BattleMap: React.FC = () => {
     if (movementHistory.length > 0) {
       const previousState = movementHistory[movementHistory.length - 1]; // Recupera o último estado salvo
       setTokens(previousState); // Reverte o estado dos tokens
+
+      socket.emit('undo_move', previousState);
+
       setMovementHistory((prevHistory) => prevHistory.slice(0, -1)); // Remove o último estado do histórico
     }
   };
       
   // Função para excluir um token
   const handleDeleteToken = (tokenId: string) => {
-    setTokens((prevTokens) => prevTokens.filter((token) => token.id !== tokenId));
+    setTokens((prevTokens) => {
+      const deleteToken = prevTokens.filter((token) => token.id !== tokenId);
+
+      // Emitir para o servidor para que a exclusão seja propagada
+      socket.emit('delete_token', tokenId);
+
+      return deleteToken;
+    });
   };
 
   const nextTurn = () => {
@@ -214,6 +238,7 @@ const BattleMap: React.FC = () => {
         })
       );
       
+      socket.emit('next_turn', newTurn);
       return newTurn;
     });
   };    
@@ -230,6 +255,9 @@ const BattleMap: React.FC = () => {
       [newTokens[index], newTokens[index + 1]] = [newTokens[index + 1], newTokens[index]];
     }
     setTokens(newTokens);
+
+    // Emitir a nova ordem de tokens para o servidor
+    socket.emit('move_token_in_turn_order', newTokens);
   };
 
   // Função para desenhar o grid e os tokens no canvas
@@ -328,6 +356,76 @@ const BattleMap: React.FC = () => {
   useEffect(() => {
     drawMap();
   }, [zoomLevel, drawMap]);
+
+  useEffect(() => {
+    socket.on('connect', () => {
+      console.log('Conectado:', socket.id);
+    });
+
+    // Escutando o evento de carregamento de mapa vindo do servidor
+    socket.on('battle_map_loaded', (imageData) => {
+      setImage(imageData);
+      setMapLoaded(true);
+    });
+
+    // Escutando o evento de criação de token vindo do servidor
+    socket.on('token_created', (token) => {
+      setTokens((prev) => {
+        // Verifica se o token já existe antes de adicionar
+        if (!prev.some(t => t.id === token.id)) {
+          return [...prev, token];
+        }
+        return prev;
+      });
+    });
+
+    // Escutando o evento de movimentação de token vindo do servidor
+    socket.on('token_moved', (updatedToken) => {
+      setTokens((prevTokens) =>
+        prevTokens.map((token) =>
+          token.id === updatedToken.id
+            ? { ...token, x: updatedToken.x, y: updatedToken.y, remainingMovement: updatedToken.remainingMovement }
+            : token
+        )
+      );
+    });
+
+    socket.on('turn_changed', (newTurn) => {
+      setCurrentTurn(newTurn);
+      setTokens((prevTokens) =>
+        prevTokens.map((token, idx) => {
+          if (idx === newTurn) {
+            return { ...token, remainingMovement: (token.movement / 1.5) }; // Reseta o movimento do token da vez
+          }
+          return token;
+        })
+      );
+    });
+
+    // Escutando o evento de desfazer o movimento
+    socket.on('tokens_updated', (updatedTokens) => {
+      setTokens(updatedTokens); // Atualiza os tokens para o estado revertido
+    });
+
+    // Escutando o evento de exclusão de token
+    socket.on('token_deleted', (tokenId) => {
+      setTokens((prevTokens) => prevTokens.filter((token) => token.id !== tokenId)); // Remove o token excluído
+    });
+
+    // Escutando o evento de atualização da ordem dos tokens
+    socket.on('tokens_order_updated', (newTokens) => {
+      setTokens(newTokens); // Atualiza a ordem dos tokens
+    });
+  
+    socket.on('disconnect', () => {
+      console.log('Desconectado do servidor');
+    });
+
+    /*return () => {
+      socket.off('battle_map_loaded');
+      socket.disconnect();
+    };*/
+  }, []);
 
   const getRandomColor = () => {
     const letters = '0123456789ABCDEF';
