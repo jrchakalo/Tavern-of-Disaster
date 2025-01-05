@@ -6,7 +6,7 @@ const Dice = () => {
   const [diceCount, setDiceCount] = useState(1);
   const [lastResults, setLastResults] = useState<{ [key: string]: number }>({});
   const [soundEnabled, setSoundEnabled] = useState(false);
-  const maxDiceCount = 6;
+  const maxDiceCount = 8;
 
   useEffect(() => {
     updateDiceImage(1);
@@ -122,7 +122,7 @@ const Dice = () => {
             </div>
           ))}
         </div>
-        <button id="add-dice-button" onClick={addDice}>
+        <button className="add-dice-button" onClick={addDice}>
           Adicionar mais dados
         </button>
         <button id="toggle-log-button" onClick={toggleLog}>
