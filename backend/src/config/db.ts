@@ -1,6 +1,7 @@
 // Arquivo de configuração para conexão com o MongoDB usando Mongoose
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import Square from "../models/Square.model";
 
 dotenv.config();
 
@@ -12,7 +13,15 @@ const connectDB = async () => {
             process.exit(1);
         }
         
+        // Conecta ao MongoDB
         await mongoose.connect(mongoURI);
+
+        try {
+            const deleteResult = await Square.deleteMany({}); // Deleta TODOS os documentos
+        } catch (clearError: any) {
+            console.error('Erro ao limpar o db:', clearError.message);
+        }
+
         console.log("Conexão com o MongoDB estabelecida com sucesso.");
     }catch (err: any){
         console.error("Erro ao conectar ao MongoDB:", err.message);

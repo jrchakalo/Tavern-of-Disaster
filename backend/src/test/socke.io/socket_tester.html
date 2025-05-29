@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket.IO Tester</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Socket.IO Tester</h1>
+    <p>Abra o console do navegador (F12) para ver os logs.</p>
+    <button onclick="sendSquareClick()">Enviar squareClicked (A1, red)</button>
+    <button onclick="sendAnotherClick()">Enviar squareClicked (B2, blue)</button>
+
+    <script>
+        // Conecta ao seu servidor backend
+        // Se o seu backend estiver rodando em localhost:3001
+        const socket = io('ws://localhost:3001', {
+            transports: ['websocket'] // Força o uso de WebSockets
+        });
+
+        socket.on('connect', () => {
+            console.log('CONECTADO ao servidor Socket.IO! ID do Socket:', socket.id);
+            // Você pode adicionar aqui um log no seu backend para confirmar
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log('DESCONECTADO do servidor Socket.IO:', reason);
+        });
+
+        socket.on('connect_error', (err) => {
+            console.error('Erro de conexão Socket.IO:', err.message, err.stack);
+        });
+
+        // Ouvir pelo estado inicial do grid
+        socket.on('initialGridState', (data) => {
+            console.log('Recebido "initialGridState":', data);
+        });
+
+        // Ouvir por atualizações do grid
+        socket.on('gridSquareUpdated', (data) => {
+            console.log('Recebido "gridSquareUpdated":', data);
+        });
+
+        // Ouvir por erros gerais do servidor que você possa ter definido
+        socket.on('errorLoadingGrid', (error) => {
+            console.error('Erro do servidor ao carregar grid:', error);
+        });
+
+        socket.on('updateError', (error) => {
+            console.error('Erro do servidor ao atualizar quadrado:', error);
+        });
+
+        function sendSquareClick() {
+            const eventData = { "squareId": "A1", "color": "red" };
+            console.log('Enviando evento "squareClicked":', eventData);
+            socket.emit('squareClicked', eventData);
+        }
+
+        function sendAnotherClick() {
+            const eventData = { "squareId": "B2", "color": "blue" };
+            console.log('Enviando evento "squareClicked":', eventData);
+            socket.emit('squareClicked', eventData);
+        }
+    </script>
+</body>
+</html>
