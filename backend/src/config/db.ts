@@ -1,0 +1,23 @@
+// Arquivo de configuração para conexão com o MongoDB usando Mongoose
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const connectDB = async () => {
+    try {
+        const mongoURI = process.env.MONGO_URI;
+        if (!mongoURI) {
+            console.error("Erro: MONGO_URI não está definido no arquivo .env");
+            process.exit(1);
+        }
+        
+        await mongoose.connect(mongoURI);
+        console.log("Conexão com o MongoDB estabelecida com sucesso.");
+    }catch (err: any){
+        console.error("Erro ao conectar ao MongoDB:", err.message);
+        process.exit(1);
+    }
+};
+
+export default connectDB;
