@@ -50,13 +50,13 @@
         });
 
         function sendSquareClick() {
-            const eventData = { "squareId": "A1", "color": "red" };
+            const eventData = { "squareId": "sq-0", "color": "red" };
             console.log('Enviando evento "squareClicked":', eventData);
             socket.emit('squareClicked', eventData);
         }
 
         function sendAnotherClick() {
-            const eventData = { "squareId": "B2", "color": "blue" };
+            const eventData = { "squareId": "sq-1", "color": "blue" };
             console.log('Enviando evento "squareClicked":', eventData);
             socket.emit('squareClicked', eventData);
         }
