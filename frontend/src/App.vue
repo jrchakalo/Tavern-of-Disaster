@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref, computed, onMounted, onUnmounted, watch} from 'vue';
+import {ref, computed, onMounted} from 'vue';
 import {io, Socket} from 'socket.io-client';
 
 const gridSize = ref(3);
@@ -12,20 +12,6 @@ interface GridSquare {
 
 const squares = ref<GridSquare[]>([]);
 
-const initializeSquares = () => {
-  const newSquaresArray: GridSquare[] = [];
-  const total = gridSize.value * gridSize.value;
-  for (let i = 0; i < total; i++) {
-    newSquaresArray.push({
-      id: `sq-${i}`,
-      color: undefined
-    });
-  }
-  squares.value = newSquaresArray;
-};
-
-watch(gridSize, initializeSquares, { immediate: true });
-
 const gridContainerStyle = computed(() => {
   return {
     '--grid-columns': gridSize.value,
@@ -34,14 +20,26 @@ const gridContainerStyle = computed(() => {
 });
 
 function handleSquareClick(squareId: string) {
-  console.log(`Quadrado ${squareId} clicado!`);
+  // Gera uma cor hexadecimal aleatória
+  const randomNumber = Math.floor(Math.random() * 16777215);
+  const hexString = randomNumber.toString(16);
+  const novaCor = `#${hexString.padStart(6, '0')}`;
+
+  if (socket){
+    socket.emit('squareClicked', {
+      squareId: squareId,
+      color: novaCor
+    });
+  }else{
+    console.error('Socket não está conectado. Não foi possível enviar o evento "squareClicked".');
+  }
 }
 
 let socket: Socket | null = null;
 
 onMounted(() => {
   console.log('Componente App.vue montado. Tentando conectar ao Socket.IO...');
-  socket = io('http://localhost:3001', {
+  socket = io('ws://localhost:3001', {
     transports: ['websocket']
   })
 
@@ -58,21 +56,38 @@ onMounted(() => {
   });
 
   
-  socket.on('initialGridState', (backendSquares: Array<{ squareId: string; color: string }>) => {
-    console.log('Recebido "initialGridState" DO BACKEND:', backendSquares);
+  socket.on('initialGridState', (backendSquaresData: Array<{ squareId: string; color: string }>) => {
+    const newSquaresLocal: GridSquare[] = [];
+    const totalExpectedSquares = gridSize.value * gridSize.value;
+
+    for (let i = 0; i < totalExpectedSquares; i++) {
+      newSquaresLocal.push({ id: `sq-${i}`, color: '#FFF' });
+    }
     
-    if (backendSquares && backendSquares.length > 0) {
-      backendSquares.forEach(backendSquare => {
-        const frontendSquare = squares.value.find(sq => sq.id === backendSquare.squareId);
-        
-        if (frontendSquare) {
-          frontendSquare.color = backendSquare.color;
+    if (backendSquaresData && backendSquaresData.length > 0) {
+      backendSquaresData.forEach(backendSq => {
+        const frontendSqToUpdate = newSquaresLocal.find(s => s.id === backendSq.squareId);
+        if (frontendSqToUpdate) {
+          frontendSqToUpdate.color = backendSq.color;
+        } else {
+            console.warn(`(initialGridState) ID ${backendSq.squareId} do backend não encontrado na estrutura base do frontend.`);
         }
       });
-    } else {
-      console.log('Nenhum estado de cor inicial recebido ou grid vazio no backend.');
     }
+    
+    squares.value = newSquaresLocal;
   });
+
+  socket.on('gridSquareUpdated', (updatedBackendSquare: { squareId: string; color: string}) => {
+    const index = squares.value.findIndex(sq => sq.id === updatedBackendSquare.squareId);
+
+    if (index !== -1) {
+      squares.value[index] = { ...squares.value[index], color: updatedBackendSquare.color };
+      
+    } else {
+      console.warn(`Quadrado com ID ${updatedBackendSquare.squareId} não encontrado no frontend para gridSquareUpdated.`);
+    }
+  })
     
 });
 
@@ -88,7 +103,6 @@ onMounted(() => {
       @click="handleSquareClick(square.id)"
       :style="{ backgroundColor: square.color }"
       >
-      {{ square.id.replace('sq-', '') }}
       </div>
     </div>
   </main>

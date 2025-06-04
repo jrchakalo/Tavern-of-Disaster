@@ -41,7 +41,6 @@ io.on('connection', async (socket) => {
   }
 
   socket.on('squareClicked', async (data: { squareId: string, color: string }) => {
-    console.log(`Evento 'squareClicked' recebido de ${socket.id}:`, data);
     try {
       const { squareId, color } = data;
       
@@ -60,8 +59,7 @@ io.on('connection', async (socket) => {
         }
       );
 
-      io.emit('squareUpdated', updatedSquare);
-      console.log('Quadrado atualizado e transmitido:', updatedSquare);
+      io.emit('gridSquareUpdated', updatedSquare);
     } catch (error) {
       console.error('Erro ao atualizar o quadrado:', error);
       socket.emit('updateError', { message: 'Erro ao atualizar o quadrado.' });
