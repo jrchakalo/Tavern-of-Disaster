@@ -75,6 +75,67 @@ io.on('connection', async (socket) => {
     }
   });
 
+  socket.on('requestMoveToken', async (data: { tokenId: string; targetSquareId: string }) => {
+    console.log(`Recebido 'requestMoveToken' de ${socket.id}:`, data);
+    try {
+      const { tokenId, targetSquareId } = data;
+
+      if (!tokenId || !targetSquareId) {
+        socket.emit('tokenMoveError', { message: 'Dados inválidos para mover token.' });
+        return;
+      }
+
+      // Verifica se o quadrado de destino já está ocupado por OUTRO token
+      const occupyingToken = await Token.findOne({ squareId: targetSquareId });
+      if (occupyingToken && occupyingToken._id.toString() !== tokenId) {
+        console.log(`Tentativa de mover token para quadrado ${targetSquareId} já ocupado por ${occupyingToken._id}`);
+        socket.emit('tokenMoveError', { message: 'Quadrado de destino já está ocupado.' });
+        return;
+      }
+
+      // Encontra o token a ser movido
+      const tokenToMove = await Token.findById(tokenId);
+      if (!tokenToMove) {
+        console.log(`Token com ID ${tokenId} não encontrado para mover.`);
+        socket.emit('tokenMoveError', { message: 'Token não encontrado.' });
+        return;
+      }
+
+      
+      if (tokenToMove.ownerSocketId !== socket.id) {
+        console.log(`Usuário ${socket.id} tentou mover token ${tokenId} que não lhe pertence.`);
+        socket.emit('tokenMoveError', { message: 'Você não tem permissão para mover este token.' });
+        return;
+      }
+
+      const oldSquareId = tokenToMove.squareId; // Guarda o squareId antigo
+
+      // Se o token já está no targetSquareId, não faz nada
+      if (oldSquareId === targetSquareId) {
+        console.log(`Token ${tokenId} já está em ${targetSquareId}. Nenhum movimento necessário.`);
+        return;
+      }
+
+      tokenToMove.squareId = targetSquareId; // Atualiza a posição
+      await tokenToMove.save();
+
+      console.log(`Token ${tokenId} movido de ${oldSquareId} para ${targetSquareId}`);
+
+      // Notifica todos os clientes sobre o movimento do token
+      io.emit('tokenMoved', {
+        _id: tokenToMove._id.toString(), // Garante que é string
+        oldSquareId: oldSquareId,
+        squareId: tokenToMove.squareId, // Novo squareId
+        color: tokenToMove.color,
+        ownerSocketId: tokenToMove.ownerSocketId
+      });
+
+    } catch (error: any) {
+      console.error('Erro ao processar requestMoveToken:', error.message);
+      socket.emit('tokenMoveError', { message: 'Erro interno ao mover o token.' });
+    }
+  });
+
   // Evento de desconexão
   socket.on('disconnect', () => {
     console.log(`Usuário desconectado:, ${socket.id}`);
