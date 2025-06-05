@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import http from 'http';
 import { Server } from 'socket.io';
 import connectDB from './config/db';
-import Square, { ISquare } from './models/Square.model';
+import Token from './models/Token.model';
 
 dotenv.config();
 connectDB();
@@ -17,7 +17,7 @@ const io = new Server(server, {
   },
 });
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 3001;
 
 app.get('/', (req, res) => {
   res.send('Socket.IO carregado.');
@@ -31,38 +31,47 @@ server.listen(port, () => {
 io.on('connection', async (socket) => {
   console.log(`Usuário conectado:, ${socket.id}`);
 
-  try{
-    const squares: ISquare[] = await Square.find({});
-    socket.emit('initialGridState', squares);
-    console.log('Estado inicial da grade enviado para o cliente');
-  }catch (error) {
-    console.error('Erro ao buscar o estado inicial da grade:', error);
-    socket.emit('errorLoadingGrid', {message: 'Não foi possível carregar o estado inicial da grade.'});
+  try {
+    const tokens = await Token.find({}); // Busca todos os tokens existentes
+    socket.emit('initialTokenState', tokens); // Novo evento ou modifique o existente
+    console.log('Estado inicial dos tokens enviado para o cliente');
+  } catch (error) {
+    console.error('Erro ao buscar o estado inicial dos tokens:', error);
   }
 
-  socket.on('squareClicked', async (data: { squareId: string, color: string }) => {
+  socket.on('requestPlaceToken', async (data: { squareId: string }) => {
     try {
-      const { squareId, color } = data;
-      
-      if (!squareId || !color) {
-        socket.emit('updateError', { message: 'Dados inválidos para squareClicked.' });
+      if (!data || !data.squareId) {
+        socket.emit('tokenPlacementError', { message: 'squareId não fornecido.' });
         return;
       }
 
-      const updatedSquare = await Square.findOneAndUpdate(
-        { squareId: squareId },
-        { color: color },
-        {
-          new: true, // Retorna o documento atualizado
-          upsert: true, // Cria um novo documento se não existir
-          setDefaultsOnInsert: true // Define valores padrão se o documento for criado
-        }
-      );
+      // Verifica se já existe um token nesse quadrado
+      const existingToken = await Token.findOne({ squareId: data.squareId });
+      if (existingToken) {
+        console.log(`Tentativa de colocar token em quadrado já ocupado: ${data.squareId}`);
+        socket.emit('tokenPlacementError', { message: 'Este quadrado já está ocupado.' });
+        return;
+      }
 
-      io.emit('gridSquareUpdated', updatedSquare);
-    } catch (error) {
-      console.error('Erro ao atualizar o quadrado:', error);
-      socket.emit('updateError', { message: 'Erro ao atualizar o quadrado.' });
+      // Cria um novo token
+      const randomNumber = Math.floor(Math.random() * 16777215);
+      const hexString = randomNumber.toString(16).padStart(6, '0');
+      const tokenColor = `#${hexString}`;
+
+      const newToken = new Token({
+        squareId: data.squareId,
+        color: tokenColor,
+        ownerSocketId: socket.id
+      });
+
+      await newToken.save();
+
+      io.emit('tokenPlaced', newToken); // Envia o token completo
+
+    } catch (error: any) {
+      console.error('Erro ao processar requestPlaceToken:', error.message);
+      socket.emit('tokenPlacementError', { message: 'Erro ao colocar o token.' });
     }
   });
 
