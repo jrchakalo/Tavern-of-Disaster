@@ -1,30 +1,14 @@
 <script setup lang="ts">
-import {ref, computed, onMounted} from 'vue';
+import {ref, computed, onMounted, onUnmounted} from 'vue';
 import {io, Socket} from 'socket.io-client';
+import GridDisplay from './components/GridDisplay.vue';
+import type { GridSquare, TokenInfo } from './types';
 
 const gridSize = ref(8);
 const squareSizePx = ref(80);
 
-interface TokenInfo {
-  _id: string;
-  squareId: string;
-  color: string;
-  ownerSocketId: string;
-}
-
-interface GridSquare {
-  id: string;
-  token?: TokenInfo | null; // Adicionando a propriedade token
-}
-
 const squares = ref<GridSquare[]>([]);
-
-const gridContainerStyle = computed(() => {
-  return {
-    '--grid-columns': gridSize.value,
-    '--grid-square-size': `${squareSizePx.value}px` 
-  };
-});
+const selectedTokenId = ref<string | null>(null);
 
 function handleRightClick(square: GridSquare){
   if(square.token){
@@ -38,9 +22,6 @@ function handleRightClick(square: GridSquare){
     console.error('Socket não está conectado. Não é possível solicitar a colocação do token.');
   }
 }
-
-const selectedTokenId = ref<string | null>(null);
-let socket: Socket | null = null;
 
 function handleLeftClickOnSquare(clickedSquare: GridSquare){
   if (selectedTokenId.value){
@@ -67,6 +48,8 @@ function handleLeftClickOnSquare(clickedSquare: GridSquare){
     } 
   }
 }
+
+let socket: Socket | null = null;
 
 onMounted(() => {
   console.log('Componente App.vue montado. Tentando conectar ao Socket.IO...');
@@ -159,23 +142,26 @@ onMounted(() => {
   });
 });
 
+onUnmounted(() => {
+  if (socket) {
+    socket.disconnect();
+    console.log('Desconectado do servidor Socket.IO.');
+  }
+});
+
 </script>
 
 <template>
   <main>
     <h1>Segundo Grid</h1>
-    <div class="grid-container" :style="gridContainerStyle">
-      <div v-for="square in squares"
-        :key="square.id"
-        class="grid-square"
-        @contextmenu.prevent="handleRightClick(square)" 
-        @click="handleLeftClickOnSquare(square)">
-        <div v-if="square.token" 
-              class="token"
-              :class="{ 'selected': square.token._id === selectedTokenId }" 
-              :style="{ backgroundColor: square.token.color }"></div>
-      </div>
-    </div>
+    <GridDisplay
+      :squares="squares"
+      :gridSize="gridSize"
+      :squareSizePx="squareSizePx"
+      :selectedTokenId="selectedTokenId"
+      @square-left-click="handleLeftClickOnSquare" 
+      @square-right-click="handleRightClick"
+    />
   </main>
 </template>
 
@@ -195,49 +181,4 @@ main{
   align-items: center;
   margin-top: 20px;
 }
-
-.grid-container {
-  display: grid;
-  grid-template-columns: repeat(var(--grid-columns), var(--grid-square-size));
-  grid-template-rows: repeat(var(--grid-columns), var(--grid-square-size));
-  gap: 5px;
-
-  border: 2px solid #333;
-  padding: 5px;
-  background-color: #eee;
-  width: fit-content;
-}
-
-.grid-square {
-  width: var(--grid-square-size);
-  height: var(--grid-square-size);
-  background-color: #fff;
-  border: 1px solid #ccc;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  box-sizing: border-box;
-  cursor: pointer;  /*Indica que é clicável*/
-}
-
-.token {
-  width: 70%;  /* 70% do tamanho do quadrado pai */
-  height: 70%;
-  border-radius: 50%; /* Para fazer uma bolinha */
-  box-sizing: border-box;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 0.7em; /* Se for mostrar texto pequeno dentro */
-  color: white;
-  font-weight: bold;
-  text-shadow: 1px 1px 1px black; /* Sombra para melhor leitura do texto, se houver */
-}
-
-.token.selected {
-  border: 3px solid yellow; /* Destaque para o token selecionado */
-  box-shadow: 0 0 10px yellow; /* Efeito de destaque */
-  transform: scale(1.1); /* Leve aumento de tamanho para destaque */
-}
-
 </style>
