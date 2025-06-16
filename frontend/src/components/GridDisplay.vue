@@ -13,6 +13,7 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
     (e: 'square-left-click', square: GridSquare): void;
     (e: 'square-right-click', square: GridSquare): void;
+    (e: 'token-move-requested', payload: { tokenId: string; targetSquareId: string }): void;
 }>();
 
 const gridContainerStyle = computed(() => {
@@ -21,6 +22,43 @@ const gridContainerStyle = computed(() => {
     '--grid-square-size': `${props.squareSizePx}px`
   };
 });
+
+function handleDragStart(event: DragEvent, token: TokenInfo) {
+  console.log(`Iniciando o arrastar do token: ${token._id}`);
+  if (event.dataTransfer) {
+    // Define o tipo de operação permitida
+    event.dataTransfer.effectAllowed = 'move';
+    // Armazena o id do token e o id do seu quadrado original
+    event.dataTransfer.setData('application/json', JSON.stringify({
+      tokenId: token._id,
+      originalSquareId: token.squareId
+    }));
+  }
+}
+
+function handleDrop(event: DragEvent, targetSquare: GridSquare) {
+  event.preventDefault();
+  console.log(`Token solto no quadrado: ${targetSquare.id}`);
+
+  if (targetSquare.token) {
+    console.log('Quadrado de destino já está ocupado. Movimento cancelado.');
+    return; // Não permite soltar em um quadrado já ocupado
+  }
+
+  if (event.dataTransfer) {
+    // Recupera os dados de dragstart
+    const data = JSON.parse(event.dataTransfer.getData('application/json'));
+    const { tokenId, originalSquareId } = data;
+
+    console.log(`Emitindo 'token-move-requested': tokenId=<span class="math-inline">\{tokenId\}, targetSquareId\=</span>{targetSquare.id}`);
+
+    // Emite o novo evento 
+    emit('token-move-requested', {
+      tokenId: tokenId,
+      targetSquareId: targetSquare.id
+    });
+  }
+}
 
 function onSquareLeftClick(square: GridSquare) {
   emit('square-left-click', square);
@@ -36,10 +74,13 @@ function onSquareRightClick(square: GridSquare) {
     <div
       v-for="square in props.squares" :key="square.id"
       class="grid-square"
-      @contextmenu.prevent="onSquareRightClick(square)" @click="onSquareLeftClick(square)"             >
+      @contextmenu.prevent="onSquareRightClick(square)" @click="onSquareLeftClick(square)"
+      @dragover.prevent @drop="handleDrop($event, square)" >
       <div v-if="square.token"
            class="token"
-           :class="{ 'selected': square.token._id === props.selectedTokenId }" :style="{ backgroundColor: square.token.color }">
+           :class="{ 'selected': square.token._id === props.selectedTokenId }"
+           :style="{ backgroundColor: square.token.color }"
+           draggable="true" @dragstart="handleDragStart($event, square.token!)">
       </div>
     </div>
   </div>

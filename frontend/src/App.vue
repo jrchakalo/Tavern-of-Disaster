@@ -23,29 +23,24 @@ function handleRightClick(square: GridSquare){
   }
 }
 
-function handleLeftClickOnSquare(clickedSquare: GridSquare){
-  if (selectedTokenId.value){
-    if(!clickedSquare.token){
-      console.log(`Movendo token ${selectedTokenId.value} para o quadrado ${clickedSquare.id}`);
-      if (socket) {
-        socket.emit('requestMoveToken', {
-          tokenId: selectedTokenId.value,
-          targetSquareId: clickedSquare.id
-        });
-      }
-      selectedTokenId.value = null; // Limpa a seleção após mover
-    } else if (clickedSquare.token && clickedSquare.token._id === selectedTokenId.value) {
-      console.log(`Desmarcando token ${selectedTokenId.value} no quadrado ${clickedSquare.id}`);
-      selectedTokenId.value = null; // Desmarca o token se já estiver selecionado
+function handleLeftClickOnSquare(clickedSquare: GridSquare) {
+  if (clickedSquare.token) {
+    // Se o token clicado já estava selecionado, deseleciona. Senão, seleciona.
+    if (selectedTokenId.value === clickedSquare.token._id) {
+      selectedTokenId.value = null;
     } else {
-      console.log(`Selecionando novo token ${clickedSquare.token?._id} e cancelando movimento do anterior.`);
-      selectedTokenId.value = clickedSquare.token!._id; // O '!' assume que clickedSquare.token existe
+      selectedTokenId.value = clickedSquare.token._id;
     }
   } else {
-    if (clickedSquare.token && clickedSquare.token.ownerSocketId === socket?.id) {
-      console.log(`Selecionando token ${clickedSquare.token._id} no quadrado ${clickedSquare.id}`);
-      selectedTokenId.value = clickedSquare.token._id; // Seleciona o token do quadrado
-    } 
+    // Clicar em um quadrado vazio deseleciona qualquer token
+    selectedTokenId.value = null;
+  }
+}
+
+function handleTokenMoveRequest(payload: { tokenId: string; targetSquareId: string }) {
+  console.log(`App.vue recebeu pedido para mover token:`, payload);
+  if (socket) {
+    socket.emit('requestMoveToken', payload);
   }
 }
 
@@ -159,8 +154,8 @@ onUnmounted(() => {
       :gridSize="gridSize"
       :squareSizePx="squareSizePx"
       :selectedTokenId="selectedTokenId"
-      @square-left-click="handleLeftClickOnSquare" 
       @square-right-click="handleRightClick"
+      @token-move-requested="handleTokenMoveRequest"
     />
   </main>
 </template>
