@@ -3,6 +3,8 @@ export interface TokenInfo {
   squareId: string;
   color: string;
   ownerSocketId: string;
+  name: string; 
+  imageUrl?: string; 
 }
 
 export interface GridSquare {

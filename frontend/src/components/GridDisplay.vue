@@ -81,6 +81,10 @@ function onSquareRightClick(square: GridSquare) {
            :class="{ 'selected': square.token._id === props.selectedTokenId }"
            :style="{ backgroundColor: square.token.color }"
            draggable="true" @dragstart="handleDragStart($event, square.token!)">
+           <img v-if="square.token.imageUrl" :src="square.token.imageUrl" :alt="square.token.name" class="token-image" />
+          <div v-else class="token-fallback" :style="{ backgroundColor: square.token.color }">
+            <span>{{ square.token.name.substring(0, 2) }}</span>
+          </div>
       </div>
     </div>
   </div>
@@ -123,12 +127,30 @@ function onSquareRightClick(square: GridSquare) {
   color: white;
   font-weight: bold;
   text-shadow: 1px 1px 1px black; /* Sombra para melhor leitura do texto, se houver */
+  background-color: transparent; /* Remove a cor de fundo do container do token */
+  overflow: hidden; /* Garante que a imagem fique contida no círculo */
+}
+
+.token-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* Faz a imagem cobrir o espaço sem distorcer */
+}
+
+.token-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.2em; /* Tamanho ajustado para iniciais */
+  color: white;
+  font-weight: bold;
+  text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
 }
 
 .token.selected {
-  border: 3px solid yellow; /* Destaque para o token selecionado */
-  box-shadow: 0 0 10px yellow; /* Efeito de destaque */
-  transform: scale(1.1); /* Leve aumento de tamanho para destaque */
+  box-shadow: 0 0 10px 3px yellow;
 }
 
 </style>

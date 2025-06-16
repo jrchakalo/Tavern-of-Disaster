@@ -2,6 +2,7 @@
 import {ref, computed, onMounted, onUnmounted} from 'vue';
 import {io, Socket} from 'socket.io-client';
 import GridDisplay from './components/GridDisplay.vue';
+import TokenCreationForm from './components/TokenCreationForm.vue';
 import type { GridSquare, TokenInfo } from './types';
 
 const gridSize = ref(8);
@@ -10,17 +11,26 @@ const squareSizePx = ref(80);
 const squares = ref<GridSquare[]>([]);
 const selectedTokenId = ref<string | null>(null);
 
-function handleRightClick(square: GridSquare){
-  if(square.token){
-    console.log('Este quadrado já possui um token');
-    return;
-  }
+const showTokenForm = ref(false);
+const targetSquareIdForToken = ref<string | null>(null);
 
-  if (socket) {
-    socket.emit('requestPlaceToken', { squareId: square.id });
-  } else {
-    console.error('Socket não está conectado. Não é possível solicitar a colocação do token.');
+function handleRightClick(square: GridSquare) {
+  if (square.token) return; // Não faz nada se o quadrado estiver ocupado
+  targetSquareIdForToken.value = square.id;
+  showTokenForm.value = true;
+}
+
+function createToken(payload: { name: string, imageUrl: string }) {
+  if (socket && targetSquareIdForToken.value) {
+    socket.emit('requestPlaceToken', {
+      squareId: targetSquareIdForToken.value,
+      name: payload.name,
+      imageUrl: payload.imageUrl
+    });
   }
+  // Fecha o formulário
+  showTokenForm.value = false;
+  targetSquareIdForToken.value = null;
 }
 
 function handleLeftClickOnSquare(clickedSquare: GridSquare) {
@@ -124,7 +134,9 @@ onMounted(() => {
         _id: movedTokenData._id,
         squareId: movedTokenData.squareId,
         color: movedTokenData.color,
-        ownerSocketId: movedTokenData.ownerSocketId
+        ownerSocketId: movedTokenData.ownerSocketId,
+        name: movedTokenData.name,
+        imageUrl: movedTokenData.imageUrl
       };
     } else {
       console.warn(`Novo quadrado ${movedTokenData.squareId} não encontrado no frontend para colocar token.`);
@@ -155,7 +167,13 @@ onUnmounted(() => {
       :squareSizePx="squareSizePx"
       :selectedTokenId="selectedTokenId"
       @square-right-click="handleRightClick"
+      @square-left-click="handleLeftClickOnSquare"
       @token-move-requested="handleTokenMoveRequest"
+    />
+    <TokenCreationForm
+      v-if="showTokenForm"
+      @create-token="createToken"
+      @cancel="showTokenForm = false"
     />
   </main>
 </template>

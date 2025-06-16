@@ -39,9 +39,9 @@ io.on('connection', async (socket) => {
     console.error('Erro ao buscar o estado inicial dos tokens:', error);
   }
 
-  socket.on('requestPlaceToken', async (data: { squareId: string }) => {
+  socket.on('requestPlaceToken', async (data: { squareId: string; name: string; imageUrl?: string }) => {
     try {
-      if (!data || !data.squareId) {
+      if (!data || !data.squareId || !data.name) {
         socket.emit('tokenPlacementError', { message: 'squareId não fornecido.' });
         return;
       }
@@ -62,7 +62,9 @@ io.on('connection', async (socket) => {
       const newToken = new Token({
         squareId: data.squareId,
         color: tokenColor,
-        ownerSocketId: socket.id
+        ownerSocketId: socket.id,
+        name: data.name,
+        imageUrl: data.imageUrl
       });
 
       await newToken.save();
@@ -127,7 +129,9 @@ io.on('connection', async (socket) => {
         oldSquareId: oldSquareId,
         squareId: tokenToMove.squareId, // Novo squareId
         color: tokenToMove.color,
-        ownerSocketId: tokenToMove.ownerSocketId
+        ownerSocketId: tokenToMove.ownerSocketId,
+        name: tokenToMove.name,
+        imageUrl: tokenToMove.imageUrl
       });
 
     } catch (error: any) {
