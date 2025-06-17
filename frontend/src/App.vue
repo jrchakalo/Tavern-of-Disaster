@@ -172,7 +172,7 @@ onUnmounted(() => {
 
 </script>
 
-<template>
+<!-- <template> 
   <main>
     <h1>Tavern of Disaster</h1>
 
@@ -197,6 +197,20 @@ onUnmounted(() => {
       @cancel="showTokenForm = false"
     />
   </main>
+</template> -->
+
+<template>
+  <header class="main-header">
+    <nav>
+      <RouterLink to="/">Home</RouterLink>
+      <RouterLink to="/login">Login</RouterLink>
+      <RouterLink to="/register">Registro</RouterLink>
+    </nav>
+  </header>
+
+  <main>
+    <RouterView />
+  </main>
 </template>
 
 <style>
@@ -208,6 +222,23 @@ onUnmounted(() => {
 </style>
 
 <style scoped>
+.main-header {
+  background-color: #2c2c2c;
+  padding: 10px 20px;
+  text-align: center;
+}
+
+nav a {
+  font-weight: bold;
+  color: #ccc;
+  text-decoration: none;
+  margin: 0 15px;
+}
+
+nav a.router-link-exact-active {
+  color: #ffc107;
+}
+
 main{
   font-family: sans-serif;
   display: flex;
