@@ -1,9 +1,12 @@
-import express from 'express';
+import express, { Request, Response, RequestHandler } from 'express';
 import dotenv from 'dotenv';
 import http from 'http';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { Server } from 'socket.io';
 import connectDB from './config/db';
 import Token from './models/Token.model';
+import User from './models/User.model';
 
 let currentMapUrl: string | null = null;
 
@@ -20,10 +23,58 @@ const io = new Server(server, {
 });
 
 const port = process.env.PORT || 3001;
+app.use(express.json());
 
 app.get('/', (req, res) => {
   res.send('Socket.IO carregado.');
 });
+
+const registerUserHandler: RequestHandler = async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+
+    // Validação simples
+    if (!username || !email || !password) {
+      res.status(400).json({ message: 'Por favor, preencha todos os campos.' });
+      return;
+    }
+
+    // Verifica se o usuário ou email já existem
+    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    if (existingUser) {
+      res.status(400).json({ message: 'Nome de usuário ou email já cadastrado.' });
+      return;
+    }
+
+    // Cria o hash da senha
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    // Cria um novo usuário
+    const newUser = new User({
+      username,
+      email,
+      passwordHash, // Salva o hash, não a senha!
+    });
+
+    const savedUser = await newUser.save();
+
+    // Responde ao frontend. Não envie a senha/hash de volta!
+    res.status(201).json({
+      message: 'Usuário registrado com sucesso!',
+      user: {
+        id: savedUser._id,
+        username: savedUser.username,
+      },
+    });
+
+  } catch (error) {
+    console.error('Erro no registro:', error);
+    res.status(500).json({ message: 'Erro interno do servidor.' });
+  }
+};
+
+app.post('/api/auth/register', registerUserHandler);
 
 server.listen(port, () => {
   console.log(`Server rodando em http://localhost:${port}`);
