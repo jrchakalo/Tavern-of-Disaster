@@ -7,6 +7,7 @@ interface Props {
   gridSize: number;
   squareSizePx: number;
   selectedTokenId: string | null;
+  mapUrl: string | null;
 }
 
 const props = defineProps<Props>();
@@ -19,7 +20,8 @@ const emit = defineEmits<{
 const gridContainerStyle = computed(() => {
   return {
     '--grid-columns': props.gridSize,
-    '--grid-square-size': `${props.squareSizePx}px`
+    '--grid-square-size': `${props.squareSizePx}px`,
+    backgroundImage: props.mapUrl ? `url(${props.mapUrl})` : 'none',
   };
 });
 
@@ -101,6 +103,8 @@ function onSquareRightClick(square: GridSquare) {
   padding: 5px;
   background-color: #eee;
   width: fit-content;
+  background-size: cover; /* Faz a imagem cobrir toda a área */
+  background-position: center; /* Centraliza a imagem */
 }
 
 .grid-square {
@@ -113,6 +117,8 @@ function onSquareRightClick(square: GridSquare) {
   align-items: center;
   box-sizing: border-box;
   cursor: pointer;  /*Indica que é clicável*/
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(204, 204, 204, 0.15);
 }
 
 .token {

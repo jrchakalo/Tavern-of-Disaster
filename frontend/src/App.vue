@@ -14,6 +14,15 @@ const selectedTokenId = ref<string | null>(null);
 const showTokenForm = ref(false);
 const targetSquareIdForToken = ref<string | null>(null);
 
+const mapUrlInput = ref(''); // Para o campo de input
+const currentMapUrl = ref<string | null>(null); // Armazena a URL do mapa
+
+function setMap() {
+  if (socket && mapUrlInput.value.trim() !== '') {
+    socket.emit('requestSetMap', { mapUrl: mapUrlInput.value });
+  }
+}
+
 function handleRightClick(square: GridSquare) {
   if (square.token) return; // Não faz nada se o quadrado estiver ocupado
   targetSquareIdForToken.value = square.id;
@@ -143,6 +152,11 @@ onMounted(() => {
     }
   });
 
+  socket.on('mapUpdated', (data: { mapUrl: string }) => {
+    console.log('Recebido "mapUpdated", novo mapa:', data.mapUrl);
+    currentMapUrl.value = data.mapUrl;
+  });
+
   socket.on('tokenPlacementError', (error: { message: string }) => {
     console.error('Erro do backend ao colocar token:', error.message);
     alert(`Erro ao colocar token: ${error.message}`); // Feedback simples para o usuário
@@ -160,12 +174,19 @@ onUnmounted(() => {
 
 <template>
   <main>
-    <h1>Segundo Grid</h1>
+    <h1>Tavern of Disaster</h1>
+
+    <div class="map-controls">
+      <input type="url" v-model="mapUrlInput" placeholder="Cole a URL da imagem do mapa aqui" />
+      <button @click="setMap">Definir Mapa</button>
+    </div>
+    
     <GridDisplay
       :squares="squares"
       :gridSize="gridSize"
       :squareSizePx="squareSizePx"
       :selectedTokenId="selectedTokenId"
+      :mapUrl="currentMapUrl"
       @square-right-click="handleRightClick"
       @square-left-click="handleLeftClickOnSquare"
       @token-move-requested="handleTokenMoveRequest"
@@ -193,5 +214,14 @@ main{
   flex-direction: column;
   align-items: center;
   margin-top: 20px;
+}
+.map-controls {
+  margin-bottom: 20px;
+  display: flex;
+  gap: 10px;
+}
+.map-controls input {
+  padding: 8px;
+  min-width: 300px;
 }
 </style>

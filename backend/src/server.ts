@@ -5,6 +5,8 @@ import { Server } from 'socket.io';
 import connectDB from './config/db';
 import Token from './models/Token.model';
 
+let currentMapUrl: string | null = null;
+
 dotenv.config();
 connectDB();
 
@@ -37,6 +39,11 @@ io.on('connection', async (socket) => {
     console.log('Estado inicial dos tokens enviado para o cliente');
   } catch (error) {
     console.error('Erro ao buscar o estado inicial dos tokens:', error);
+  }
+
+  if (currentMapUrl) {
+    console.log(`Enviando mapa atual (${currentMapUrl}) para ${socket.id}`);
+    socket.emit('mapUpdated', { mapUrl: currentMapUrl });
   }
 
   socket.on('requestPlaceToken', async (data: { squareId: string; name: string; imageUrl?: string }) => {
@@ -133,10 +140,21 @@ io.on('connection', async (socket) => {
         name: tokenToMove.name,
         imageUrl: tokenToMove.imageUrl
       });
+  
 
     } catch (error: any) {
       console.error('Erro ao processar requestMoveToken:', error.message);
       socket.emit('tokenMoveError', { message: 'Erro interno ao mover o token.' });
+    }
+  });
+
+  socket.on('requestSetMap', (data: { mapUrl: string }) => {
+    if (typeof data.mapUrl === 'string') {
+      currentMapUrl = data.mapUrl;
+      console.log(`Mapa atualizado para: ${currentMapUrl}`);
+      
+      // Notifica TODOS os clientes  sobre o novo mapa
+      io.emit('mapUpdated', { mapUrl: currentMapUrl });
     }
   });
 
