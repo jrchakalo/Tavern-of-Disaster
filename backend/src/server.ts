@@ -74,7 +74,66 @@ const registerUserHandler: RequestHandler = async (req, res) => {
   }
 };
 
+const loginUserHandler: RequestHandler = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Validação simples
+    if (!email || !password) {
+      res.status(400).json({ message: 'Por favor, preencha email e senha.' });
+      return;
+    }
+
+    // Encontrar o usuário pelo email
+    const user = await User.findOne({ email });
+    if (!user) {
+      res.status(400).json({ message: 'Credenciais inválidas.' });
+      return;
+    }
+
+    // Comparar a senha enviada com o hash salvo no banco
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!isMatch) {
+      // Mesma mensagem genérica
+      res.status(400).json({ message: 'Credenciais inválidas.' });
+      return;
+    }
+
+    // Senha correta! Criar e assinar o JWT
+    const payload = {
+      user: {
+        id: user.id,
+        username: user.username
+      }
+    };
+
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error('Chave secreta JWT não definida no .env');
+    }
+
+    jwt.sign(
+      payload,
+      jwtSecret,
+      { expiresIn: '6h' }, // O token expirará em 6 horas
+      (err, token) => {
+        if (err) throw err;
+        // 4. Enviar o token de volta para o frontend
+        res.json({
+          message: 'Login bem-sucedido!',
+          token: token // O frontend precisa salvar isso
+        });
+      }
+    );
+
+  } catch (error) {
+    console.error('Erro no login:', error);
+    res.status(500).json({ message: 'Erro interno do servidor.' });
+  }
+};
+
 app.post('/api/auth/register', registerUserHandler);
+app.post('/api/auth/login', loginUserHandler);
 
 server.listen(port, () => {
   console.log(`Server rodando em http://localhost:${port}`);
