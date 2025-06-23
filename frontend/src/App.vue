@@ -4,6 +4,8 @@ import {io, Socket} from 'socket.io-client';
 import GridDisplay from './components/GridDisplay.vue';
 import TokenCreationForm from './components/TokenCreationForm.vue';
 import type { GridSquare, TokenInfo } from './types';
+import { RouterLink, RouterView, useRouter } from 'vue-router';
+import { authToken, clearAuthToken } from './auth';
 
 const gridSize = ref(8);
 const squareSizePx = ref(80);
@@ -16,6 +18,13 @@ const targetSquareIdForToken = ref<string | null>(null);
 
 const mapUrlInput = ref(''); // Para o campo de input
 const currentMapUrl = ref<string | null>(null); // Armazena a URL do mapa
+
+const router = useRouter();
+
+function handleLogout() {
+  clearAuthToken(); // Limpa o token de autenticação
+  router.push('/login'); // Redireciona para a página de login
+}
 
 function setMap() {
   if (socket && mapUrlInput.value.trim() !== '') {
@@ -203,8 +212,15 @@ onUnmounted(() => {
   <header class="main-header">
     <nav>
       <RouterLink to="/">Home</RouterLink>
-      <RouterLink to="/login">Login</RouterLink>
-      <RouterLink to="/register">Registro</RouterLink>
+
+      <template v-if="authToken">
+        <RouterLink to="/minhas-mesas">Minhas Mesas</RouterLink> <a @click="handleLogout" href="#">Logout</a>
+      </template>
+      <template v-else>
+        <RouterLink to="/login">Login</RouterLink>
+        <RouterLink to="/register">Registro</RouterLink>
+      </template>
+
     </nav>
   </header>
 
