@@ -6,6 +6,7 @@ export interface ITable extends Document {
   dm: Types.ObjectId; // Referência ao ID do usuário que é o Mestre
   players: Types.ObjectId[]; // Uma lista de IDs de usuários que são jogadores
   inviteCode: string; // Um código único para convidar outros jogadores
+  currentMapUrl?: string;
 }
 
 const TableSchema: Schema<ITable> = new Schema({
@@ -13,6 +14,7 @@ const TableSchema: Schema<ITable> = new Schema({
   dm: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   players: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   inviteCode: { type: String, required: true, unique: true },
+  currentMapUrl: { type: String, required: false },
 }, {
   timestamps: true
 });

@@ -7,14 +7,16 @@ export interface IToken extends Document {
     ownerSocketId: string;
     name: string;
     imageUrl?: string;
+    tableId: Types.ObjectId;
 }
 
 const TokenSchema: Schema = new Schema({
-    squareId: { type: String, required: true, unique: true, index: true },
+    squareId: { type: String, required: true, index: true },
     color: { type: String, required: true },
     ownerSocketId: { type: String, required: true },
     name: { type: String, required: true, default: 'Token' }, 
     imageUrl: { type: String, required: false }, 
+    tableId: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index:true }
 }, {
     timestamps: true
 });

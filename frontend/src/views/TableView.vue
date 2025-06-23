@@ -4,7 +4,10 @@ import {io, Socket} from 'socket.io-client';
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import type { GridSquare, TokenInfo } from '../types';
+import { useRoute } from 'vue-router';
 
+const route = useRoute();
+const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
 const gridSize = ref(8);
 const squareSizePx = ref(80);
 
@@ -18,8 +21,11 @@ const mapUrlInput = ref(''); // Para o campo de input
 const currentMapUrl = ref<string | null>(null); // Armazena a URL do mapa
 
 function setMap() {
-  if (socket && mapUrlInput.value.trim() !== '') {
-    socket.emit('requestSetMap', { mapUrl: mapUrlInput.value });
+  if (socket && mapUrlInput.value.trim() !== '' && tableId) {
+    socket.emit('requestSetMap', { 
+      mapUrl: mapUrlInput.value,
+      tableId: tableId
+    });
   }
 }
 
@@ -30,8 +36,9 @@ function handleRightClick(square: GridSquare) {
 }
 
 function createToken(payload: { name: string, imageUrl: string }) {
-  if (socket && targetSquareIdForToken.value) {
+  if (socket && targetSquareIdForToken.value && tableId) {
     socket.emit('requestPlaceToken', {
+      tableId: tableId,
       squareId: targetSquareIdForToken.value,
       name: payload.name,
       imageUrl: payload.imageUrl
@@ -58,8 +65,12 @@ function handleLeftClickOnSquare(clickedSquare: GridSquare) {
 
 function handleTokenMoveRequest(payload: { tokenId: string; targetSquareId: string }) {
   console.log(`App.vue recebeu pedido para mover token:`, payload);
-  if (socket) {
-    socket.emit('requestMoveToken', payload);
+  if (socket && tableId) {
+    socket.emit('requestMoveToken', {
+      tableId: tableId,
+      tokenId: payload.tokenId,
+      targetSquareId: payload.targetSquareId,
+    });
   }
 }
 
@@ -73,6 +84,11 @@ onMounted(() => {
 
   socket.on('connect', () => {
     console.log('CONECTADO ao servidor Socket.IO! ID do Frontend:', socket?.id);
+
+    if (tableId) {
+      console.log(`Enviando evento para entrar na sala da mesa: ${tableId}`);
+      socket.emit('joinTable', tableId);
+    }
   });
 
   socket.on('disconnect', (reason: Socket.DisconnectReason) => {
