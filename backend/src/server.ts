@@ -4,6 +4,7 @@ import http from 'http';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Server } from 'socket.io';
+import cors from 'cors';
 import connectDB from './config/db';
 import Token from './models/Token.model';
 import User from './models/User.model';
@@ -23,6 +24,7 @@ const io = new Server(server, {
 });
 
 const port = process.env.PORT || 3001;
+app.use(cors());
 app.use(express.json());
 
 app.get('/', (req, res) => {
