@@ -36,4 +36,22 @@ router.post('/create', authMiddleware, (async (req: AuthRequest, res) => {
   }
 }) as RequestHandler);
 
+router.get('/mytables', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Usuário não autenticado.' });
+    }
+
+    // Encontra todas as tabelas onde o array 'players' contém o ID do usuário
+    const tables = await Table.find({ players: userId }).sort({ createdAt: -1 });
+
+    res.json(tables);
+
+  } catch (error) {
+    console.error('Erro ao buscar mesas do usuário:', error);
+    res.status(500).json({ message: 'Erro interno ao buscar as mesas.' });
+  }
+}) as RequestHandler);
+
 export default router;

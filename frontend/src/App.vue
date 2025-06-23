@@ -14,9 +14,10 @@ function handleLogout() {
 <template>
   <header class="main-header">
     <nav>
+      <RouterLink to="/">Home</RouterLink>
       <template v-if="authToken">
-        <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/minhas-mesas">Minhas Mesas</RouterLink> <a @click="handleLogout" href="#">Logout</a>
+        <RouterLink to="/tables">Minhas Mesas</RouterLink> 
+        <a @click="handleLogout" href="#">Logout</a>
       </template>
       <template v-else>
         <RouterLink to="/login">Login</RouterLink>

@@ -108,4 +108,7 @@ const loginUserHandler: RequestHandler = async (req, res) => {
   }
 };
 
+router.post('/register', registerUserHandler);
+router.post('/login', loginUserHandler);
+
 export default router;

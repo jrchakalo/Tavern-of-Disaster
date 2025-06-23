@@ -22,7 +22,19 @@ const router = createRouter({
       name: 'register',
       // Lazy-loading também aqui.
       component: () => import('../views/RegisterView.vue')
-    }
+    },
+    {
+    path: '/table/:tableId', // Usa um parâmetro dinâmico ':tableId'
+    name: 'table',
+    component: () => import('../views/TableView.vue'),
+    meta: { requiresAuth: true }
+    },
+    {
+      path: '/tables',
+      name: 'tables',
+      component: () => import('../views/TablesView.vue'),
+      meta: { requiresAuth: true }
+    },
   ]
 });
 
