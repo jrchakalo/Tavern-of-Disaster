@@ -3,8 +3,9 @@ import {ref, onMounted, onUnmounted} from 'vue';
 import {io, Socket} from 'socket.io-client';
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
-import type { GridSquare, TokenInfo } from '../types';
+import type { GridSquare, TokenInfo, IScene } from '../types';
 import { useRoute } from 'vue-router';
+import { authToken } from '../auth';
 
 const route = useRoute();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
@@ -19,6 +20,12 @@ const targetSquareIdForToken = ref<string | null>(null);
 
 const mapUrlInput = ref(''); // Para o campo de input
 const currentMapUrl = ref<string | null>(null); // Armazena a URL do mapa
+
+const scenes = ref<IScene[]>([]); // Armazena a lista de todas as cenas da mesa
+const activeSceneId = ref<string | null>(null); // Armazena o ID da cena ativa
+
+const newSceneName = ref('');
+const newSceneImageUrl = ref('');
 
 function setMap() {
   if (socket && mapUrlInput.value.trim() !== '' && tableId) {
@@ -71,6 +78,39 @@ function handleTokenMoveRequest(payload: { tokenId: string; targetSquareId: stri
       tokenId: payload.tokenId,
       targetSquareId: payload.targetSquareId,
     });
+  }
+}
+
+async function handleCreateScene() {
+  if (!newSceneName.value.trim() || !tableId) return;
+
+  try {
+    const response = await fetch(`http://localhost:3001/api/tables/${tableId}/scenes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken.value}`,
+      },
+      body: JSON.stringify({ 
+        name: newSceneName.value,
+        imageUrl: newSceneImageUrl.value
+      }),
+    });
+
+    const newScene = await response.json();
+    if (response.ok) {
+      scenes.value.push(newScene); // Adiciona a nova cena à lista local
+      newSceneName.value = '';
+      newSceneImageUrl.value = '';
+    } else {
+      alert(`Erro: ${newScene.message}`);
+    }
+  } catch (error) { console.error("Erro ao criar cena", error); }
+}
+
+function handleSetActiveScene(sceneId: string) {
+  if (socket && tableId) {
+    socket.emit('requestSetActiveScene', { tableId, sceneId });
   }
 }
 
@@ -177,6 +217,35 @@ onMounted(() => {
     console.error('Erro do backend ao colocar token:', error.message);
     alert(`Erro ao colocar token: ${error.message}`); // Feedback simples para o usuário
   });
+
+  socket.on('initialSessionState', (data: { activeScene: IScene | null, tokens: TokenInfo[], allScenes: IScene[] }) => {
+    console.log("Recebido estado inicial da sessão:", data);
+    scenes.value = data.allScenes;
+    activeSceneId.value = data.activeScene?._id || null;
+    currentMapUrl.value = data.activeScene?.imageUrl || '';
+
+    // Lógica para popular os quadrados com os tokens da cena ativa (a que já tínhamos)
+    const newSquaresLocal: GridSquare[] = [];
+    // ... (crie os quadrados vazios) ...
+    data.tokens.forEach(token => {
+      const sq = newSquaresLocal.find(s => s.id === token.squareId);
+      if (sq) sq.token = token;
+    });
+    squares.value = newSquaresLocal;
+  });
+
+  // Listener para quando a cena ou os tokens mudam
+  socket.on('sessionStateUpdated', (newState: { activeScene: IScene | null, tokens: TokenInfo[] }) => {
+    console.log("Estado da sessão atualizado:", newState);
+    activeSceneId.value = newState.activeScene?._id || null;
+    currentMapUrl.value = newState.activeScene?.imageUrl || '';
+
+    // Repopula os quadrados com os novos tokens
+    const newSquaresLocal: GridSquare[] = [];
+    // ... (mesma lógica de criar quadrados e popular com newState.tokens) ...
+    squares.value = newSquaresLocal;
+  });
+
 });
 
 onUnmounted(() => {
@@ -194,6 +263,39 @@ onUnmounted(() => {
     <div class="map-controls">
       <input type="url" v-model="mapUrlInput" placeholder="Cole a URL da imagem do mapa aqui" />
       <button @click="setMap">Definir Mapa</button>
+    </div>
+
+    <div class="table-view-container">
+      <main class="battlemap-main">
+        </main>
+
+      <aside class="dm-panel">
+        <h2>Painel do Mestre</h2>
+
+        <div class="scene-manager">
+          <h3>Cenas</h3>
+          <ul class="scene-list">
+            <li 
+              v-for="scene in scenes" 
+              :key="scene._id"
+              :class="{ 'active-scene': scene._id === activeSceneId }"
+            >
+              <span>{{ scene.name }}</span>
+              <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">
+                Ativar
+              </button>
+            </li>
+          </ul>
+
+          <form @submit.prevent="handleCreateScene" class="create-scene-form">
+            <h4>Criar Nova Cena</h4>
+            <input v-model="newSceneName" placeholder="Nome da Cena" required />
+            <input v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
+            <button type="submit">Adicionar Cena</button>
+          </form>
+        </div>
+      </aside>
+
     </div>
     
     <GridDisplay
@@ -230,5 +332,47 @@ main{
 .map-controls input {
   padding: 8px;
   min-width: 300px;
+}
+.table-view-container {
+  display: flex;
+  width: 100%;
+  gap: 20px;
+  padding: 20px;
+}
+.battlemap-main {
+  flex-grow: 1; /* Faz o battlemap ocupar o espaço principal */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.dm-panel {
+  width: 300px;
+  flex-shrink: 0; /* Impede que o painel encolha */
+  background-color: #3a3a3a;
+  padding: 15px;
+  border-radius: 8px;
+}
+.scene-list {
+  list-style: none;
+  padding: 0;
+}
+.scene-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  margin-bottom: 5px;
+  border-radius: 4px;
+}
+.scene-list li.active-scene {
+  background-color: #ffc107;
+  color: #333;
+  font-weight: bold;
+}
+.create-scene-form {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 </style>

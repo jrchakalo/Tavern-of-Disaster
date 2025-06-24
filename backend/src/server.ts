@@ -33,62 +33,68 @@ server.listen(port, () => {
   console.log(`Server rodando em http://localhost:${port}`);
 });
 
+async function getFullSessionState(tableId: string, sceneId: string) {
+  const activeScene = await Scene.findById(sceneId);
+  const tokens = await Token.find({ sceneId: sceneId }); // Apenas tokens da cena ativa
+  return { activeScene, tokens };
+}
+
 // Configuração do Socket.IO
 io.on('connection', async (socket) => {
   console.log(`Usuário conectado:, ${socket.id}`);
 
   socket.on('joinTable', async (tableId: string) => {
     try {
-      // 'join' é o comando do Socket.IO para adicionar um socket a uma sala
       socket.join(tableId);
       console.log(`Socket ${socket.id} entrou na sala da mesa ${tableId}`);
 
-      const tokens = await Token.find({ tableId: tableId });
-      socket.emit('initialTokenState', tokens);
+      const table = await Table.findById(tableId).populate('scenes'); // Popula o array de cenas
+      if (!table) return;
 
-      const table = await Table.findById(tableId).populate('activeScene');
-      if (table && table.activeScene) {
-        const sceneData = table.activeScene as any;
-        socket.emit('mapUpdated', { mapUrl: sceneData.imageUrl });
-      }
+      const activeSceneId = table.activeScene?.toString();
+      const initialState = activeSceneId 
+        ? await getFullSessionState(tableId, activeSceneId) 
+        : { activeScene: null, tokens: [] };
+
+      // Envia o estado completo para o cliente que acabou de entrar
+      socket.emit('initialSessionState', { ...initialState, allScenes: table.scenes });
+
     } catch (error) {
       console.error(`Erro ao entrar na sala ${tableId}:`, error);
       socket.emit('error', { message: `Não foi possível entrar na mesa ${tableId}` });
     }
   });
 
-  socket.on('requestPlaceToken', async (data: { tableId: string, squareId: string; name: string; imageUrl?: string }) => {
+  socket.on('requestPlaceToken', async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string }) => {
     try {
-      if (!data || !data.squareId || !data.name) {
-        socket.emit('tokenPlacementError', { message: 'squareId não fornecido.' });
+      const { tableId, sceneId, squareId, name, imageUrl } = data; // <<< Pega o sceneId dos dados
+
+      if (!sceneId) {
+        socket.emit('tokenPlacementError', { message: 'ID da cena não fornecido.' });
         return;
       }
 
       // Verifica se já existe um token nesse quadrado
-      const existingToken = await Token.findOne({ tableId: data.tableId, squareId: data.squareId });
+      const existingToken = await Token.findOne({ sceneId: sceneId, squareId: squareId });
       if (existingToken) {
-        console.log(`Tentativa de colocar token em quadrado já ocupado: ${data.squareId}`);
-        socket.emit('tokenPlacementError', { message: 'Este quadrado já está ocupado.' });
+        socket.emit('tokenPlacementError', { message: 'Este quadrado já está ocupado nesta cena.' });
         return;
       }
 
-      // Cria um novo token
-      const randomNumber = Math.floor(Math.random() * 16777215);
-      const hexString = randomNumber.toString(16).padStart(6, '0');
-      const tokenColor = `#${hexString}`;
+      const tokenColor = `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`;
 
       const newToken = new Token({
-        tableId: data.tableId,  
-        squareId: data.squareId,
+        tableId,
+        sceneId, 
+        squareId,
         color: tokenColor,
         ownerSocketId: socket.id,
-        name: data.name,
-        imageUrl: data.imageUrl
+        name,
+        imageUrl
       });
 
       await newToken.save();
-
-      io.to(data.tableId).emit('tokenPlaced', newToken); // Envia o token completo
+      io.to(tableId).emit('tokenPlaced', newToken); 
 
     } catch (error: any) {
       console.error('Erro ao processar requestPlaceToken:', error.message);
@@ -183,35 +189,29 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('requestSetActiveScene', async (data: { tableId: string; sceneId: string }) => {
-  try {
-    const { tableId, sceneId } = data;
+    try {
+      const { tableId, sceneId } = data;
 
-    // Validação (se o usuário é o mestre, se a cena pertence à mesa, etc.) - omitida por simplicidade por ora
+      // --- Validação de Permissão (Simplificada) ---
+      // No futuro, verificaríamos se o socket.id corresponde ao Mestre da mesa.
+      const tableForUpdate = await Table.findById(tableId);
+      if (!tableForUpdate) return;
+      // if (tableForUpdate.dm.toString() !== userIdExtraidoDoSocket) {
+      //   return socket.emit('error', { message: 'Apenas o Mestre pode mudar a cena.' });
+      // }
+      // --- Fim da Validação ---
 
-    // Atualiza a cena ativa da mesa no DB
-    await Table.findByIdAndUpdate(tableId, { activeScene: sceneId });
+      await Table.findByIdAndUpdate(tableId, { activeScene: sceneId });
 
-    // Busca os dados da NOVA cena para enviar a todos
-    const newActiveScene = await Scene.findById(sceneId);
-    const tokensForNewScene = await Token.find({ tableId, sceneId }); // Precisaremos adicionar sceneId ao modelo Token!
+      const newState = await getFullSessionState(data.tableId, data.sceneId);
 
-    const newState = {
-      mapUrl: newActiveScene?.imageUrl || '',
-      tokens: tokensForNewScene,
-      sceneId: newActiveScene?._id
-    };
+      // Notifica todos na sala que a sessão foi atualizada
+      io.to(data.tableId).emit('sessionStateUpdated', newState);
+      console.log(`Mesa ${tableId} teve sua cena ativa atualizada para ${sceneId}`);
 
-    // Notifica todos na sala que o estado da sessão foi atualizado
-    io.to(tableId).emit('sessionStateUpdated', newState);
-    console.log(`Mesa ${tableId} atualizada para a cena ${sceneId}`);
-
-  } catch (error) {
-    console.error('Erro ao definir cena ativa:', error);
-  }
-});
-
-  // Evento de desconexão
-  socket.on('disconnect', () => {
-    console.log(`Usuário desconectado:, ${socket.id}`);
+    } catch (error) {
+      console.error('Erro ao definir cena ativa:', error);
+      // Poderíamos emitir um erro de volta para o Mestre aqui
+    }
   });
-});
+  });
