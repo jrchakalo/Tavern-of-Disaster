@@ -1,5 +1,6 @@
 import { Router, RequestHandler } from 'express';
 import { nanoid } from 'nanoid';
+import mongoose, { Types } from 'mongoose'
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
 import Table from '../models/Table.model';
 
@@ -51,6 +52,40 @@ router.get('/mytables', authMiddleware, (async (req: AuthRequest, res) => {
   } catch (error) {
     console.error('Erro ao buscar mesas do usuário:', error);
     res.status(500).json({ message: 'Erro interno ao buscar as mesas.' });
+  }
+}) as RequestHandler);
+
+router.post('/join', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { inviteCode } = req.body;
+    const userId = req.user?.id;
+
+    if (!inviteCode) {
+      return res.status(400).json({ message: 'O código de convite é obrigatório.' });
+    }
+
+    // Encontra a mesa pelo código de convite
+    const table = await Table.findOne({ inviteCode });
+    if (!table) {
+      return res.status(404).json({ message: 'Nenhuma mesa encontrada com este código.' });
+    }
+
+    // Verifica se o usuário já é um jogador nesta mesa
+    if (table.players.map(p => p.toString()).includes(userId!)) {
+      console.log(`Usuário ${userId} já está na mesa ${table.name}`);
+      // Retorna sucesso, pois o usuário já é membro.
+      return res.json({ message: 'Você já faz parte desta mesa.', table });
+    }
+
+    // Adiciona o novo jogador ao array de jogadores
+    table.players.push(new Types.ObjectId(userId!));
+    await table.save();
+
+    res.json({ message: `Você entrou na mesa "${table.name}" com sucesso!`, table });
+
+  } catch (error) {
+    console.error('Erro ao entrar na mesa:', error);
+    res.status(500).json({ message: 'Erro interno ao entrar na mesa.' });
   }
 }) as RequestHandler);
 
