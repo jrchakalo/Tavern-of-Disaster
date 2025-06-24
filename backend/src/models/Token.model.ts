@@ -8,6 +8,7 @@ export interface IToken extends Document {
     name: string;
     imageUrl?: string;
     tableId: Types.ObjectId;
+    sceneId?: Types.ObjectId; 
 }
 
 const TokenSchema: Schema = new Schema({
@@ -16,7 +17,8 @@ const TokenSchema: Schema = new Schema({
     ownerSocketId: { type: String, required: true },
     name: { type: String, required: true, default: 'Token' }, 
     imageUrl: { type: String, required: false }, 
-    tableId: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index:true }
+    tableId: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index:true },
+    sceneId: { type: Schema.Types.ObjectId, ref: 'Scene', required: true, index: true },
 }, {
     timestamps: true
 });

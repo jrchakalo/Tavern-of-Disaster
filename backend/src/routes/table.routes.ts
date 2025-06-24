@@ -27,6 +27,7 @@ router.post('/create', authMiddleware, (async (req: AuthRequest, res) => {
       dm: dmId,
       players: [dmId], // O mestre é automaticamente o primeiro jogador
       inviteCode: nanoid(8), // Gera um código de convite aleatório de 8 caracteres
+      scenes: [], // Inicia com um array vazio de cenas
     });
 
     const defaultScene = new Scene({
@@ -36,7 +37,8 @@ router.post('/create', authMiddleware, (async (req: AuthRequest, res) => {
     });
 
     await defaultScene.save();
-    newTable.activeScene = defaultScene._id;  
+    newTable.activeScene = defaultScene._id;
+    newTable.scenes.push(defaultScene._id);
     await newTable.save();
     res.status(201).json(newTable); // Retorna os dados da nova mesa criada
 
@@ -95,6 +97,39 @@ router.post('/join', authMiddleware, (async (req: AuthRequest, res) => {
   } catch (error) {
     console.error('Erro ao entrar na mesa:', error);
     res.status(500).json({ message: 'Erro interno ao entrar na mesa.' });
+  }
+}) as RequestHandler);
+
+router.post('/:tableId/scenes', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId } = req.params;
+    const { name, imageUrl } = req.body;
+    const userId = req.user?.id;
+
+    const table = await Table.findById(tableId);
+
+    if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
+    // Verificação de permissão: só o Mestre pode adicionar cenas
+    if (table.dm.toString() !== userId) {
+      return res.status(403).json({ message: 'Apenas o Mestre pode adicionar cenas.' });
+    }
+
+    const newScene = new Scene({
+      tableId: table._id,
+      name: name || 'Nova Cena', // Usa o nome fornecido ou um padrão
+      imageUrl: imageUrl || ''
+    });
+    await newScene.save();
+
+    // Adiciona a nova cena ao array de cenas da mesa
+    table.scenes.push(newScene._id);
+    await table.save();
+
+    res.status(201).json(newScene); // Retorna a cena recém-criada
+
+  } catch (error) {
+    console.error('Erro ao adicionar cena:', error);
+    res.status(500).json({ message: 'Erro interno ao adicionar cena.' });
   }
 }) as RequestHandler);
 

@@ -182,6 +182,34 @@ io.on('connection', async (socket) => {
     }
   });
 
+  socket.on('requestSetActiveScene', async (data: { tableId: string; sceneId: string }) => {
+  try {
+    const { tableId, sceneId } = data;
+
+    // Validação (se o usuário é o mestre, se a cena pertence à mesa, etc.) - omitida por simplicidade por ora
+
+    // Atualiza a cena ativa da mesa no DB
+    await Table.findByIdAndUpdate(tableId, { activeScene: sceneId });
+
+    // Busca os dados da NOVA cena para enviar a todos
+    const newActiveScene = await Scene.findById(sceneId);
+    const tokensForNewScene = await Token.find({ tableId, sceneId }); // Precisaremos adicionar sceneId ao modelo Token!
+
+    const newState = {
+      mapUrl: newActiveScene?.imageUrl || '',
+      tokens: tokensForNewScene,
+      sceneId: newActiveScene?._id
+    };
+
+    // Notifica todos na sala que o estado da sessão foi atualizado
+    io.to(tableId).emit('sessionStateUpdated', newState);
+    console.log(`Mesa ${tableId} atualizada para a cena ${sceneId}`);
+
+  } catch (error) {
+    console.error('Erro ao definir cena ativa:', error);
+  }
+});
+
   // Evento de desconexão
   socket.on('disconnect', () => {
     console.log(`Usuário desconectado:, ${socket.id}`);
