@@ -6,6 +6,7 @@ import cors from 'cors';
 import connectDB from './config/db';
 import Token, { IToken } from './models/Token.model';
 import Table from './models/Table.model';
+import Scene from './models/Scene.model';
 import authRouter from './routes/auth.routes';
 import tableRouter from './routes/table.routes';
 
@@ -45,9 +46,10 @@ io.on('connection', async (socket) => {
       const tokens = await Token.find({ tableId: tableId });
       socket.emit('initialTokenState', tokens);
 
-      const table = await Table.findById(tableId);
-      if (table && table.currentMapUrl) {
-        socket.emit('mapUpdated', { mapUrl: table.currentMapUrl });
+      const table = await Table.findById(tableId).populate('activeScene');
+      if (table && table.activeScene) {
+        const sceneData = table.activeScene as any;
+        socket.emit('mapUpdated', { mapUrl: sceneData.imageUrl });
       }
     } catch (error) {
       console.error(`Erro ao entrar na sala ${tableId}:`, error);
@@ -159,17 +161,20 @@ io.on('connection', async (socket) => {
   socket.on('requestSetMap', async (data: { tableId: string, mapUrl: string }) => {
     try {
       if (typeof data.mapUrl === 'string' && data.tableId) {
-        // Encontra a mesa no DB e atualiza sua URL do mapa
-        const updatedTable = await Table.findByIdAndUpdate(
-          data.tableId,
-          { currentMapUrl: data.mapUrl },
-          { new: true } // Retorna o documento atualizado
+        // Encontra a mesa para obter o ID da cena ativa
+        const table = await Table.findById(data.tableId);
+        if (!table || !table.activeScene) return;
+
+        const updatedScene = await Scene.findByIdAndUpdate(
+          table.activeScene,
+          { imageUrl: data.mapUrl },
+          { new: true }
         );
 
-        if (updatedTable) {
-          console.log(`Mapa da mesa ${data.tableId} atualizado para: ${data.mapUrl}`);
-          // Notifica TODOS na sala sobre o novo mapa
-          io.to(data.tableId).emit('mapUpdated', { mapUrl: updatedTable.currentMapUrl });
+        if (updatedScene) {
+          console.log(`Mapa da cena ${updatedScene._id} atualizado para: ${updatedScene.imageUrl}`);
+          // Notifica a sala sobre o novo mapa
+          io.to(data.tableId).emit('mapUpdated', { mapUrl: updatedScene.imageUrl });
         }
       }
     } catch (error) {

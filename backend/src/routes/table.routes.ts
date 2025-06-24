@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import mongoose, { Types } from 'mongoose'
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
 import Table from '../models/Table.model';
+import Scene from '../models/Scene.model';
 
 const router = Router();
 
@@ -28,6 +29,14 @@ router.post('/create', authMiddleware, (async (req: AuthRequest, res) => {
       inviteCode: nanoid(8), // Gera um código de convite aleatório de 8 caracteres
     });
 
+    const defaultScene = new Scene({
+      tableId: newTable._id,
+      name: 'Primeiro Mapa',
+      imageUrl: '', // Começa sem imagem
+    });
+
+    await defaultScene.save();
+    newTable.activeScene = defaultScene._id;  
     await newTable.save();
     res.status(201).json(newTable); // Retorna os dados da nova mesa criada
 
