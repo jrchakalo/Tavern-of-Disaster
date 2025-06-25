@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import {ref, onMounted, onUnmounted} from 'vue';
+import {ref, onMounted, onUnmounted, computed} from 'vue';
 import {io, Socket} from 'socket.io-client';
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
-import type { GridSquare, TokenInfo, IScene } from '../types';
+import type { GridSquare, TokenInfo, IScene, ITable } from '../types';
 import { useRoute } from 'vue-router';
-import { authToken } from '../auth';
+import { authToken, currentUser } from '../auth';
 
 const route = useRoute();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
 const gridSize = ref(8);
-const squareSizePx = ref(80);
+const squareSizePx = ref(100);
 
 const squares = ref<GridSquare[]>([]);
 const selectedTokenId = ref<string | null>(null);
@@ -26,6 +26,11 @@ const activeSceneId = ref<string | null>(null); // Armazena o ID da cena ativa
 
 const newSceneName = ref('');
 const newSceneImageUrl = ref('');
+
+const currentTable = ref<ITable | null>(null);
+const isDM = computed(() => {
+  return currentUser.value?.id === currentTable.value?.dm;
+});
 
 function setMap() {
   if (socket && mapUrlInput.value.trim() !== '' && tableId) {
@@ -168,61 +173,72 @@ onMounted(() => {
     }
   });
 
-socket.on('tokenMoved', (movedTokenData: TokenInfo & { oldSquareId: string }) => {
-  console.log('Recebido "tokenMoved" DO BACKEND:', movedTokenData);
+  socket.on('tokenMoved', (movedTokenData: TokenInfo & { oldSquareId: string }) => {
+    console.log('Recebido "tokenMoved" DO BACKEND:', movedTokenData);
 
-  // Verificação para processar o movimento apenas se ele pertencer à cena ativa
-  if (movedTokenData.sceneId === activeSceneId.value) {
+    // Verificação para processar o movimento apenas se ele pertencer à cena ativa
+    if (movedTokenData.sceneId === activeSceneId.value) {
 
-    // Remover o token do quadrado antigo
-    const oldSquare = squares.value.find(sq => sq.id === movedTokenData.oldSquareId);
-    if (oldSquare) {
-      console.log(`Removendo token do quadrado antigo: ${movedTokenData.oldSquareId}`);
-      oldSquare.token = null;
+      // Remover o token do quadrado antigo
+      const oldSquare = squares.value.find(sq => sq.id === movedTokenData.oldSquareId);
+      if (oldSquare) {
+        console.log(`Removendo token do quadrado antigo: ${movedTokenData.oldSquareId}`);
+        oldSquare.token = null;
+      } else {
+        console.warn(`Quadrado antigo ${movedTokenData.oldSquareId} não encontrado no frontend para remover token.`);
+      }
+
+      // Adicionar/Atualizar o token no novo quadrado
+      const newSquare = squares.value.find(sq => sq.id === movedTokenData.squareId);
+      if (newSquare) {
+        console.log(`Colocando token no novo quadrado: ${movedTokenData.squareId}`);
+        newSquare.token = {
+          _id: movedTokenData._id,
+          squareId: movedTokenData.squareId,
+          color: movedTokenData.color,
+          ownerId: movedTokenData.ownerId,
+          name: movedTokenData.name,
+          imageUrl: movedTokenData.imageUrl,
+          sceneId: movedTokenData.sceneId,
+        };
+      } else {
+        console.warn(`Novo quadrado ${movedTokenData.squareId} não encontrado no frontend para colocar token.`);
+      }
     } else {
-      console.warn(`Quadrado antigo ${movedTokenData.oldSquareId} não encontrado no frontend para remover token.`);
+      console.log(`Movimento do token ignorado, pois pertence à cena ${movedTokenData.sceneId} e a cena ativa é ${activeSceneId.value}`);
     }
-
-    // Adicionar/Atualizar o token no novo quadrado
-    const newSquare = squares.value.find(sq => sq.id === movedTokenData.squareId);
-    if (newSquare) {
-      console.log(`Colocando token no novo quadrado: ${movedTokenData.squareId}`);
-      newSquare.token = {
-        _id: movedTokenData._id,
-        squareId: movedTokenData.squareId,
-        color: movedTokenData.color,
-        ownerId: movedTokenData.ownerId,
-        name: movedTokenData.name,
-        imageUrl: movedTokenData.imageUrl,
-        sceneId: movedTokenData.sceneId,
-      };
-    } else {
-      console.warn(`Novo quadrado ${movedTokenData.squareId} não encontrado no frontend para colocar token.`);
-    }
-  } else {
-    console.log(`Movimento do token ignorado, pois pertence à cena ${movedTokenData.sceneId} e a cena ativa é ${activeSceneId.value}`);
-  }
-});
+  });
 
   socket.on('tokenPlacementError', (error: { message: string }) => {
     console.error('Erro do backend ao colocar token:', error.message);
     alert(`Erro ao colocar token: ${error.message}`); // Feedback simples para o usuário
   });
 
-  socket.on('initialSessionState', (data: { activeScene: IScene | null, tokens: TokenInfo[], allScenes: IScene[] }) => {
-    console.log("Recebido estado inicial da sessão:", data);
+  socket.on('initialSessionState', (data: { 
+    tableInfo: ITable, //Recebe os dados da mesa
+    activeScene: IScene | null, 
+    tokens: TokenInfo[], 
+    allScenes: IScene[] 
+  }) => {
+
+    currentTable.value = data.tableInfo; // Salva os dados da mesa
     scenes.value = data.allScenes;
     activeSceneId.value = data.activeScene?._id || null;
     currentMapUrl.value = data.activeScene?.imageUrl || '';
-    updateGrid(data.tokens); // Usa a função auxiliar
+    updateGrid(data.tokens);
   });
 
-  // Listener para quando a cena ou os tokens mudam
   socket.on('sessionStateUpdated', (newState: { activeScene: IScene | null, tokens: TokenInfo[] }) => {
     console.log("Estado da sessão atualizado:", newState);
     activeSceneId.value = newState.activeScene?._id || null;
     currentMapUrl.value = newState.activeScene?.imageUrl || '';
     updateGrid(newState.tokens); // Usa a função auxiliar
+  });
+
+  socket.on('mapUpdated', (data: { mapUrl: string }) => {
+    console.log('Mapa atualizado recebido do servidor:', data.mapUrl);
+    currentMapUrl.value = data.mapUrl; // Atualiza a URL do mapa localmente
+    mapUrlInput.value = data.mapUrl; // Atualiza o campo de input para refletir a mudança
   });
 });
 
@@ -234,64 +250,64 @@ onUnmounted(() => {
 });
 </script>
 
-<template>  
-  <main>
-    <h1>Battlemap</h1>
+<template>
+  <div class="table-view-layout">
 
-    <div class="map-controls">
-      <input type="url" v-model="mapUrlInput" placeholder="Cole a URL da imagem do mapa aqui" />
-      <button @click="setMap">Definir Mapa</button>
-    </div>
+    <aside v-if="isDM" class="dm-panel">
+      <h2>Painel do Mestre</h2>
 
-    <div class="table-view-container">
-      <main class="battlemap-main">
-        </main>
-
-      <aside class="dm-panel">
-        <h2>Painel do Mestre</h2>
-
-        <div class="scene-manager">
-          <h3>Cenas</h3>
-          <ul class="scene-list">
-            <li 
-              v-for="scene in scenes" 
-              :key="scene._id"
-              :class="{ 'active-scene': scene._id === activeSceneId }"
-            >
-              <span>{{ scene.name }}</span>
-              <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">
-                Ativar
-              </button>
-            </li>
-          </ul>
-
-          <form @submit.prevent="handleCreateScene" class="create-scene-form">
-            <h4>Criar Nova Cena</h4>
-            <input v-model="newSceneName" placeholder="Nome da Cena" required />
-            <input v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
-            <button type="submit">Adicionar Cena</button>
-          </form>
+      <div class="panel-section">
+        <h4>Imagem/Mapa da Cena Ativa</h4>
+        <div class="map-controls">
+          <input type="url" v-model="mapUrlInput" placeholder="URL da imagem" />
+          <button @click="setMap">Definir</button>
         </div>
-      </aside>
+      </div>
 
-    </div>
-    
-    <GridDisplay
-      :squares="squares"
-      :gridSize="gridSize"
-      :squareSizePx="squareSizePx"
-      :selectedTokenId="selectedTokenId"
-      :mapUrl="currentMapUrl"
-      @square-right-click="handleRightClick"
-      @square-left-click="handleLeftClickOnSquare"
-      @token-move-requested="handleTokenMoveRequest"
-    />
+      <div class="panel-section scene-manager">
+        <h3>Cenas</h3>
+        <ul class="scene-list">
+          <li 
+            v-for="scene in scenes" 
+            :key="scene._id"
+            :class="{ 'active-scene': scene._id === activeSceneId }"
+          >
+            <span>{{ scene.name }}</span>
+            <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">
+              Ativar
+            </button>
+          </li>
+        </ul>
+        <form @submit.prevent="handleCreateScene" class="create-scene-form">
+          <input v-model="newSceneName" placeholder="Nome da Nova Cena" required />
+          <input v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
+          <button type="submit">Adicionar Cena</button>
+        </form>
+      </div>
+    </aside>
+
+    <main class="battlemap-main">
+      <h1>{{ currentTable?.name || 'Battlemap' }}</h1>
+      
+      <GridDisplay
+        :squares="squares"
+        :gridSize="gridSize"
+        :squareSizePx="squareSizePx"
+        :selectedTokenId="selectedTokenId"
+        :mapUrl="currentMapUrl"
+        @square-right-click="handleRightClick"
+        @square-left-click="handleLeftClickOnSquare"
+        @token-move-requested="handleTokenMoveRequest"
+      />
+    </main>
+
     <TokenCreationForm
-      v-if="showTokenForm"
+      v-if="showTokenForm && isDM"
       @create-token="createToken"
       @cancel="showTokenForm = false"
     />
-  </main>
+
+  </div>
 </template>
 
 <style scoped>
@@ -306,10 +322,22 @@ main{
   margin-bottom: 20px;
   display: flex;
   gap: 10px;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
 }
 .map-controls input {
-  padding: 8px;
+  padding: 5px;
   min-width: 300px;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.3s ease;
+}
+.map-controls button, .create-scene-form button {
+  width: 100%;
+  padding: 10px;
 }
 .table-view-container {
   display: flex;
@@ -317,11 +345,21 @@ main{
   gap: 20px;
   padding: 20px;
 }
+.table-view-layout {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+  padding: 20px;
+  box-sizing: border-box; /* Garante que o padding não aumente a largura total */
+}
 .battlemap-main {
   flex-grow: 1; /* Faz o battlemap ocupar o espaço principal */
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+.battlemap-main h1 {
+  margin-top: 0;
 }
 .dm-panel {
   width: 300px;
@@ -329,10 +367,23 @@ main{
   background-color: #3a3a3a;
   padding: 15px;
   border-radius: 8px;
+  height: fit-content;
+}
+.dm-panel h2 {
+  margin-top: 0;
+  text-align: center;
+  color: #ffc107;
+}
+.panel-section {
+  margin-top: 25px;
+  border-top: 1px solid #555;
+  padding-top: 15px;
 }
 .scene-list {
   list-style: none;
   padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
 }
 .scene-list li {
   display: flex;
@@ -341,6 +392,11 @@ main{
   padding: 8px;
   margin-bottom: 5px;
   border-radius: 4px;
+  background-color: #4f4f4f;
+}
+.panel-section h3, .panel-section h4 {
+  margin-top: 0;
+  margin-bottom: 10px;
 }
 .scene-list li.active-scene {
   background-color: #ffc107;

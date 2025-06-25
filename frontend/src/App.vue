@@ -64,5 +64,6 @@ main{
   flex-direction: column;
   align-items: center;
   margin-top: 20px;
+  padding-bottom: 50px;
 }
 </style>

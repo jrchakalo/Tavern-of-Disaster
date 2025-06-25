@@ -97,14 +97,13 @@ function onSquareRightClick(square: GridSquare) {
   display: grid;
   grid-template-columns: repeat(var(--grid-columns), var(--grid-square-size));
   grid-template-rows: repeat(var(--grid-columns), var(--grid-square-size));
-  gap: 5px;
+  gap: 0;
 
   border: 2px solid #333;
-  padding: 5px;
   background-color: #eee;
   width: fit-content;
-  background-size: cover; /* Faz a imagem cobrir toda a área */
-  background-position: center; /* Centraliza a imagem */
+  background-size: cover; /* Faz a imagem de fundo cobrir todo o grid */
+  background-position: center;
 }
 
 .grid-square {
@@ -117,8 +116,8 @@ function onSquareRightClick(square: GridSquare) {
   align-items: center;
   box-sizing: border-box;
   cursor: pointer;  /*Indica que é clicável*/
-  background-color: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(204, 204, 204, 0.15);
+  background-color: rgba(255, 255, 255, 0.00); 
+  border: 1px solid rgba(0, 0, 0, 0.75);
 }
 
 .token {

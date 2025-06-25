@@ -32,7 +32,7 @@ router.post('/create', authMiddleware, (async (req: AuthRequest, res) => {
 
     const defaultScene = new Scene({
       tableId: newTable._id,
-      name: 'Primeiro Mapa',
+      name: 'Primeira Cena',
       imageUrl: '', // Começa sem imagem
     });
 

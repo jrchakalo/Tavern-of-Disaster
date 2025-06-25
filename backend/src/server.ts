@@ -70,17 +70,20 @@ io.on('connection', async (socket) => {
       socket.join(tableId);
       console.log(`Socket ${socket.id} entrou na sala da mesa ${tableId}`);
 
-      const table = await Table.findById(tableId).populate('scenes'); // Popula o array de cenas
+      const table = await Table.findById(tableId).populate('activeScene').populate('scenes');
       if (!table) return;
 
-      const activeSceneId = table.activeScene?.toString();
-      const initialState = activeSceneId 
-        ? await getFullSessionState(tableId, activeSceneId) 
-        : { activeScene: null, tokens: [] };
+      const activeSceneId = table.activeScene?._id;
+      const tokens = activeSceneId ? await Token.find({ sceneId: activeSceneId }) : [];
+      const initialState = {
+        tableInfo: table,
+        activeScene: table.activeScene,
+        tokens: tokens,
+        allScenes: table.scenes,
+      };
 
       // Envia o estado completo para o cliente que acabou de entrar
-      socket.emit('initialSessionState', { ...initialState, allScenes: table.scenes });
-
+      socket.emit('initialSessionState', initialState);
     } catch (error) {
       console.error(`Erro ao entrar na sala ${tableId}:`, error);
       socket.emit('error', { message: `Não foi possível entrar na mesa ${tableId}` });
@@ -220,27 +223,25 @@ io.on('connection', async (socket) => {
   socket.on('requestSetActiveScene', async (data: { tableId: string; sceneId: string }) => {
     try {
       const { tableId, sceneId } = data;
+      const userId = socket.data.user?.id; // Pega o usuário da conexão autenticada
 
-      // --- Validação de Permissão (Simplificada) ---
-      // No futuro, verificaríamos se o socket.id corresponde ao Mestre da mesa.
-      const tableForUpdate = await Table.findById(tableId);
-      if (!tableForUpdate) return;
-      // if (tableForUpdate.dm.toString() !== userIdExtraidoDoSocket) {
-      //   return socket.emit('error', { message: 'Apenas o Mestre pode mudar a cena.' });
-      // }
-      // --- Fim da Validação ---
+      const table = await Table.findById(tableId);
+      if (!table) return;
+
+      if (table.dm.toString() !== userId) {
+        console.log(`[AUTH] Falha: Usuário ${userId} tentou mudar cena da mesa ${tableId}, mas não é o mestre.`);
+        return socket.emit('error', { message: 'Apenas o Mestre pode mudar a cena.' });
+      }
 
       await Table.findByIdAndUpdate(tableId, { activeScene: sceneId });
 
       const newState = await getFullSessionState(data.tableId, data.sceneId);
 
-      // Notifica todos na sala que a sessão foi atualizada
       io.to(data.tableId).emit('sessionStateUpdated', newState);
       console.log(`Mesa ${tableId} teve sua cena ativa atualizada para ${sceneId}`);
 
     } catch (error) {
       console.error('Erro ao definir cena ativa:', error);
-      // Poderíamos emitir um erro de volta para o Mestre aqui
     }
   });
-  });
+});
