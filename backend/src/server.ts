@@ -244,4 +244,38 @@ io.on('connection', async (socket) => {
       console.error('Erro ao definir cena ativa:', error);
     }
   });
+
+  socket.on('requestUpdateGridSize', async (data: { tableId: string, sceneId: string, newGridSize: number }) => {
+    try {
+      const { tableId, sceneId, newGridSize } = data;
+      const userId = socket.data.user?.id; // Pega o usuário da conexão autenticada
+      const table = await Table.findById(tableId).populate('scenes');
+      if (!table) return;
+
+      if (table.dm.toString() !== userId) {
+        console.log(`[AUTH] Falha: Usuário ${userId} tentou atualizar o tamanho do grid da mesa ${tableId}, mas não é o mestre.`);
+        return socket.emit('error', { message: 'Apenas o Mestre pode atualizar o tamanho do grid.' });
+      }
+
+      await Scene.findByIdAndUpdate(sceneId, { gridSize: newGridSize });
+      
+      const activeScene = await Scene.findById(sceneId);
+      const tokens = await Token.find({ sceneId: sceneId });
+
+      const newState = {
+        tableInfo: table,
+        activeScene: activeScene,
+        tokens: tokens,
+        allScenes: table?.scenes || []
+      };
+
+      io.to(tableId).emit('sessionStateUpdated', newState);
+    } catch (error) {
+      console.error('Erro ao atualizar o tamanho do grid:', error);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`Usuário desconectado: ${socket.id}`);
+  });
 });

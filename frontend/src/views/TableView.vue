@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import {ref, onMounted, onUnmounted, computed} from 'vue';
-import {io, Socket} from 'socket.io-client';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+import { io, Socket } from 'socket.io-client';
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import type { GridSquare, TokenInfo, IScene, ITable } from '../types';
@@ -9,8 +9,8 @@ import { authToken, currentUser } from '../auth';
 
 const route = useRoute();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
-const gridSize = ref(8);
-const squareSizePx = ref(100);
+const gridSize = ref(30);
+
 
 const squares = ref<GridSquare[]>([]);
 const selectedTokenId = ref<string | null>(null);
@@ -137,6 +137,17 @@ function updateGrid(tokens: TokenInfo[]) {
   squares.value = newSquaresLocal;
 }
 
+watch(gridSize, (newSize, oldSize) => {
+  if (isDM.value && newSize !== oldSize && socket && tableId && activeSceneId.value) {
+    console.log(`Mestre alterou o grid para ${newSize}. Solicitando atualização...`);
+    socket.emit('requestUpdateGridSize', {
+      tableId: tableId,
+      sceneId: activeSceneId.value, // Envia o ID da cena ativa
+      newGridSize: newSize
+    });
+  }
+});
+
 let socket: Socket | null = null;
 
 onMounted(() => {
@@ -225,6 +236,7 @@ onMounted(() => {
     scenes.value = data.allScenes;
     activeSceneId.value = data.activeScene?._id || null;
     currentMapUrl.value = data.activeScene?.imageUrl || '';
+    gridSize.value = data.activeScene?.gridSize || 30;
     updateGrid(data.tokens);
   });
 
@@ -232,6 +244,7 @@ onMounted(() => {
     console.log("Estado da sessão atualizado:", newState);
     activeSceneId.value = newState.activeScene?._id || null;
     currentMapUrl.value = newState.activeScene?.imageUrl || '';
+    gridSize.value = newState.activeScene?.gridSize || 30;
     updateGrid(newState.tokens); // Usa a função auxiliar
   });
 
@@ -256,14 +269,6 @@ onUnmounted(() => {
     <aside v-if="isDM" class="dm-panel">
       <h2>Painel do Mestre</h2>
 
-      <div class="panel-section">
-        <h4>Imagem/Mapa da Cena Ativa</h4>
-        <div class="map-controls">
-          <input type="url" v-model="mapUrlInput" placeholder="URL da imagem" />
-          <button @click="setMap">Definir</button>
-        </div>
-      </div>
-
       <div class="panel-section scene-manager">
         <h3>Cenas</h3>
         <ul class="scene-list">
@@ -279,26 +284,51 @@ onUnmounted(() => {
           </li>
         </ul>
         <form @submit.prevent="handleCreateScene" class="create-scene-form">
-          <input v-model="newSceneName" placeholder="Nome da Nova Cena" required />
+          <h4>Criar Nova Cena</h4>
+          <input v-model="newSceneName" placeholder="Nome da Cena" required />
           <input v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
           <button type="submit">Adicionar Cena</button>
         </form>
       </div>
+
+      <div class="panel-section">
+        <h4>Editar Cena Ativa</h4>
+        <div class="map-controls">
+          <label for="map-url">URL do Mapa:</label>
+          <input id="map-url" type="url" v-model="mapUrlInput" placeholder="URL da imagem da cena" />
+          <button @click="setMap">Definir Mapa</button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h4>Controles do Grid</h4>
+        <div class="grid-controls">
+          <label for="grid-size">Tamanho (quadrados):</label>
+          <input id="grid-size" type="number" v-model="gridSize" min="1" />
+        </div>
+      </div>
     </aside>
 
     <main class="battlemap-main">
-      <h1>{{ currentTable?.name || 'Battlemap' }}</h1>
-      
-      <GridDisplay
-        :squares="squares"
-        :gridSize="gridSize"
-        :squareSizePx="squareSizePx"
-        :selectedTokenId="selectedTokenId"
-        :mapUrl="currentMapUrl"
-        @square-right-click="handleRightClick"
-        @square-left-click="handleLeftClickOnSquare"
-        @token-move-requested="handleTokenMoveRequest"
-      />
+      <h1 v-if="currentTable">{{ currentTable.name }}</h1>
+      <h3 v-if="activeSceneId" class="active-scene-name">Cena Ativa: {{ scenes.find(s => s._id === activeSceneId)?.name }}</h3>
+
+      <div class="map-container">
+        <img v-if="currentMapUrl" :src="currentMapUrl" alt="Mapa de Batalha" class="map-image" />
+        <div v-else class="map-placeholder">
+          <p>Nenhum mapa definido para esta cena.</p>
+          <p v-if="isDM">Use o Painel do Mestre para definir uma imagem.</p>
+        </div>
+        
+        <GridDisplay
+          :squares="squares"
+          :gridSize="gridSize"
+          :selectedTokenId="selectedTokenId"
+          @square-right-click="handleRightClick"
+          @square-left-click="handleLeftClickOnSquare"
+          @token-move-requested="handleTokenMoveRequest"
+        />
+      </div>
     </main>
 
     <TokenCreationForm
@@ -373,6 +403,32 @@ main{
   margin-top: 0;
   text-align: center;
   color: #ffc107;
+}
+.grid-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    align-items: stretch;
+}
+.grid-controls label {
+    font-size: 0.9em;
+    text-align: left;
+}
+.grid-controls input {
+    width: 100%;
+}
+.map-container {
+  position: relative; 
+  width: 100%;
+  max-width: 1200px; 
+  margin-top: 20px;
+}
+
+.map-image {
+  display: block; 
+  width: 100%; 
+  height: auto; 
+  border-radius: 4px;
 }
 .panel-section {
   margin-top: 25px;

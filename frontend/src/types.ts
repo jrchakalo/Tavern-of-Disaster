@@ -27,4 +27,5 @@ export interface IScene {
   tableId: string;
   name: string;
   imageUrl?: string;
+  gridSize?: number; // Tamanho da grade, se necessário
 }

@@ -5,9 +5,9 @@ import type { GridSquare, TokenInfo } from '../types';
 interface Props {
   squares: GridSquare[];
   gridSize: number;
-  squareSizePx: number;
+  //squareSizePx: number;
   selectedTokenId: string | null;
-  mapUrl: string | null;
+  //mapUrl: string | null;
 }
 
 const props = defineProps<Props>();
@@ -20,8 +20,8 @@ const emit = defineEmits<{
 const gridContainerStyle = computed(() => {
   return {
     '--grid-columns': props.gridSize,
-    '--grid-square-size': `${props.squareSizePx}px`,
-    backgroundImage: props.mapUrl ? `url(${props.mapUrl})` : 'none',
+    //'--grid-square-size': `${props.squareSizePx}px`,
+    //backgroundImage: props.mapUrl ? `url(${props.mapUrl})` : 'none',
   };
 });
 
@@ -94,23 +94,24 @@ function onSquareRightClick(square: GridSquare) {
 
 <style scoped>
 .grid-container {
+  position: absolute;
+  top: 0;
+  left: 0;
   display: grid;
-  grid-template-columns: repeat(var(--grid-columns), var(--grid-square-size));
-  grid-template-rows: repeat(var(--grid-columns), var(--grid-square-size));
+  grid-template-columns: repeat(var(--grid-columns), 1fr);
+  grid-template-rows: repeat(var(--grid-columns), 1fr);
   gap: 0;
-
-  border: 2px solid #333;
-  background-color: #eee;
-  width: fit-content;
-  background-size: cover; /* Faz a imagem de fundo cobrir todo o grid */
-  background-position: center;
+  padding: 0;
+  /*border: 2px solid #333;*/
+  /*background-color: #eee;*/
+  /*width: fit-content;*/
+  width: 100%;
+  height: 100%;
+  /*background-size: cover;*/
+  /*background-position: center;*/
 }
 
 .grid-square {
-  width: var(--grid-square-size);
-  height: var(--grid-square-size);
-  background-color: #fff;
-  border: 1px solid #ccc;
   display: flex;
   justify-content: center;
   align-items: center;

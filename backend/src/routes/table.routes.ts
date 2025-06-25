@@ -103,7 +103,7 @@ router.post('/join', authMiddleware, (async (req: AuthRequest, res) => {
 router.post('/:tableId/scenes', authMiddleware, (async (req: AuthRequest, res) => {
   try {
     const { tableId } = req.params;
-    const { name, imageUrl } = req.body;
+    const { name, imageUrl, gridSize } = req.body;
     const userId = req.user?.id;
 
     const table = await Table.findById(tableId);
@@ -117,7 +117,8 @@ router.post('/:tableId/scenes', authMiddleware, (async (req: AuthRequest, res) =
     const newScene = new Scene({
       tableId: table._id,
       name: name || 'Nova Cena', // Usa o nome fornecido ou um padrão
-      imageUrl: imageUrl || ''
+      imageUrl: imageUrl || '',
+      gridSize: gridSize || 30,
     });
     await newScene.save();
 
