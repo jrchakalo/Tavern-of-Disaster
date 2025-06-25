@@ -4,7 +4,7 @@ export interface IToken extends Document {
     _id: Types.ObjectId;
     squareId: string;
     color: string;
-    ownerSocketId: string;
+    ownerId: string;
     name: string;
     imageUrl?: string;
     tableId: Types.ObjectId;
@@ -14,7 +14,7 @@ export interface IToken extends Document {
 const TokenSchema: Schema = new Schema({
     squareId: { type: String, required: true, index: true },
     color: { type: String, required: true },
-    ownerSocketId: { type: String, required: true },
+    ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     name: { type: String, required: true, default: 'Token' }, 
     imageUrl: { type: String, required: false }, 
     tableId: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index:true },

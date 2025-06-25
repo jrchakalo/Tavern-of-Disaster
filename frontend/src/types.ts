@@ -2,9 +2,10 @@ export interface TokenInfo {
   _id: string;
   squareId: string;
   color: string;
-  ownerSocketId: string;
+  ownerId: string;
   name: string; 
   imageUrl?: string; 
+  sceneId: string;
 }
 
 export interface GridSquare {

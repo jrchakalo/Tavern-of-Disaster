@@ -43,12 +43,13 @@ function handleRightClick(square: GridSquare) {
 }
 
 function createToken(payload: { name: string, imageUrl: string }) {
-  if (socket && targetSquareIdForToken.value && tableId) {
+  if (socket && targetSquareIdForToken.value && tableId && activeSceneId.value) {
     socket.emit('requestPlaceToken', {
       tableId: tableId,
       squareId: targetSquareIdForToken.value,
       name: payload.name,
-      imageUrl: payload.imageUrl
+      imageUrl: payload.imageUrl,
+      sceneId: activeSceneId.value
     });
   }
   // Fecha o formulário
@@ -114,12 +115,32 @@ function handleSetActiveScene(sceneId: string) {
   }
 }
 
+function updateGrid(tokens: TokenInfo[]) {
+  const newSquaresLocal: GridSquare[] = [];
+  const totalExpectedSquares = gridSize.value * gridSize.value;
+  for (let i = 0; i < totalExpectedSquares; i++) {
+    newSquaresLocal.push({ id: `sq-${i}`, token: null });
+  }
+  if (tokens && tokens.length > 0) {
+    tokens.forEach(token => {
+      const frontendSqToUpdate = newSquaresLocal.find(s => s.id === token.squareId);
+      if (frontendSqToUpdate) {
+        frontendSqToUpdate.token = token;
+      }
+    });
+  }
+  squares.value = newSquaresLocal;
+}
+
 let socket: Socket | null = null;
 
 onMounted(() => {
   console.log('Componente App.vue montado. Tentando conectar ao Socket.IO...');
   socket = io('ws://localhost:3001', {
-    transports: ['websocket']
+    transports: ['websocket'],
+    auth: {
+      token: authToken.value
+    }
   })
 
   socket.on('connect', () => {
@@ -139,47 +160,19 @@ onMounted(() => {
     console.error('Erro de conexão:', error.message);
   });
 
-  socket.on('initialTokenState', (backendTokens: TokenInfo[]) => {
-    console.log('Recebido "initialTokenState" DO BACKEND:', backendTokens);
-
-    const newSquaresLocal: GridSquare[] = [];
-    const totalExpectedSquares = gridSize.value * gridSize.value;
-
-    for (let i = 0; i < totalExpectedSquares; i++) {
-      newSquaresLocal.push({ id: `sq-${i}`, token: null });
-    }
-
-    if (backendTokens && backendTokens.length > 0) {
-      backendTokens.forEach(token => {
-        const frontendSqToUpdate = newSquaresLocal.find(s => s.id === token.squareId);
-        if (frontendSqToUpdate) {
-          frontendSqToUpdate.token = token; // Atribui o objeto token inteiro
-        } else {
-          console.warn(`(initialTokenState) Token para squareId ${token.squareId} não encontrou quadrado correspondente no frontend.`);
-        }
-      });
-    }
-
-    squares.value = newSquaresLocal; // Atualiza o ref principal
-    console.log('squares.value populado/atualizado por initialTokenState:', JSON.parse(JSON.stringify(squares.value)));
-  });
-
   socket.on('tokenPlaced', (newToken: TokenInfo) => {
-    console.log('Recebido "tokenPlaced" DO BACKEND:', newToken);
-
-    const squareToUpdate = squares.value.find(sq => sq.id === newToken.squareId);
-
-    if (squareToUpdate) {
-      squareToUpdate.token = newToken; // Coloca o novo token no quadrado
-      console.log(`Token colocado no frontend em ${newToken.squareId}:`, JSON.parse(JSON.stringify(squareToUpdate)));
-    } else {
-      // Isso pode acontecer se o gridSize do frontend for diferente ou se a lista de squares não estiver sincronizada
-      console.warn(`Quadrado com ID ${newToken.squareId} não encontrado no frontend para "tokenPlaced".`);
+    // Só adiciona o token se ele pertencer à cena ativa
+    if(newToken.sceneId === activeSceneId.value) {
+      const squareToUpdate = squares.value.find(sq => sq.id === newToken.squareId);
+      if (squareToUpdate) squareToUpdate.token = newToken;
     }
   });
 
-  socket.on('tokenMoved', (movedTokenData: TokenInfo & { oldSquareId: string }) => {
-    console.log('Recebido "tokenMoved" DO BACKEND:', movedTokenData);
+socket.on('tokenMoved', (movedTokenData: TokenInfo & { oldSquareId: string }) => {
+  console.log('Recebido "tokenMoved" DO BACKEND:', movedTokenData);
+
+  // Verificação para processar o movimento apenas se ele pertencer à cena ativa
+  if (movedTokenData.sceneId === activeSceneId.value) {
 
     // Remover o token do quadrado antigo
     const oldSquare = squares.value.find(sq => sq.id === movedTokenData.oldSquareId);
@@ -191,27 +184,25 @@ onMounted(() => {
     }
 
     // Adicionar/Atualizar o token no novo quadrado
-    const newSquare = squares.value.find(sq => sq.id === movedTokenData.squareId); // squareId aqui é o novo squareId
+    const newSquare = squares.value.find(sq => sq.id === movedTokenData.squareId);
     if (newSquare) {
       console.log(`Colocando token no novo quadrado: ${movedTokenData.squareId}`);
-      // Recria o objeto token para o frontend com os dados recebidos
       newSquare.token = {
         _id: movedTokenData._id,
         squareId: movedTokenData.squareId,
         color: movedTokenData.color,
-        ownerSocketId: movedTokenData.ownerSocketId,
+        ownerId: movedTokenData.ownerId,
         name: movedTokenData.name,
-        imageUrl: movedTokenData.imageUrl
+        imageUrl: movedTokenData.imageUrl,
+        sceneId: movedTokenData.sceneId,
       };
     } else {
       console.warn(`Novo quadrado ${movedTokenData.squareId} não encontrado no frontend para colocar token.`);
     }
-  });
-
-  socket.on('mapUpdated', (data: { mapUrl: string }) => {
-    console.log('Recebido "mapUpdated", novo mapa:', data.mapUrl);
-    currentMapUrl.value = data.mapUrl;
-  });
+  } else {
+    console.log(`Movimento do token ignorado, pois pertence à cena ${movedTokenData.sceneId} e a cena ativa é ${activeSceneId.value}`);
+  }
+});
 
   socket.on('tokenPlacementError', (error: { message: string }) => {
     console.error('Erro do backend ao colocar token:', error.message);
@@ -223,15 +214,7 @@ onMounted(() => {
     scenes.value = data.allScenes;
     activeSceneId.value = data.activeScene?._id || null;
     currentMapUrl.value = data.activeScene?.imageUrl || '';
-
-    // Lógica para popular os quadrados com os tokens da cena ativa (a que já tínhamos)
-    const newSquaresLocal: GridSquare[] = [];
-    // ... (crie os quadrados vazios) ...
-    data.tokens.forEach(token => {
-      const sq = newSquaresLocal.find(s => s.id === token.squareId);
-      if (sq) sq.token = token;
-    });
-    squares.value = newSquaresLocal;
+    updateGrid(data.tokens); // Usa a função auxiliar
   });
 
   // Listener para quando a cena ou os tokens mudam
@@ -239,13 +222,8 @@ onMounted(() => {
     console.log("Estado da sessão atualizado:", newState);
     activeSceneId.value = newState.activeScene?._id || null;
     currentMapUrl.value = newState.activeScene?.imageUrl || '';
-
-    // Repopula os quadrados com os novos tokens
-    const newSquaresLocal: GridSquare[] = [];
-    // ... (mesma lógica de criar quadrados e popular com newState.tokens) ...
-    squares.value = newSquaresLocal;
+    updateGrid(newState.tokens); // Usa a função auxiliar
   });
-
 });
 
 onUnmounted(() => {
