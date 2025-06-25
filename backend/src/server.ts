@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import jwt from 'jsonwebtoken';
 import connectDB from './config/db';
 import Token, { IToken } from './models/Token.model';
 import Table from './models/Table.model';
@@ -39,6 +40,27 @@ async function getFullSessionState(tableId: string, sceneId: string) {
   return { activeScene, tokens };
 }
 
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  if (!token) {
+    return next(new Error('Authentication error: Token não fornecido.'));
+  }
+
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return next(new Error('Authentication error: JWT Secret não configurada no servidor.'));
+  }
+
+  jwt.verify(token, jwtSecret, (err: any, decoded: any) => {
+    if (err) {
+      return next(new Error('Authentication error: Token inválido.'));
+    }
+    // Anexa o usuário ao objeto socket para uso posterior
+    socket.data.user = decoded.user;
+    next();
+  });
+});
+
 // Configuração do Socket.IO
 io.on('connection', async (socket) => {
   console.log(`Usuário conectado:, ${socket.id}`);
@@ -67,7 +89,10 @@ io.on('connection', async (socket) => {
 
   socket.on('requestPlaceToken', async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string }) => {
     try {
-      const { tableId, sceneId, squareId, name, imageUrl } = data; // <<< Pega o sceneId dos dados
+      const userId = socket.data.user?.id; 
+      if (!userId) return;
+
+      const { tableId, sceneId, squareId, name, imageUrl } = data;
 
       if (!sceneId) {
         socket.emit('tokenPlacementError', { message: 'ID da cena não fornecido.' });
@@ -88,7 +113,7 @@ io.on('connection', async (socket) => {
         sceneId, 
         squareId,
         color: tokenColor,
-        ownerSocketId: socket.id,
+        ownerId: userId,
         name,
         imageUrl
       });
@@ -105,6 +130,10 @@ io.on('connection', async (socket) => {
   socket.on('requestMoveToken', async (data: { tableId: string, tokenId: string; targetSquareId: string }) => {
     console.log(`Recebido 'requestMoveToken' de ${socket.id}:`, data);
     try {
+
+      const userId = socket.data.user?.id;
+      if (!userId) return;
+
       const { tableId, tokenId, targetSquareId } = data;
 
       if (!tokenId || !targetSquareId) {
@@ -128,9 +157,8 @@ io.on('connection', async (socket) => {
         return;
       }
 
-      
-      if (tokenToMove.ownerSocketId !== socket.id) {
-        console.log(`Usuário ${socket.id} tentou mover token ${tokenId} que não lhe pertence.`);
+      if (tokenToMove.ownerId.toString() !== userId) {
+        console.log(`Usuário ${userId} tentou mover token ${data.tokenId} que não lhe pertence.`);
         socket.emit('tokenMoveError', { message: 'Você não tem permissão para mover este token.' });
         return;
       }
@@ -154,9 +182,10 @@ io.on('connection', async (socket) => {
         oldSquareId: oldSquareId,
         squareId: tokenToMove.squareId, // Novo squareId
         color: tokenToMove.color,
-        ownerSocketId: tokenToMove.ownerSocketId,
+        ownerId: tokenToMove.ownerId.toString(),
         name: tokenToMove.name,
-        imageUrl: tokenToMove.imageUrl
+        imageUrl: tokenToMove.imageUrl,
+        sceneId: tokenToMove.sceneId ? tokenToMove.sceneId.toString() : "",
       });
     } catch (error: any) {
       console.error('Erro ao processar requestMoveToken:', error.message);
