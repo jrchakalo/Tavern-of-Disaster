@@ -506,7 +506,9 @@ main{
   max-height: 100%;
 }
 .map-image {
-  object-fit: contain; 
+  object-fit: contain;
+  min-width: 1000px;
+  min-height: 600px;
 }
 .grid-overlay {
   width: 100%;
