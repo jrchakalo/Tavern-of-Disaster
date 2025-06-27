@@ -28,4 +28,5 @@ export interface IScene {
   name: string;
   imageUrl?: string;
   gridSize?: number; // Tamanho da grade, se necessário
+  type?: 'battlemap' | 'image';
 }

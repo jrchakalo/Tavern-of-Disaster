@@ -4,6 +4,7 @@ import mongoose, { Types } from 'mongoose'
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
 import Table from '../models/Table.model';
 import Scene from '../models/Scene.model';
+import Token from '../models/Token.model';
 
 const router = Router();
 
@@ -103,7 +104,7 @@ router.post('/join', authMiddleware, (async (req: AuthRequest, res) => {
 router.post('/:tableId/scenes', authMiddleware, (async (req: AuthRequest, res) => {
   try {
     const { tableId } = req.params;
-    const { name, imageUrl, gridSize } = req.body;
+    const { name, imageUrl, gridSize, type } = req.body;
     const userId = req.user?.id;
 
     const table = await Table.findById(tableId);
@@ -119,6 +120,7 @@ router.post('/:tableId/scenes', authMiddleware, (async (req: AuthRequest, res) =
       name: name || 'Nova Cena', // Usa o nome fornecido ou um padrão
       imageUrl: imageUrl || '',
       gridSize: gridSize || 30,
+      type: type || 'battlemap', // Define o tipo da cena, padrão é 'battlemap'
     });
     await newScene.save();
 
@@ -132,6 +134,63 @@ router.post('/:tableId/scenes', authMiddleware, (async (req: AuthRequest, res) =
     console.error('Erro ao adicionar cena:', error);
     res.status(500).json({ message: 'Erro interno ao adicionar cena.' });
   }
+}) as RequestHandler);
+
+router.put('/:tableId/scenes/:sceneId', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId, sceneId } = req.params;
+    const { name} = req.body; // Pega os novos dados do corpo da requisição
+    const userId = req.user?.id;
+
+    const table = await Table.findById(tableId);
+    if (!table || table.dm.toString() !== userId) {
+      return res.status(403).json({ message: 'Acesso negado.' });
+    }
+
+    // Garante que a cena a ser editada realmente pertence à mesa
+    if (!table.scenes.map(s => s.toString()).includes(sceneId)) {
+      return res.status(404).json({ message: 'Cena não encontrada nesta mesa.' });
+    }
+
+    const updatedScene = await Scene.findByIdAndUpdate(
+      sceneId,
+      { name },
+      { new: true } // Retorna o documento atualizado
+    );
+
+    if (!updatedScene) return res.status(404).json({ message: 'Cena não encontrada.' });
+
+    res.json(updatedScene);
+
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao editar a cena.' });
+  }
+}) as RequestHandler);
+
+
+router.delete('/:tableId/scenes/:sceneId', authMiddleware, (async (req: AuthRequest, res) => {
+    try {
+        const { tableId, sceneId } = req.params;
+        const userId = req.user?.id;
+
+        const table = await Table.findById(tableId);
+        if (!table || table.dm.toString() !== userId) {
+            return res.status(403).json({ message: 'Acesso negado.' });
+        }
+        if (table.activeScene?.toString() === sceneId) {
+            return res.status(400).json({ message: 'Não é possível excluir a cena ativa.' });
+        }
+
+        // Remove a cena da lista da mesa
+        await Table.findByIdAndUpdate(tableId, { $pull: { scenes: sceneId } });
+        // Deleta o documento da cena em si
+        await Scene.findByIdAndDelete(sceneId);
+        await Token.deleteMany({ sceneId: sceneId });
+
+        res.status(200).json({ message: 'Cena excluída com sucesso.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Erro ao excluir a cena.' });
+    }
 }) as RequestHandler);
 
 export default router;

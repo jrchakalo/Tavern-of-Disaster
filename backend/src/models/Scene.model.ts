@@ -6,6 +6,7 @@ export interface IScene extends Document {
   name: string; 
   imageUrl?: string;
   gridSize?: number; // Tamanho da grade, se necessário
+  type: 'battlemap' | 'image';
   // No futuro: tokens: [{ tokenId, positionX, positionY }]
 }
 
@@ -14,6 +15,11 @@ const SceneSchema: Schema<IScene> = new Schema({
   name: { type: String, required: true, default: 'Cena Padrão' },
   imageUrl: { type: String, required: false },
   gridSize: { type: Number, default: 30, required: true },
+  type: { 
+    type: String, 
+    enum: ['battlemap', 'image'], 
+    default: 'battlemap'
+  },
 }, {
   timestamps: true
 });

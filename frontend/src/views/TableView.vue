@@ -11,7 +11,6 @@ const route = useRoute();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
 const gridSize = ref(30);
 
-
 const squares = ref<GridSquare[]>([]);
 const selectedTokenId = ref<string | null>(null);
 
@@ -26,10 +25,14 @@ const activeSceneId = ref<string | null>(null); // Armazena o ID da cena ativa
 
 const newSceneName = ref('');
 const newSceneImageUrl = ref('');
+const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena, padrão é 'battlemap
 
 const currentTable = ref<ITable | null>(null);
 const isDM = computed(() => {
   return currentUser.value?.id === currentTable.value?.dm;
+});
+const activeScene = computed(() => {
+    return scenes.value.find(s => s._id === activeSceneId.value) || null;
 });
 
 function setMap() {
@@ -99,7 +102,9 @@ async function handleCreateScene() {
       },
       body: JSON.stringify({ 
         name: newSceneName.value,
-        imageUrl: newSceneImageUrl.value
+        imageUrl: newSceneImageUrl.value,
+        gridSize: 30, // Tamanho padrão do grid
+        type: newSceneType.value, // Envia o tipo da cena
       }),
     });
 
@@ -118,6 +123,61 @@ function handleSetActiveScene(sceneId: string) {
   if (socket && tableId) {
     socket.emit('requestSetActiveScene', { tableId, sceneId });
   }
+}
+
+function handleEditScene(scene: IScene) {
+  // Abre um prompt simples do navegador para pegar os novos valores
+  const newName = prompt("Digite o novo nome para a cena:", scene.name);
+
+  if (newName === null) return; // Usuário cancelou
+
+  // Chama a nova API PUT para editar
+  fetch(`http://localhost:3001/api/tables/${tableId}/scenes/${scene._id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken.value}`,
+    },
+    body: JSON.stringify({ name: newName }),
+  })
+  .then(res => res.json())
+  .then(updatedScene => {
+    if (updatedScene._id) {
+      // Atualiza a cena na lista local para refletir a mudança imediatamente
+      const index = scenes.value.findIndex(s => s._id === updatedScene._id);
+      if (index !== -1) {
+        scenes.value[index] = updatedScene;
+      }
+    } else {
+      alert(`Erro: ${updatedScene.message}`);
+    }
+  })
+  .catch(err => console.error("Erro ao editar cena:", err));
+}
+
+async function handleDeleteScene(sceneId: string) {
+  // Pede confirmação antes de uma ação destrutiva
+  if (!confirm("Tem certeza que deseja excluir esta cena? Esta ação não pode ser desfeita.")) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`http://localhost:3001/api/tables/${tableId}/scenes/${sceneId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${authToken.value}`,
+      },
+    });
+
+    const data = await response.json();
+    if (response.ok) {
+      // Remove a cena da lista local para refletir a mudança imediatamente
+      scenes.value = scenes.value.filter(s => s._id !== sceneId);
+      alert(data.message);
+    } else {
+      alert(`Erro: ${data.message}`);
+    }
+  } catch (error) { console.error("Erro ao excluir cena:", error); }
 }
 
 function updateGrid(tokens: TokenInfo[]) {
@@ -270,37 +330,48 @@ onUnmounted(() => {
       <h2>Painel do Mestre</h2>
 
       <div class="panel-section scene-manager">
-        <h3>Cenas</h3>
+        <form @submit.prevent="handleCreateScene" class="create-scene-form">
+          <h4>Criar Nova Cena</h4>
+          <input v-model="newSceneName" placeholder="Nome da Cena" required />
+          <input v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
+
+          <select v-model="newSceneType">
+            <option value="battlemap">Battlemap</option>
+            <option value="image">Imagem</option>
+          </select>
+
+          <button type="submit">Adicionar Cena</button>
+        </form>
+
         <ul class="scene-list">
+          <h3>Cenas</h3>
           <li 
             v-for="scene in scenes" 
             :key="scene._id"
             :class="{ 'active-scene': scene._id === activeSceneId }"
           >
             <span>{{ scene.name }}</span>
-            <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">
-              Ativar
-            </button>
+            <div class="scene-buttons">
+              <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">
+                Ativar
+              </button>
+              <button @click="handleEditScene(scene)">✏️</button>
+              <button @click="handleDeleteScene(scene._id)" :disabled="scene._id === activeSceneId" class="delete-btn">🗑️</button>
+            </div>
           </li>
         </ul>
-        <form @submit.prevent="handleCreateScene" class="create-scene-form">
-          <h4>Criar Nova Cena</h4>
-          <input v-model="newSceneName" placeholder="Nome da Cena" required />
-          <input v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
-          <button type="submit">Adicionar Cena</button>
-        </form>
-      </div>
 
-      <div class="panel-section">
-        <h4>Editar Cena Ativa</h4>
-        <div class="map-controls">
-          <label for="map-url">URL do Mapa:</label>
-          <input id="map-url" type="url" v-model="mapUrlInput" placeholder="URL da imagem da cena" />
-          <button @click="setMap">Definir Mapa</button>
+        <div class="panel-section">
+          <h4>Editar Imagem da Cena Ativa</h4>
+          <div class="map-controls">
+            <label for="map-url">URL da Imagem:</label>
+            <input id="map-url" type="url" v-model="mapUrlInput" placeholder="URL da imagem da cena" />
+            <button @click="setMap">Definir Imagem</button>
+          </div>
         </div>
       </div>
 
-      <div class="panel-section">
+      <div v-if="activeScene?.type === 'battlemap'" class="panel-section">
         <h4>Controles do Grid</h4>
         <div class="grid-controls">
           <label for="grid-size">Tamanho (quadrados):</label>
@@ -314,20 +385,29 @@ onUnmounted(() => {
       <h3 v-if="activeSceneId" class="active-scene-name">Cena Ativa: {{ scenes.find(s => s._id === activeSceneId)?.name }}</h3>
 
       <div class="map-container">
-        <img v-if="currentMapUrl" :src="currentMapUrl" alt="Mapa de Batalha" class="map-image" />
-        <div v-else class="map-placeholder">
-          <p>Nenhum mapa definido para esta cena.</p>
-          <p v-if="isDM">Use o Painel do Mestre para definir uma imagem.</p>
+        <div class="map-content-wrapper">
+          <img 
+            v-if="currentMapUrl" 
+            :src="currentMapUrl" 
+            alt="Mapa de Batalha" 
+            class="map-image" 
+          />
+          <div v-else class="map-placeholder">
+            <p>Nenhum mapa definido para esta cena.</p>
+            <p v-if="isDM">Use o Painel do Mestre para definir uma imagem.</p>
+          </div>
+
+          <GridDisplay v-if="activeScene?.type === 'battlemap' && currentMapUrl"
+            class="grid-overlay"
+            :squares="squares"
+            :gridSize="gridSize"
+            :selectedTokenId="selectedTokenId"
+            @square-right-click="handleRightClick"
+            @square-left-click="handleLeftClickOnSquare"
+            @token-move-requested="handleTokenMoveRequest"
+          />
+          
         </div>
-        
-        <GridDisplay
-          :squares="squares"
-          :gridSize="gridSize"
-          :selectedTokenId="selectedTokenId"
-          @square-right-click="handleRightClick"
-          @square-left-click="handleLeftClickOnSquare"
-          @token-move-requested="handleTokenMoveRequest"
-        />
       </div>
     </main>
 
@@ -347,27 +427,6 @@ main{
   flex-direction: column;
   align-items: center;
   margin-top: 20px;
-}
-.map-controls {
-  margin-bottom: 20px;
-  display: flex;
-  gap: 10px;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-}
-.map-controls input {
-  padding: 5px;
-  min-width: 300px;
-  box-sizing: border-box;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 14px;
-  transition: border-color 0.3s ease;
-}
-.map-controls button, .create-scene-form button {
-  width: 100%;
-  padding: 10px;
 }
 .table-view-container {
   display: flex;
@@ -418,17 +477,40 @@ main{
     width: 100%;
 }
 .map-container {
-  position: relative; 
   width: 100%;
-  max-width: 1200px; 
+  max-width: 1200px; /* Limita a largura máxima do mapa */
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.3); /* Cinza mais claro meio translucido */
+  border: 10px solid rgba(0, 0, 0, 0.5); /* Borda para simular a moldura da mesa */
+  box-sizing: border-box;
+  border-radius: 8px;
+  padding: 15px; /* Um espaçamento interno */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.map-content-wrapper {
+  width: 100%;
+  justify-content: center;
+  align-items: center;
+  display: grid;
+  max-width: 1200px;
+  min-height: 400px;
+  place-items: center;
+  border-radius: 4px;
   margin-top: 20px;
 }
-
+.map-image, .grid-overlay {
+  grid-area: 1 / 1 / 2 / 2;
+  max-width: 100%;
+  max-height: 100%;
+}
 .map-image {
-  display: block; 
-  width: 100%; 
-  height: auto; 
-  border-radius: 4px;
+  object-fit: contain; 
+}
+.grid-overlay {
+  width: 100%;
+  height: 100%;
 }
 .panel-section {
   margin-top: 25px;
@@ -464,5 +546,26 @@ main{
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.map-controls {
+  margin-bottom: 20px;
+  display: flex;
+  gap: 10px;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+.map-controls input {
+  padding: 5px;
+  min-width: 300px;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.3s ease;
+}
+.map-controls button, .create-scene-form button {
+  width: 100%;
+  padding: 10px;
 }
 </style>

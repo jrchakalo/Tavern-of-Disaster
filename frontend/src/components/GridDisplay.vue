@@ -94,21 +94,11 @@ function onSquareRightClick(square: GridSquare) {
 
 <style scoped>
 .grid-container {
-  position: absolute;
-  top: 0;
-  left: 0;
+  width: 100%;
+  height: 100%;
   display: grid;
   grid-template-columns: repeat(var(--grid-columns), 1fr);
   grid-template-rows: repeat(var(--grid-columns), 1fr);
-  gap: 0;
-  padding: 0;
-  /*border: 2px solid #333;*/
-  /*background-color: #eee;*/
-  /*width: fit-content;*/
-  width: 100%;
-  height: 100%;
-  /*background-size: cover;*/
-  /*background-position: center;*/
 }
 
 .grid-square {
@@ -117,13 +107,13 @@ function onSquareRightClick(square: GridSquare) {
   align-items: center;
   box-sizing: border-box;
   cursor: pointer;  /*Indica que é clicável*/
-  background-color: rgba(255, 255, 255, 0.00); 
-  border: 1px solid rgba(0, 0, 0, 0.75);
+  background-color: rgba(255, 255, 255, 0.05); 
+  border: 1px solid rgba(0, 0, 0, 0.4);
 }
 
 .token {
-  width: 70%;  /* 70% do tamanho do quadrado pai */
-  height: 70%;
+  width: 80%;  /* 70% do tamanho do quadrado pai */
+  height: 80%;
   border-radius: 50%; /* Para fazer uma bolinha */
   box-sizing: border-box;
   display: flex;
@@ -135,6 +125,7 @@ function onSquareRightClick(square: GridSquare) {
   text-shadow: 1px 1px 1px black; /* Sombra para melhor leitura do texto, se houver */
   background-color: transparent; /* Remove a cor de fundo do container do token */
   overflow: hidden; /* Garante que a imagem fique contida no círculo */
+  cursor: grab;
 }
 
 .token-image {
