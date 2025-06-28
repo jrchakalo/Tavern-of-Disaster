@@ -11,15 +11,25 @@ export const currentUser = ref<UserPayload | null>(null);
 
 function updateUserState(token: string | null) {
   if (token) {
-    localStorage.setItem('authToken', token);
-    authToken.value = token;
     try {
-      // Decodifica o token para extrair as informações do usuário
-      const decoded = jwtDecode<{ user: UserPayload }>(token);
+      // Decodifica o token para ler seu conteúdo e data de expiração
+      const decoded = jwtDecode<{ user: UserPayload, exp: number }>(token);
+
+      // Se a data de expiração for no passado, o token está expirado.
+      if (decoded.exp * 1000 < Date.now()) {
+        console.log('Token encontrado no localStorage, mas está expirado. Limpando...');
+        throw new Error('Token expirado'); // Lança um erro para cair no bloco catch
+      }
+
+      // Se chegou aqui, o token é válido e não expirado
+      localStorage.setItem('authToken', token);
+      authToken.value = token;
       currentUser.value = decoded.user;
+      console.log('Estado de autenticação inicializado com token válido.');
+
     } catch (error) {
-      console.error("Token inválido:", error);
-      // Limpa tudo se o token for inválido
+      console.error("Não foi possível processar o token:", error);
+      // Limpa o estado e o localStorage para garantir
       localStorage.removeItem('authToken');
       authToken.value = null;
       currentUser.value = null;
