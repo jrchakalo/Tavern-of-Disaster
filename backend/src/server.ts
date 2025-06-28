@@ -275,6 +275,97 @@ io.on('connection', async (socket) => {
     }
   });
 
+  socket.on('requestAddCharacterToInitiative', async (data: { tableId: string, sceneId: string, characterName: string }) => {
+    try {
+      const { tableId, sceneId, characterName } = data;
+      const userId = socket.data.user?.id;
+
+      const table = await Table.findById(tableId);
+      if (!table) return;
+
+      if (table.dm.toString() !== userId) {
+        console.log(`[AUTH] Falha: Usuário ${userId} tentou adicionar personagem à iniciativa da mesa ${tableId}, mas não é o mestre.`);
+        return socket.emit('error', { message: 'Apenas o Mestre pode adicionar personagens à iniciativa.' });
+      }
+
+      const newEntry = { characterName, isCurrentTurn: false };
+
+      const updatedScene = await Scene.findByIdAndUpdate(
+        sceneId,
+        { $push: { initiative: newEntry } },
+        { new: true }
+      );
+
+      io.to(tableId).emit('initiativeUpdated', updatedScene?.initiative);
+    } catch (error) { 
+      console.error("Erro ao adicionar personagem à iniciativa:", error); 
+    }
+  });
+
+  socket.on('requestNextTurn', async (data: { tableId: string, sceneId: string }) => {
+    try {
+      const { tableId, sceneId } = data;
+      const userId = socket.data.user?.id; 
+      
+      const table = await Table.findById(tableId);
+      if (!table) return;
+
+      if (table.dm.toString() !== userId) {
+        console.log(`[AUTH] Falha: Usuário ${userId} tentou avançar o turno da mesa ${tableId}, mas não é o mestre.`);
+        return socket.emit('error', { message: 'Apenas o Mestre pode avançar o turno.' });
+      }
+
+      const scene = await Scene.findById(sceneId);
+      if (!scene || scene.initiative.length === 0) return;
+
+      const initiativeList = scene.initiative;
+      const currentTurnIndex = initiativeList.findIndex(entry => entry.isCurrentTurn);
+
+      // Desmarca o turno atual
+      if (currentTurnIndex !== -1) {
+          initiativeList[currentTurnIndex].isCurrentTurn = false;
+      }
+
+      // Encontra o próximo turno, voltando ao início se chegar ao fim
+      const nextTurnIndex = (currentTurnIndex + 1) % initiativeList.length;
+      initiativeList[nextTurnIndex].isCurrentTurn = true;
+
+      // Salva o estado atualizado da lista no documento da cena
+      scene.initiative = initiativeList;
+      await scene.save();
+
+      // Notifica todos na sala sobre a lista de iniciativa atualizada
+      io.to(tableId).emit('initiativeUpdated', scene.initiative);
+    } catch (error) { 
+      console.error("Erro ao avançar o turno:", error); 
+    }
+  });
+
+  socket.on('requestResetInitiative', async (data: { tableId: string, sceneId: string }) => {
+    try {
+      const { tableId, sceneId } = data;
+      const userId = socket.data.user?.id;
+
+      const table = await Table.findById(tableId);
+      if (!table) return;
+      
+      if (table.dm.toString() !== userId) {
+          console.log(`[AUTH] Falha: Usuário ${userId} tentou resetar a iniciativa da mesa ${tableId}, mas não é o mestre.`);
+          return socket.emit('error', { message: 'Apenas o Mestre pode resetar a iniciativa.' });
+      }
+
+      const updatedScene = await Scene.findByIdAndUpdate(
+          sceneId,
+          { initiative: [] }, // Define o array de iniciativa como vazio
+          { new: true }
+      );
+
+      io.to(tableId).emit('initiativeUpdated', updatedScene?.initiative);
+    } catch (error) { 
+      console.error("Erro ao resetar a iniciativa:", error); 
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log(`Usuário desconectado: ${socket.id}`);
   });

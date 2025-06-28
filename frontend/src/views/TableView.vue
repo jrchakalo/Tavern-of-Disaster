@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { io, Socket } from 'socket.io-client';
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
-import type { GridSquare, TokenInfo, IScene, ITable } from '../types';
+import type { GridSquare, TokenInfo, IScene, ITable, IInitiativeEntry } from '../types';
 import { useRoute } from 'vue-router';
 import { authToken, currentUser } from '../auth';
 
@@ -22,6 +22,9 @@ const currentMapUrl = ref<string | null>(null); // Armazena a URL do mapa
 
 const scenes = ref<IScene[]>([]); // Armazena a lista de todas as cenas da mesa
 const activeSceneId = ref<string | null>(null); // Armazena o ID da cena ativa
+
+const initiativeList = ref<IInitiativeEntry[]>([]);
+const newCharacterName = ref('');
 
 const newSceneName = ref('');
 const newSceneImageUrl = ref('');
@@ -180,6 +183,29 @@ async function handleDeleteScene(sceneId: string) {
   } catch (error) { console.error("Erro ao excluir cena:", error); }
 }
 
+function handleAddCharacter() {
+  if (!newCharacterName.value.trim() || !tableId || !activeSceneId.value || !socket) return;
+
+  socket.emit('requestAddCharacterToInitiative', {
+    tableId,
+    sceneId: activeSceneId.value,
+    characterName: newCharacterName.value,
+  });
+
+  newCharacterName.value = ''; // Limpa o input
+}
+
+function handleNextTurn() {
+  if (!tableId || !activeSceneId.value || !socket) return;
+  socket.emit('requestNextTurn', { tableId, sceneId: activeSceneId.value });
+}
+
+function handleResetInitiative() {
+  if (!confirm("Tem certeza que deseja limpar toda a lista de iniciativa?")) return;
+  if (!tableId || !activeSceneId.value || !socket) return;
+  socket.emit('requestResetInitiative', { tableId, sceneId: activeSceneId.value });
+}
+
 function updateGrid(tokens: TokenInfo[]) {
   const newSquaresLocal: GridSquare[] = [];
   const totalExpectedSquares = gridSize.value * gridSize.value;
@@ -298,6 +324,7 @@ onMounted(() => {
     currentMapUrl.value = data.activeScene?.imageUrl || '';
     gridSize.value = data.activeScene?.gridSize || 30;
     updateGrid(data.tokens);
+    initiativeList.value = data.activeScene?.initiative || [];
   });
 
   socket.on('sessionStateUpdated', (newState: { activeScene: IScene | null, tokens: TokenInfo[] }) => {
@@ -306,12 +333,18 @@ onMounted(() => {
     currentMapUrl.value = newState.activeScene?.imageUrl || '';
     gridSize.value = newState.activeScene?.gridSize || 30;
     updateGrid(newState.tokens); // Usa a função auxiliar
+    initiativeList.value = newState.activeScene?.initiative || [];
   });
 
   socket.on('mapUpdated', (data: { mapUrl: string }) => {
     console.log('Mapa atualizado recebido do servidor:', data.mapUrl);
     currentMapUrl.value = data.mapUrl; // Atualiza a URL do mapa localmente
     mapUrlInput.value = data.mapUrl; // Atualiza o campo de input para refletir a mudança
+  });
+
+  socket.on('initiativeUpdated', (newInitiativeList: IInitiativeEntry[]) => {
+    console.log('Recebida lista de iniciativa atualizada:', newInitiativeList);
+    initiativeList.value = newInitiativeList;
   });
 });
 
@@ -342,6 +375,27 @@ onUnmounted(() => {
 
           <button type="submit">Adicionar Cena</button>
         </form>
+      
+      <div class="panel-section">
+        <h3>Iniciativa</h3>
+        <div class="initiative-controls">
+          <button @click="handleNextTurn">Próximo Turno</button>
+          <button @click="handleResetInitiative" class="delete-btn">Resetar</button>
+        </div>
+        <ul class="initiative-list">
+          <li
+            v-for="entry in initiativeList"
+            :key="entry._id"
+            :class="{ 'active-turn': entry.isCurrentTurn }"
+          >
+            <span>{{ entry.characterName }}</span>
+          </li>
+        </ul>
+        <form @submit.prevent="handleAddCharacter" class="add-character-form">
+          <input v-model="newCharacterName" placeholder="Nome do Personagem/Monstro" required />
+          <button type="submit">Adicionar à Iniciativa</button>
+        </form>
+      </div>
 
         <ul class="scene-list">
           <h3>Cenas</h3>
@@ -569,5 +623,41 @@ main{
 .map-controls button, .create-scene-form button {
   width: 100%;
   padding: 10px;
+}
+.initiative-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.initiative-controls button {
+  flex-grow: 1;
+}
+.initiative-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+  max-height: 250px; /* Limita a altura e adiciona scroll se necessário */
+  overflow-y: auto;
+  background-color: #2c2c2c;
+  border-radius: 4px;
+}
+.initiative-list li {
+  padding: 10px;
+  border-bottom: 1px solid #4f4f4f;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.initiative-list li:last-child {
+  border-bottom: none;
+}
+.initiative-list li.active-turn {
+  background-color: #5a9c5a; /* Destaque verde para o turno ativo */
+  font-weight: bold;
+}
+.add-character-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 </style>

@@ -16,10 +16,17 @@ export interface GridSquare {
 export interface ITable {
   _id: string;
   name: string;
-  dm: string; // Apenas o ID como string
+  dm: string;
   players: string[];
   inviteCode: string;
   activeScene?: string | null | undefined;
+}
+
+export interface IInitiativeEntry {
+  _id: string;
+  characterName: string;
+  tokenId?: string;
+  isCurrentTurn: boolean;
 }
 
 export interface IScene {
@@ -29,4 +36,5 @@ export interface IScene {
   imageUrl?: string;
   gridSize?: number; // Tamanho da grade, se necessário
   type?: 'battlemap' | 'image';
+  initiative: IInitiativeEntry[];
 }
