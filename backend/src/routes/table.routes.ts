@@ -57,7 +57,10 @@ router.get('/mytables', authMiddleware, (async (req: AuthRequest, res) => {
     }
 
     // Encontra todas as tabelas onde o array 'players' contém o ID do usuário
-    const tables = await Table.find({ players: userId }).sort({ createdAt: -1 });
+    const tables = await Table.find({ players: userId })
+      .populate('dm', 'username') // Pega o username do mestre
+      .populate('players', 'username') // Pega o username de cada jogador
+      .sort({ createdAt: -1 });
 
     res.json(tables);
 

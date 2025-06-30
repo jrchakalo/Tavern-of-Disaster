@@ -5,7 +5,8 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import connectDB from './config/db';
-import Token, { IToken } from './models/Token.model';
+import Token from './models/Token.model';
+import { IInitiativeEntry } from './models/Scene.model';
 import Table from './models/Table.model';
 import Scene from './models/Scene.model';
 import authRouter from './routes/auth.routes';
@@ -122,8 +123,23 @@ io.on('connection', async (socket) => {
       });
 
       await newToken.save();
-      io.to(tableId).emit('tokenPlaced', newToken); 
+      // Após salvar o token, também o adicionamos à iniciativa da cena
+      const newEntry = { 
+        characterName: newToken.name,
+        tokenId: newToken._id,
+        isCurrentTurn: false 
+      };
 
+      const updatedScene = await Scene.findByIdAndUpdate(
+        data.sceneId,
+        { $push: { initiative: newEntry } },
+        { new: true }
+      );
+
+      io.to(tableId).emit('tokenPlaced', newToken); 
+      if (updatedScene) {
+        io.to(data.tableId).emit('initiativeUpdated', updatedScene.initiative);
+      }
     } catch (error: any) {
       console.error('Erro ao processar requestPlaceToken:', error.message);
       socket.emit('tokenPlacementError', { message: 'Erro ao colocar o token.' });
@@ -160,10 +176,30 @@ io.on('connection', async (socket) => {
         return;
       }
 
-      if (tokenToMove.ownerId.toString() !== userId) {
-        console.log(`Usuário ${userId} tentou mover token ${data.tokenId} que não lhe pertence.`);
+      const table = await Table.findById(tableId);
+      if (!table) return;
+
+      const isDM = table.dm.toString() === userId;
+      const isOwner = tokenToMove.ownerId.toString() === userId;
+
+      if (!isDM && !isOwner) { // Se o usuário não for NEM o mestre E NEM o dono
+        console.log(`[AUTH] Falha: Usuário ${userId} tentou mover token ${tokenId} sem permissão.`);
         socket.emit('tokenMoveError', { message: 'Você não tem permissão para mover este token.' });
         return;
+      }
+      
+      const scene = await Scene.findById(tokenToMove.sceneId);
+      if (scene) {
+          const entryInInitiative = scene.initiative.find(entry => entry.tokenId?.toString() === tokenToMove._id.toString());
+          if (entryInInitiative && !entryInInitiative.isCurrentTurn) {
+              // Apenas Mestres podem mover fora do turno.
+              const table = await Table.findById(tableId);
+              if(table?.dm.toString() !== userId) { // Se quem está movendo não é o mestre
+                  console.log(`Usuário ${userId} tentou mover token ${tokenId} fora do seu turno.`);
+                  socket.emit('tokenMoveError', { message: 'Você só pode mover no seu turno.' });
+                  return;
+              }
+          }
       }
 
       const oldSquareId = tokenToMove.squareId; // Guarda o squareId antigo
@@ -269,15 +305,15 @@ io.on('connection', async (socket) => {
         allScenes: table?.scenes || []
       };
 
-      io.to(tableId).emit('sessionStateUpdated', newState);
+      socket.to(tableId).emit('sessionStateUpdated', newState);
     } catch (error) {
       console.error('Erro ao atualizar o tamanho do grid:', error);
     }
   });
 
-  socket.on('requestAddCharacterToInitiative', async (data: { tableId: string, sceneId: string, characterName: string }) => {
+  socket.on('requestAddCharacterToInitiative', async (data: { tableId: string, sceneId: string, tokenId: string }) => {
     try {
-      const { tableId, sceneId, characterName } = data;
+      const { tableId, sceneId, tokenId } = data;
       const userId = socket.data.user?.id;
 
       const table = await Table.findById(tableId);
@@ -288,7 +324,28 @@ io.on('connection', async (socket) => {
         return socket.emit('error', { message: 'Apenas o Mestre pode adicionar personagens à iniciativa.' });
       }
 
-      const newEntry = { characterName, isCurrentTurn: false };
+      if (!tokenId) {
+        socket.emit('error', { message: 'Nenhum token foi selecionado.' });
+        return;
+      }
+
+      const token = await Token.findById(tokenId);
+      if (!token) {
+          socket.emit('error', { message: 'Token não encontrado.' });
+          return;
+      }
+
+      const scene = await Scene.findById(sceneId);
+      if (scene && scene.initiative.some(entry => entry.tokenId?.toString() === tokenId)) {
+          socket.emit('error', { message: 'Este token já está na iniciativa.' });
+          return;
+      }
+
+      const newEntry = { 
+        characterName: token.name,
+        tokenId: token._id, 
+        isCurrentTurn: false
+      };
 
       const updatedScene = await Scene.findByIdAndUpdate(
         sceneId,
@@ -296,7 +353,9 @@ io.on('connection', async (socket) => {
         { new: true }
       );
 
-      io.to(tableId).emit('initiativeUpdated', updatedScene?.initiative);
+      if (updatedScene) {
+        io.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
+      }
     } catch (error) { 
       console.error("Erro ao adicionar personagem à iniciativa:", error); 
     }
@@ -364,6 +423,158 @@ io.on('connection', async (socket) => {
     } catch (error) { 
       console.error("Erro ao resetar a iniciativa:", error); 
     }
+  });
+
+  socket.on('requestRemoveFromInitiative', async (data: { tableId: string; sceneId: string; initiativeEntryId: string }) => {
+    try {
+      const { tableId, sceneId, initiativeEntryId } = data;
+      
+      const userId = socket.data.user?.id;
+      const table = await Table.findById(tableId);
+      if (!table) return;
+      if (table.dm.toString() !== userId) {
+        console.log(`[AUTH] Falha: Usuário ${userId} tentou remover da iniciativa da mesa ${tableId}, mas não é o mestre.`);
+        return socket.emit('error', { message: 'Apenas o Mestre pode remover personagens da iniciativa.' });
+      }
+
+      // Encontra a cena
+      const scene = await Scene.findById(sceneId);
+      const entryToRemove = scene?.initiative.find(e => e._id.toString() === initiativeEntryId);
+
+      if (entryToRemove && entryToRemove.tokenId) {
+        // Deleta o token associado
+        await Token.findByIdAndDelete(entryToRemove.tokenId);
+      }
+
+      // Remove a entrada do array de iniciativa no documento da cena
+      const updatedScene = await Scene.findByIdAndUpdate(
+        sceneId,
+        { $pull: { initiative: { _id: initiativeEntryId } } },
+        { new: true }
+      );
+
+      if (updatedScene) {
+        // Notifica sobre a lista de iniciativa atualizada
+        io.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
+
+        // Notifica que um token foi removido
+        if (entryToRemove?.tokenId) {
+          io.to(tableId).emit('tokenRemoved', { tokenId: entryToRemove.tokenId.toString() });
+        }
+      }
+    } catch (error) { 
+      console.error("Erro ao remover da iniciativa:", error); 
+    }
+  });
+
+  socket.on('requestReorderInitiative', async (data: { tableId: string; sceneId: string; newOrder: IInitiativeEntry[] }) => {
+    try {
+      const { tableId, sceneId, newOrder } = data;
+      const userId = socket.data.user?.id;
+
+      const table = await Table.findById(tableId);
+      if (!table) return;
+      if (table.dm.toString() !== userId) {
+        console.log(`[AUTH] Falha: Usuário ${userId} tentou reordenar a iniciativa da mesa ${tableId}, mas não é o mestre.`);
+        return socket.emit('error', { message: 'Apenas o Mestre pode reordenar a iniciativa.' });
+      }
+
+      // Atualiza todo o array 'initiative' da cena com a nova ordem recebida
+      const updatedScene = await Scene.findByIdAndUpdate(
+        sceneId,
+        { initiative: newOrder },
+        { new: true }
+      );
+
+      if (updatedScene) {
+        // Em vez de io.to, usamos socket.to para manter a fluidez para o mestre
+        socket.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
+      }
+    } catch (error) { console.error("Erro ao reordenar iniciativa:", error); }
+  });
+
+  socket.on('requestAssignToken', async (data: { tableId: string; tokenId: string; newOwnerId: string }) => {
+    try {
+        const { tableId, tokenId, newOwnerId } = data;
+
+        const userId = socket.data.user?.id;
+        const table = await Table.findById(tableId);
+        if (!table) return;
+        if (table.dm.toString() !== userId) {
+            console.log(`[AUTH] Falha: Usuário ${userId} tentou atribuir token da mesa ${tableId}, mas não é o mestre.`);
+            return socket.emit('error', { message: 'Apenas o Mestre pode atribuir tokens.' });
+        }
+
+        const updatedToken = await Token.findByIdAndUpdate(
+            tokenId,
+            { ownerId: newOwnerId },
+            { new: true }
+        );
+
+        if (updatedToken) {
+            io.to(tableId).emit('tokenPlaced', updatedToken);
+        }
+    } catch (error) { console.error("Erro ao atribuir token:", error); }
+  });
+
+  socket.on('requestEditInitiativeEntry', async (data: { tableId: string; sceneId: string; initiativeEntryId: string; newName: string }) => {
+    try {
+      const { tableId, sceneId, initiativeEntryId, newName } = data;
+      const userId = socket.data.user?.id;
+
+      const table = await Table.findById(tableId);
+      if (!table) return;
+      if (table.dm.toString() !== userId) {
+        console.log(`[AUTH] Falha: Usuário ${userId} tentou editar entrada da iniciativa da mesa ${tableId}, mas não é o mestre.`);
+        return socket.emit('error', { message: 'Apenas o Mestre pode editar entradas da iniciativa.' });
+      }
+
+      const scene = await Scene.findById(sceneId);
+      if (!scene) return;
+
+      // Encontra a entrada específica no array e atualiza seu nome
+      const entry = scene.initiative.find(e => e._id?.toString() === initiativeEntryId);
+      if (entry) {
+        entry.characterName = newName;
+
+        if (entry.tokenId) {
+          await Token.findByIdAndUpdate(entry.tokenId, { name: newName });
+        }
+      }
+
+      await scene.save();
+
+      // Notifica todos na sala sobre a lista de iniciativa atualizada
+      io.to(tableId).emit('initiativeUpdated', scene.initiative);
+    } catch (error) { 
+      console.error("Erro ao editar entrada da iniciativa:", error); 
+    }
+  });
+
+  socket.on('requestReorderScenes', async (data: { tableId: string; orderedSceneIds: string[] }) => {
+    try {
+      const { tableId, orderedSceneIds } = data;
+      const userId = socket.data.user?.id;
+
+      const table = await Table.findById(tableId);
+      if (!table) return;
+      if (table.dm.toString() !== userId) {
+        console.log(`[AUTH] Falha: Usuário ${userId} tentou reordenar cenas da mesa ${tableId}, mas não é o mestre.`);
+        return socket.emit('error', { message: 'Apenas o Mestre pode reordenar as cenas.' });
+      }
+
+      // Atualiza o array 'scenes' no documento da mesa com a nova ordem de IDs
+      const updatedTable = await Table.findByIdAndUpdate(
+        tableId,
+        { scenes: orderedSceneIds },
+        { new: true }
+      ).populate('scenes'); // Popula para enviar a lista completa de volta
+
+      if (updatedTable) {
+        // Notifica todos na sala (exceto o Mestre que arrastou) sobre a nova ordem
+        socket.to(tableId).emit('sceneListUpdated', updatedTable.scenes);
+      }
+    } catch (error) { console.error("Erro ao reordenar cenas:", error); }
   });
 
   socket.on('disconnect', () => {

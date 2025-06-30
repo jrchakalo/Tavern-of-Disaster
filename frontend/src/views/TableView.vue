@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { io, Socket } from 'socket.io-client';
+import draggable from 'vuedraggable';
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import type { GridSquare, TokenInfo, IScene, ITable, IInitiativeEntry } from '../types';
@@ -10,6 +11,9 @@ import { authToken, currentUser } from '../auth';
 const route = useRoute();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
 const gridSize = ref(30);
+const showAssignMenu = ref(false);
+const assignMenuPosition = ref({ x: 0, y: 0 });
+const assignMenuTargetToken = ref<TokenInfo | null>(null);
 
 const squares = ref<GridSquare[]>([]);
 const selectedTokenId = ref<string | null>(null);
@@ -24,7 +28,6 @@ const scenes = ref<IScene[]>([]); // Armazena a lista de todas as cenas da mesa
 const activeSceneId = ref<string | null>(null); // Armazena o ID da cena ativa
 
 const initiativeList = ref<IInitiativeEntry[]>([]);
-const newCharacterName = ref('');
 
 const newSceneName = ref('');
 const newSceneImageUrl = ref('');
@@ -32,54 +35,40 @@ const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova ce
 
 const currentTable = ref<ITable | null>(null);
 const isDM = computed(() => {
-  return currentUser.value?.id === currentTable.value?.dm;
+  return currentUser.value?.id === (typeof currentTable.value?.dm === 'object' ? currentTable.value?.dm._id : currentTable.value?.dm);
 });
 const activeScene = computed(() => {
     return scenes.value.find(s => s._id === activeSceneId.value) || null;
 });
+const currentTurnTokenId = computed(() => {
+  const currentEntry = initiativeList.value.find(entry => entry.isCurrentTurn);
+  return currentEntry?.tokenId || null;
+});
 
-function setMap() {
-  if (socket && mapUrlInput.value.trim() !== '' && tableId) {
-    socket.emit('requestSetMap', { 
-      mapUrl: mapUrlInput.value,
-      tableId: tableId
-    });
+function handleRightClick(square: GridSquare, event: MouseEvent) {
+  if (isDM.value && square.token) { // Se for o Mestre e clicar num token existente
+    event.preventDefault(); 
+    showTokenForm.value = false;
+
+    assignMenuPosition.value = { x: event.clientX, y: event.clientY };
+    assignMenuTargetToken.value = square.token;
+    showAssignMenu.value = true;
+  } else if (!square.token) { // Se o quadrado estiver vazio (lógica existente)
+    targetSquareIdForToken.value = square.id;
+    showTokenForm.value = true;
   }
 }
 
-function handleRightClick(square: GridSquare) {
-  if (square.token) return; // Não faz nada se o quadrado estiver ocupado
-  targetSquareIdForToken.value = square.id;
-  showTokenForm.value = true;
-}
-
-function createToken(payload: { name: string, imageUrl: string }) {
-  if (socket && targetSquareIdForToken.value && tableId && activeSceneId.value) {
-    socket.emit('requestPlaceToken', {
+function handleAssignToken(newOwnerId: string) {
+  if (socket && tableId && assignMenuTargetToken.value) {
+    socket.emit('requestAssignToken', {
       tableId: tableId,
-      squareId: targetSquareIdForToken.value,
-      name: payload.name,
-      imageUrl: payload.imageUrl,
-      sceneId: activeSceneId.value
+      tokenId: assignMenuTargetToken.value._id,
+      newOwnerId: newOwnerId,
     });
   }
-  // Fecha o formulário
-  showTokenForm.value = false;
-  targetSquareIdForToken.value = null;
-}
-
-function handleLeftClickOnSquare(clickedSquare: GridSquare) {
-  if (clickedSquare.token) {
-    // Se o token clicado já estava selecionado, deseleciona. Senão, seleciona.
-    if (selectedTokenId.value === clickedSquare.token._id) {
-      selectedTokenId.value = null;
-    } else {
-      selectedTokenId.value = clickedSquare.token._id;
-    }
-  } else {
-    // Clicar em um quadrado vazio deseleciona qualquer token
-    selectedTokenId.value = null;
-  }
+  // Fecha o menu
+  showAssignMenu.value = false;
 }
 
 function handleTokenMoveRequest(payload: { tokenId: string; targetSquareId: string }) {
@@ -183,18 +172,6 @@ async function handleDeleteScene(sceneId: string) {
   } catch (error) { console.error("Erro ao excluir cena:", error); }
 }
 
-function handleAddCharacter() {
-  if (!newCharacterName.value.trim() || !tableId || !activeSceneId.value || !socket) return;
-
-  socket.emit('requestAddCharacterToInitiative', {
-    tableId,
-    sceneId: activeSceneId.value,
-    characterName: newCharacterName.value,
-  });
-
-  newCharacterName.value = ''; // Limpa o input
-}
-
 function handleNextTurn() {
   if (!tableId || !activeSceneId.value || !socket) return;
   socket.emit('requestNextTurn', { tableId, sceneId: activeSceneId.value });
@@ -204,6 +181,61 @@ function handleResetInitiative() {
   if (!confirm("Tem certeza que deseja limpar toda a lista de iniciativa?")) return;
   if (!tableId || !activeSceneId.value || !socket) return;
   socket.emit('requestResetInitiative', { tableId, sceneId: activeSceneId.value });
+}
+
+function handleRemoveFromInitiative(initiativeEntryId: string) {
+  if (!confirm("Isso também irá deletar o token do mapa. Tem certeza?")) return;
+  if (!socket || !tableId || !activeSceneId.value) return;
+
+  socket.emit('requestRemoveFromInitiative', {
+    tableId,
+    sceneId: activeSceneId.value,
+    initiativeEntryId,
+  });
+}
+
+function handleEditInitiativeEntry(entry: IInitiativeEntry) {
+  const newName = prompt("Digite o novo nome:", entry.characterName);
+
+  if (!newName || newName.trim() === '') return; // Sai se o usuário cancelar ou deixar em branco
+
+  if (socket && tableId && activeSceneId.value) {
+    socket.emit('requestEditInitiativeEntry', {
+      tableId,
+      sceneId: activeSceneId.value,
+      initiativeEntryId: entry._id,
+      newName: newName,
+    });
+  }
+}
+
+function handleLeftClickOnSquare(clickedSquare: GridSquare) {
+  if (clickedSquare.token) {
+    // Se o token clicado já estava selecionado, deseleciona. Senão, seleciona.
+    if (selectedTokenId.value === clickedSquare.token._id) {
+      selectedTokenId.value = null;
+    } else {
+      selectedTokenId.value = clickedSquare.token._id;
+    }
+  } else {
+    // Clicar em um quadrado vazio deseleciona qualquer token
+    selectedTokenId.value = null;
+  }
+}
+
+function createToken(payload: { name: string, imageUrl: string }) {
+  if (socket && targetSquareIdForToken.value && tableId && activeSceneId.value) {
+    socket.emit('requestPlaceToken', {
+      tableId: tableId,
+      squareId: targetSquareIdForToken.value,
+      name: payload.name,
+      imageUrl: payload.imageUrl,
+      sceneId: activeSceneId.value
+    });
+  }
+  // Fecha o formulário
+  showTokenForm.value = false;
+  targetSquareIdForToken.value = null;
 }
 
 function updateGrid(tokens: TokenInfo[]) {
@@ -221,6 +253,40 @@ function updateGrid(tokens: TokenInfo[]) {
     });
   }
   squares.value = newSquaresLocal;
+}
+
+function setMap() {
+  if (socket && mapUrlInput.value.trim() !== '' && tableId) {
+    socket.emit('requestSetMap', { 
+      mapUrl: mapUrlInput.value,
+      tableId: tableId
+    });
+  }
+}
+
+function onInitiativeDragEnd() {
+  console.log('Ordem da iniciativa alterada no frontend. Enviando para o backend...', initiativeList.value);
+
+  if (socket && tableId && activeSceneId.value) {
+    socket.emit('requestReorderInitiative', {
+      tableId,
+      sceneId: activeSceneId.value,
+      newOrder: initiativeList.value // Envia o array já reordenado
+    });
+  }
+}
+
+function onSceneDragEnd() {
+  const orderedSceneIds = scenes.value.map(scene => scene._id);
+
+  console.log('Ordem das cenas alterada. Enviando para o backend...', orderedSceneIds);
+
+  if (socket && tableId) {
+    socket.emit('requestReorderScenes', {
+      tableId,
+      orderedSceneIds,
+    });
+  }
 }
 
 watch(gridSize, (newSize, oldSize) => {
@@ -346,6 +412,20 @@ onMounted(() => {
     console.log('Recebida lista de iniciativa atualizada:', newInitiativeList);
     initiativeList.value = newInitiativeList;
   });
+
+  socket.on('tokenRemoved', (data: { tokenId: string }) => {
+    console.log('Recebido evento para remover token:', data.tokenId);
+    // Encontra o quadrado que contém este token e o remove
+    const squareWithToken = squares.value.find(sq => sq.token?._id === data.tokenId);
+    if (squareWithToken) {
+      squareWithToken.token = null;
+    }
+  });
+
+  socket.on('sceneListUpdated', (newSceneList: IScene[]) => {
+    console.log('Recebida lista de cenas atualizada:', newSceneList);
+    scenes.value = newSceneList;
+  });
 });
 
 onUnmounted(() => {
@@ -376,43 +456,57 @@ onUnmounted(() => {
           <button type="submit">Adicionar Cena</button>
         </form>
       
-      <div class="panel-section">
-        <h3>Iniciativa</h3>
-        <div class="initiative-controls">
-          <button @click="handleNextTurn">Próximo Turno</button>
-          <button @click="handleResetInitiative" class="delete-btn">Resetar</button>
-        </div>
-        <ul class="initiative-list">
-          <li
-            v-for="entry in initiativeList"
-            :key="entry._id"
-            :class="{ 'active-turn': entry.isCurrentTurn }"
+        <div class="panel-section">
+          <h3>Iniciativa</h3>
+          <div class="initiative-controls">
+            <button @click="handleNextTurn">Próximo Turno</button>
+            <button @click="handleResetInitiative" class="delete-btn">Resetar</button>
+          </div>
+
+          <draggable
+            v-model="initiativeList"
+            tag="ul"
+            class="initiative-list"
+            item-key="_id"
+            @end="onInitiativeDragEnd"
           >
-            <span>{{ entry.characterName }}</span>
-          </li>
-        </ul>
-        <form @submit.prevent="handleAddCharacter" class="add-character-form">
-          <input v-model="newCharacterName" placeholder="Nome do Personagem/Monstro" required />
-          <button type="submit">Adicionar à Iniciativa</button>
-        </form>
-      </div>
+            <template #item="{ element: entry }">
+              <li :class="{ 'active-turn': entry.isCurrentTurn, 'draggable-item': true }">
+                <span>{{ entry.characterName }}</span>
+                <div class="initiative-buttons"> 
+                  <button @click="handleEditInitiativeEntry(entry)" class="icon-btn">✏️</button>
+                  <button @click="handleRemoveFromInitiative(entry._id)" class="icon-btn delete-btn-small">🗑️</button>
+                </div>
+              </li>
+            </template>
+          </draggable>
+
+          <div v-if="initiativeList.length === 0" class="empty-list-container">
+            <p class="empty-list">A iniciativa está vazia.</p>
+          </div>
+        </div>
 
         <ul class="scene-list">
           <h3>Cenas</h3>
-          <li 
-            v-for="scene in scenes" 
-            :key="scene._id"
-            :class="{ 'active-scene': scene._id === activeSceneId }"
+          <draggable
+            v-model="scenes"
+            tag="ul"
+            class="scene-list"
+            item-key="_id"
+            @end="onSceneDragEnd"
+            handle=".drag-handle"
           >
-            <span>{{ scene.name }}</span>
-            <div class="scene-buttons">
-              <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">
-                Ativar
-              </button>
-              <button @click="handleEditScene(scene)">✏️</button>
-              <button @click="handleDeleteScene(scene._id)" :disabled="scene._id === activeSceneId" class="delete-btn">🗑️</button>
-            </div>
-          </li>
+            <template #item="{ element: scene }">
+              <li :class="{ 'active-scene': scene._id === activeSceneId }">
+                <span class="drag-handle">⠿</span> <span>{{ scene.name }}</span>
+                <div class="scene-buttons">
+                  <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">Ativar</button>
+                  <button @click="handleEditScene(scene)" class="icon-btn">✏️</button>
+                  <button @click="handleDeleteScene(scene._id)" :disabled="scene._id === activeSceneId" class="icon-btn delete-btn-small">🗑️</button>
+                </div>
+              </li>
+            </template>
+          </draggable>
         </ul>
 
         <div class="panel-section">
@@ -432,6 +526,7 @@ onUnmounted(() => {
           <input id="grid-size" type="number" v-model="gridSize" min="1" />
         </div>
       </div>
+    
     </aside>
 
     <main class="battlemap-main">
@@ -453,6 +548,7 @@ onUnmounted(() => {
 
           <GridDisplay v-if="activeScene?.type === 'battlemap' && currentMapUrl"
             class="grid-overlay"
+            :currentTurnTokenId="currentTurnTokenId"
             :squares="squares"
             :gridSize="gridSize"
             :selectedTokenId="selectedTokenId"
@@ -460,6 +556,21 @@ onUnmounted(() => {
             @square-left-click="handleLeftClickOnSquare"
             @token-move-requested="handleTokenMoveRequest"
           />
+
+          <div 
+            v-if="showAssignMenu" 
+            class="context-menu" 
+            :style="{ top: `${assignMenuPosition.y}px`, left: `${assignMenuPosition.x}px` }"
+            @click.stop @contextmenu.prevent
+          >
+            <h4>Atribuir "{{ assignMenuTargetToken?.name }}"</h4>
+            <ul>
+              <li v-for="player in currentTable?.players" :key="player._id" @click="handleAssignToken(player._id)">
+                {{ player.username }}
+              </li>
+            </ul>
+            <button @click="showAssignMenu = false">Fechar</button>
+          </div>
           
         </div>
       </div>
@@ -660,4 +771,52 @@ main{
   flex-direction: column;
   gap: 10px;
 }
+.delete-btn-small {
+    background: none;
+    border: none;
+    color: #ff6b6b;
+    cursor: pointer;
+    font-size: 1.1em;
+}
+.delete-btn-small:hover {
+    color: #ff0000;
+}
+.draggable-item {
+  cursor: grab;
+}
+.drag-handle {
+  cursor: grab;
+  margin-right: 10px;
+  color: #888;
+}
+.draggable-item:active {
+  cursor: grabbing;
+}
+.empty-list-container {
+  padding: 20px;
+  text-align: center;
+  color: #888;
+  font-style: italic;
+}
+.initiative-buttons {
+  display: flex;
+  gap: 8px;
+}
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1em;
+}
+.context-menu {
+  position: fixed;
+  background: #4f4f4f;
+  border: 1px solid #888;
+  border-radius: 4px;
+  padding: 10px;
+  z-index: 1000;
+}
+.context-menu ul { list-style: none; padding: 0; margin: 0; }
+.context-menu li { padding: 8px 12px; cursor: pointer; }
+.context-menu li:hover { background-color: #ffc107; color: #333; }
 </style>

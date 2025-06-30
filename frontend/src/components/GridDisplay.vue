@@ -5,6 +5,7 @@ import type { GridSquare, TokenInfo } from '../types';
 interface Props {
   squares: GridSquare[];
   gridSize: number;
+  currentTurnTokenId: string | null;
   //squareSizePx: number;
   selectedTokenId: string | null;
   //mapUrl: string | null;
@@ -13,7 +14,7 @@ interface Props {
 const props = defineProps<Props>();
 const emit = defineEmits<{
     (e: 'square-left-click', square: GridSquare): void;
-    (e: 'square-right-click', square: GridSquare): void;
+    (e: 'square-right-click', square: GridSquare, event: MouseEvent): void;
     (e: 'token-move-requested', payload: { tokenId: string; targetSquareId: string }): void;
 }>();
 
@@ -66,8 +67,8 @@ function onSquareLeftClick(square: GridSquare) {
   emit('square-left-click', square);
 }
 
-function onSquareRightClick(square: GridSquare) {
-  emit('square-right-click', square);
+function onSquareRightClick(square: GridSquare, event: MouseEvent) {
+  emit('square-right-click', square, event);
 }
 </script>
 
@@ -76,11 +77,14 @@ function onSquareRightClick(square: GridSquare) {
     <div
       v-for="square in props.squares" :key="square.id"
       class="grid-square"
-      @contextmenu.prevent="onSquareRightClick(square)" @click="onSquareLeftClick(square)"
+      @contextmenu.prevent="onSquareRightClick(square, $event)" @click="onSquareLeftClick(square)"
       @dragover.prevent @drop="handleDrop($event, square)" >
       <div v-if="square.token"
            class="token"
-           :class="{ 'selected': square.token._id === props.selectedTokenId }"
+           :class="{ 
+            'selected': square.token._id === props.selectedTokenId, 
+            'active-turn-token': square.token._id === props.currentTurnTokenId
+            }"
            :style="{ backgroundColor: square.token.color }"
            draggable="true" @dragstart="handleDragStart($event, square.token!)">
            <img v-if="square.token.imageUrl" :src="square.token.imageUrl" :alt="square.token.name" class="token-image" />
@@ -150,4 +154,12 @@ function onSquareRightClick(square: GridSquare) {
   box-shadow: 0 0 10px 3px yellow;
 }
 
+.token.active-turn-token {
+  box-shadow: 0 0 5px 5px #69ff69; /* Exemplo: brilho verde */
+}
+
+/* Para o caso de um token estar selecionado E ser o turno dele */
+.token.selected.active-turn-token {
+  box-shadow: 0 0 5px 5px #69ff69, 0 0 5px 3px yellow inset;
+}
 </style>

@@ -117,12 +117,12 @@ onMounted(() => {
           <span class="table-name">{{ table.name }}</span>
 
           <div class="table-details">
-            <div v-if="table.dm === currentUser?.id" class="invite-code">
+            <div v-if="table.dm._id === currentUser?.id" class="invite-code">
               <span>Código:</span>
               <code>{{ table.inviteCode }}</code>
             </div>
             <span class="table-role">
-              {{ table.dm === currentUser?.id ? '(Mestre)' : '(Jogador)' }}
+              {{ table.dm._id === currentUser?.id ? '(Mestre)' : '(Jogador)' }}
             </span>
           </div>
 

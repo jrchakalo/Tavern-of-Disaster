@@ -16,10 +16,15 @@ export interface GridSquare {
 export interface ITable {
   _id: string;
   name: string;
-  dm: string;
-  players: string[];
+  dm: PlayerInfo;
+  players: PlayerInfo[];
   inviteCode: string;
   activeScene?: string | null | undefined;
+}
+
+export interface PlayerInfo {
+  _id: string;
+  username: string;
 }
 
 export interface IInitiativeEntry {
