@@ -426,6 +426,18 @@ onMounted(() => {
     console.log('Recebida lista de cenas atualizada:', newSceneList);
     scenes.value = newSceneList;
   });
+
+  socket.on('tokenOwnerUpdated', (data: { tokenId: string, newOwner: { _id: string, username: string } }) => {
+    console.log(`Recebido 'tokenOwnerUpdated':`, data);
+
+    // Encontra o quadrado com o token que foi atualizado
+    const squareWithToken = squares.value.find(sq => sq.token?._id === data.tokenId);
+    if (squareWithToken && squareWithToken.token) {
+      // Atualiza apenas o ID do dono no estado local
+      squareWithToken.token.ownerId = { _id: data.newOwner._id, username: data.newOwner.username };
+      console.log(`Dono do token ${data.tokenId} atualizado para ${data.newOwner.username}`);
+    }
+  });
 });
 
 onUnmounted(() => {
@@ -456,14 +468,16 @@ onUnmounted(() => {
           <button type="submit">Adicionar Cena</button>
         </form>
       
-        <div class="panel-section">
+        <div class="panel-section"
+          v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
           <h3>Iniciativa</h3>
           <div class="initiative-controls">
             <button @click="handleNextTurn">Próximo Turno</button>
             <button @click="handleResetInitiative" class="delete-btn">Resetar</button>
           </div>
 
-          <draggable
+          <draggable 
+            v-if="activeScene.type === 'battlemap'"
             v-model="initiativeList"
             tag="ul"
             class="initiative-list"
@@ -817,6 +831,20 @@ main{
   z-index: 1000;
 }
 .context-menu ul { list-style: none; padding: 0; margin: 0; }
-.context-menu li { padding: 8px 12px; cursor: pointer; }
+.context-menu li { 
+  padding: 8px 12px; 
+  cursor: pointer;
+  color: #fff;
+}
 .context-menu li:hover { background-color: #ffc107; color: #333; }
+.context-menu button { /* Estilo para o botão "Fechar" */
+  background: none;
+  border: none;
+  color: #ccc;
+  width: 100%;
+  padding: 8px;
+  margin-top: 5px;
+  border-top: 1px solid #666;
+  cursor: pointer;
+}
 </style>

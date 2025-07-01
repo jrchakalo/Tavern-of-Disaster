@@ -2,10 +2,15 @@ export interface TokenInfo {
   _id: string;
   squareId: string;
   color: string;
-  ownerId: string;
+  ownerId: TokenOwner;
   name: string; 
   imageUrl?: string; 
   sceneId: string;
+}
+
+export interface TokenOwner {
+    _id: string;
+    username: string;
 }
 
 export interface GridSquare {

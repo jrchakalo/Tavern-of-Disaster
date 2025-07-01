@@ -4,7 +4,7 @@ export interface IToken extends Document {
     _id: Types.ObjectId;
     squareId: string;
     color: string;
-    ownerId: string;
+    ownerId: Types.ObjectId;
     name: string;
     imageUrl?: string;
     tableId: Types.ObjectId;

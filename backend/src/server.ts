@@ -9,6 +9,7 @@ import Token from './models/Token.model';
 import { IInitiativeEntry } from './models/Scene.model';
 import Table from './models/Table.model';
 import Scene from './models/Scene.model';
+import User from './models/User.model';
 import authRouter from './routes/auth.routes';
 import tableRouter from './routes/table.routes';
 
@@ -37,7 +38,7 @@ server.listen(port, () => {
 
 async function getFullSessionState(tableId: string, sceneId: string) {
   const activeScene = await Scene.findById(sceneId);
-  const tokens = await Token.find({ sceneId: sceneId }); // Apenas tokens da cena ativa
+  const tokens = await Token.find({ sceneId: sceneId }).populate('ownerId', '_id username');
   return { activeScene, tokens };
 }
 
@@ -71,7 +72,11 @@ io.on('connection', async (socket) => {
       socket.join(tableId);
       console.log(`Socket ${socket.id} entrou na sala da mesa ${tableId}`);
 
-      const table = await Table.findById(tableId).populate('activeScene').populate('scenes');
+      const table = await Table.findById(tableId)
+      .populate('activeScene')
+      .populate('scenes')
+      .populate('players', 'username _id')
+      .populate('dm', 'username _id'); 
       if (!table) return;
 
       const activeSceneId = table.activeScene?._id;
@@ -136,7 +141,8 @@ io.on('connection', async (socket) => {
         { new: true }
       );
 
-      io.to(tableId).emit('tokenPlaced', newToken); 
+      const populatedToken = await newToken.populate('ownerId', '_id username');
+      io.to(data.tableId).emit('tokenPlaced', populatedToken); 
       if (updatedScene) {
         io.to(data.tableId).emit('initiativeUpdated', updatedScene.initiative);
       }
@@ -214,17 +220,17 @@ io.on('connection', async (socket) => {
       await tokenToMove.save();
 
       console.log(`Token ${tokenId} movido de ${oldSquareId} para ${targetSquareId}`);
-
+      const populatedToken = await tokenToMove.populate('ownerId', '_id username');
       // Notifica todos os clientes sobre o movimento do token
       io.to(tableId).emit('tokenMoved', {
-        _id: tokenToMove._id.toString(), // Garante que é string
+        _id: populatedToken._id.toString(), // Garante que é string
         oldSquareId: oldSquareId,
-        squareId: tokenToMove.squareId, // Novo squareId
-        color: tokenToMove.color,
-        ownerId: tokenToMove.ownerId.toString(),
-        name: tokenToMove.name,
-        imageUrl: tokenToMove.imageUrl,
-        sceneId: tokenToMove.sceneId ? tokenToMove.sceneId.toString() : "",
+        squareId: populatedToken.squareId, // Novo squareId
+        color: populatedToken.color,
+        ownerId: populatedToken.ownerId,
+        name: populatedToken.name,
+        imageUrl: populatedToken.imageUrl,
+        sceneId: populatedToken.sceneId ? populatedToken.sceneId.toString() : "",
       });
     } catch (error: any) {
       console.error('Erro ao processar requestMoveToken:', error.message);
@@ -506,13 +512,16 @@ io.on('connection', async (socket) => {
         }
 
         const updatedToken = await Token.findByIdAndUpdate(
-            tokenId,
-            { ownerId: newOwnerId },
+            data.tokenId,
+            { ownerId: data.newOwnerId },
             { new: true }
         );
 
         if (updatedToken) {
-            io.to(tableId).emit('tokenPlaced', updatedToken);
+            io.to(data.tableId).emit('tokenOwnerUpdated', { 
+              tokenId: updatedToken._id.toString(), 
+              newOwner: await User.findById(updatedToken.ownerId, 'username _id') // Envia os dados do novo dono
+            });
         }
     } catch (error) { console.error("Erro ao atribuir token:", error); }
   });
