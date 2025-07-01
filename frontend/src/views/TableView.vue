@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client';
 import draggable from 'vuedraggable';
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
+import InitiativeTracker from '../components/InitiativeTracker.vue';
 import type { GridSquare, TokenInfo, IScene, ITable, IInitiativeEntry } from '../types';
 import { useRoute } from 'vue-router';
 import { authToken, currentUser } from '../auth';
@@ -14,6 +15,12 @@ const gridSize = ref(30);
 const showAssignMenu = ref(false);
 const assignMenuPosition = ref({ x: 0, y: 0 });
 const assignMenuTargetToken = ref<TokenInfo | null>(null);
+const scale = ref(1);
+const panOffset = ref({ x: 0, y: 0 }); 
+const isPanning = ref(false);
+const panStart = ref({ x: 0, y: 0 }); 
+const panOrigin = ref({ x: 0, y: 0 });
+const viewportRef = ref<HTMLDivElement | null>(null);
 
 const squares = ref<GridSquare[]>([]);
 const selectedTokenId = ref<string | null>(null);
@@ -223,6 +230,68 @@ function handleLeftClickOnSquare(clickedSquare: GridSquare) {
   }
 }
 
+function handleWheel(event: WheelEvent) {
+  if (!viewportRef.value) return;
+  event.preventDefault();
+
+  // Posição do mouse relativa à viewport (a "câmera")
+  const viewportRect = viewportRef.value.getBoundingClientRect();
+  const mouseX = event.clientX - viewportRect.left;
+  const mouseY = event.clientY - viewportRect.top;
+
+  // Ponto de origem da transformação (o ponto do mapa sob o mouse)
+  const originX = (mouseX - panOffset.value.x) / scale.value;
+  const originY = (mouseY - panOffset.value.y) / scale.value;
+
+  // Fator de zoom
+  const zoomFactor = 1.1;
+  let newScale;
+
+  if (event.deltaY < 0) {
+    // Zoom In (aproximar)
+    newScale = scale.value * zoomFactor;
+  } else {
+    // Zoom Out (afastar)
+    newScale = scale.value / zoomFactor;
+  }
+
+  // Limites de zoom
+  scale.value = Math.max(0.2, Math.min(newScale, 5));
+
+  // Calcula o novo deslocamento do Pan para manter o ponto sob o mouse estável
+  const newPanX = mouseX - originX * scale.value;
+  const newPanY = mouseY - originY * scale.value;
+
+  panOffset.value = { x: newPanX, y: newPanY };
+}
+
+function handlePanStart(event: MouseEvent) {
+  // Usaremos o botão do meio (scroll) do mouse para o Pan
+  if (event.button !== 1) return; 
+  event.preventDefault();
+  isPanning.value = true;
+  panStart.value = { x: event.clientX, y: event.clientY };
+}
+
+function handlePanMove(event: MouseEvent) {
+  if (!isPanning.value) return;
+  event.preventDefault();
+  const dx = event.clientX - panStart.value.x;
+  const dy = event.clientY - panStart.value.y;
+
+  panOffset.value = {
+    x: panOffset.value.x + dx,
+    y: panOffset.value.y + dy,
+  };
+
+  // Atualiza o ponto de início para o próximo movimento
+  panStart.value = { x: event.clientX, y: event.clientY };
+}
+
+function handlePanEnd() {
+  isPanning.value = false;
+}
+
 function createToken(payload: { name: string, imageUrl: string }) {
   if (socket && targetSquareIdForToken.value && tableId && activeSceneId.value) {
     socket.emit('requestPlaceToken', {
@@ -289,6 +358,12 @@ function onSceneDragEnd() {
   }
 }
 
+function resetView() {
+  console.log('Resetando a visualização do mapa...');
+  scale.value = 1;
+  panOffset.value = { x: 0, y: 0 };
+}
+
 watch(gridSize, (newSize, oldSize) => {
   if (isDM.value && newSize !== oldSize && socket && tableId && activeSceneId.value) {
     console.log(`Mestre alterou o grid para ${newSize}. Solicitando atualização...`);
@@ -296,6 +371,22 @@ watch(gridSize, (newSize, oldSize) => {
       tableId: tableId,
       sceneId: activeSceneId.value, // Envia o ID da cena ativa
       newGridSize: newSize
+    });
+  }
+});
+
+watch(gridSize, () => {
+  const currentTokens = squares.value
+    .map(sq => sq.token)
+    .filter((token): token is TokenInfo => token !== null);
+
+  updateGrid(currentTokens);
+
+  if (isDM.value && socket && tableId && activeSceneId.value) {
+    socket.emit('requestUpdateGridSize', {
+      tableId,
+      sceneId: activeSceneId.value,
+      newGridSize: gridSize.value,
     });
   }
 });
@@ -451,6 +542,10 @@ onUnmounted(() => {
 <template>
   <div class="table-view-layout">
 
+    <div v-if="!isDM">
+      <InitiativeTracker :initiativeList="initiativeList" />
+    </div>
+
     <aside v-if="isDM" class="dm-panel">
       <h2>Painel do Mestre</h2>
 
@@ -546,21 +641,33 @@ onUnmounted(() => {
     <main class="battlemap-main">
       <h1 v-if="currentTable">{{ currentTable.name }}</h1>
       <h3 v-if="activeSceneId" class="active-scene-name">Cena Ativa: {{ scenes.find(s => s._id === activeSceneId)?.name }}</h3>
-
-      <div class="map-container">
-        <div class="map-content-wrapper">
+      <button @click="resetView" class="reset-view-btn">Resetar Posição</button>
+      <div 
+        class="viewport"
+        ref="viewportRef"
+        @wheel.prevent="handleWheel"
+        @mousedown="handlePanStart"
+        @mousemove="handlePanMove"
+        @mouseup="handlePanEnd"
+        @mouseleave="handlePanEnd"
+      >    
+        <div 
+          class="map-stage"
+          :style="{ transform: `scale(${scale}) translate(${panOffset.x}px, ${panOffset.y}px)`, transformOrigin: `${panOrigin.x}px ${panOrigin.y}px` }"
+        >
           <img 
             v-if="currentMapUrl" 
             :src="currentMapUrl" 
             alt="Mapa de Batalha" 
-            class="map-image" 
+            class="map-image"
           />
           <div v-else class="map-placeholder">
             <p>Nenhum mapa definido para esta cena.</p>
             <p v-if="isDM">Use o Painel do Mestre para definir uma imagem.</p>
           </div>
 
-          <GridDisplay v-if="activeScene?.type === 'battlemap' && currentMapUrl"
+          <GridDisplay
+            v-if="currentMapUrl && activeScene?.type === 'battlemap'"
             class="grid-overlay"
             :currentTurnTokenId="currentTurnTokenId"
             :squares="squares"
@@ -585,17 +692,16 @@ onUnmounted(() => {
             </ul>
             <button @click="showAssignMenu = false">Fechar</button>
           </div>
-          
         </div>
       </div>
     </main>
+
 
     <TokenCreationForm
       v-if="showTokenForm && isDM"
       @create-token="createToken"
       @cancel="showTokenForm = false"
     />
-
   </div>
 </template>
 
@@ -625,6 +731,7 @@ main{
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: 100%;
 }
 .battlemap-main h1 {
   margin-top: 0;
@@ -655,43 +762,56 @@ main{
 .grid-controls input {
     width: 100%;
 }
-.map-container {
+.viewport {
   width: 100%;
-  max-width: 1200px; /* Limita a largura máxima do mapa */
-  height: 100%;
-  background-color: rgba(255, 255, 255, 0.3); /* Cinza mais claro meio translucido */
-  border: 10px solid rgba(0, 0, 0, 0.5); /* Borda para simular a moldura da mesa */
-  box-sizing: border-box;
+  height: 85vh;
+  max-width: 1600px;
+  background-color: #2c2c2c;
+  border: 10px solid rgba(0, 0, 0, 0.5);
   border-radius: 8px;
-  padding: 15px; /* Um espaçamento interno */
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  overflow: hidden; /* Esconde as partes do mapa que saem da tela */
+  position: relative; 
+  cursor: grab; /* Indica que a área pode ser arrastada */
 }
-.map-content-wrapper {
+.viewport:active {
+  cursor: grabbing;
+}
+.map-stage {
   width: 100%;
-  justify-content: center;
-  align-items: center;
-  display: grid;
-  max-width: 1200px;
-  min-height: 400px;
-  place-items: center;
-  border-radius: 4px;
-  margin-top: 20px;
+  height: 100%;
+  position: relative; /* Para que a imagem e o grid se alinhem a ele */
+  transition: transform 0.1s ease-out; /* Transição suave para o zoom */
 }
-.map-image, .grid-overlay {
-  grid-area: 1 / 1 / 2 / 2;
+.map-image,
+.grid-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%); 
   max-width: 100%;
   max-height: 100%;
 }
 .map-image {
   object-fit: contain;
-  min-width: 1000px;
-  min-height: 600px;
 }
 .grid-overlay {
-  width: 100%;
-  height: 100%;
+  aspect-ratio: 1 / 1;
+}
+.map-placeholder {
+  color: #888;
+  grid-area: 1 / 1 / 2 / 2; 
+}
+.reset-view-btn {
+  margin-bottom: 15px;
+  padding: 8px 12px;
+  background-color: rgba(44, 44, 44, 0.8);
+  color: white;
+  border: 1px solid #888;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.reset-view-btn:hover {
+  background-color: rgba(60, 60, 60, 0.9);
 }
 .panel-section {
   margin-top: 25px;

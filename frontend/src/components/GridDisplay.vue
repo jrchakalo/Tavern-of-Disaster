@@ -113,6 +113,8 @@ function onSquareRightClick(square: GridSquare, event: MouseEvent) {
   cursor: pointer;  /*Indica que é clicável*/
   background-color: rgba(255, 255, 255, 0.05); 
   border: 1px solid rgba(0, 0, 0, 0.4);
+  min-width: 0;
+  min-height: 0;
 }
 
 .token {
@@ -130,24 +132,31 @@ function onSquareRightClick(square: GridSquare, event: MouseEvent) {
   background-color: transparent; /* Remove a cor de fundo do container do token */
   overflow: hidden; /* Garante que a imagem fique contida no círculo */
   cursor: grab;
+  position: relative;
+}
+
+.token-image,
+.token-fallback {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%; /* Garante que o conteúdo também seja circular */
+  overflow: hidden; /* Garante que nada vaze das bordas arredondadas */
 }
 
 .token-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover; /* Faz a imagem cobrir o espaço sem distorcer */
+  object-fit: cover;
 }
 
 .token-fallback {
-  width: 100%;
-  height: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
-  font-size: 1.2em; /* Tamanho ajustado para iniciais */
+  font-size: 1.2em;
   color: white;
   font-weight: bold;
-  text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
 }
 
 .token.selected {
