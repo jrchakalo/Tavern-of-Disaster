@@ -243,6 +243,7 @@ io.on('connection', async (socket) => {
         return;
       }
 
+      tokenToMove.previousSquareId = oldSquareId;
       tokenToMove.squareId = data.targetSquareId;
       tokenToMove.remainingMovement -= movementCost;
       await tokenToMove.save();
@@ -623,6 +624,57 @@ io.on('connection', async (socket) => {
         socket.to(tableId).emit('sceneListUpdated', updatedTable.scenes);
       }
     } catch (error) { console.error("Erro ao reordenar cenas:", error); }
+  });
+
+  socket.on('requestUndoMove', async (data: { tableId: string, tokenId: string }) => {
+    try {
+      const { tableId, tokenId } = data;
+      
+      const table = await Table.findById(tableId);
+      if (!table) return;
+
+      const tokenToUndo = await Token.findById(tokenId);
+      if (!tokenToUndo || !tokenToUndo.previousSquareId) return;
+
+      // Inverte as posições e restaura o movimento
+      const currentSquare = tokenToUndo.squareId;
+      const previousSquare = tokenToUndo.previousSquareId;
+
+      // Recalcula o custo para restaurar o movimento
+      const scene = await Scene.findById(tokenToUndo.sceneId);
+      if (!scene) return;
+
+      const getCoords = (sqId: string) => {
+        const index = parseInt(sqId.replace('sq-', ''));
+        const gridSize = scene.gridSize ?? 30;
+        return { x: index % gridSize, y: Math.floor(index / gridSize) };
+      };
+
+      const distance = Math.max(Math.abs(getCoords(currentSquare).x - getCoords(previousSquare).x), Math.abs(getCoords(currentSquare).y - getCoords(previousSquare).y));
+      const movementCost = distance * 1.5;
+
+      tokenToUndo.squareId = previousSquare;
+      tokenToUndo.previousSquareId = currentSquare; // Salva a posição "desfeita" caso queira refazer
+      tokenToUndo.remainingMovement += movementCost;
+      await tokenToUndo.save();
+
+      // Emite o mesmo evento 'tokenMoved'
+      io.to(tableId).emit('tokenMoved', {
+        _id: tokenToUndo._id.toString(),
+        oldSquareId: currentSquare,
+        squareId: tokenToUndo.squareId,
+        color: tokenToUndo.color,
+        ownerId: tokenToUndo.ownerId,
+        name: tokenToUndo.name,
+        imageUrl: tokenToUndo.imageUrl,
+        sceneId: tokenToUndo.sceneId ? tokenToUndo.sceneId.toString() : "",
+        movement: tokenToUndo.movement,
+        remainingMovement: tokenToUndo.remainingMovement,
+      });
+
+    } catch (error) { 
+      console.error("Erro ao desfazer movimento:", error); 
+    }
   });
 
   socket.on('disconnect', () => {

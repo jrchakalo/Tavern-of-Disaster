@@ -51,6 +51,23 @@ const currentTurnTokenId = computed(() => {
   const currentEntry = initiativeList.value.find(entry => entry.isCurrentTurn);
   return currentEntry?.tokenId || null;
 });
+const myActiveToken = computed(() => {
+  // Encontra a entrada da iniciativa que está no turno atual
+  const activeEntry = initiativeList.value.find(entry => entry.isCurrentTurn);
+  if (!activeEntry || !activeEntry.tokenId) return null;
+
+  // Encontra o token correspondente no grid
+  const tokenOnBoard = squares.value
+    .map(sq => sq.token)
+    .find(token => token?._id === activeEntry.tokenId);
+
+  // Retorna o token apenas se ele pertencer ao usuário logado
+  if (tokenOnBoard && tokenOnBoard.ownerId?._id === currentUser.value?.id) {
+    return tokenOnBoard;
+  }
+
+  return null;
+});
 
 function handleRightClick(square: GridSquare, event: MouseEvent) {
   if (isDM.value && square.token) { // Se for o Mestre e clicar num token existente
@@ -290,6 +307,11 @@ function handlePanMove(event: MouseEvent) {
 
 function handlePanEnd() {
   isPanning.value = false;
+}
+
+function handleUndoMove(tokenId: string) {
+  if (!socket || !tableId) return;
+  socket.emit('requestUndoMove', { tableId, tokenId });
 }
 
 function createToken(payload: { name: string, imageUrl: string, movement: number }) {
@@ -642,6 +664,17 @@ onUnmounted(() => {
     </aside>
 
     <main class="battlemap-main">
+      <div v-if="myActiveToken" class="turn-status-panel">
+        <h3>Seu Turno: {{ myActiveToken.name }}</h3>
+        <p>
+          Movimento Restante: <strong>{{ myActiveToken.remainingMovement }}m</strong> / {{ myActiveToken.movement }}m
+        </p>
+      </div>
+      <div v-if="myActiveToken" class="turn-status-panel">
+        <div class="turn-actions">
+          <button @click="handleUndoMove(myActiveToken._id)">Desfazer Movimento</button>
+          </div>
+      </div>
       <h1 v-if="currentTable">{{ currentTable.name }}</h1>
       <h3 v-if="activeSceneId" class="active-scene-name">Cena Ativa: {{ scenes.find(s => s._id === activeSceneId)?.name }}</h3>
       <button @click="resetView" class="reset-view-btn">Resetar Posição</button>
@@ -969,5 +1002,19 @@ main{
   margin-top: 5px;
   border-top: 1px solid #666;
   cursor: pointer;
+}
+.turn-status-panel {
+  margin-top: 20px;
+  background-color: #3a3a3a;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #555;
+  text-align: center;
+  width: 100%;
+  max-width: 400px;
+}
+.turn-status-panel h3 {
+  margin-top: 0;
+  color: #ffc107;
 }
 </style>

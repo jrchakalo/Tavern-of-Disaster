@@ -11,6 +11,7 @@ export interface IToken extends Document {
     sceneId?: Types.ObjectId; 
     movement: number;
     remainingMovement: number;
+    previousSquareId?: string;
 }
 
 const TokenSchema: Schema = new Schema({
@@ -23,6 +24,7 @@ const TokenSchema: Schema = new Schema({
     sceneId: { type: Schema.Types.ObjectId, ref: 'Scene', required: true, index: true },
     movement: { type: Number, required: true, default: 9 },
     remainingMovement: { type: Number, required: true, default: 9 },
+    previousSquareId: { type: String, required: false },
 }, {
     timestamps: true
 });
