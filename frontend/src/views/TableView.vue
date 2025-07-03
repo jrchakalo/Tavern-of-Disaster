@@ -292,13 +292,14 @@ function handlePanEnd() {
   isPanning.value = false;
 }
 
-function createToken(payload: { name: string, imageUrl: string }) {
+function createToken(payload: { name: string, imageUrl: string, movement: number }) {
   if (socket && targetSquareIdForToken.value && tableId && activeSceneId.value) {
     socket.emit('requestPlaceToken', {
       tableId: tableId,
       squareId: targetSquareIdForToken.value,
       name: payload.name,
       imageUrl: payload.imageUrl,
+      movement: payload.movement,
       sceneId: activeSceneId.value
     });
   }
@@ -454,6 +455,8 @@ onMounted(() => {
           name: movedTokenData.name,
           imageUrl: movedTokenData.imageUrl,
           sceneId: movedTokenData.sceneId,
+          movement: movedTokenData.movement,
+          remainingMovement: movedTokenData.remainingMovement,
         };
       } else {
         console.warn(`Novo quadrado ${movedTokenData.squareId} não encontrado no frontend para colocar token.`);

@@ -3,9 +3,10 @@ import { ref } from 'vue';
 
 const tokenName = ref('');
 const tokenImageUrl = ref('');
+const tokenMovement = ref(9);
 
 const emit = defineEmits<{
-  (e: 'create-token', payload: { name: string; imageUrl: string }): void;
+  (e: 'create-token', payload: { name: string; imageUrl: string; movement: number }): void;
   (e: 'cancel'): void;
 }>();
 
@@ -16,7 +17,8 @@ function handleSubmit() {
   }
   emit('create-token', {
     name: tokenName.value,
-    imageUrl: tokenImageUrl.value
+    imageUrl: tokenImageUrl.value,
+    movement: tokenMovement.value
   });
   // Limpa os campos após emitir
   tokenName.value = '';
@@ -34,7 +36,8 @@ function handleCancel() {
       <h3>Criar Novo Token</h3>
       <label for="token-name">Nome:</label>
       <input id="token-name" v-model="tokenName" type="text" placeholder="Nome do Personagem" required />
-
+      <label for="token-movement">Movimento (em metros):</label>
+      <input id="token-movement" v-model="tokenMovement" type="number" placeholder="9" required />
       <label for="token-image">URL da Imagem:</label>
       <input id="token-image" v-model="tokenImageUrl" type="url" placeholder="https://exemplo.com/imagem.png" />
 

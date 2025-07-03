@@ -6,6 +6,8 @@ export interface TokenInfo {
   name: string; 
   imageUrl?: string; 
   sceneId: string;
+  movement: number;
+  remainingMovement: number;
 }
 
 export interface TokenOwner {

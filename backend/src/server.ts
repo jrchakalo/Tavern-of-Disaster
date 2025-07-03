@@ -96,12 +96,12 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('requestPlaceToken', async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string }) => {
+  socket.on('requestPlaceToken', async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement: number; remainingMovement: number }) => {
     try {
       const userId = socket.data.user?.id; 
       if (!userId) return;
 
-      const { tableId, sceneId, squareId, name, imageUrl } = data;
+      const { tableId, sceneId, squareId, name, imageUrl, movement, remainingMovement } = data;
 
       if (!sceneId) {
         socket.emit('tokenPlacementError', { message: 'ID da cena não fornecido.' });
@@ -124,7 +124,9 @@ io.on('connection', async (socket) => {
         color: tokenColor,
         ownerId: userId,
         name,
-        imageUrl
+        imageUrl,
+        movement: data.movement || 9, 
+        remainingMovement: data.remainingMovement || 9, 
       });
 
       await newToken.save();
@@ -193,8 +195,14 @@ io.on('connection', async (socket) => {
         socket.emit('tokenMoveError', { message: 'Você não tem permissão para mover este token.' });
         return;
       }
-      
+
       const scene = await Scene.findById(tokenToMove.sceneId);
+      if (!scene){
+        console.log(`Cena com ID ${tokenToMove.sceneId} não encontrada para mover o token.`);
+        socket.emit('tokenMoveError', { message: 'Cena não encontrada.' });
+        return;
+      }
+
       if (scene) {
           const entryInInitiative = scene.initiative.find(entry => entry.tokenId?.toString() === tokenToMove._id.toString());
           if (entryInInitiative && !entryInInitiative.isCurrentTurn) {
@@ -208,6 +216,25 @@ io.on('connection', async (socket) => {
           }
       }
 
+      const gridSize = scene.gridSize ?? 30; // Pega o tamanho do grid da cena, padrão 30x30 se indefinido
+
+      const getCoords = (sqId: string) => {
+        const index = parseInt(sqId.replace('sq-', ''));
+        return { x: index % gridSize, y: Math.floor(index / gridSize) };
+      };
+
+      const oldCoords = getCoords(tokenToMove.squareId);
+      const newCoords = getCoords(targetSquareId);
+
+      // Calcula a distância em quadrados (método Chebyshev, comum em D&D 5e e outros jogos de tabuleiro)
+      const distanceInSquares = Math.max(Math.abs(newCoords.x - oldCoords.x), Math.abs(newCoords.y - oldCoords.y));
+      const movementCost = distanceInSquares * 1.5; // Custo em metros
+
+      if (tokenToMove.remainingMovement < movementCost) {
+        socket.emit('tokenMoveError', { message: 'Movimento insuficiente.' });
+        return;
+      }
+
       const oldSquareId = tokenToMove.squareId; // Guarda o squareId antigo
 
       // Se o token já está no targetSquareId, não faz nada
@@ -216,7 +243,8 @@ io.on('connection', async (socket) => {
         return;
       }
 
-      tokenToMove.squareId = targetSquareId; // Atualiza a posição
+      tokenToMove.squareId = data.targetSquareId;
+      tokenToMove.remainingMovement -= movementCost;
       await tokenToMove.save();
 
       console.log(`Token ${tokenId} movido de ${oldSquareId} para ${targetSquareId}`);
@@ -231,6 +259,8 @@ io.on('connection', async (socket) => {
         name: populatedToken.name,
         imageUrl: populatedToken.imageUrl,
         sceneId: populatedToken.sceneId ? populatedToken.sceneId.toString() : "",
+        movement: tokenToMove.movement,
+        remainingMovement: tokenToMove.remainingMovement,
       });
     } catch (error: any) {
       console.error('Erro ao processar requestMoveToken:', error.message);
@@ -394,6 +424,15 @@ io.on('connection', async (socket) => {
       // Encontra o próximo turno, voltando ao início se chegar ao fim
       const nextTurnIndex = (currentTurnIndex + 1) % initiativeList.length;
       initiativeList[nextTurnIndex].isCurrentTurn = true;
+
+      const nextTurnTokenId = initiativeList[nextTurnIndex].tokenId;
+      if (nextTurnTokenId) {
+        const tokenOfNextTurn = await Token.findById(nextTurnTokenId);
+        if (tokenOfNextTurn) {
+          tokenOfNextTurn.remainingMovement = tokenOfNextTurn.movement;
+          await tokenOfNextTurn.save();
+        }
+      }
 
       // Salva o estado atualizado da lista no documento da cena
       scene.initiative = initiativeList;
