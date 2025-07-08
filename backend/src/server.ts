@@ -424,42 +424,25 @@ io.on('connection', async (socket) => {
       // Encontra o próximo turno, voltando ao início se chegar ao fim
       const nextTurnIndex = (currentTurnIndex + 1) % initiativeList.length;
       if (nextTurnIndex === 0) {
-        console.log(`Nova rodada iniciada na cena ${sceneId}. Resetando movimento de todos os tokens.`);
-        await Token.updateMany(
-          { sceneId: sceneId }, 
-          [
-            { 
-              $set: { 
-                remainingMovement: "$movement", // Usa o valor do próprio campo 'movement'
-                moveHistory: ["$squareId"]      // Reseta o histórico para a posição atual
-              } 
-            }
-          ]
-        );
-      }
+      console.log(`Nova rodada iniciada na cena ${sceneId}. Resetando movimento de todos os tokens.`);
+      await Token.updateMany(
+        { sceneId: sceneId },
+        [{ $set: { 
+            remainingMovement: "$movement",
+            moveHistory: ["$squareId"]
+        }}]
+      );
 
-      if (currentTurnIndex !== -1) {
-        initiativeList[currentTurnIndex].isCurrentTurn = false;
-      }
+      const updatedTokens = await Token.find({ sceneId: sceneId }).populate('ownerId', '_id username');
+      io.to(tableId).emit('tokensUpdated', updatedTokens);
+    }
 
-      initiativeList[nextTurnIndex].isCurrentTurn = true;
+    initiativeList[nextTurnIndex].isCurrentTurn = true;
 
-      const nextTurnTokenId = initiativeList[nextTurnIndex].tokenId;
-      if (nextTurnTokenId) {
-        const tokenOfNextTurn = await Token.findById(nextTurnTokenId);
-        if (tokenOfNextTurn) {
-          tokenOfNextTurn.remainingMovement = tokenOfNextTurn.movement;
-          tokenOfNextTurn.moveHistory = [tokenOfNextTurn.squareId];
-          await tokenOfNextTurn.save();
-        }
-      }
+    scene.initiative = initiativeList;
+    await scene.save();
 
-      // Salva o estado atualizado da lista no documento da cena
-      scene.initiative = initiativeList;
-      await scene.save();
-
-      // Notifica todos na sala sobre a lista de iniciativa atualizada
-      io.to(tableId).emit('initiativeUpdated', scene.initiative);
+    io.to(tableId).emit('initiativeUpdated', scene.initiative);
     } catch (error) { 
       console.error("Erro ao avançar o turno:", error); 
     }

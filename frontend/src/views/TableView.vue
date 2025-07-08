@@ -580,7 +580,7 @@ onUnmounted(() => {
 <template>
   <div class="table-view-layout">
 
-    <div v-if="!isDM">
+    <div v-if="!isDM && activeScene?.type === 'battlemap'">
       <TurnOrderDisplay :initiativeList="initiativeList" />
       <PlayerTurnPanel 
         :initiativeList="initiativeList"
