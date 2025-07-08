@@ -4,7 +4,7 @@ import { io, Socket } from 'socket.io-client';
 import draggable from 'vuedraggable';
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
-import InitiativeTracker from '../components/InitiativeTracker.vue';
+import TurnOrderDisplay from '../components/TurnOrderDisplay.vue';
 import type { GridSquare, TokenInfo, IScene, ITable, IInitiativeEntry } from '../types';
 import { useRoute } from 'vue-router';
 import { authToken, currentUser } from '../auth';
@@ -568,7 +568,11 @@ onUnmounted(() => {
   <div class="table-view-layout">
 
     <div v-if="!isDM">
-      <InitiativeTracker :initiativeList="initiativeList" />
+      <TurnOrderDisplay 
+      :initiativeList="initiativeList"
+      :myActiveToken="myActiveToken"
+      @undo-move="handleUndoMove"
+      @end-turn="handleNextTurn" />
     </div>
 
     <aside v-if="isDM" class="dm-panel">
@@ -664,17 +668,6 @@ onUnmounted(() => {
     </aside>
 
     <main class="battlemap-main">
-      <div v-if="myActiveToken" class="turn-status-panel">
-        <h3>Seu Turno: {{ myActiveToken.name }}</h3>
-        <p>
-          Movimento Restante: <strong>{{ myActiveToken.remainingMovement }}m</strong> / {{ myActiveToken.movement }}m
-        </p>
-      </div>
-      <div v-if="myActiveToken" class="turn-status-panel">
-        <div class="turn-actions">
-          <button @click="handleUndoMove(myActiveToken._id)">Desfazer Movimento</button>
-          </div>
-      </div>
       <h1 v-if="currentTable">{{ currentTable.name }}</h1>
       <h3 v-if="activeSceneId" class="active-scene-name">Cena Ativa: {{ scenes.find(s => s._id === activeSceneId)?.name }}</h3>
       <button @click="resetView" class="reset-view-btn">Resetar Posição</button>

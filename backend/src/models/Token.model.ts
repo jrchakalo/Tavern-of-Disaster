@@ -12,6 +12,7 @@ export interface IToken extends Document {
     movement: number;
     remainingMovement: number;
     previousSquareId?: string;
+    moveHistory: string[]; 
 }
 
 const TokenSchema: Schema = new Schema({
@@ -25,6 +26,7 @@ const TokenSchema: Schema = new Schema({
     movement: { type: Number, required: true, default: 9 },
     remainingMovement: { type: Number, required: true, default: 9 },
     previousSquareId: { type: String, required: false },
+    moveHistory: [{ type: String }],
 }, {
     timestamps: true
 });

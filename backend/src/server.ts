@@ -216,6 +216,9 @@ io.on('connection', async (socket) => {
           }
       }
 
+      const oldSquareId = tokenToMove.squareId; // Guarda o squareId antigo
+      if (oldSquareId === targetSquareId) return;
+
       const gridSize = scene.gridSize ?? 30; // Pega o tamanho do grid da cena, padrão 30x30 se indefinido
 
       const getCoords = (sqId: string) => {
@@ -235,15 +238,7 @@ io.on('connection', async (socket) => {
         return;
       }
 
-      const oldSquareId = tokenToMove.squareId; // Guarda o squareId antigo
-
-      // Se o token já está no targetSquareId, não faz nada
-      if (oldSquareId === targetSquareId) {
-        console.log(`Token ${tokenId} já está em ${targetSquareId}. Nenhum movimento necessário.`);
-        return;
-      }
-
-      tokenToMove.previousSquareId = oldSquareId;
+      tokenToMove.moveHistory.push(tokenToMove.squareId);
       tokenToMove.squareId = data.targetSquareId;
       tokenToMove.remainingMovement -= movementCost;
       await tokenToMove.save();
@@ -431,6 +426,7 @@ io.on('connection', async (socket) => {
         const tokenOfNextTurn = await Token.findById(nextTurnTokenId);
         if (tokenOfNextTurn) {
           tokenOfNextTurn.remainingMovement = tokenOfNextTurn.movement;
+          tokenOfNextTurn.moveHistory = [tokenOfNextTurn.squareId];
           await tokenOfNextTurn.save();
         }
       }
@@ -629,16 +625,21 @@ io.on('connection', async (socket) => {
   socket.on('requestUndoMove', async (data: { tableId: string, tokenId: string }) => {
     try {
       const { tableId, tokenId } = data;
+      const userId = socket.data.user?.id;
       
       const table = await Table.findById(tableId);
       if (!table) return;
 
       const tokenToUndo = await Token.findById(tokenId);
-      if (!tokenToUndo || !tokenToUndo.previousSquareId) return;
+      if (!tokenToUndo || tokenToUndo.moveHistory.length === 0) return;
 
-      // Inverte as posições e restaura o movimento
-      const currentSquare = tokenToUndo.squareId;
-      const previousSquare = tokenToUndo.previousSquareId;
+      // Validação de permissão
+      const isDM = table.dm.toString() === userId;
+      const isOwner = tokenToUndo.ownerId.toString() === userId;
+      if (!isDM && !isOwner) return;
+
+      const currentPosition = tokenToUndo.squareId;
+      const previousPosition = tokenToUndo.moveHistory.pop()!; 
 
       // Recalcula o custo para restaurar o movimento
       const scene = await Scene.findById(tokenToUndo.sceneId);
@@ -650,18 +651,17 @@ io.on('connection', async (socket) => {
         return { x: index % gridSize, y: Math.floor(index / gridSize) };
       };
 
-      const distance = Math.max(Math.abs(getCoords(currentSquare).x - getCoords(previousSquare).x), Math.abs(getCoords(currentSquare).y - getCoords(previousSquare).y));
+      const distance = Math.max(Math.abs(getCoords(currentPosition).x - getCoords(previousPosition).x), Math.abs(getCoords(currentPosition).y - getCoords(previousPosition).y));
       const movementCost = distance * 1.5;
 
-      tokenToUndo.squareId = previousSquare;
-      tokenToUndo.previousSquareId = currentSquare; // Salva a posição "desfeita" caso queira refazer
+      tokenToUndo.squareId = previousPosition;
       tokenToUndo.remainingMovement += movementCost;
       await tokenToUndo.save();
 
       // Emite o mesmo evento 'tokenMoved'
       io.to(tableId).emit('tokenMoved', {
         _id: tokenToUndo._id.toString(),
-        oldSquareId: currentSquare,
+        oldSquareId: currentPosition,
         squareId: tokenToUndo.squareId,
         color: tokenToUndo.color,
         ownerId: tokenToUndo.ownerId,

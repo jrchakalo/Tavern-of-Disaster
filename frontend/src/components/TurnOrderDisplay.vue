@@ -1,37 +1,47 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import type { IInitiativeEntry } from '../types';
+import type { IInitiativeEntry, TokenInfo } from '../types';
 
 interface Props {
   initiativeList: IInitiativeEntry[];
+  myActiveToken: TokenInfo | null;
 }
-defineProps<Props>();
+const props = defineProps<Props>();
+
+const emit = defineEmits<{
+  (e: 'undo-move', tokenId: string): void;
+  (e: 'end-turn'): void;
+}>();
 
 const isCollapsed = ref(true); // Começa recolhido
 </script>
 
 <template>
-  <div class="initiative-tracker" :class="{ collapsed: isCollapsed }">
+  <div class="turn-order-display" :class="{ collapsed: isCollapsed }">
     <button @click="isCollapsed = !isCollapsed" class="toggle-button">
-      <span>Iniciativa</span>
-      <span v-if="isCollapsed">▲</span>
-      <span v-else>▼</span>
-    </button>
-    <ul v-show="!isCollapsed" class="initiative-list">
-      <li
-        v-for="entry in initiativeList"
-        :key="entry._id"
-        :class="{ 'active-turn': entry.isCurrentTurn }"
-      >
-        <span>{{ entry.characterName }}</span>
-      </li>
-      <li v-if="initiativeList.length === 0" class="empty-list">A iniciativa está vazia.</li>
-    </ul>
+      <span>Ordem de Combate</span>
+      </button>
+
+    <div v-show="!isCollapsed">
+      <ul class="initiative-list">
+        </ul>
+
+      <div v-if="props.myActiveToken" class="turn-status-panel">
+        <h3>Seu Turno: {{ props.myActiveToken.name }}</h3>
+        <p>
+          Movimento: <strong>{{ props.myActiveToken.remainingMovement }}m</strong> / {{ props.myActiveToken.movement }}m
+        </p>
+        <div class="turn-actions">
+          <button @click="emit('undo-move', props.myActiveToken!._id)">Desfazer Movimento</button>
+          <button @click="emit('end-turn')" class="end-turn-btn">Encerrar Turno</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.initiative-tracker {
+.turn-order-display {
   position: fixed;
   top: 80px; /* Abaixo do header principal */
   left: 20px;
