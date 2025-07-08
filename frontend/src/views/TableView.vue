@@ -5,6 +5,7 @@ import draggable from 'vuedraggable';
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import TurnOrderDisplay from '../components/TurnOrderDisplay.vue';
+import PlayerTurnPanel from '../components/PlayerTurnPanel.vue';
 import type { GridSquare, TokenInfo, IScene, ITable, IInitiativeEntry } from '../types';
 import { useRoute } from 'vue-router';
 import { authToken, currentUser } from '../auth';
@@ -68,6 +69,11 @@ const myActiveToken = computed(() => {
 
   return null;
 });
+const tokensOnMap = computed(() => 
+  squares.value
+    .map(sq => sq.token)
+    .filter((token): token is TokenInfo => token !== null && token !== undefined)
+);
 
 function handleRightClick(square: GridSquare, event: MouseEvent) {
   if (isDM.value && square.token) { // Se for o Mestre e clicar num token existente
@@ -201,11 +207,6 @@ function handleNextTurn() {
   socket.emit('requestNextTurn', { tableId, sceneId: activeSceneId.value });
 }
 
-function handleResetInitiative() {
-  if (!confirm("Tem certeza que deseja limpar toda a lista de iniciativa?")) return;
-  if (!tableId || !activeSceneId.value || !socket) return;
-  socket.emit('requestResetInitiative', { tableId, sceneId: activeSceneId.value });
-}
 
 function handleRemoveFromInitiative(initiativeEntryId: string) {
   if (!confirm("Isso também irá deletar o token do mapa. Tem certeza?")) return;
@@ -309,9 +310,10 @@ function handlePanEnd() {
   isPanning.value = false;
 }
 
-function handleUndoMove(tokenId: string) {
-  if (!socket || !tableId) return;
-  socket.emit('requestUndoMove', { tableId, tokenId });
+function handleUndoMove() {
+  const tokenIdToUndo = currentTurnTokenId.value;
+  if (!socket || !tableId || !tokenIdToUndo) return;
+  socket.emit('requestUndoMove', { tableId, tokenId: tokenIdToUndo });
 }
 
 function createToken(payload: { name: string, imageUrl: string, movement: number }) {
@@ -457,12 +459,9 @@ onMounted(() => {
     if (movedTokenData.sceneId === activeSceneId.value) {
 
       // Remover o token do quadrado antigo
-      const oldSquare = squares.value.find(sq => sq.id === movedTokenData.oldSquareId);
-      if (oldSquare) {
-        console.log(`Removendo token do quadrado antigo: ${movedTokenData.oldSquareId}`);
-        oldSquare.token = null;
-      } else {
-        console.warn(`Quadrado antigo ${movedTokenData.oldSquareId} não encontrado no frontend para remover token.`);
+      const oldSquareIndex = squares.value.findIndex(sq => sq.id === movedTokenData.oldSquareId);
+      if (oldSquareIndex !== -1) {
+        squares.value[oldSquareIndex] = { ...squares.value[oldSquareIndex], token: null };
       }
 
       // Adicionar/Atualizar o token no novo quadrado
@@ -554,6 +553,20 @@ onMounted(() => {
       console.log(`Dono do token ${data.tokenId} atualizado para ${data.newOwner.username}`);
     }
   });
+
+  socket.on('tokensUpdated', (updatedTokens: TokenInfo[]) => {
+    console.log('Recebido evento de atualização em massa de tokens:', updatedTokens);
+    // Itera sobre cada token atualizado vindo do backend
+    updatedTokens.forEach(updatedToken => {
+      // Encontra o quadrado que contém (ou deveria conter) este token
+      const square = squares.value.find(sq => sq.token?._id === updatedToken._id);
+      if (square && square.token) {
+        // Atualiza o objeto token existente com os novos dados
+        square.token.remainingMovement = updatedToken.remainingMovement;
+        // Atualize outras propriedades se necessário
+      }
+    });
+  });
 });
 
 onUnmounted(() => {
@@ -568,11 +581,14 @@ onUnmounted(() => {
   <div class="table-view-layout">
 
     <div v-if="!isDM">
-      <TurnOrderDisplay 
-      :initiativeList="initiativeList"
-      :myActiveToken="myActiveToken"
-      @undo-move="handleUndoMove"
-      @end-turn="handleNextTurn" />
+      <TurnOrderDisplay :initiativeList="initiativeList" />
+      <PlayerTurnPanel 
+        :initiativeList="initiativeList"
+        :myActiveToken="myActiveToken"
+        :currentUser="currentUser ? { _id: currentUser.id, username: currentUser.username } : null"
+        :tokensOnMap="tokensOnMap" @undo-move="handleUndoMove"
+        @end-turn="handleNextTurn"
+      />
     </div>
 
     <aside v-if="isDM" class="dm-panel">
@@ -595,9 +611,23 @@ onUnmounted(() => {
         <div class="panel-section"
           v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
           <h3>Iniciativa</h3>
+          <ul class="initiative-list">
+            <li v-for="entry in initiativeList" :key="entry._id">
+              <div class="entry-info">
+                <span class="character-name">{{ entry.characterName }}</span>
+                <small v-if="entry.tokenId && tokensOnMap.find(t => t._id === entry.tokenId)" class="movement-info">
+                  Mov: {{ tokensOnMap.find(t => t._id === entry.tokenId)!.remainingMovement }}m
+                  Sq: {{ (tokensOnMap.find(t => t._id === entry.tokenId)!.remainingMovement)/1.5 }}
+                </small>
+              </div>
+            </li>
+          </ul>
           <div class="initiative-controls">
             <button @click="handleNextTurn">Próximo Turno</button>
-            <button @click="handleResetInitiative" class="delete-btn">Resetar</button>
+            <button 
+              @click="handleUndoMove"
+              :disabled="!currentTurnTokenId"
+            >Desfazer Movimento</button>
           </div>
 
           <draggable 
@@ -1009,5 +1039,24 @@ main{
 .turn-status-panel h3 {
   margin-top: 0;
   color: #ffc107;
+}
+.initiative-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    /* ... */
+}
+.entry-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+.character-name {
+    font-weight: bold;
+}
+.movement-info {
+    font-size: 0.8em;
+    color: #ccc;
+    opacity: 0.8;
 }
 </style>

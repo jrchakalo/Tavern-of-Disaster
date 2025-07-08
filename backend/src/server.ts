@@ -401,9 +401,13 @@ io.on('connection', async (socket) => {
       const table = await Table.findById(tableId);
       if (!table) return;
 
-      if (table.dm.toString() !== userId) {
-        console.log(`[AUTH] Falha: Usuário ${userId} tentou avançar o turno da mesa ${tableId}, mas não é o mestre.`);
-        return socket.emit('error', { message: 'Apenas o Mestre pode avançar o turno.' });
+      const isDM = table.dm.toString() === userId;
+      const isOwner = table.players.some(player => player._id.toString() === userId);
+
+      if (!isDM && !isOwner) { // Se o usuário não for NEM o mestre E NEM o dono
+        console.log(`[AUTH] Falha: Usuário ${userId} tentou avançar o turno sem permissão.`);
+        socket.emit('tokenMoveError', { message: 'Você não tem permissão para avançar o turno.' });
+        return;
       }
 
       const scene = await Scene.findById(sceneId);
@@ -419,6 +423,25 @@ io.on('connection', async (socket) => {
 
       // Encontra o próximo turno, voltando ao início se chegar ao fim
       const nextTurnIndex = (currentTurnIndex + 1) % initiativeList.length;
+      if (nextTurnIndex === 0) {
+        console.log(`Nova rodada iniciada na cena ${sceneId}. Resetando movimento de todos os tokens.`);
+        await Token.updateMany(
+          { sceneId: sceneId }, 
+          [
+            { 
+              $set: { 
+                remainingMovement: "$movement", // Usa o valor do próprio campo 'movement'
+                moveHistory: ["$squareId"]      // Reseta o histórico para a posição atual
+              } 
+            }
+          ]
+        );
+      }
+
+      if (currentTurnIndex !== -1) {
+        initiativeList[currentTurnIndex].isCurrentTurn = false;
+      }
+
       initiativeList[nextTurnIndex].isCurrentTurn = true;
 
       const nextTurnTokenId = initiativeList[nextTurnIndex].tokenId;
@@ -656,20 +679,21 @@ io.on('connection', async (socket) => {
 
       tokenToUndo.squareId = previousPosition;
       tokenToUndo.remainingMovement += movementCost;
-      await tokenToUndo.save();
+      const savedToken = await tokenToUndo.save();
 
       // Emite o mesmo evento 'tokenMoved'
+      const populatedTokenToUndo = await savedToken.populate('ownerId', '_id username');
       io.to(tableId).emit('tokenMoved', {
-        _id: tokenToUndo._id.toString(),
+        _id: populatedTokenToUndo._id.toString(),
         oldSquareId: currentPosition,
-        squareId: tokenToUndo.squareId,
-        color: tokenToUndo.color,
-        ownerId: tokenToUndo.ownerId,
-        name: tokenToUndo.name,
-        imageUrl: tokenToUndo.imageUrl,
-        sceneId: tokenToUndo.sceneId ? tokenToUndo.sceneId.toString() : "",
-        movement: tokenToUndo.movement,
-        remainingMovement: tokenToUndo.remainingMovement,
+        squareId: populatedTokenToUndo.squareId,
+        color: populatedTokenToUndo.color,
+        ownerId: populatedTokenToUndo.ownerId,
+        name: populatedTokenToUndo.name,
+        imageUrl: populatedTokenToUndo.imageUrl,
+        sceneId: populatedTokenToUndo.sceneId ? populatedTokenToUndo.sceneId.toString() : "",
+        movement: populatedTokenToUndo.movement,
+        remainingMovement: populatedTokenToUndo.remainingMovement,
       });
 
     } catch (error) { 

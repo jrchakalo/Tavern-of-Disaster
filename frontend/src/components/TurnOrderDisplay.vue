@@ -4,38 +4,35 @@ import type { IInitiativeEntry, TokenInfo } from '../types';
 
 interface Props {
   initiativeList: IInitiativeEntry[];
-  myActiveToken: TokenInfo | null;
 }
 const props = defineProps<Props>();
 
-const emit = defineEmits<{
-  (e: 'undo-move', tokenId: string): void;
-  (e: 'end-turn'): void;
-}>();
-
 const isCollapsed = ref(true); // Começa recolhido
+
+
 </script>
 
 <template>
   <div class="turn-order-display" :class="{ collapsed: isCollapsed }">
     <button @click="isCollapsed = !isCollapsed" class="toggle-button">
       <span>Ordem de Combate</span>
-      </button>
+      <span v-if="isCollapsed">▲</span>
+      <span v-else>▼</span>
+    </button>
 
-    <div v-show="!isCollapsed">
+    <div v-show="!isCollapsed" class="content">
       <ul class="initiative-list">
-        </ul>
-
-      <div v-if="props.myActiveToken" class="turn-status-panel">
-        <h3>Seu Turno: {{ props.myActiveToken.name }}</h3>
-        <p>
-          Movimento: <strong>{{ props.myActiveToken.remainingMovement }}m</strong> / {{ props.myActiveToken.movement }}m
-        </p>
-        <div class="turn-actions">
-          <button @click="emit('undo-move', props.myActiveToken!._id)">Desfazer Movimento</button>
-          <button @click="emit('end-turn')" class="end-turn-btn">Encerrar Turno</button>
-        </div>
-      </div>
+        <li
+          v-for="entry in initiativeList"
+          :key="entry._id"
+          :class="{ 'active-turn': entry.isCurrentTurn }"
+        >
+          <span>{{ entry.characterName }}</span>
+        </li>
+        <li v-if="initiativeList.length === 0" class="empty-list">
+          A iniciativa está vazia.
+        </li>
+      </ul>
     </div>
   </div>
 </template>
@@ -52,9 +49,13 @@ const isCollapsed = ref(true); // Começa recolhido
   z-index: 20;
   overflow: hidden;
   transition: width 0.3s ease;
-  width: 250px;
+  backdrop-filter: blur(5px);
+  width: 280px;
 }
-.initiative-tracker.collapsed {
+.turn-order-display.collapsed .content {
+  display: none;
+}
+.turn-order-display.collapsed {
   width: 120px;
 }
 .toggle-button {
@@ -70,6 +71,9 @@ const isCollapsed = ref(true); // Começa recolhido
   justify-content: space-between;
   align-items: center;
 }
+.content {
+  padding: 0 15px 15px 15px;
+}
 .initiative-list {
   list-style: none;
   padding: 0;
@@ -81,12 +85,17 @@ const isCollapsed = ref(true); // Começa recolhido
   padding: 8px 12px;
   border-top: 1px solid #4f4f4f;
 }
-.initiative-list li.active-turn {
-  background-color: #5a9c5a;
-  font-weight: bold;
+.initiative-list li:last-child { 
+  border-bottom: none; 
 }
-.empty-list {
-  font-style: italic;
-  color: #aaa;
+.initiative-list li.active-turn { 
+  background-color: #5a9c5a; 
+  border-radius: 4px; 
+  font-weight: bold; 
+}
+.empty-list { 
+  font-style: italic; 
+  color: #aaa; 
+  text-align: center; 
 }
 </style>
