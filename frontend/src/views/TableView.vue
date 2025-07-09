@@ -45,6 +45,7 @@ const currentTable = ref<ITable | null>(null);
 const isDM = computed(() => {
   return currentUser.value?.id === (typeof currentTable.value?.dm === 'object' ? currentTable.value?.dm._id : currentTable.value?.dm);
 });
+const isDmPanelCollapsed = ref(false);
 const activeScene = computed(() => {
     return scenes.value.find(s => s._id === activeSceneId.value) || null;
 });
@@ -80,7 +81,14 @@ function handleRightClick(square: GridSquare, event: MouseEvent) {
     event.preventDefault(); 
     showTokenForm.value = false;
 
-    assignMenuPosition.value = { x: event.clientX, y: event.clientY };
+    if (!viewportRef.value) return;
+
+    const viewportRect = viewportRef.value.getBoundingClientRect();
+
+    const mouseX = event.clientX - viewportRect.left;
+    const mouseY = event.clientY - viewportRect.top;
+
+    assignMenuPosition.value = { x: mouseX, y: mouseY };
     assignMenuTargetToken.value = square.token;
     showAssignMenu.value = true;
   } else if (!square.token) { // Se o quadrado estiver vazio (lógica existente)
@@ -591,110 +599,115 @@ onUnmounted(() => {
       />
     </div>
 
-    <aside v-if="isDM" class="dm-panel">
-      <h2>Painel do Mestre</h2>
-
-      <div class="panel-section scene-manager">
-        <form @submit.prevent="handleCreateScene" class="create-scene-form">
-          <h4>Criar Nova Cena</h4>
-          <input v-model="newSceneName" placeholder="Nome da Cena" required />
-          <input v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
-
-          <select v-model="newSceneType">
-            <option value="battlemap">Battlemap</option>
-            <option value="image">Imagem</option>
-          </select>
-
-          <button type="submit">Adicionar Cena</button>
-        </form>
+    <aside v-if="isDM" class="dm-panel" :class="{ collapsed: isDmPanelCollapsed }">
+      <button @click="isDmPanelCollapsed = !isDmPanelCollapsed" class="toggle-button">
+        <span>Painel do Mestre</span>
+        <span v-if="isDmPanelCollapsed">▲</span>
+        <span v-else>▼</span>
+      </button>
       
-        <div class="panel-section"
-          v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
-          <h3>Iniciativa</h3>
-          <ul class="initiative-list">
-            <li v-for="entry in initiativeList" :key="entry._id">
-              <div class="entry-info">
-                <span class="character-name">{{ entry.characterName }}</span>
-                <small v-if="entry.tokenId && tokensOnMap.find(t => t._id === entry.tokenId)" class="movement-info">
-                  Mov: {{ tokensOnMap.find(t => t._id === entry.tokenId)!.remainingMovement }}m
-                  Sq: {{ (tokensOnMap.find(t => t._id === entry.tokenId)!.remainingMovement)/1.5 }}
-                </small>
-              </div>
-            </li>
+      <div v-show="!isDmPanelCollapsed" class="panel-content">
+        <div class="panel-section scene-manager">
+          <form @submit.prevent="handleCreateScene" class="create-scene-form">
+            <h4>Criar Nova Cena</h4>
+            <input v-model="newSceneName" placeholder="Nome da Cena" required />
+            <input v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
+
+            <select v-model="newSceneType">
+              <option value="battlemap">Battlemap</option>
+              <option value="image">Imagem</option>
+            </select>
+
+            <button type="submit">Adicionar Cena</button>
+          </form>
+        
+          <div class="panel-section"
+            v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
+            <h3>Iniciativa</h3>
+            <ul class="initiative-list">
+              <li v-for="entry in initiativeList" :key="entry._id">
+                <div class="entry-info">
+                  <span class="character-name">{{ entry.characterName }}</span>
+                  <small v-if="entry.tokenId && tokensOnMap.find(t => t._id === entry.tokenId)" class="movement-info">
+                    Mov: {{ tokensOnMap.find(t => t._id === entry.tokenId)!.remainingMovement }}m
+                    Sq: {{ (tokensOnMap.find(t => t._id === entry.tokenId)!.remainingMovement)/1.5 }}
+                  </small>
+                </div>
+              </li>
+            </ul>
+            <div class="initiative-controls">
+              <button @click="handleNextTurn">Próximo Turno</button>
+              <button 
+                @click="handleUndoMove"
+                :disabled="!currentTurnTokenId"
+              >Desfazer Movimento</button>
+            </div>
+
+            <draggable 
+              v-if="activeScene.type === 'battlemap'"
+              v-model="initiativeList"
+              tag="ul"
+              class="initiative-list"
+              item-key="_id"
+              @end="onInitiativeDragEnd"
+            >
+              <template #item="{ element: entry }">
+                <li :class="{ 'active-turn': entry.isCurrentTurn, 'draggable-item': true }">
+                  <span>{{ entry.characterName }}</span>
+                  <div class="initiative-buttons"> 
+                    <button @click="handleEditInitiativeEntry(entry)" class="icon-btn">✏️</button>
+                    <button @click="handleRemoveFromInitiative(entry._id)" class="icon-btn delete-btn-small">🗑️</button>
+                  </div>
+                </li>
+              </template>
+            </draggable>
+
+            <div v-if="initiativeList.length === 0" class="empty-list-container">
+              <p class="empty-list">A iniciativa está vazia.</p>
+            </div>
+          </div>
+
+          <ul class="scene-list">
+            <h3>Cenas</h3>
+            <draggable
+              v-model="scenes"
+              tag="ul"
+              class="scene-list"
+              item-key="_id"
+              @end="onSceneDragEnd"
+              handle=".drag-handle"
+            >
+              <template #item="{ element: scene }">
+                <li :class="{ 'active-scene': scene._id === activeSceneId }">
+                  <span class="drag-handle">⠿</span> <span>{{ scene.name }}</span>
+                  <div class="scene-buttons">
+                    <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">Ativar</button>
+                    <button @click="handleEditScene(scene)" class="icon-btn">✏️</button>
+                    <button @click="handleDeleteScene(scene._id)" :disabled="scene._id === activeSceneId" class="icon-btn delete-btn-small">🗑️</button>
+                  </div>
+                </li>
+              </template>
+            </draggable>
           </ul>
-          <div class="initiative-controls">
-            <button @click="handleNextTurn">Próximo Turno</button>
-            <button 
-              @click="handleUndoMove"
-              :disabled="!currentTurnTokenId"
-            >Desfazer Movimento</button>
-          </div>
 
-          <draggable 
-            v-if="activeScene.type === 'battlemap'"
-            v-model="initiativeList"
-            tag="ul"
-            class="initiative-list"
-            item-key="_id"
-            @end="onInitiativeDragEnd"
-          >
-            <template #item="{ element: entry }">
-              <li :class="{ 'active-turn': entry.isCurrentTurn, 'draggable-item': true }">
-                <span>{{ entry.characterName }}</span>
-                <div class="initiative-buttons"> 
-                  <button @click="handleEditInitiativeEntry(entry)" class="icon-btn">✏️</button>
-                  <button @click="handleRemoveFromInitiative(entry._id)" class="icon-btn delete-btn-small">🗑️</button>
-                </div>
-              </li>
-            </template>
-          </draggable>
-
-          <div v-if="initiativeList.length === 0" class="empty-list-container">
-            <p class="empty-list">A iniciativa está vazia.</p>
+          <div class="panel-section">
+            <h4>Editar Imagem da Cena Ativa</h4>
+            <div class="map-controls">
+              <label for="map-url">URL da Imagem:</label>
+              <input id="map-url" type="url" v-model="mapUrlInput" placeholder="URL da imagem da cena" />
+              <button @click="setMap">Definir Imagem</button>
+            </div>
           </div>
         </div>
 
-        <ul class="scene-list">
-          <h3>Cenas</h3>
-          <draggable
-            v-model="scenes"
-            tag="ul"
-            class="scene-list"
-            item-key="_id"
-            @end="onSceneDragEnd"
-            handle=".drag-handle"
-          >
-            <template #item="{ element: scene }">
-              <li :class="{ 'active-scene': scene._id === activeSceneId }">
-                <span class="drag-handle">⠿</span> <span>{{ scene.name }}</span>
-                <div class="scene-buttons">
-                  <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">Ativar</button>
-                  <button @click="handleEditScene(scene)" class="icon-btn">✏️</button>
-                  <button @click="handleDeleteScene(scene._id)" :disabled="scene._id === activeSceneId" class="icon-btn delete-btn-small">🗑️</button>
-                </div>
-              </li>
-            </template>
-          </draggable>
-        </ul>
-
-        <div class="panel-section">
-          <h4>Editar Imagem da Cena Ativa</h4>
-          <div class="map-controls">
-            <label for="map-url">URL da Imagem:</label>
-            <input id="map-url" type="url" v-model="mapUrlInput" placeholder="URL da imagem da cena" />
-            <button @click="setMap">Definir Imagem</button>
+        <div v-if="activeScene?.type === 'battlemap'" class="panel-section">
+          <h4>Controles do Grid</h4>
+          <div class="grid-controls">
+            <label for="grid-size">Tamanho (quadrados):</label>
+            <input id="grid-size" type="number" v-model="gridSize" min="1" />
           </div>
         </div>
       </div>
-
-      <div v-if="activeScene?.type === 'battlemap'" class="panel-section">
-        <h4>Controles do Grid</h4>
-        <div class="grid-controls">
-          <label for="grid-size">Tamanho (quadrados):</label>
-          <input id="grid-size" type="number" v-model="gridSize" min="1" />
-        </div>
-      </div>
-    
     </aside>
 
     <main class="battlemap-main">
@@ -736,8 +749,8 @@ onUnmounted(() => {
             @square-left-click="handleLeftClickOnSquare"
             @token-move-requested="handleTokenMoveRequest"
           />
-
-          <div 
+        </div>
+        <div 
             v-if="showAssignMenu" 
             class="context-menu" 
             :style="{ top: `${assignMenuPosition.y}px`, left: `${assignMenuPosition.x}px` }"
@@ -751,7 +764,6 @@ onUnmounted(() => {
             </ul>
             <button @click="showAssignMenu = false">Fechar</button>
           </div>
-        </div>
       </div>
     </main>
 
@@ -779,11 +791,11 @@ main{
   padding: 20px;
 }
 .table-view-layout {
-  display: flex;
   gap: 20px;
   width: 100%;
   padding: 20px;
   box-sizing: border-box; /* Garante que o padding não aumente a largura total */
+  position: relative;
 }
 .battlemap-main {
   flex-grow: 1; /* Faz o battlemap ocupar o espaço principal */
@@ -796,14 +808,35 @@ main{
   margin-top: 0;
 }
 .dm-panel {
+  transition: width 0.3s ease, padding 0.3s ease; /* Transição suave */
+  position: absolute;
+  top: 20px; 
+  right: 20px;
+  z-index: 50; 
+
   width: 300px;
-  flex-shrink: 0; /* Impede que o painel encolha */
+  flex-shrink: 0;
   background-color: #3a3a3a;
   padding: 15px;
   border-radius: 8px;
   height: fit-content;
+  max-height: calc(100vh - 40px); 
+  overflow-y: auto; /* Adiciona scroll se o conteúdo for muito grande */
 }
-.dm-panel h2 {
+.toggle-button {
+  background-color: #3a3a3a;
+  color: #ffc107;
+  border: none;
+  width: 100%;
+  padding: 10px;
+  font-size: 1em;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+panel h2 {
   margin-top: 0;
   text-align: center;
   color: #ffc107;
@@ -1002,12 +1035,13 @@ main{
   font-size: 1.1em;
 }
 .context-menu {
-  position: fixed;
+  position: absolute;
   background: #4f4f4f;
   border: 1px solid #888;
   border-radius: 4px;
-  padding: 10px;
+  padding: 5px 0;
   z-index: 1000;
+  min-width: 150px;
 }
 .context-menu ul { list-style: none; padding: 0; margin: 0; }
 .context-menu li { 
