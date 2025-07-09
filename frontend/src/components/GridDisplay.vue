@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { GridSquare, TokenInfo } from '../types';
+
+const pathPreview = ref<string[]>([]); 
+const isPathValid = ref(true); 
+const draggedTokenInfo = ref<TokenInfo | null>(null);
+let throttleTimeout: number | null = null;
+const THROTTLE_DELAY_MS = 50;
 
 interface Props {
   squares: GridSquare[];
@@ -37,11 +43,42 @@ function handleDragStart(event: DragEvent, token: TokenInfo) {
       originalSquareId: token.squareId
     }));
   }
+  draggedTokenInfo.value = token;
+  pathPreview.value = [];
+}
+
+function handleDragOver(targetSquare: GridSquare) {
+  if (throttleTimeout) return;
+
+  throttleTimeout = window.setTimeout(() => {
+    // Quando o timer acabar, resete a flag para permitir a próxima execução
+    throttleTimeout = null;
+  }, THROTTLE_DELAY_MS);
+
+  if (!draggedTokenInfo.value || !targetSquare || draggedTokenInfo.value.squareId === targetSquare.id) {
+    pathPreview.value = []; // Se estiver sobre o mesmo quadrado, não mostra caminho
+    return;
+  }
+
+  // Calcula o caminho
+  const path = findShortestPath(draggedTokenInfo.value.squareId, targetSquare.id, props.gridSize);
+  pathPreview.value = path;
+
+  // Valida o custo do movimento
+  const movementCost = (path.length - 1) * 1.5;
+  isPathValid.value = draggedTokenInfo.value.remainingMovement >= movementCost;
 }
 
 function handleDrop(event: DragEvent, targetSquare: GridSquare) {
   event.preventDefault();
   console.log(`Token solto no quadrado: ${targetSquare.id}`);
+
+  if (!isPathValid.value) {
+    console.log("Movimento inválido. Drop cancelado.");
+    pathPreview.value = []; // Limpa a projeção vermelha
+    draggedTokenInfo.value = null;
+    return;
+  }
 
   if (targetSquare.token) {
     console.log('Quadrado de destino já está ocupado. Movimento cancelado.');
@@ -61,6 +98,46 @@ function handleDrop(event: DragEvent, targetSquare: GridSquare) {
       targetSquareId: targetSquare.id
     });
   }
+  pathPreview.value = [];
+  draggedTokenInfo.value = null;
+}
+
+function findShortestPath(startId: string, endId: string, gridSize: number): string[] {
+  const getCoords = (id: string) => {
+    const index = parseInt(id.replace('sq-', ''));
+    return { x: index % gridSize, y: Math.floor(index / gridSize) };
+  };
+  const getId = (x: number, y: number) => `sq-${y * gridSize + x}`;
+
+  const queue: { path: string[] }[] = [{ path: [startId] }];
+  const visited = new Set([startId]);
+
+  while (queue.length > 0) {
+    const { path } = queue.shift()!;
+    const currentId = path[path.length - 1];
+
+    if (currentId === endId) return path;
+
+    const { x, y } = getCoords(currentId);
+    const neighbors = [
+      { dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+      { dx: -1, dy: -1 }, { dx: -1, dy: 1 }, { dx: 1, dy: -1 }, { dx: 1, dy: 1 }
+    ];
+
+    for (const { dx, dy } of neighbors) {
+      const nextX = x + dx;
+      const nextY = y + dy;
+      if (nextX >= 0 && nextX < gridSize && nextY >= 0 && nextY < gridSize) {
+        const neighborId = getId(nextX, nextY);
+        if (!visited.has(neighborId)) {
+          visited.add(neighborId);
+          const newPath = [...path, neighborId];
+          queue.push({ path: newPath });
+        }
+      }
+    }
+  }
+  return []; // Retorna vazio se nenhum caminho for encontrado
 }
 
 function onSquareLeftClick(square: GridSquare) {
@@ -77,8 +154,13 @@ function onSquareRightClick(square: GridSquare, event: MouseEvent) {
     <div
       v-for="square in props.squares" :key="square.id"
       class="grid-square"
-      @contextmenu.prevent="onSquareRightClick(square, $event)" @click="onSquareLeftClick(square)"
-      @dragover.prevent @drop="handleDrop($event, square)" >
+      :class="{ 
+        'path-preview': pathPreview.includes(square.id) && isPathValid,
+        'path-invalid': pathPreview.includes(square.id) && !isPathValid
+      }"
+      @contextmenu.prevent="onSquareRightClick(square, $event)" 
+      @click="onSquareLeftClick(square)"
+      @dragover.prevent="handleDragOver(square)" @drop="handleDrop($event, square)" >
       <div v-if="square.token"
            class="token"
            :class="{ 
@@ -115,6 +197,17 @@ function onSquareRightClick(square: GridSquare, event: MouseEvent) {
   border: 1px solid rgba(0, 0, 0, 0.4);
   min-width: 0;
   min-height: 0;
+}
+.grid-square:hover {
+  background-color: rgba(255, 255, 0, 0.1); 
+}
+
+.path-preview {
+  background-color: rgba(50, 100, 255, 0.3); 
+}
+
+.path-invalid {
+  background-color: rgba(255, 50, 50, 0.4); 
 }
 
 .token {

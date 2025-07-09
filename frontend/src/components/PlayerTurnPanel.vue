@@ -51,7 +51,7 @@ const isMyTurnNext = computed(() => {
     <div v-if="props.myActiveToken" class="turn-status-panel">
       <h3>Seu Turno: {{ props.myActiveToken.name }}</h3>
       <p>
-        Movimento: <strong>{{ props.myActiveToken.remainingMovement }}m</strong>
+        Movimento: <strong>{{ props.myActiveToken.remainingMovement }}m </strong>
         <small>({{ remainingSquares }} quadrados)</small>
       </p>
       <div class="turn-actions">
