@@ -764,7 +764,9 @@ onUnmounted(() => {
             v-if="showAssignMenu" 
             class="context-menu" 
             :style="{ top: `${assignMenuPosition.y}px`, left: `${assignMenuPosition.x}px` }"
-            @click.stop @contextmenu.prevent
+            @click.stop 
+            @contextmenu.prevent
+            @pointerdown.stop
           >
             <h4>Atribuir "{{ assignMenuTargetToken?.name }}"</h4>
             <ul>
