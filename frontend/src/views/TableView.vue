@@ -341,15 +341,16 @@ function handleUndoMove() {
   socket.emit('requestUndoMove', { tableId, tokenId: tokenIdToUndo });
 }
 
-function createToken(payload: { name: string, imageUrl: string, movement: number }) {
+function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string }) {
   if (socket && targetSquareIdForToken.value && tableId && activeSceneId.value) {
     socket.emit('requestPlaceToken', {
       tableId: tableId,
+      sceneId: activeSceneId.value,
       squareId: targetSquareIdForToken.value,
       name: payload.name,
       imageUrl: payload.imageUrl,
       movement: payload.movement,
-      sceneId: activeSceneId.value
+      ownerId: payload.ownerId,
     });
   }
   // Fecha o formulário
@@ -782,7 +783,7 @@ onUnmounted(() => {
 
     <TokenCreationForm
       v-if="showTokenForm && isDM"
-      @create-token="createToken"
+      :players="currentTable?.players || []" @create-token="createToken"
       @cancel="showTokenForm = false"
     />
   </div>

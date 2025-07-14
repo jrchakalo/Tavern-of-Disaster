@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
+import { PlayerInfo } from '../types'; 
 
 const tokenName = ref('');
 const tokenImageUrl = ref('');
 const tokenMovement = ref(9);
+const assignedOwnerId = ref('');
+
+interface Props {
+  players: PlayerInfo[]; 
+}
+const props = defineProps<Props>();
 
 const emit = defineEmits<{
-  (e: 'create-token', payload: { name: string; imageUrl: string; movement: number }): void;
+  (e: 'create-token', payload: { name: string; imageUrl: string; movement: number; ownerId: string }): void;
   (e: 'cancel'): void;
 }>();
 
@@ -18,7 +25,8 @@ function handleSubmit() {
   emit('create-token', {
     name: tokenName.value,
     imageUrl: tokenImageUrl.value,
-    movement: tokenMovement.value
+    movement: tokenMovement.value,
+    ownerId: assignedOwnerId.value,
   });
   // Limpa os campos após emitir
   tokenName.value = '';
@@ -28,7 +36,14 @@ function handleSubmit() {
 function handleCancel() {
     emit('cancel');
 }
+
+onMounted(() => {
+  if (props.players.length > 0) {
+    assignedOwnerId.value = props.players[0]._id; 
+  }
+});
 </script>
+
 
 <template>
   <div class="form-overlay">
@@ -36,10 +51,19 @@ function handleCancel() {
       <h3>Criar Novo Token</h3>
       <label for="token-name">Nome:</label>
       <input id="token-name" v-model="tokenName" type="text" placeholder="Nome do Personagem" required />
-      <label for="token-movement">Movimento (em metros):</label>
-      <input id="token-movement" v-model="tokenMovement" type="number" placeholder="9" required />
+
       <label for="token-image">URL da Imagem:</label>
       <input id="token-image" v-model="tokenImageUrl" type="url" placeholder="https://exemplo.com/imagem.png" />
+
+      <label for="token-movement">Movimento (m):</label>
+      <input id="token-movement" v-model="tokenMovement" type="number" required />
+
+      <label for="token-owner">Atribuir a:</label>
+      <select id="token-owner" v-model="assignedOwnerId">
+        <option v-for="player in players" :key="player._id" :value="player._id">
+          {{ player.username }} {{ player._id === props.players[0]._id ? '(Mestre)' : '' }}
+        </option>
+      </select>
 
       <div class="buttons">
         <button type="submit">Criar</button>

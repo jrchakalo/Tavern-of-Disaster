@@ -80,7 +80,9 @@ io.on('connection', async (socket) => {
       if (!table) return;
 
       const activeSceneId = table.activeScene?._id;
-      const tokens = activeSceneId ? await Token.find({ sceneId: activeSceneId }) : [];
+      const tokens = activeSceneId 
+      ? await Token.find({ sceneId: activeSceneId }).populate('ownerId', '_id username') 
+      : [];
       const initialState = {
         tableInfo: table,
         activeScene: table.activeScene,
@@ -96,12 +98,15 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('requestPlaceToken', async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement: number; remainingMovement: number }) => {
+  socket.on('requestPlaceToken', async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement: number; remainingMovement: number, ownerId?: string }) => {
     try {
       const userId = socket.data.user?.id; 
       if (!userId) return;
 
-      const { tableId, sceneId, squareId, name, imageUrl, movement, remainingMovement } = data;
+      const { tableId, sceneId, squareId, name, imageUrl, movement, remainingMovement, ownerId } = data;
+
+      const requesterId = socket.data.user?.id; 
+      if (!requesterId) return;
 
       if (!sceneId) {
         socket.emit('tokenPlacementError', { message: 'ID da cena não fornecido.' });
@@ -122,7 +127,7 @@ io.on('connection', async (socket) => {
         sceneId, 
         squareId,
         color: tokenColor,
-        ownerId: userId,
+        ownerId: ownerId || requesterId,
         name,
         imageUrl,
         movement: data.movement || 9, 
