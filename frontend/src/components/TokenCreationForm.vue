@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { PlayerInfo } from '../types'; 
+import { PlayerInfo, TokenSize } from '../types'; 
+import { tokenSizes } from '../types';
 
 const tokenName = ref('');
 const tokenImageUrl = ref('');
 const tokenMovement = ref(9);
 const assignedOwnerId = ref('');
+const tokenSize = ref<TokenSize>('Pequeno/Médio');
 
 interface Props {
   players: PlayerInfo[]; 
@@ -13,7 +15,7 @@ interface Props {
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
-  (e: 'create-token', payload: { name: string; imageUrl: string; movement: number; ownerId: string }): void;
+  (e: 'create-token', payload: { name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize }): void; // <<< ATUALIZADO
   (e: 'cancel'): void;
 }>();
 
@@ -27,6 +29,7 @@ function handleSubmit() {
     imageUrl: tokenImageUrl.value,
     movement: tokenMovement.value,
     ownerId: assignedOwnerId.value,
+    size: tokenSize.value,
   });
   // Limpa os campos após emitir
   tokenName.value = '';
@@ -62,6 +65,13 @@ onMounted(() => {
       <select id="token-owner" v-model="assignedOwnerId">
         <option v-for="player in players" :key="player._id" :value="player._id">
           {{ player.username }} {{ player._id === props.players[0]._id ? '(Mestre)' : '' }}
+        </option>
+      </select>
+
+      <label for="token-size">Tamanho:</label>
+      <select id="token-size" v-model="tokenSize">
+        <option v-for="sizeOption in tokenSizes" :key="sizeOption" :value="sizeOption">
+          {{ sizeOption }}
         </option>
       </select>
 

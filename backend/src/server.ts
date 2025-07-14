@@ -98,12 +98,12 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('requestPlaceToken', async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement: number; remainingMovement: number, ownerId?: string }) => {
+  socket.on('requestPlaceToken', async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement: number; remainingMovement: number, ownerId?: string, size: string }) => {
     try {
       const userId = socket.data.user?.id; 
       if (!userId) return;
 
-      const { tableId, sceneId, squareId, name, imageUrl, movement, remainingMovement, ownerId } = data;
+      const { tableId, sceneId, squareId, name, imageUrl, movement, remainingMovement, ownerId, size } = data;
 
       const requesterId = socket.data.user?.id; 
       if (!requesterId) return;
@@ -131,7 +131,8 @@ io.on('connection', async (socket) => {
         name,
         imageUrl,
         movement: data.movement || 9, 
-        remainingMovement: data.remainingMovement || 9, 
+        remainingMovement: data.remainingMovement || 9,
+        size: data.size || 'Pequeno/Médio',
       });
 
       await newToken.save();
@@ -262,6 +263,7 @@ io.on('connection', async (socket) => {
         sceneId: populatedToken.sceneId ? populatedToken.sceneId.toString() : "",
         movement: tokenToMove.movement,
         remainingMovement: tokenToMove.remainingMovement,
+        size: tokenToMove.size,
       });
     } catch (error: any) {
       console.error('Erro ao processar requestMoveToken:', error.message);
@@ -682,6 +684,8 @@ io.on('connection', async (socket) => {
         sceneId: populatedTokenToUndo.sceneId ? populatedTokenToUndo.sceneId.toString() : "",
         movement: populatedTokenToUndo.movement,
         remainingMovement: populatedTokenToUndo.remainingMovement,
+        savedToken: populatedTokenToUndo,
+        size: populatedTokenToUndo.size,
       });
 
     } catch (error) { 

@@ -6,7 +6,7 @@ import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import TurnOrderDisplay from '../components/TurnOrderDisplay.vue';
 import PlayerTurnPanel from '../components/PlayerTurnPanel.vue';
-import type { GridSquare, TokenInfo, IScene, ITable, IInitiativeEntry } from '../types';
+import type { GridSquare, TokenInfo, IScene, ITable, IInitiativeEntry, TokenSize } from '../types';
 import { useRoute } from 'vue-router';
 import { authToken, currentUser } from '../auth';
 
@@ -341,7 +341,7 @@ function handleUndoMove() {
   socket.emit('requestUndoMove', { tableId, tokenId: tokenIdToUndo });
 }
 
-function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string }) {
+function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string, size: TokenSize }) {
   if (socket && targetSquareIdForToken.value && tableId && activeSceneId.value) {
     socket.emit('requestPlaceToken', {
       tableId: tableId,
@@ -351,6 +351,7 @@ function createToken(payload: { name: string, imageUrl: string, movement: number
       imageUrl: payload.imageUrl,
       movement: payload.movement,
       ownerId: payload.ownerId,
+      size: payload.size,
     });
   }
   // Fecha o formulário
@@ -498,6 +499,7 @@ onMounted(() => {
           sceneId: movedTokenData.sceneId,
           movement: movedTokenData.movement,
           remainingMovement: movedTokenData.remainingMovement,
+          size: movedTokenData.size,
         };
       } else {
         console.warn(`Novo quadrado ${movedTokenData.squareId} não encontrado no frontend para colocar token.`);

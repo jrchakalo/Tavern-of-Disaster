@@ -1,5 +1,7 @@
 import mongoose, { Schema, Document, Types } from "mongoose";
 
+export const tokenSizes = [ 'Pequeno/Médio', 'Grande', 'Enorme', 'Descomunal', 'Colossal'];
+
 export interface IToken extends Document {
     _id: Types.ObjectId;
     squareId: string;
@@ -12,7 +14,8 @@ export interface IToken extends Document {
     movement: number;
     remainingMovement: number;
     previousSquareId?: string;
-    moveHistory: string[]; 
+    moveHistory: string[];
+    size: string;
 }
 
 const TokenSchema: Schema = new Schema({
@@ -27,6 +30,12 @@ const TokenSchema: Schema = new Schema({
     remainingMovement: { type: Number, required: true, default: 9 },
     previousSquareId: { type: String, required: false },
     moveHistory: [{ type: String }],
+    size: { // <<< NOVO
+        type: String,
+        required: true,
+        enum: tokenSizes,
+        default: 'Médio',
+    },
 }, {
     timestamps: true
 });

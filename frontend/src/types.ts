@@ -1,3 +1,6 @@
+export const tokenSizes = ['Pequeno/Médio', 'Grande', 'Enorme', 'Descomunal', 'Colossal'] as const;
+export type TokenSize = typeof tokenSizes[number];
+
 export interface TokenInfo {
   _id: string;
   squareId: string;
@@ -8,6 +11,7 @@ export interface TokenInfo {
   sceneId: string;
   movement: number;
   remainingMovement: number;
+  size: TokenSize;
 }
 
 export interface TokenOwner {

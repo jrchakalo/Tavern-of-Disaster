@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { GridSquare, TokenInfo } from '../types';
+import type { GridSquare, TokenInfo, TokenSize } from '../types';
 
 const pathPreview = ref<string[]>([]); 
 const isPathValid = ref(true); 
@@ -147,6 +147,17 @@ function onSquareLeftClick(square: GridSquare) {
 function onSquareRightClick(square: GridSquare, event: MouseEvent) {
   emit('square-right-click', square, event);
 }
+
+function getTokenSizeInSquares(size: TokenSize): number {
+  switch (size) {
+    case 'Grande': return 2;
+    case 'Enorme': return 3;
+    case 'Descomunal': return 4;
+    case 'Colossal': return 5;
+    default:
+      return 1;
+  }
+}
 </script>
 
 <template>
@@ -167,7 +178,10 @@ function onSquareRightClick(square: GridSquare, event: MouseEvent) {
             'selected': square.token._id === props.selectedTokenId, 
             'active-turn-token': square.token._id === props.currentTurnTokenId
             }"
-           :style="{ backgroundColor: square.token.color }"
+           :style="{
+              '--token-size': getTokenSizeInSquares(square.token.size), // <<< NOVO: Passa o tamanho como variável CSS
+              backgroundColor: square.token.color // Apenas para o fallback, se necessário
+            }"
            draggable="true" @dragstart="handleDragStart($event, square.token!)">
            <img v-if="square.token.imageUrl" :src="square.token.imageUrl" :alt="square.token.name" class="token-image" />
           <div v-else class="token-fallback" :style="{ backgroundColor: square.token.color }">
@@ -197,6 +211,7 @@ function onSquareRightClick(square: GridSquare, event: MouseEvent) {
   border: 1px solid rgba(0, 0, 0, 0.4);
   min-width: 0;
   min-height: 0;
+  position: relative;
 }
 .grid-square:hover {
   background-color: rgba(255, 255, 0, 0.1); 
@@ -211,8 +226,8 @@ function onSquareRightClick(square: GridSquare, event: MouseEvent) {
 }
 
 .token {
-  width: 80%;  /* 70% do tamanho do quadrado pai */
-  height: 80%;
+  width: calc(100% * var(--token-size, 1));
+  height: calc(100% * var(--token-size, 1));
   border-radius: 50%; /* Para fazer uma bolinha */
   box-sizing: border-box;
   display: flex;
@@ -225,7 +240,10 @@ function onSquareRightClick(square: GridSquare, event: MouseEvent) {
   background-color: transparent; /* Remove a cor de fundo do container do token */
   overflow: hidden; /* Garante que a imagem fique contida no círculo */
   cursor: grab;
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
 }
 
 .token-image,
@@ -258,6 +276,7 @@ function onSquareRightClick(square: GridSquare, event: MouseEvent) {
 
 .token.active-turn-token {
   box-shadow: 0 0 5px 5px #69ff69; /* Exemplo: brilho verde */
+  z-index: 6;
 }
 
 /* Para o caso de um token estar selecionado E ser o turno dele */
