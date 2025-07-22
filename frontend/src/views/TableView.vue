@@ -20,6 +20,7 @@ const viewportRef = ref<HTMLDivElement | null>(null);
 const viewTransform = ref({ scale: 1, x: 0, y: 0 });
 const activePointers = ref<PointerEvent[]>([]);
 const initialPinchDistance = ref(0);
+const sessionStatus = ref<'PREPARING' | 'LIVE' | 'ENDED'>('PREPARING');
 
 const squares = ref<GridSquare[]>([]);
 const selectedTokenId = ref<string | null>(null);
@@ -341,6 +342,11 @@ function handleUndoMove() {
   socket.emit('requestUndoMove', { tableId, tokenId: tokenIdToUndo });
 }
 
+function handleUpdateSessionStatus(newStatus: 'LIVE' | 'ENDED') {
+    if (!socket || !tableId) return;
+    socket.emit('requestUpdateSessionStatus', { tableId, newStatus });
+}
+
 function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string, size: TokenSize }) {
   if (socket && targetSquareIdForToken.value && tableId && activeSceneId.value) {
     socket.emit('requestPlaceToken', {
@@ -527,7 +533,8 @@ onMounted(() => {
     currentMapUrl.value = data.activeScene?.imageUrl || '';
     gridSize.value = data.activeScene?.gridSize || 30;
     updateGrid(data.tokens);
-    initiativeList.value = data.activeScene?.initiative || [];
+    initiativeList.value = data.activeScene?.initiative || [];  
+    sessionStatus.value = data.tableInfo.status;
   });
 
   socket.on('sessionStateUpdated', (newState: { activeScene: IScene | null, tokens: TokenInfo[] }) => {
@@ -589,6 +596,12 @@ onMounted(() => {
       }
     });
   });
+
+  socket.on('sessionStatusUpdated', (data: { status: 'LIVE' | 'ENDED' }) => {
+    console.log("Status da sessão atualizado para:", data.status);
+    sessionStatus.value = data.status;
+  });
+
 });
 
 onUnmounted(() => {
@@ -602,13 +615,14 @@ onUnmounted(() => {
 <template>
   <div class="table-view-layout">
 
-    <div v-if="!isDM && activeScene?.type === 'battlemap'">
+    <div v-if="!isDM && sessionStatus === 'LIVE'">
       <TurnOrderDisplay :initiativeList="initiativeList" />
       <PlayerTurnPanel 
         :initiativeList="initiativeList"
         :myActiveToken="myActiveToken"
         :currentUser="currentUser ? { _id: currentUser.id, username: currentUser.username } : null"
-        :tokensOnMap="tokensOnMap" @undo-move="handleUndoMove"
+        :tokensOnMap="tokensOnMap"
+        @undo-move="handleUndoMove"
         @end-turn="handleNextTurn"
       />
     </div>
@@ -621,42 +635,45 @@ onUnmounted(() => {
       </button>
       
       <div v-show="!isDmPanelCollapsed" class="panel-content">
+        
+        <div class="panel-section">
+          <h4>Sessão</h4>
+          <div class="session-controls">
+            <button 
+              v-if="sessionStatus === 'PREPARING' || sessionStatus === 'ENDED'" 
+              @click="handleUpdateSessionStatus('LIVE')"
+              class="start-btn"
+            >
+              Iniciar Sessão
+            </button>
+            <button 
+              v-if="sessionStatus === 'LIVE'" 
+              @click="handleUpdateSessionStatus('ENDED')"
+              class="end-btn"
+            >
+              Encerrar Sessão
+            </button>
+          </div>
+        </div>
+        
         <div class="panel-section scene-manager">
           <form @submit.prevent="handleCreateScene" class="create-scene-form">
             <h4>Criar Nova Cena</h4>
             <input v-model="newSceneName" placeholder="Nome da Cena" required />
             <input v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
-
             <select v-model="newSceneType">
               <option value="battlemap">Battlemap</option>
               <option value="image">Imagem</option>
             </select>
-
             <button type="submit">Adicionar Cena</button>
           </form>
         
-          <div class="panel-section"
-            v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
+          <div class="panel-section" v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
             <h3>Iniciativa</h3>
-            <ul class="initiative-list">
-              <li v-for="entry in initiativeList" :key="entry._id">
-                <div class="entry-info">
-                  <span class="character-name">{{ entry.characterName }}</span>
-                  <small v-if="entry.tokenId && tokensOnMap.find(t => t._id === entry.tokenId)" class="movement-info">
-                    Mov: {{ tokensOnMap.find(t => t._id === entry.tokenId)!.remainingMovement }}m
-                    Sq: {{ (tokensOnMap.find(t => t._id === entry.tokenId)!.remainingMovement)/1.5 }}
-                  </small>
-                </div>
-              </li>
-            </ul>
             <div class="initiative-controls">
               <button @click="handleNextTurn">Próximo Turno</button>
-              <button 
-                @click="handleUndoMove"
-                :disabled="!currentTurnTokenId"
-              >Desfazer Movimento</button>
+              <button @click="handleUndoMove" :disabled="!currentTurnTokenId">Desfazer Movimento</button>
             </div>
-
             <draggable 
               v-if="activeScene.type === 'battlemap'"
               v-model="initiativeList"
@@ -675,7 +692,6 @@ onUnmounted(() => {
                 </li>
               </template>
             </draggable>
-
             <div v-if="initiativeList.length === 0" class="empty-list-container">
               <p class="empty-list">A iniciativa está vazia.</p>
             </div>
@@ -725,63 +741,67 @@ onUnmounted(() => {
     </aside>
 
     <main class="battlemap-main">
-      <h1 v-if="currentTable">{{ currentTable.name }}</h1>
-      <h3 v-if="activeSceneId" class="active-scene-name">Cena Ativa: {{ scenes.find(s => s._id === activeSceneId)?.name }}</h3>
-      <button @click="resetView" class="reset-view-btn">Resetar Posição</button>
+      <h1 v-if="currentTable && sessionStatus === 'LIVE' || isDM">{{ currentTable.name }}</h1>
+      <h3 v-if="activeSceneId && sessionStatus === 'LIVE' || isDM" class="active-scene-name">Cena Ativa: {{ scenes.find(s => s._id === activeSceneId)?.name }}</h3>
+      <button v-if="sessionStatus === 'LIVE' || isDM" @click="resetView" class="reset-view-btn">Resetar Visão</button>
       <div 
+        v-if="sessionStatus === 'LIVE' || isDM"
         class="viewport"
         ref="viewportRef"
         @wheel.prevent="handleWheel"
         @pointerdown="handlePointerDown"
         @pointermove="handlePointerMove"
         @pointerup="handlePointerUp"
-        @pointerleave="handlePointerUp" style="touch-action: none;" >
-        <div 
-          class="map-stage"
-          :style="{ transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale})` }"
-        >
-          <img 
-            v-if="currentMapUrl" 
-            :src="currentMapUrl" 
-            alt="Mapa de Batalha" 
-            class="map-image"
-          />
-          <div v-else class="map-placeholder">
-            <p>Nenhum mapa definido para esta cena.</p>
-            <p v-if="isDM">Use o Painel do Mestre para definir uma imagem.</p>
-          </div>
+        @mouseleave="handlePointerUp" style="touch-action: none;" >
 
-          <GridDisplay
-            v-if="currentMapUrl && activeScene?.type === 'battlemap'"
-            class="grid-overlay"
-            :currentTurnTokenId="currentTurnTokenId"
-            :squares="squares"
-            :gridSize="gridSize"
-            :selectedTokenId="selectedTokenId"
-            @square-right-click="handleRightClick"
-            @square-left-click="handleLeftClickOnSquare"
-            @token-move-requested="handleTokenMoveRequest"
-          />
-        </div>
-        <div 
-            v-if="showAssignMenu" 
-            class="context-menu" 
-            :style="{ top: `${assignMenuPosition.y}px`, left: `${assignMenuPosition.x}px` }"
-            @click.stop 
-            @contextmenu.prevent
-            @pointerdown.stop
+        
+        <template v-if="sessionStatus === 'LIVE' || isDM">
+          <div 
+            class="map-stage"
+            :style="{ transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale})` }"
           >
-            <h4>Atribuir "{{ assignMenuTargetToken?.name }}"</h4>
-            <ul>
-              <li v-for="player in currentTable?.players" :key="player._id" @click="handleAssignToken(player._id)">
-                {{ player.username }}
-              </li>
-            </ul>
-            <button @click="showAssignMenu = false">Fechar</button>
+            <img v-if="currentMapUrl" :src="currentMapUrl" alt="Mapa de Batalha" class="map-image" />
+            <div v-else class="map-placeholder">
+              <p>Nenhum mapa definido para esta cena.</p>
+              <p v-if="isDM">Use o Painel do Mestre para definir uma imagem.</p>
+            </div>
+
+            <GridDisplay
+              v-if="currentMapUrl && activeScene?.type === 'battlemap'"
+              class="grid-overlay"
+              :currentTurnTokenId="currentTurnTokenId"
+              :squares="squares"
+              :gridSize="gridSize"
+              :selectedTokenId="selectedTokenId"
+              @square-right-click="handleRightClick"
+              @square-left-click="handleLeftClickOnSquare"
+              @token-move-requested="handleTokenMoveRequest"
+            />
           </div>
+        </template>
+
+        <div 
+          v-if="showAssignMenu" 
+          class="context-menu" 
+          :style="{ top: `${assignMenuPosition.y}px`, left: `${assignMenuPosition.x}px` }"
+          @click.stop 
+          @contextmenu.prevent
+          @pointerdown.stop
+        >
+          <h4>Atribuir "{{ assignMenuTargetToken?.name }}"</h4>
+          <ul>
+            <li v-for="player in currentTable?.players" :key="player._id" @click="handleAssignToken(player._id)">
+              {{ player.username }}
+            </li>
+          </ul>
+          <button @click="showAssignMenu = false">Fechar</button>
+        </div>
+      </div>
+      <div v-else-if="!isDM && (sessionStatus === 'PREPARING' || sessionStatus === 'ENDED')" class="waiting-room">
+        <p v-if="sessionStatus === 'PREPARING'">Nenhuma sessão em andamento, aguarde até o Mestre iniciar a sessão.</p>
+        <p v-if="sessionStatus === 'ENDED'">A sessão foi encerrada.</p>
       </div>
     </main>
-
 
     <TokenCreationForm
       v-if="showTokenForm && isDM"

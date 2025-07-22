@@ -693,6 +693,29 @@ io.on('connection', async (socket) => {
     }
   });
 
+  socket.on('requestUpdateSessionStatus', async (data: { tableId: string; newStatus: 'LIVE' | 'ENDED' }) => {
+    try {
+      const { tableId, newStatus } = data;
+      const userId = socket.data.user?.id;
+
+      const table = await Table.findById(tableId);
+      if (!table || table.dm.toString() !== userId) {
+        return socket.emit('error', { message: 'Apenas o Mestre pode alterar o status da sessão.' });
+      }
+
+      table.status = newStatus;
+      await table.save();
+
+      console.log(`Status da mesa ${tableId} atualizado para ${newStatus}`);
+
+      
+      io.to(tableId).emit('sessionStatusUpdated', { status: newStatus });
+
+    } catch (error) { 
+      console.error("Erro ao atualizar status da sessão:", error); 
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log(`Usuário desconectado: ${socket.id}`);
   });
