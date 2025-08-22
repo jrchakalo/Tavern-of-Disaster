@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import type { Ref, ComputedRef } from 'vue';
 import { ref, computed } from 'vue';
 import type { IScene, ITable, IInitiativeEntry, GridSquare, TokenInfo, PlayerInfo } from '../types';
-import { currentUser } from '../auth';
+import { currentUser } from '../services/authService';
 
 export const useTableStore = defineStore('table', () => {
     // STATE

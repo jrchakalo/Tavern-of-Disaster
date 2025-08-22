@@ -10,7 +10,8 @@ import TurnOrderDisplay from '../components/TurnOrderDisplay.vue';
 import PlayerTurnPanel from '../components/PlayerTurnPanel.vue';
 import type { GridSquare, TokenInfo, IScene, ITable, IInitiativeEntry, TokenSize } from '../types';
 import { useRoute } from 'vue-router';
-import { authToken, currentUser } from '../auth';
+import { authToken, currentUser } from '../services/authService';
+import { socketService } from '../services/socketService';
 
 const route = useRoute();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
@@ -29,7 +30,6 @@ const newSceneName = ref('');
 const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena, padrão é 'battlemap
 const isDmPanelCollapsed = ref(false);
-
 
 const tableStore = useTableStore();
 const {
@@ -51,6 +51,114 @@ const {
 } = storeToRefs(tableStore);
 
 
+function handleSetActiveScene(sceneId: string) {
+  socketService.setActiveScene(tableId, sceneId);
+}
+
+function handleUpdateSessionStatus(newStatus: 'LIVE' | 'ENDED') {
+  socketService.updateSessionStatus(tableId, newStatus);
+}
+
+function setMap() {
+  if (mapUrlInput.value.trim() !== '') {
+    socketService.setMap(tableId, mapUrlInput.value);
+  }
+}
+
+function onSceneDragEnd() {
+  const orderedSceneIds = scenes.value.map(scene => scene._id);
+  socketService.reorderScenes(tableId, orderedSceneIds);
+}
+
+function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string, size: TokenSize }) {
+  if (targetSquareIdForToken.value && activeSceneId.value) {
+    socketService.placeToken({
+      tableId: tableId,
+      sceneId: activeSceneId.value,
+      squareId: targetSquareIdForToken.value,
+      ...payload
+    });
+  }
+  // Fecha o formulário
+  showTokenForm.value = false;
+  targetSquareIdForToken.value = null;
+}
+
+function handleTokenMoveRequest(payload: { tokenId: string; targetSquareId: string }) {
+  socketService.moveToken({ tableId, ...payload });
+}
+
+function handleAssignToken(newOwnerId: string) {
+  if (assignMenuTargetToken.value) {
+    socketService.assignToken({
+      tableId,
+      tokenId: assignMenuTargetToken.value._id,
+      newOwnerId
+    });
+  }
+  showAssignMenu.value = false;
+}
+
+function handleUndoMove() {
+  if (currentTurnTokenId.value) {
+    socketService.undoMove(tableId, currentTurnTokenId.value);
+  }
+}
+
+function handleNextTurn() {
+  if (activeSceneId.value) {
+    socketService.nextTurn(tableId, activeSceneId.value);
+  }
+}
+
+function handleRemoveFromInitiative(initiativeEntryId: string) {
+  if (!confirm("Isso também irá deletar o token do mapa. Tem certeza?")) return;
+  if (activeSceneId.value) {
+    socketService.removeFromInitiative({
+      tableId,
+      sceneId: activeSceneId.value,
+      initiativeEntryId
+    });
+  }
+}
+
+function handleEditInitiativeEntry(entry: IInitiativeEntry) {
+  const newName = prompt("Digite o novo nome:", entry.characterName);
+  if (!newName || newName.trim() === '') return;
+  if (activeSceneId.value) {
+    socketService.editInitiativeEntry({
+      tableId,
+      sceneId: activeSceneId.value,
+      initiativeEntryId: entry._id,
+      newName
+    });
+  }
+}
+
+function onInitiativeDragEnd() {
+  if (activeSceneId.value) {
+    socketService.reorderInitiative({
+      tableId,
+      sceneId: activeSceneId.value,
+      newOrder: initiativeList.value
+    });
+  }
+}
+
+function handleLeftClickOnSquare(clickedSquare: GridSquare) {
+  if (clickedSquare.token) {
+    // Se o token clicado já estava selecionado, deseleciona. Senão, seleciona.
+    if (selectedTokenId.value === clickedSquare.token._id) {
+      selectedTokenId.value = null;
+    } else {
+      selectedTokenId.value = clickedSquare.token._id;
+    }
+  } else {
+    // Clicar em um quadrado vazio deseleciona qualquer token
+    selectedTokenId.value = null;
+  }
+}
+
 function handleRightClick(square: GridSquare, event: MouseEvent) {
   if (isDM.value && square.token) { // Se for o Mestre e clicar num token existente
     event.preventDefault(); 
@@ -69,29 +177,6 @@ function handleRightClick(square: GridSquare, event: MouseEvent) {
   } else if (!square.token) { // Se o quadrado estiver vazio (lógica existente)
     targetSquareIdForToken.value = square.id;
     showTokenForm.value = true;
-  }
-}
-
-function handleAssignToken(newOwnerId: string) {
-  if (socket && tableId && assignMenuTargetToken.value) {
-    socket.emit('requestAssignToken', {
-      tableId: tableId,
-      tokenId: assignMenuTargetToken.value._id,
-      newOwnerId: newOwnerId,
-    });
-  }
-  // Fecha o menu
-  showAssignMenu.value = false;
-}
-
-function handleTokenMoveRequest(payload: { tokenId: string; targetSquareId: string }) {
-  console.log(`App.vue recebeu pedido para mover token:`, payload);
-  if (socket && tableId) {
-    socket.emit('requestMoveToken', {
-      tableId: tableId,
-      tokenId: payload.tokenId,
-      targetSquareId: payload.targetSquareId,
-    });
   }
 }
 
@@ -122,12 +207,6 @@ async function handleCreateScene() {
       alert(`Erro: ${newScene.message}`);
     }
   } catch (error) { console.error("Erro ao criar cena", error); }
-}
-
-function handleSetActiveScene(sceneId: string) {
-  if (socket && tableId) {
-    socket.emit('requestSetActiveScene', { tableId, sceneId });
-  }
 }
 
 function handleEditScene(scene: IScene) {
@@ -185,52 +264,6 @@ async function handleDeleteScene(sceneId: string) {
   } catch (error) { console.error("Erro ao excluir cena:", error); }
 }
 
-function handleNextTurn() {
-  if (!tableId || !activeSceneId.value || !socket) return;
-  socket.emit('requestNextTurn', { tableId, sceneId: activeSceneId.value });
-}
-
-
-function handleRemoveFromInitiative(initiativeEntryId: string) {
-  if (!confirm("Isso também irá deletar o token do mapa. Tem certeza?")) return;
-  if (!socket || !tableId || !activeSceneId.value) return;
-
-  socket.emit('requestRemoveFromInitiative', {
-    tableId,
-    sceneId: activeSceneId.value,
-    initiativeEntryId,
-  });
-}
-
-function handleEditInitiativeEntry(entry: IInitiativeEntry) {
-  const newName = prompt("Digite o novo nome:", entry.characterName);
-
-  if (!newName || newName.trim() === '') return; // Sai se o usuário cancelar ou deixar em branco
-
-  if (socket && tableId && activeSceneId.value) {
-    socket.emit('requestEditInitiativeEntry', {
-      tableId,
-      sceneId: activeSceneId.value,
-      initiativeEntryId: entry._id,
-      newName: newName,
-    });
-  }
-}
-
-function handleLeftClickOnSquare(clickedSquare: GridSquare) {
-  if (clickedSquare.token) {
-    // Se o token clicado já estava selecionado, deseleciona. Senão, seleciona.
-    if (selectedTokenId.value === clickedSquare.token._id) {
-      selectedTokenId.value = null;
-    } else {
-      selectedTokenId.value = clickedSquare.token._id;
-    }
-  } else {
-    // Clicar em um quadrado vazio deseleciona qualquer token
-    selectedTokenId.value = null;
-  }
-}
-
 // Função para quando um ponteiro (dedo/mouse) toca a tela
 function handlePointerDown(event: PointerEvent) {
   // Ignora se o clique não for o botão esquerdo do mouse (ou um toque)
@@ -246,11 +279,9 @@ function handlePointerDown(event: PointerEvent) {
 // Função para quando um ponteiro se move
 function handlePointerMove(event: PointerEvent) {
   if (activePointers.value.length === 1) {
-    // --- LÓGICA DE PAN (Arrastar com um dedo/mouse) ---
     viewTransform.value.x += event.movementX;
     viewTransform.value.y += event.movementY;
   } else if (activePointers.value.length === 2) {
-    // --- LÓGICA DE ZOOM (Gesto de Pinça com dois dedos) ---
 
     // Encontra o novo índice do ponteiro que se moveu
     const index = activePointers.value.findIndex(p => p.pointerId === event.pointerId);
@@ -270,9 +301,9 @@ function handlePointerMove(event: PointerEvent) {
       initialPinchDistance.value = currentDistance;
     }
 
-    // Calcula a nova escala baseada na mudança da distância e aplica
+    // Calcula a nova escala baseada na mudança da distância
     const newScale = viewTransform.value.scale * (currentDistance / initialPinchDistance.value);
-    viewTransform.value.scale = Math.max(0.1, Math.min(newScale, 10)); // Com limites
+    viewTransform.value.scale = Math.max(0.1, Math.min(newScale, 10));
 
     // Atualiza a distância inicial para o próximo movimento
     initialPinchDistance.value = currentDistance;
@@ -281,7 +312,7 @@ function handlePointerMove(event: PointerEvent) {
 
 // Função para quando um ponteiro (dedo/mouse) sai da tela
 function handlePointerUp(event: PointerEvent) {
-  // Remove o ponteiro da nossa lista de ativos
+  // Remove o ponteiro
   activePointers.value = activePointers.value.filter(
     p => p.pointerId !== event.pointerId
   );
@@ -293,10 +324,7 @@ function handlePointerUp(event: PointerEvent) {
   viewportRef.value?.releasePointerCapture(event.pointerId);
 }
 
-// Ainda precisamos do handleWheel para o scroll do mouse tradicional
 function handleWheel(event: WheelEvent) {
-    // A lógica de zoom focado no cursor que você gostou pode ser adaptada e mantida aqui
-    // Por simplicidade, vamos usar um zoom mais simples por enquanto.
     event.preventDefault();
     const zoomIntensity = 0.1;
     if (event.deltaY < 0) {
@@ -307,238 +335,24 @@ function handleWheel(event: WheelEvent) {
     viewTransform.value.scale = Math.max(0.1, Math.min(viewTransform.value.scale, 10));
 }
 
-// Função de reset continua a mesma
 function resetView() {
   viewTransform.value = { scale: 1, x: 0, y: 0 };
 }
 
-function handleUndoMove() {
-  const tokenIdToUndo = currentTurnTokenId.value;
-  if (!socket || !tableId || !tokenIdToUndo) return;
-  socket.emit('requestUndoMove', { tableId, tokenId: tokenIdToUndo });
-}
-
-function handleUpdateSessionStatus(newStatus: 'LIVE' | 'ENDED') {
-    if (!socket || !tableId) return;
-    socket.emit('requestUpdateSessionStatus', { tableId, newStatus });
-}
-
-function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string, size: TokenSize }) {
-  if (socket && targetSquareIdForToken.value && tableId && activeSceneId.value) {
-    socket.emit('requestPlaceToken', {
-      tableId: tableId,
-      sceneId: activeSceneId.value,
-      squareId: targetSquareIdForToken.value,
-      name: payload.name,
-      imageUrl: payload.imageUrl,
-      movement: payload.movement,
-      ownerId: payload.ownerId,
-      size: payload.size,
-    });
-  }
-  // Fecha o formulário
-  showTokenForm.value = false;
-  targetSquareIdForToken.value = null;
-}
-
-
-
-function setMap() {
-  if (socket && mapUrlInput.value.trim() !== '' && tableId) {
-    socket.emit('requestSetMap', { 
-      mapUrl: mapUrlInput.value,
-      tableId: tableId
-    });
-  }
-}
-
-function onInitiativeDragEnd() {
-  console.log('Ordem da iniciativa alterada no frontend. Enviando para o backend...', initiativeList.value);
-
-  if (socket && tableId && activeSceneId.value) {
-    socket.emit('requestReorderInitiative', {
-      tableId,
-      sceneId: activeSceneId.value,
-      newOrder: initiativeList.value // Envia o array já reordenado
-    });
-  }
-}
-
-function onSceneDragEnd() {
-  const orderedSceneIds = scenes.value.map(scene => scene._id);
-
-  console.log('Ordem das cenas alterada. Enviando para o backend...', orderedSceneIds);
-
-  if (socket && tableId) {
-    socket.emit('requestReorderScenes', {
-      tableId,
-      orderedSceneIds,
-    });
-  }
-}
-
 watch(gridSize, (newSize, oldSize) => {
-  if (isDM.value && newSize !== oldSize && socket && tableId && activeSceneId.value) {
-    console.log(`Mestre alterou o grid para ${newSize}. Solicitando atualização...`);
-    socket.emit('requestUpdateGridSize', {
-      tableId: tableId,
-      sceneId: activeSceneId.value, // Envia o ID da cena ativa
-      newGridSize: newSize
-    });
+  if (isDM.value && newSize !== oldSize && activeSceneId.value) {
+    socketService.updateGridSize(tableId, activeSceneId.value, newSize);
   }
 });
 
-let socket: Socket | null = null;
-
 onMounted(() => {
-  console.log('Componente App.vue montado. Tentando conectar ao Socket.IO...');
-  socket = io('ws://localhost:3001', {
-    transports: ['websocket'],
-    auth: {
-      token: authToken.value
-    }
-  })
-
-  socket.on('connect', () => {
-    console.log('CONECTADO ao servidor Socket.IO! ID do Frontend:', socket?.id);
-
-    if (tableId) {
-      console.log(`Enviando evento para entrar na sala da mesa: ${tableId}`);
-      socket.emit('joinTable', tableId);
-    }
-  });
-
-  socket.on('disconnect', (reason: Socket.DisconnectReason) => {
-    console.log('Desconectado do servidor Socket.IO.', reason);
-  });
-
-  socket.on('connect_error', (error: Error) => {
-    console.error('Erro de conexão:', error.message);
-  });
-
-  socket.on('tokenPlaced', (newToken: TokenInfo) => {
-    // Só adiciona o token se ele pertencer à cena ativa
-    if(newToken.sceneId === activeSceneId.value) {
-      const squareToUpdate = squares.value.find(sq => sq.id === newToken.squareId);
-      if (squareToUpdate) squareToUpdate.token = newToken;
-    }
-  });
-
-  socket.on('tokenMoved', (movedTokenData: TokenInfo & { oldSquareId: string }) => {
-    console.log('Recebido "tokenMoved" DO BACKEND:', movedTokenData);
-
-    // Verificação para processar o movimento apenas se ele pertencer à cena ativa
-    if (movedTokenData.sceneId === activeSceneId.value) {
-
-      // Remover o token do quadrado antigo
-      const oldSquareIndex = squares.value.findIndex(sq => sq.id === movedTokenData.oldSquareId);
-      if (oldSquareIndex !== -1) {
-        squares.value[oldSquareIndex] = { ...squares.value[oldSquareIndex], token: null };
-      }
-
-      // Adicionar/Atualizar o token no novo quadrado
-      const newSquare = squares.value.find(sq => sq.id === movedTokenData.squareId);
-      if (newSquare) {
-        console.log(`Colocando token no novo quadrado: ${movedTokenData.squareId}`);
-        newSquare.token = {
-          _id: movedTokenData._id,
-          squareId: movedTokenData.squareId,
-          color: movedTokenData.color,
-          ownerId: movedTokenData.ownerId,
-          name: movedTokenData.name,
-          imageUrl: movedTokenData.imageUrl,
-          sceneId: movedTokenData.sceneId,
-          movement: movedTokenData.movement,
-          remainingMovement: movedTokenData.remainingMovement,
-          size: movedTokenData.size,
-        };
-      } else {
-        console.warn(`Novo quadrado ${movedTokenData.squareId} não encontrado no frontend para colocar token.`);
-      }
-    } else {
-      console.log(`Movimento do token ignorado, pois pertence à cena ${movedTokenData.sceneId} e a cena ativa é ${activeSceneId.value}`);
-    }
-  });
-
-  socket.on('tokenPlacementError', (error: { message: string }) => {
-    console.error('Erro do backend ao colocar token:', error.message);
-    alert(`Erro ao colocar token: ${error.message}`); // Feedback simples para o usuário
-  });
-
-  socket.on('initialSessionState', (data) => {
-    tableStore.setInitialState(data);
-    // Também atualizamos o input de URL do mapa para refletir o estado atual
-    mapUrlInput.value = tableStore.currentMapUrl || '';
-  });
-
-  socket.on('sessionStateUpdated', (newState) => {
-    tableStore.updateSessionState(newState);
-    mapUrlInput.value = tableStore.currentMapUrl || '';
-  });
-
-  socket.on('mapUpdated', (data: { mapUrl: string }) => {
-    tableStore.currentMapUrl = data.mapUrl;
-    mapUrlInput.value = data.mapUrl;
-  });
-
-  socket.on('initiativeUpdated', (newInitiativeList: IInitiativeEntry[]) => {
-    console.log('Recebida lista de iniciativa atualizada:', newInitiativeList);
-    initiativeList.value = newInitiativeList;
-  });
-
-  socket.on('tokenRemoved', (data: { tokenId: string }) => {
-    console.log('Recebido evento para remover token:', data.tokenId);
-    // Encontra o quadrado que contém este token e o remove
-    const squareWithToken = squares.value.find(sq => sq.token?._id === data.tokenId);
-    if (squareWithToken) {
-      squareWithToken.token = null;
-    }
-  });
-
-  socket.on('sceneListUpdated', (newSceneList: IScene[]) => {
-    console.log('Recebida lista de cenas atualizada:', newSceneList);
-    scenes.value = newSceneList;
-  });
-
-  socket.on('tokenOwnerUpdated', (data: { tokenId: string, newOwner: { _id: string, username: string } }) => {
-    console.log(`Recebido 'tokenOwnerUpdated':`, data);
-
-    // Encontra o quadrado com o token que foi atualizado
-    const squareWithToken = squares.value.find(sq => sq.token?._id === data.tokenId);
-    if (squareWithToken && squareWithToken.token) {
-      // Atualiza apenas o ID do dono no estado local
-      squareWithToken.token.ownerId = { _id: data.newOwner._id, username: data.newOwner.username };
-      console.log(`Dono do token ${data.tokenId} atualizado para ${data.newOwner.username}`);
-    }
-  });
-
-  socket.on('tokensUpdated', (updatedTokens: TokenInfo[]) => {
-    console.log('Recebido evento de atualização em massa de tokens:', updatedTokens);
-    // Itera sobre cada token atualizado vindo do backend
-    updatedTokens.forEach(updatedToken => {
-      // Encontra o quadrado que contém (ou deveria conter) este token
-      const square = squares.value.find(sq => sq.token?._id === updatedToken._id);
-      if (square && square.token) {
-        // Atualiza o objeto token existente com os novos dados
-        square.token.remainingMovement = updatedToken.remainingMovement;
-        // Atualize outras propriedades se necessário
-      }
-    });
-  });
-
-  socket.on('sessionStatusUpdated', (data: { status: 'LIVE' | 'ENDED' }) => {
-    console.log("Status da sessão atualizado para:", data.status);
-    sessionStatus.value = data.status;
-  });
-
+  socketService.connect(tableId);
 });
 
 onUnmounted(() => {
-  if (socket) {
-    socket.disconnect();
-    console.log('Desconectado do servidor Socket.IO.');
-  }
+  socketService.disconnect();
 });
+
 </script>
 
 <template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router';
-import { currentUser } from '../auth'; // Importa o usuário logado para saudação
+import { currentUser } from '../services/authService'; // Importa o usuário logado para saudação
 </script>
 
 <template>

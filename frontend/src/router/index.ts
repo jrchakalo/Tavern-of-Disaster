@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import HomeView from '../views/HomeView.vue';
-import { authToken } from '../auth';
+import { authToken } from '../services/authService';
 
 const router = createRouter({
   history: createWebHistory(),

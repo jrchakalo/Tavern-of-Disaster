@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { setAuthToken } from '../auth';
+import { setAuthToken } from '../services/authService';
 
 const email = ref('');
 const password = ref('');

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRouter } from 'vue-router';
-import { authToken, clearAuthToken } from './auth';
+import { authToken, clearAuthToken } from './services/authService';
 
 const router = useRouter();
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { authToken, currentUser } from '../auth';
+import { authToken, currentUser } from '../services/authService';
 import type { ITable } from '../types';
 
 const router = useRouter();
