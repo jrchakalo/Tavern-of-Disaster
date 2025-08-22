@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { io, Socket } from 'socket.io-client';
+import { useTableStore } from '../stores/tableStore';
+import { storeToRefs } from 'pinia';
 import draggable from 'vuedraggable';
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
@@ -12,7 +14,6 @@ import { authToken, currentUser } from '../auth';
 
 const route = useRoute();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
-const gridSize = ref(30);
 const showAssignMenu = ref(false);
 const assignMenuPosition = ref({ x: 0, y: 0 });
 const assignMenuTargetToken = ref<TokenInfo | null>(null);
@@ -20,60 +21,35 @@ const viewportRef = ref<HTMLDivElement | null>(null);
 const viewTransform = ref({ scale: 1, x: 0, y: 0 });
 const activePointers = ref<PointerEvent[]>([]);
 const initialPinchDistance = ref(0);
-const sessionStatus = ref<'PREPARING' | 'LIVE' | 'ENDED'>('PREPARING');
-
-const squares = ref<GridSquare[]>([]);
 const selectedTokenId = ref<string | null>(null);
-
 const showTokenForm = ref(false);
 const targetSquareIdForToken = ref<string | null>(null);
-
 const mapUrlInput = ref(''); // Para o campo de input
-const currentMapUrl = ref<string | null>(null); // Armazena a URL do mapa
-
-const scenes = ref<IScene[]>([]); // Armazena a lista de todas as cenas da mesa
-const activeSceneId = ref<string | null>(null); // Armazena o ID da cena ativa
-
-const initiativeList = ref<IInitiativeEntry[]>([]);
-
 const newSceneName = ref('');
 const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena, padrão é 'battlemap
-
-const currentTable = ref<ITable | null>(null);
-const isDM = computed(() => {
-  return currentUser.value?.id === (typeof currentTable.value?.dm === 'object' ? currentTable.value?.dm._id : currentTable.value?.dm);
-});
 const isDmPanelCollapsed = ref(false);
-const activeScene = computed(() => {
-    return scenes.value.find(s => s._id === activeSceneId.value) || null;
-});
-const currentTurnTokenId = computed(() => {
-  const currentEntry = initiativeList.value.find(entry => entry.isCurrentTurn);
-  return currentEntry?.tokenId || null;
-});
-const myActiveToken = computed(() => {
-  // Encontra a entrada da iniciativa que está no turno atual
-  const activeEntry = initiativeList.value.find(entry => entry.isCurrentTurn);
-  if (!activeEntry || !activeEntry.tokenId) return null;
 
-  // Encontra o token correspondente no grid
-  const tokenOnBoard = squares.value
-    .map(sq => sq.token)
-    .find(token => token?._id === activeEntry.tokenId);
 
-  // Retorna o token apenas se ele pertencer ao usuário logado
-  if (tokenOnBoard && tokenOnBoard.ownerId?._id === currentUser.value?.id) {
-    return tokenOnBoard;
-  }
+const tableStore = useTableStore();
+const {
+  //State
+  currentTable, 
+  scenes, 
+  activeSceneId, 
+  initiativeList, 
+  squares, 
+  gridSize, 
+  sessionStatus,
+  currentMapUrl,
+  // Getters
+  isDM, 
+  activeScene, 
+  tokensOnMap, 
+  currentTurnTokenId, 
+  myActiveToken 
+} = storeToRefs(tableStore);
 
-  return null;
-});
-const tokensOnMap = computed(() => 
-  squares.value
-    .map(sq => sq.token)
-    .filter((token): token is TokenInfo => token !== null && token !== undefined)
-);
 
 function handleRightClick(square: GridSquare, event: MouseEvent) {
   if (isDM.value && square.token) { // Se for o Mestre e clicar num token existente
@@ -365,22 +341,7 @@ function createToken(payload: { name: string, imageUrl: string, movement: number
   targetSquareIdForToken.value = null;
 }
 
-function updateGrid(tokens: TokenInfo[]) {
-  const newSquaresLocal: GridSquare[] = [];
-  const totalExpectedSquares = gridSize.value * gridSize.value;
-  for (let i = 0; i < totalExpectedSquares; i++) {
-    newSquaresLocal.push({ id: `sq-${i}`, token: null });
-  }
-  if (tokens && tokens.length > 0) {
-    tokens.forEach(token => {
-      const frontendSqToUpdate = newSquaresLocal.find(s => s.id === token.squareId);
-      if (frontendSqToUpdate) {
-        frontendSqToUpdate.token = token;
-      }
-    });
-  }
-  squares.value = newSquaresLocal;
-}
+
 
 function setMap() {
   if (socket && mapUrlInput.value.trim() !== '' && tableId) {
@@ -423,22 +384,6 @@ watch(gridSize, (newSize, oldSize) => {
       tableId: tableId,
       sceneId: activeSceneId.value, // Envia o ID da cena ativa
       newGridSize: newSize
-    });
-  }
-});
-
-watch(gridSize, () => {
-  const currentTokens = squares.value
-    .map(sq => sq.token)
-    .filter((token): token is TokenInfo => token !== null);
-
-  updateGrid(currentTokens);
-
-  if (isDM.value && socket && tableId && activeSceneId.value) {
-    socket.emit('requestUpdateGridSize', {
-      tableId,
-      sceneId: activeSceneId.value,
-      newGridSize: gridSize.value,
     });
   }
 });
@@ -520,36 +465,20 @@ onMounted(() => {
     alert(`Erro ao colocar token: ${error.message}`); // Feedback simples para o usuário
   });
 
-  socket.on('initialSessionState', (data: { 
-    tableInfo: ITable, //Recebe os dados da mesa
-    activeScene: IScene | null, 
-    tokens: TokenInfo[], 
-    allScenes: IScene[] 
-  }) => {
-
-    currentTable.value = data.tableInfo; // Salva os dados da mesa
-    scenes.value = data.allScenes;
-    activeSceneId.value = data.activeScene?._id || null;
-    currentMapUrl.value = data.activeScene?.imageUrl || '';
-    gridSize.value = data.activeScene?.gridSize || 30;
-    updateGrid(data.tokens);
-    initiativeList.value = data.activeScene?.initiative || [];  
-    sessionStatus.value = data.tableInfo.status;
+  socket.on('initialSessionState', (data) => {
+    tableStore.setInitialState(data);
+    // Também atualizamos o input de URL do mapa para refletir o estado atual
+    mapUrlInput.value = tableStore.currentMapUrl || '';
   });
 
-  socket.on('sessionStateUpdated', (newState: { activeScene: IScene | null, tokens: TokenInfo[] }) => {
-    console.log("Estado da sessão atualizado:", newState);
-    activeSceneId.value = newState.activeScene?._id || null;
-    currentMapUrl.value = newState.activeScene?.imageUrl || '';
-    gridSize.value = newState.activeScene?.gridSize || 30;
-    updateGrid(newState.tokens); // Usa a função auxiliar
-    initiativeList.value = newState.activeScene?.initiative || [];
+  socket.on('sessionStateUpdated', (newState) => {
+    tableStore.updateSessionState(newState);
+    mapUrlInput.value = tableStore.currentMapUrl || '';
   });
 
   socket.on('mapUpdated', (data: { mapUrl: string }) => {
-    console.log('Mapa atualizado recebido do servidor:', data.mapUrl);
-    currentMapUrl.value = data.mapUrl; // Atualiza a URL do mapa localmente
-    mapUrlInput.value = data.mapUrl; // Atualiza o campo de input para refletir a mudança
+    tableStore.currentMapUrl = data.mapUrl;
+    mapUrlInput.value = data.mapUrl;
   });
 
   socket.on('initiativeUpdated', (newInitiativeList: IInitiativeEntry[]) => {
