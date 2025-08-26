@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 
 // Define os tipos de ferramentas que teremos.
-type Tool = 'ruler' | 'none';
+type Tool = 'ruler' | 'cone' | 'none';
 
 // O componente pai (TableView) nos dirá qual ferramenta está ativa.
 const props = defineProps<{
@@ -31,6 +31,16 @@ function selectTool(tool: Tool) {
       title="Medir Distância (Régua)"
     >
       📏 </button>
+
+    <button
+      class="tool-button"
+      :class="{ active: activeTool === 'cone' }"
+      @click="selectTool('cone')"
+      title="Medir Área (Cone)"
+    >
+      🔻
+    </button>
+    
     </div>
 </template>
 

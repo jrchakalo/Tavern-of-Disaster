@@ -17,6 +17,7 @@ interface Props {
   measureStartPoint: { x: number; y: number } | null;
   measureEndPoint: { x: number; y: number } | null;
   measuredDistance: string;
+  coneAffectedSquares: string[];
 }
 
 const props = defineProps<Props>();
@@ -171,6 +172,7 @@ function getTokenSizeInSquares(size: TokenSize): number {
       :class="{ 
         'path-preview': pathPreview.includes(square.id) && isPathValid,
         'path-invalid': pathPreview.includes(square.id) && !isPathValid
+        'cone-preview': props.coneAffectedSquares.includes(square.id)
       }"
       @contextmenu.prevent="onSquareRightClick(square, $event)" 
       @click="onSquareLeftClick(square)"
@@ -333,6 +335,11 @@ function getTokenSizeInSquares(size: TokenSize): number {
   stroke-width: 4px;
   stroke-linecap: butt;
   stroke-linejoin: miter;
+}
+
+.cone-preview {
+  background-color: rgba(255, 165, 0, 0.4); /* Laranja de fogo semi-transparente */
+  border-color: rgba(255, 140, 0, 0.6);
 }
 </style>
 

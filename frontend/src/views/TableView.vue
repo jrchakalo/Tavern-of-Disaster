@@ -31,11 +31,15 @@ const newSceneName = ref('');
 const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena, padrão é 'battlemap
 const isDmPanelCollapsed = ref(false);
-const activeTool = ref<'ruler' | 'none'>('none');
+
+const activeTool = ref<'ruler' | 'cone' | 'none'>('none');
 const rulerStartPoint = ref<{ x: number; y: number } | null>(null);
 const rulerEndPoint = ref<{ x: number; y: number } | null>(null);
 const rulerDistance = ref('0.0m');
-const isMeasuring = computed(() => activeTool.value === 'ruler');
+const isMeasuring = computed(() => activeTool.value !== 'none');
+const coneOriginSquareId = ref<string | null>(null); // Quadrado onde o cone começa
+const coneAffectedSquares = ref<string[]>([]); // Lista de IDs dos quadrados afetados
+const coneLength = ref(9); // Comprimento padrão do cone em metros (ex: Mãos Flamejantes)
 
 const tableStore = useTableStore();
 const {
@@ -152,7 +156,7 @@ function onInitiativeDragEnd() {
 
 function handleLeftClickOnSquare(clickedSquare: GridSquare) {
   // Se a ferramenta de régua estiver ativa, o clique esquerdo define os pontos.
-  if (isMeasuring.value) {
+  if (activeTool.value === 'ruler') {
     if (!gridDisplayRef.value) return;
     const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
     const clickPos = {
@@ -171,6 +175,12 @@ function handleLeftClickOnSquare(clickedSquare: GridSquare) {
       rulerEndPoint.value = null;
     }
     return; // Impede a lógica de seleção de token.
+  } else if (activeTool.value === 'cone') {
+    // Primeiro clique define a origem do cone
+    coneOriginSquareId.value = square.id;
+    // Calcula uma área inicial
+    coneAffectedSquares.value = calculateConeArea(square.id, square.id, coneLength.value);
+    return;
   }
 
   // Se nenhuma ferramenta estiver ativa, executa a lógica de seleção de token.
@@ -184,10 +194,12 @@ function handleLeftClickOnSquare(clickedSquare: GridSquare) {
 function handleRightClick(square: GridSquare, event: MouseEvent) {
   event.preventDefault();
 
-  // Se a ferramenta de régua estiver ativa, o clique direito cancela a medição atual.
+  // Com qualquer ferramenta ativa, o clique direito cancela
   if (isMeasuring.value) {
+    activeTool.value = 'none';
     rulerStartPoint.value = null;
-    rulerEndPoint.value = null;
+    coneOriginSquareId.value = null;
+    coneAffectedSquares.value = [];
     return;
   }
 
@@ -311,7 +323,7 @@ function handlePointerDown(event: PointerEvent) {
 // Função para quando um ponteiro se move
 function handlePointerMove(event: PointerEvent) {
   // Se a régua estiver ativa e um ponto inicial tiver sido definido, atualiza a linha.
-  if (isMeasuring.value && rulerStartPoint.value) {
+  if (activeTool.value === 'ruler' && rulerStartPoint.value) {
     if (!gridDisplayRef.value) return;
     const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
     rulerEndPoint.value = {
@@ -330,6 +342,19 @@ function handlePointerMove(event: PointerEvent) {
     
     rulerDistance.value = `${distanceInMeters.toFixed(1)}m`;
     return; // Impede o pan do mapa.
+  } else if (activeTool.value === 'cone' && coneOriginSquareId.value) {
+    // Encontra o quadrado sob o mouse
+    const gridRect = gridDisplayRef.value?.$el.getBoundingClientRect();
+    if (!gridRect) return;
+    const squareSize = gridRect.width / gridSize.value;
+    const mouseX = event.clientX - gridRect.left;
+    const mouseY = event.clientY - gridRect.top;
+    const gridX = Math.floor(mouseX / squareSize);
+    const gridY = Math.floor(mouseY / squareSize);
+    const targetId = `sq-${gridY * gridSize.value + gridX}`;
+
+    // Recalcula a área do cone em tempo real
+    coneAffectedSquares.value = calculateConeArea(coneOriginSquareId.value, targetId, coneLength.value);
   }
 
   // Se nenhuma ferramenta estiver ativa, executa a lógica de pan & zoom.
@@ -394,15 +419,64 @@ function resetView() {
   viewTransform.value = { scale: 1, x: 0, y: 0 };
 }
 
-function handleToolSelected(tool: 'ruler' | 'none') {
+function handleToolSelected(tool: 'ruler' | 'cone' | 'none') {
   activeTool.value = tool;
 
-  // Se estamos ativando a régua, garantimos que não estamos em modo de criação de token
-  if (tool === 'ruler') {
+  // SEMPRE reseta o estado de TODAS as ferramentas de medição ao trocar de ferramenta.
+  rulerStartPoint.value = null;
+  rulerEndPoint.value = null;
+  rulerDistance.value = '0.0m';
+  coneOriginSquareId.value = null;
+  coneAffectedSquares.value = [];
+
+  // Se qualquer ferramenta for ATIVADA fazemos a limpeza da UI.
+  if (tool !== 'none') {
     showTokenForm.value = false;
-    // Se uma ferramenta for selecionada, deseleciona qualquer token
     selectedTokenId.value = null;
   }
+}
+
+function calculateConeArea(originId: string, targetId: string, lengthInMeters: number): string[] {
+  if (originId === targetId) return [];
+
+  const lengthInSquares = Math.floor(lengthInMeters / 1.5);
+
+  const getCoords = (id: string) => {
+    const index = parseInt(id.replace('sq-', ''));
+    return { x: index % gridSize.value, y: Math.floor(index / gridSize.value) };
+  };
+  const getId = (x: number, y: number) => `sq-${y * gridSize.value + x}`;
+
+  const origin = getCoords(originId);
+  const target = getCoords(targetId);
+
+  const dx = target.x - origin.x;
+  const dy = target.y - origin.y;
+
+  const affected = new Set<string>([originId]);
+
+  // Itera para cada "passo" de distância do cone
+  for (let i = 1; i <= lengthInSquares; i++) {
+    // A largura do cone na distância 'i' é 'i'
+    const coneWidth = i;
+    for (let j = -Math.floor(coneWidth / 2); j <= Math.floor(coneWidth / 2); j++) {
+      let x: number, y: number;
+
+      // Lógica simplificada para determinar a direção e expandir o cone
+      if (Math.abs(dx) > Math.abs(dy)) { // Horizontalmente dominante
+        x = origin.x + i * Math.sign(dx);
+        y = origin.y + j;
+      } else { // Verticalmente dominante ou diagonal
+        x = origin.x + j;
+        y = origin.y + i * Math.sign(dy);
+      }
+
+      if (x >= 0 && x < gridSize.value && y >= 0 && y < gridSize.value) {
+        affected.add(getId(x, y));
+      }
+    }
+  }
+  return Array.from(affected);
 }
 
 watch(gridSize, (newSize, oldSize) => {
@@ -589,6 +663,7 @@ onUnmounted(() => {
               :measureStartPoint="rulerStartPoint"
               :measureEndPoint="rulerEndPoint"
               :measuredDistance="rulerDistance"
+              :coneAffectedSquares="coneAffectedSquares"
               :currentTurnTokenId="currentTurnTokenId"
               :squares="squares"
               :gridSize="gridSize"
