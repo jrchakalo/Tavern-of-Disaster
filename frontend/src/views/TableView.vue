@@ -8,6 +8,7 @@ import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import TurnOrderDisplay from '../components/TurnOrderDisplay.vue';
 import PlayerTurnPanel from '../components/PlayerTurnPanel.vue';
+import Toolbar from '../components/Toolbar.vue';
 import type { GridSquare, TokenInfo, IScene, ITable, IInitiativeEntry, TokenSize } from '../types';
 import { useRoute } from 'vue-router';
 import { authToken, currentUser } from '../services/authService';
@@ -30,6 +31,11 @@ const newSceneName = ref('');
 const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena, padrão é 'battlemap
 const isDmPanelCollapsed = ref(false);
+const activeTool = ref<'ruler' | 'none'>('none');
+const rulerStartPoint = ref<{ x: number; y: number } | null>(null);
+const rulerEndPoint = ref<{ x: number; y: number } | null>(null);
+const rulerDistance = ref('0.0m');
+const isMeasuring = computed(() => activeTool.value === 'ruler');
 
 const tableStore = useTableStore();
 const {
@@ -49,7 +55,6 @@ const {
   currentTurnTokenId, 
   myActiveToken 
 } = storeToRefs(tableStore);
-
 
 function handleSetActiveScene(sceneId: string) {
   socketService.setActiveScene(tableId, sceneId);
@@ -146,20 +151,47 @@ function onInitiativeDragEnd() {
 }
 
 function handleLeftClickOnSquare(clickedSquare: GridSquare) {
-  if (clickedSquare.token) {
-    // Se o token clicado já estava selecionado, deseleciona. Senão, seleciona.
-    if (selectedTokenId.value === clickedSquare.token._id) {
-      selectedTokenId.value = null;
+  // Se a ferramenta de régua estiver ativa, o clique esquerdo define os pontos.
+  if (isMeasuring.value) {
+    if (!gridDisplayRef.value) return;
+    const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
+    const clickPos = {
+      x: event.clientX - gridRect.left,
+      y: event.clientY - gridRect.top
+    };
+
+    if (!rulerStartPoint.value) {
+      // Primeiro clique: define o ponto inicial.
+      rulerStartPoint.value = clickPos;
+      rulerEndPoint.value = clickPos; // Inicia o ponto final no mesmo lugar.
     } else {
-      selectedTokenId.value = clickedSquare.token._id;
+      // Segundo clique: finaliza a medição, deixando a linha visível.
+      // Para iniciar uma nova, o usuário pode clicar novamente ou usar o clique direito para cancelar.
+      rulerStartPoint.value = null; 
+      rulerEndPoint.value = null;
     }
+    return; // Impede a lógica de seleção de token.
+  }
+
+  // Se nenhuma ferramenta estiver ativa, executa a lógica de seleção de token.
+  if (square.token) {
+    selectedTokenId.value = selectedTokenId.value === square.token._id ? null : square.token._id;
   } else {
-    // Clicar em um quadrado vazio deseleciona qualquer token
     selectedTokenId.value = null;
   }
 }
 
 function handleRightClick(square: GridSquare, event: MouseEvent) {
+  event.preventDefault();
+
+  // Se a ferramenta de régua estiver ativa, o clique direito cancela a medição atual.
+  if (isMeasuring.value) {
+    rulerStartPoint.value = null;
+    rulerEndPoint.value = null;
+    return;
+  }
+
+  // Se nenhuma ferramenta estiver ativa, executa a lógica original de menus do Mestre.
   if (isDM.value && square.token) { // Se for o Mestre e clicar num token existente
     event.preventDefault(); 
     showTokenForm.value = false;
@@ -174,7 +206,7 @@ function handleRightClick(square: GridSquare, event: MouseEvent) {
     assignMenuPosition.value = { x: mouseX, y: mouseY };
     assignMenuTargetToken.value = square.token;
     showAssignMenu.value = true;
-  } else if (!square.token) { // Se o quadrado estiver vazio (lógica existente)
+  } else if (isDM.value && !square.token) { // Se o quadrado estiver vazio
     targetSquareIdForToken.value = square.id;
     showTokenForm.value = true;
   }
@@ -278,6 +310,29 @@ function handlePointerDown(event: PointerEvent) {
 
 // Função para quando um ponteiro se move
 function handlePointerMove(event: PointerEvent) {
+  // Se a régua estiver ativa e um ponto inicial tiver sido definido, atualiza a linha.
+  if (isMeasuring.value && rulerStartPoint.value) {
+    if (!gridDisplayRef.value) return;
+    const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
+    rulerEndPoint.value = {
+      x: event.clientX - gridRect.left,
+      y: event.clientY - gridRect.top
+    };
+    
+    // Calcula a distância
+    const dx = rulerEndPoint.value.x - rulerStartPoint.value.x;
+    const dy = rulerEndPoint.value.y - rulerStartPoint.value.y;
+    const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+    
+    const squarePixelSize = gridRect.width / gridSize.value;
+    const distanceInSquares = pixelDistance / squarePixelSize;
+    const distanceInMeters = distanceInSquares * 1.5;
+    
+    rulerDistance.value = `${distanceInMeters.toFixed(1)}m`;
+    return; // Impede o pan do mapa.
+  }
+
+  // Se nenhuma ferramenta estiver ativa, executa a lógica de pan & zoom.
   if (activePointers.value.length === 1) {
     viewTransform.value.x += event.movementX;
     viewTransform.value.y += event.movementY;
@@ -339,6 +394,17 @@ function resetView() {
   viewTransform.value = { scale: 1, x: 0, y: 0 };
 }
 
+function handleToolSelected(tool: 'ruler' | 'none') {
+  activeTool.value = tool;
+
+  // Se estamos ativando a régua, garantimos que não estamos em modo de criação de token
+  if (tool === 'ruler') {
+    showTokenForm.value = false;
+    // Se uma ferramenta for selecionada, deseleciona qualquer token
+    selectedTokenId.value = null;
+  }
+}
+
 watch(gridSize, (newSize, oldSize) => {
   if (isDM.value && newSize !== oldSize && activeSceneId.value) {
     socketService.updateGridSize(tableId, activeSceneId.value, newSize);
@@ -369,6 +435,12 @@ onUnmounted(() => {
         @end-turn="handleNextTurn"
       />
     </div>
+
+    <Toolbar 
+      v-if="sessionStatus === 'LIVE' || isDM"
+      :activeTool="activeTool"
+      @tool-selected="handleToolSelected" 
+    />
 
     <aside v-if="isDM" class="dm-panel" :class="{ collapsed: isDmPanelCollapsed }">
       <button @click="isDmPanelCollapsed = !isDmPanelCollapsed" class="toggle-button">
@@ -511,7 +583,12 @@ onUnmounted(() => {
 
             <GridDisplay
               v-if="currentMapUrl && activeScene?.type === 'battlemap'"
+              ref="gridDisplayRef"
               class="grid-overlay"
+              :isMeasuring="isMeasuring"
+              :measureStartPoint="rulerStartPoint"
+              :measureEndPoint="rulerEndPoint"
+              :measuredDistance="rulerDistance"
               :currentTurnTokenId="currentTurnTokenId"
               :squares="squares"
               :gridSize="gridSize"

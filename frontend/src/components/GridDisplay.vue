@@ -12,12 +12,15 @@ interface Props {
   squares: GridSquare[];
   gridSize: number;
   currentTurnTokenId: string | null;
-  //squareSizePx: number;
   selectedTokenId: string | null;
-  //mapUrl: string | null;
+  isMeasuring: boolean;
+  measureStartPoint: { x: number; y: number } | null;
+  measureEndPoint: { x: number; y: number } | null;
+  measuredDistance: string;
 }
 
 const props = defineProps<Props>();
+
 const emit = defineEmits<{
     (e: 'square-left-click', square: GridSquare): void;
     (e: 'square-right-click', square: GridSquare, event: MouseEvent): void;
@@ -188,6 +191,23 @@ function getTokenSizeInSquares(size: TokenSize): number {
             <span>{{ square.token.name.substring(0, 2) }}</span>
           </div>
       </div>
+
+      <svg v-if="props.isMeasuring && props.measureStartPoint" class="measurement-overlay">
+        <line
+          v-if="props.measureEndPoint"
+          :x1="props.measureStartPoint.x"
+          :y1="props.measureStartPoint.y"
+          :x2="props.measureEndPoint.x"
+          :y2="props.measureEndPoint.y"
+        />
+        <text
+          v-if="props.measureEndPoint"
+          :x="props.measureEndPoint.x + 15"
+          :y="props.measureEndPoint.y - 15"
+        >
+          {{ props.measuredDistance }}
+        </text>
+      </svg>
     </div>
   </div>
 </template>
@@ -199,6 +219,7 @@ function getTokenSizeInSquares(size: TokenSize): number {
   display: grid;
   grid-template-columns: repeat(var(--grid-columns), 1fr);
   grid-template-rows: repeat(var(--grid-columns), 1fr);
+  position: relative;
 }
 
 .grid-square {
@@ -283,4 +304,35 @@ function getTokenSizeInSquares(size: TokenSize): number {
 .token.selected.active-turn-token {
   box-shadow: 0 0 5px 5px #69ff69, 0 0 5px 3px yellow inset;
 }
+
+.measurement-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* ESSENCIAL: Impede que o SVG bloqueie os cliques no grid abaixo dele */
+  z-index: 100; /* Garante que o desenho fique sobre tudo */
+}
+
+.measurement-overlay line {
+  stroke: #00ffff; /* Cor Ciano brilhante */
+  stroke-width: 3;
+  stroke-dasharray: 8 4; /* Linha tracejada para parecer uma régua */
+  stroke-linecap: round;
+}
+
+.measurement-overlay text {
+  fill: #ffffff; /* Texto branco */
+  font-size: 18px;
+  font-weight: bold;
+  font-family: sans-serif;
+  /* Efeito de contorno preto para máxima legibilidade em qualquer fundo */
+  paint-order: stroke;
+  stroke: #000000;
+  stroke-width: 4px;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+}
 </style>
+
