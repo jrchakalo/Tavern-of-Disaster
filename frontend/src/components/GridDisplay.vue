@@ -18,12 +18,19 @@ interface Props {
   measureEndPoint: { x: number; y: number } | null;
   measuredDistance: string;
   coneAffectedSquares: string[];
+  previewMeasurement: { // <<< Apenas esta prop para todas as ferramentas
+    type: 'ruler' | 'cone';
+    start: { x: number; y: number; };
+    end: { x: number; y: number; };
+    distance?: string;
+    affectedSquares?: string[];
+  } | null;
 }
 
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
-    (e: 'square-left-click', square: GridSquare): void;
+    (e: 'square-left-click', square: GridSquare, event: MouseEvent): void;
     (e: 'square-right-click', square: GridSquare, event: MouseEvent): void;
     (e: 'token-move-requested', payload: { tokenId: string; targetSquareId: string }): void;
 }>();
@@ -144,8 +151,8 @@ function findShortestPath(startId: string, endId: string, gridSize: number): str
   return []; // Retorna vazio se nenhum caminho for encontrado
 }
 
-function onSquareLeftClick(square: GridSquare) {
-  emit('square-left-click', square);
+function onSquareLeftClick(square: GridSquare, event: MouseEvent) {
+  emit('square-left-click', square, event);
 }
 
 function onSquareRightClick(square: GridSquare, event: MouseEvent) {
@@ -171,46 +178,43 @@ function getTokenSizeInSquares(size: TokenSize): number {
       class="grid-square"
       :class="{ 
         'path-preview': pathPreview.includes(square.id) && isPathValid,
-        'path-invalid': pathPreview.includes(square.id) && !isPathValid
+        'path-invalid': pathPreview.includes(square.id) && !isPathValid,
         'cone-preview': props.coneAffectedSquares.includes(square.id)
       }"
       @contextmenu.prevent="onSquareRightClick(square, $event)" 
-      @click="onSquareLeftClick(square)"
+      @click="onSquareLeftClick(square, $event)"
       @dragover.prevent="handleDragOver(square)" @drop="handleDrop($event, square)" >
       <div v-if="square.token"
-           class="token"
-           :class="{ 
-            'selected': square.token._id === props.selectedTokenId, 
-            'active-turn-token': square.token._id === props.currentTurnTokenId
-            }"
-           :style="{
-              '--token-size': getTokenSizeInSquares(square.token.size), // <<< NOVO: Passa o tamanho como variável CSS
-              backgroundColor: square.token.color // Apenas para o fallback, se necessário
-            }"
-           draggable="true" @dragstart="handleDragStart($event, square.token!)">
-           <img v-if="square.token.imageUrl" :src="square.token.imageUrl" :alt="square.token.name" class="token-image" />
-          <div v-else class="token-fallback" :style="{ backgroundColor: square.token.color }">
-            <span>{{ square.token.name.substring(0, 2) }}</span>
-          </div>
+            class="token"
+            :class="{ 
+              'selected': square.token._id === props.selectedTokenId, 
+              'active-turn-token': square.token._id === props.currentTurnTokenId
+              }"
+            :style="{
+                '--token-size': getTokenSizeInSquares(square.token.size), 
+                backgroundColor: square.token.color 
+              }"
+            draggable="true" @dragstart="handleDragStart($event, square.token!)">
+            <img v-if="square.token.imageUrl" :src="square.token.imageUrl" :alt="square.token.name" class="token-image" />
+            <div v-else class="token-fallback" :style="{ backgroundColor: square.token.color }">
+              <span>{{ square.token.name.substring(0, 2) }}</span>
+            </div>
+        </div>
       </div>
 
-      <svg v-if="props.isMeasuring && props.measureStartPoint" class="measurement-overlay">
-        <line
-          v-if="props.measureEndPoint"
-          :x1="props.measureStartPoint.x"
-          :y1="props.measureStartPoint.y"
-          :x2="props.measureEndPoint.x"
-          :y2="props.measureEndPoint.y"
-        />
-        <text
-          v-if="props.measureEndPoint"
-          :x="props.measureEndPoint.x + 15"
-          :y="props.measureEndPoint.y - 15"
-        >
-          {{ props.measuredDistance }}
-        </text>
+      <svg v-if="previewMeasurement" class="measurement-overlay">
+        <template v-if="previewMeasurement.type === 'ruler'">
+          <line
+            :x1="previewMeasurement.start.x" :y1="previewMeasurement.start.y"
+            :x2="previewMeasurement.end.x" :y2="previewMeasurement.end.y"
+          />
+          <text
+            :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15"
+          >
+            {{ previewMeasurement.distance }}
+          </text>
+        </template>
       </svg>
-    </div>
   </div>
 </template>
 

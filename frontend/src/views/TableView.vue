@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
-import { io, Socket } from 'socket.io-client';
-import { useTableStore } from '../stores/tableStore';
-import { storeToRefs } from 'pinia';
+import { useRoute } from 'vue-router';
 import draggable from 'vuedraggable';
+
+import { storeToRefs } from 'pinia';
+import { authToken, currentUser } from '../services/authService';
+import { socketService } from '../services/socketService';
+import { useTableStore } from '../stores/tableStore';
+
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import TurnOrderDisplay from '../components/TurnOrderDisplay.vue';
 import PlayerTurnPanel from '../components/PlayerTurnPanel.vue';
 import Toolbar from '../components/Toolbar.vue';
-import type { GridSquare, TokenInfo, IScene, ITable, IInitiativeEntry, TokenSize } from '../types';
-import { useRoute } from 'vue-router';
-import { authToken, currentUser } from '../services/authService';
-import { socketService } from '../services/socketService';
+
+import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize } from '../types';
 
 const route = useRoute();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
@@ -31,6 +33,7 @@ const newSceneName = ref('');
 const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena, padrão é 'battlemap
 const isDmPanelCollapsed = ref(false);
+const gridDisplayRef = ref<any>(null);
 
 const activeTool = ref<'ruler' | 'cone' | 'none'>('none');
 const rulerStartPoint = ref<{ x: number; y: number } | null>(null);
@@ -40,6 +43,13 @@ const isMeasuring = computed(() => activeTool.value !== 'none');
 const coneOriginSquareId = ref<string | null>(null); // Quadrado onde o cone começa
 const coneAffectedSquares = ref<string[]>([]); // Lista de IDs dos quadrados afetados
 const coneLength = ref(9); // Comprimento padrão do cone em metros (ex: Mãos Flamejantes)
+const previewMeasurement = ref<{
+  type: 'ruler' | 'cone';
+  start: { x: number; y: number; };
+  end: { x: number; y: number; };
+  distance?: string;
+  affectedSquares?: string[];
+} | null>(null);
 
 const tableStore = useTableStore();
 const {
@@ -154,7 +164,7 @@ function onInitiativeDragEnd() {
   }
 }
 
-function handleLeftClickOnSquare(clickedSquare: GridSquare) {
+function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
   // Se a ferramenta de régua estiver ativa, o clique esquerdo define os pontos.
   if (activeTool.value === 'ruler') {
     if (!gridDisplayRef.value) return;
@@ -312,49 +322,56 @@ async function handleDeleteScene(sceneId: string) {
 function handlePointerDown(event: PointerEvent) {
   // Ignora se o clique não for o botão esquerdo do mouse (ou um toque)
   if (event.button !== 0) return;
-  // Ignora se o clique começou em algo interativo como um botão ou um token
-  if ((event.target as HTMLElement).closest('button, .token')) return;
 
-  event.preventDefault();
-  viewportRef.value?.setPointerCapture(event.pointerId);
+  if (isMeasuring.value) {
+    // Se uma ferramenta está ativa, o pointerDown INICIA a pré-visualização.
+    const startPos = getMousePositionOnMap(event);
+    if (!startPos) return;
+
+    if (activeTool.value === 'ruler') {
+      previewMeasurement.value = {
+        type: 'ruler',
+        start: startPos,
+        end: startPos, // Começa e termina no mesmo lugar
+        distance: '0.0m'
+      };
+    }
+    // (Futuramente: else if (activeTool.value === 'cone') { ... })
+
+    // Captura o ponteiro para que o 'pointerup' funcione mesmo se o mouse sair da área
+    (event.target as HTMLElement).setPointerCapture(event.pointerId);
+    return;
+  }
+
+  // Lógica original de pan
+  if ((event.target as HTMLElement).closest('button, .token')) return;
   activePointers.value.push(event);
+  viewportRef.value?.setPointerCapture(event.pointerId);
 }
 
 // Função para quando um ponteiro se move
 function handlePointerMove(event: PointerEvent) {
   // Se a régua estiver ativa e um ponto inicial tiver sido definido, atualiza a linha.
-  if (activeTool.value === 'ruler' && rulerStartPoint.value) {
-    if (!gridDisplayRef.value) return;
-    const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
-    rulerEndPoint.value = {
-      x: event.clientX - gridRect.left,
-      y: event.clientY - gridRect.top
-    };
-    
-    // Calcula a distância
-    const dx = rulerEndPoint.value.x - rulerStartPoint.value.x;
-    const dy = rulerEndPoint.value.y - rulerStartPoint.value.y;
-    const pixelDistance = Math.sqrt(dx * dx + dy * dy);
-    
-    const squarePixelSize = gridRect.width / gridSize.value;
-    const distanceInSquares = pixelDistance / squarePixelSize;
-    const distanceInMeters = distanceInSquares * 1.5;
-    
-    rulerDistance.value = `${distanceInMeters.toFixed(1)}m`;
-    return; // Impede o pan do mapa.
-  } else if (activeTool.value === 'cone' && coneOriginSquareId.value) {
-    // Encontra o quadrado sob o mouse
-    const gridRect = gridDisplayRef.value?.$el.getBoundingClientRect();
-    if (!gridRect) return;
-    const squareSize = gridRect.width / gridSize.value;
-    const mouseX = event.clientX - gridRect.left;
-    const mouseY = event.clientY - gridRect.top;
-    const gridX = Math.floor(mouseX / squareSize);
-    const gridY = Math.floor(mouseY / squareSize);
-    const targetId = `sq-${gridY * gridSize.value + gridX}`;
+  if (previewMeasurement.value) {
+    const currentPos = getMousePositionOnMap(event);
+    if (!currentPos) return;
 
-    // Recalcula a área do cone em tempo real
-    coneAffectedSquares.value = calculateConeArea(coneOriginSquareId.value, targetId, coneLength.value);
+    previewMeasurement.value.end = currentPos;
+
+    if (previewMeasurement.value.type === 'ruler') {
+      const dx = currentPos.x - previewMeasurement.value.start.x;
+      const dy = currentPos.y - previewMeasurement.value.start.y;
+      const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+
+      if (!viewportRef.value) return;
+      const worldWidth = viewportRef.value.clientWidth;
+      const worldSquareSize = worldWidth / gridSize.value;
+
+      const distanceInSquares = pixelDistance / worldSquareSize;
+      const distanceInMeters = distanceInSquares * 1.5;
+      previewMeasurement.value.distance = `${distanceInMeters.toFixed(1)}m`;
+    }
+    return;
   }
 
   // Se nenhuma ferramenta estiver ativa, executa a lógica de pan & zoom.
@@ -392,12 +409,19 @@ function handlePointerMove(event: PointerEvent) {
 
 // Função para quando um ponteiro (dedo/mouse) sai da tela
 function handlePointerUp(event: PointerEvent) {
-  // Remove o ponteiro
-  activePointers.value = activePointers.value.filter(
-    p => p.pointerId !== event.pointerId
-  );
+  // Se estávamos pré-visualizando, o pointerUp FINALIZA a medição.
+  if (previewMeasurement.value) {
+    // TODO: Futuramente, aqui emitiremos o evento de socket para mostrar para todos.
+    // Por enquanto, apenas limpamos a pré-visualização.
+    console.log('Medição finalizada:', previewMeasurement.value);
+    previewMeasurement.value = null; 
 
-  // Reseta a distância do pinch quando um dos dedos sai
+    (event.target as HTMLElement).releasePointerCapture(event.pointerId);
+    return;
+  }
+
+  // Lógica original de pan & zoom
+  activePointers.value = activePointers.value.filter(p => p.pointerId !== event.pointerId);
   if (activePointers.value.length < 2) {
     initialPinchDistance.value = 0;
   }
@@ -477,6 +501,32 @@ function calculateConeArea(originId: string, targetId: string, lengthInMeters: n
     }
   }
   return Array.from(affected);
+}
+
+function getMousePositionOnMap(event: PointerEvent): { x: number; y: number } | null {
+  if (!viewportRef.value) return null;
+
+  const viewportRect = viewportRef.value.getBoundingClientRect();
+  const viewportWidth = viewportRef.value.clientWidth;
+  const viewportHeight = viewportRef.value.clientHeight;
+
+  // Centro do viewport, que é a origem da transformação de escala
+  const centerX = viewportWidth / 2;
+  const centerY = viewportHeight / 2;
+
+  // Posição do mouse relativa ao viewport (a "mesa")
+  const mouseX = event.clientX - viewportRect.left;
+  const mouseY = event.clientY - viewportRect.top;
+
+  // Extrai os valores de pan e zoom do estado
+  const panX = viewTransform.value.x;
+  const scale = viewTransform.value.scale;
+  const panY = viewTransform.value.y;
+  
+  const worldX = (mouseX - centerX) / scale + centerX - (panX / scale);
+  const worldY = (mouseY - centerY) / scale + centerY - (panY / scale);
+
+  return { x: worldX, y: worldY };
 }
 
 watch(gridSize, (newSize, oldSize) => {
@@ -663,6 +713,7 @@ onUnmounted(() => {
               :measureStartPoint="rulerStartPoint"
               :measureEndPoint="rulerEndPoint"
               :measuredDistance="rulerDistance"
+              :previewMeasurement="previewMeasurement"
               :coneAffectedSquares="coneAffectedSquares"
               :currentTurnTokenId="currentTurnTokenId"
               :squares="squares"
