@@ -178,28 +178,8 @@ function onInitiativeDragEnd() {
 function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
   // Se a ferramenta de régua estiver ativa, o clique esquerdo define os pontos.
   if (activeTool.value === 'ruler') {
-  if (!gridDisplayRef.value) return;
-  // Centraliza a medição no centro da célula clicada
-  const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
-  const cols = gridWidth.value || 1;
-  const cellSize = gridRect.width / cols;
-  const localX = event.clientX - gridRect.left;
-  const localY = event.clientY - gridRect.top;
-  const col = Math.floor(localX / cellSize);
-  const row = Math.floor(localY / cellSize);
-  const clickPos = { x: col * cellSize + cellSize / 2, y: row * cellSize + cellSize / 2 };
-
-    if (!rulerStartPoint.value) {
-      // Primeiro clique: define o ponto inicial.
-      rulerStartPoint.value = clickPos;
-      rulerEndPoint.value = clickPos; // Inicia o ponto final no mesmo lugar.
-    } else {
-      // Segundo clique: finaliza a medição, deixando a linha visível.
-      // Para iniciar uma nova, o usuário pode clicar novamente ou usar o clique direito para cancelar.
-      rulerStartPoint.value = null; 
-      rulerEndPoint.value = null;
-    }
-    return; // Impede a lógica de seleção de token.
+  // Origem já foi definida em pointerdown (posição real do mouse). Nada a fazer aqui.
+  return; 
   } else if (activeTool.value === 'cone') {
     // Primeiro clique define a origem do cone
     coneOriginSquareId.value = square.id;
@@ -340,14 +320,18 @@ function handlePointerDown(event: PointerEvent) {
 
   if (isMeasuring.value) {
     // Se uma ferramenta está ativa, o pointerDown INICIA a pré-visualização.
-    const startPos = getMousePositionOnMap(event);
-    if (!startPos) return;
-
     if (activeTool.value === 'ruler') {
+      if (!gridDisplayRef.value) return;
+      const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
+      const scale = viewTransform.value.scale || 1;
+      const local = {
+        x: (event.clientX - gridRect.left) / scale,
+        y: (event.clientY - gridRect.top) / scale
+      };
       previewMeasurement.value = {
         type: 'ruler',
-        start: startPos,
-        end: startPos, // Começa e termina no mesmo lugar
+        start: local,
+        end: local,
         distance: '0.0m'
       };
     }
@@ -370,21 +354,20 @@ function handlePointerMove(event: PointerEvent) {
   if (previewMeasurement.value) {
     if (!gridDisplayRef.value) return;
     const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
-    const cols = gridWidth.value || 1;
-    const cellSize = gridRect.width / cols;
-    const localX = event.clientX - gridRect.left;
-    const localY = event.clientY - gridRect.top;
-    const col = Math.floor(localX / cellSize);
-    const row = Math.floor(localY / cellSize);
-    const currentPos = { x: col * cellSize + cellSize / 2, y: row * cellSize + cellSize / 2 };
+    const scale = viewTransform.value.scale || 1;
+    const currentPos = {
+      x: (event.clientX - gridRect.left) / scale,
+      y: (event.clientY - gridRect.top) / scale
+    };
     previewMeasurement.value.end = currentPos;
     if (previewMeasurement.value.type === 'ruler') {
       const dx = currentPos.x - previewMeasurement.value.start.x;
       const dy = currentPos.y - previewMeasurement.value.start.y;
       const pixelDistance = Math.sqrt(dx * dx + dy * dy);
-      const distanceInSquares = pixelDistance / cellSize;
-      const distanceInMeters = distanceInSquares * 1.5; // fator fixo
-      previewMeasurement.value.distance = `${distanceInMeters.toFixed(1)}m`;
+      const unscaledGridWidth = gridRect.width / scale;
+      const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
+      const distanceInSquares = pixelDistance / worldSquareSize;
+      previewMeasurement.value.distance = `${(distanceInSquares * 1.5).toFixed(1)}m`;
     }
     return;
   }
@@ -455,7 +438,10 @@ function handleWheel(event: WheelEvent) {
 }
 
 function resetView() {
-  viewTransform.value = { scale: 1, x: 0, y: 0 };
+  viewTransform.value.scale = 1;
+  // Centraliza sem depender de offsets anteriores
+  viewTransform.value.x = 0;
+  viewTransform.value.y = 0;
 }
 
 function handleToolSelected(tool: 'ruler' | 'cone' | 'none') {
@@ -898,11 +884,14 @@ panel h2 {
   position: relative; /* Para que a imagem e o grid se alinhem a ele */
   transition: transform 0.1s ease-out; /* Transição suave para o zoom */
   overflow: hidden; /* Clipa tanto vertical quanto horizontal */
+  transform-origin: center center;
 }
 .map-image,
 .grid-overlay {
   position: absolute;
-
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   max-width: 100%;
   max-height: 100%;
   user-select: none;
@@ -913,9 +902,7 @@ panel h2 {
   pointer-events: none;
   display: block;
 }
-.grid-overlay {
-  aspect-ratio: 1 / 1;
-}
+
 .map-placeholder {
   color: #888;
   grid-area: 1 / 1 / 2 / 2; 

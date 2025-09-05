@@ -210,7 +210,7 @@ function getTokenSizeInSquares(size: TokenSize): number {
 </script>
 
 <template>
-  <div class="grid-viewport" ref="viewportRef">
+  <div class="grid-viewport" ref="viewportRef" :style="{ width: squareSizePx * resolvedWidth + 'px', height: squareSizePx * resolvedHeight + 'px' }">
     <div class="grid-container" :class="{ measuring: props.isMeasuring }" :style="gridContainerStyle">
     <div
       v-for="square in props.squares" :key="square.id"
@@ -260,10 +260,9 @@ function getTokenSizeInSquares(size: TokenSize): number {
 
 <style scoped>
 .grid-viewport {
-  width: 100%;
-  height: 100%;
+  /* Agora encolhe para o tamanho exato do grid para alinhar com a imagem centralizada */
   position: relative;
-  overflow: hidden; /* Trocar para auto se quiser rolagem */
+  overflow: visible;
 }
 .grid-container {
   display: grid;
