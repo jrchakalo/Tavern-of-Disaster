@@ -34,6 +34,16 @@ const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena, padrão é 'battlemap
 const isDmPanelCollapsed = ref(false);
 const gridDisplayRef = ref<any>(null);
+const mapImgRef = ref<HTMLImageElement | null>(null);
+const imageRenderedWidth = ref<number | null>(null);
+const imageRenderedHeight = ref<number | null>(null);
+
+function updateImageDimensions() {
+  if (mapImgRef.value) {
+    imageRenderedWidth.value = mapImgRef.value.clientWidth;
+    imageRenderedHeight.value = mapImgRef.value.clientHeight;
+  }
+}
 
 const activeTool = ref<'ruler' | 'cone' | 'none'>('none');
 const rulerStartPoint = ref<{ x: number; y: number } | null>(null);
@@ -59,7 +69,6 @@ const {
   activeSceneId, 
   initiativeList, 
   squares, 
-  gridSize, // legado (não mais exibido)
   gridWidth,
   gridHeight,
   sessionStatus,
@@ -169,12 +178,16 @@ function onInitiativeDragEnd() {
 function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
   // Se a ferramenta de régua estiver ativa, o clique esquerdo define os pontos.
   if (activeTool.value === 'ruler') {
-    if (!gridDisplayRef.value) return;
-    const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
-    const clickPos = {
-      x: event.clientX - gridRect.left,
-      y: event.clientY - gridRect.top
-    };
+  if (!gridDisplayRef.value) return;
+  // Centraliza a medição no centro da célula clicada
+  const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
+  const cols = gridWidth.value || 1;
+  const cellSize = gridRect.width / cols;
+  const localX = event.clientX - gridRect.left;
+  const localY = event.clientY - gridRect.top;
+  const col = Math.floor(localX / cellSize);
+  const row = Math.floor(localY / cellSize);
+  const clickPos = { x: col * cellSize + cellSize / 2, y: row * cellSize + cellSize / 2 };
 
     if (!rulerStartPoint.value) {
       // Primeiro clique: define o ponto inicial.
@@ -355,22 +368,22 @@ function handlePointerDown(event: PointerEvent) {
 function handlePointerMove(event: PointerEvent) {
   // Se a régua estiver ativa e um ponto inicial tiver sido definido, atualiza a linha.
   if (previewMeasurement.value) {
-    const currentPos = getMousePositionOnMap(event);
-    if (!currentPos) return;
-
+    if (!gridDisplayRef.value) return;
+    const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
+    const cols = gridWidth.value || 1;
+    const cellSize = gridRect.width / cols;
+    const localX = event.clientX - gridRect.left;
+    const localY = event.clientY - gridRect.top;
+    const col = Math.floor(localX / cellSize);
+    const row = Math.floor(localY / cellSize);
+    const currentPos = { x: col * cellSize + cellSize / 2, y: row * cellSize + cellSize / 2 };
     previewMeasurement.value.end = currentPos;
-
     if (previewMeasurement.value.type === 'ruler') {
       const dx = currentPos.x - previewMeasurement.value.start.x;
       const dy = currentPos.y - previewMeasurement.value.start.y;
       const pixelDistance = Math.sqrt(dx * dx + dy * dy);
-
-      if (!viewportRef.value) return;
-      const worldWidth = viewportRef.value.clientWidth;
-      const worldSquareSize = worldWidth / gridSize.value;
-
-      const distanceInSquares = pixelDistance / worldSquareSize;
-      const distanceInMeters = distanceInSquares * 1.5;
+      const distanceInSquares = pixelDistance / cellSize;
+      const distanceInMeters = distanceInSquares * 1.5; // fator fixo
       previewMeasurement.value.distance = `${distanceInMeters.toFixed(1)}m`;
     }
     return;
@@ -467,11 +480,13 @@ function calculateConeArea(originId: string, targetId: string, lengthInMeters: n
 
   const lengthInSquares = Math.floor(lengthInMeters / 1.5);
 
+  const cols = gridWidth.value;
+  const rows = gridHeight.value;
   const getCoords = (id: string) => {
     const index = parseInt(id.replace('sq-', ''));
-    return { x: index % gridSize.value, y: Math.floor(index / gridSize.value) };
+    return { x: index % cols, y: Math.floor(index / cols) };
   };
-  const getId = (x: number, y: number) => `sq-${y * gridSize.value + x}`;
+  const getId = (x: number, y: number) => `sq-${y * cols + x}`;
 
   const origin = getCoords(originId);
   const target = getCoords(targetId);
@@ -497,7 +512,7 @@ function calculateConeArea(originId: string, targetId: string, lengthInMeters: n
         y = origin.y + i * Math.sign(dy);
       }
 
-      if (x >= 0 && x < gridSize.value && y >= 0 && y < gridSize.value) {
+  if (x >= 0 && x < cols && y >= 0 && y < rows) {
         affected.add(getId(x, y));
       }
     }
@@ -534,16 +549,24 @@ function getMousePositionOnMap(event: PointerEvent): { x: number; y: number } | 
 // Atualização automática sempre que largura ou altura mudarem (DM apenas)
 watch([gridWidth, gridHeight], ([w, h], [ow, oh]) => {
   if (!isDM.value || !activeSceneId.value) return;
-  if (w === ow && h === oh) return; // sem mudança real
+  if (w === ow && h === oh) return;
   socketService.updateGridDimensions(tableId, activeSceneId.value, w, h);
 });
 
 onMounted(() => {
   socketService.connect(tableId);
+  // Observa resize da janela para recalcular dimensões da imagem
+  window.addEventListener('resize', updateImageDimensions);
 });
 
 onUnmounted(() => {
   socketService.disconnect();
+  window.removeEventListener('resize', updateImageDimensions);
+});
+
+watch(currentMapUrl, () => {
+  // Recalcula quando muda o src
+  setTimeout(updateImageDimensions, 50);
 });
 
 </script>
@@ -693,7 +716,7 @@ onUnmounted(() => {
       <button v-if="sessionStatus === 'LIVE' || isDM" @click="resetView" class="reset-view-btn">Resetar Visão</button>
       <div 
         v-if="sessionStatus === 'LIVE' || isDM"
-        class="viewport"
+  class="viewport" :class="{ measuring: isMeasuring }"
         ref="viewportRef"
         @wheel.prevent="handleWheel"
         @pointerdown="handlePointerDown"
@@ -707,7 +730,15 @@ onUnmounted(() => {
             class="map-stage"
             :style="{ transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale})` }"
           >
-            <img v-if="currentMapUrl" :src="currentMapUrl" alt="Mapa de Batalha" class="map-image" />
+            <img 
+              v-if="currentMapUrl" 
+              :src="currentMapUrl" 
+              alt="Mapa de Batalha" 
+              class="map-image" 
+              draggable="false" 
+              @dragstart.prevent 
+              ref="mapImgRef" 
+              @load="updateImageDimensions" />
             <div v-else class="map-placeholder">
               <p>Nenhum mapa definido para esta cena.</p>
               <p v-if="isDM">Use o Painel do Mestre para definir uma imagem.</p>
@@ -725,9 +756,10 @@ onUnmounted(() => {
               :coneAffectedSquares="coneAffectedSquares"
               :currentTurnTokenId="currentTurnTokenId"
               :squares="squares"
-              :gridSize="gridSize"  
               :gridWidth="gridWidth" 
               :gridHeight="gridHeight"
+              :imageWidth="imageRenderedWidth || undefined"
+              :imageHeight="imageRenderedHeight || undefined"
               :selectedTokenId="selectedTokenId"
               @square-right-click="handleRightClick"
               @square-left-click="handleLeftClickOnSquare"
@@ -859,27 +891,27 @@ panel h2 {
 .viewport:active {
   cursor: grabbing;
 }
+.viewport.measuring { cursor: crosshair; }
 .map-stage {
   width: 100%;
   height: 100%;
   position: relative; /* Para que a imagem e o grid se alinhem a ele */
   transition: transform 0.1s ease-out; /* Transição suave para o zoom */
+  overflow: hidden; /* Clipa tanto vertical quanto horizontal */
 }
 .map-image,
 .grid-overlay {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%); 
+
   max-width: 100%;
   max-height: 100%;
-  /*evita que o grid seja selecionada pelo o usuario*/
   user-select: none;
 }
 .map-image {
   object-fit: contain;
-  /*evita que a imagem seja selecionada pelo o usuario*/
   user-select: none;
+  pointer-events: none;
+  display: block;
 }
 .grid-overlay {
   aspect-ratio: 1 / 1;

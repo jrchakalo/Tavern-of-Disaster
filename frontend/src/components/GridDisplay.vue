@@ -10,11 +10,10 @@ const THROTTLE_DELAY_MS = 50;
 
 interface Props {
   squares: GridSquare[];
-  // LEGADO: gridSize (mantém compatibilidade). Se gridWidth/gridHeight vierem, eles prevalecem.
-  gridSize: number;
-  // NOVO: número de colunas e linhas para grids retangulares.
-  gridWidth?: number;
-  gridHeight?: number;
+  gridWidth: number; // colunas
+  gridHeight: number; // linhas
+  imageWidth?: number; // largura exibida da imagem (px)
+  imageHeight?: number; // altura exibida da imagem (px)
   currentTurnTokenId: string | null;
   selectedTokenId: string | null;
   isMeasuring: boolean;
@@ -40,8 +39,8 @@ const emit = defineEmits<{
 }>();
 
 // Largura (colunas) e altura (linhas) efetivas
-const resolvedWidth = computed(() => props.gridWidth || props.gridSize);
-const resolvedHeight = computed(() => props.gridHeight || props.gridSize);
+const resolvedWidth = computed(() => props.gridWidth);
+const resolvedHeight = computed(() => props.gridHeight);
 
 // Tamanho (lado) de cada célula em pixels (mantendo quadrado). Estratégia: basear no espaço horizontal disponível.
 // Assim, se rows * squareSize estourar a altura, deixamos transbordar (overflow) em Y.
@@ -51,10 +50,10 @@ const viewportRef = ref<HTMLElement | null>(null);
 let resizeObserver: ResizeObserver | null = null;
 
 function recalcSquareSize() {
-  if (!viewportRef.value) return;
-  const availWidth = viewportRef.value.clientWidth;
   const cols = Math.max(1, resolvedWidth.value);
-  squareSizePx.value = availWidth / cols; // baseia no width – garante quadrado. Pode gerar overflow vertical.
+  const w = props.imageWidth || viewportRef.value?.clientWidth || 0;
+  if (w === 0) return;
+  squareSizePx.value = w / cols; // Sempre baseado na largura
 }
 
 onMounted(() => {
@@ -69,7 +68,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', recalcSquareSize);
 });
 
-watch([resolvedWidth, resolvedHeight], () => recalcSquareSize());
+watch([resolvedWidth, resolvedHeight, () => props.imageWidth, () => props.imageHeight], () => recalcSquareSize());
 
 const gridContainerStyle = computed(() => ({
   '--grid-columns': resolvedWidth.value,
@@ -108,7 +107,7 @@ function handleDragOver(targetSquare: GridSquare) {
   }
 
   // Calcula o caminho
-  const path = findShortestPath(draggedTokenInfo.value.squareId, targetSquare.id, props.gridSize);
+  const path = findShortestPath(draggedTokenInfo.value.squareId, targetSquare.id);
   pathPreview.value = path;
 
   // Valida o custo do movimento
@@ -149,7 +148,7 @@ function handleDrop(event: DragEvent, targetSquare: GridSquare) {
   draggedTokenInfo.value = null;
 }
 
-function findShortestPath(startId: string, endId: string, legacySize: number): string[] {
+function findShortestPath(startId: string, endId: string): string[] {
   // Usa width/height reais se existirem
   const width = resolvedWidth.value;
   const height = resolvedHeight.value;
@@ -212,7 +211,7 @@ function getTokenSizeInSquares(size: TokenSize): number {
 
 <template>
   <div class="grid-viewport" ref="viewportRef">
-    <div class="grid-container" :style="gridContainerStyle">
+    <div class="grid-container" :class="{ measuring: props.isMeasuring }" :style="gridContainerStyle">
     <div
       v-for="square in props.squares" :key="square.id"
       class="grid-square"
@@ -279,13 +278,16 @@ function getTokenSizeInSquares(size: TokenSize): number {
   justify-content: center;
   align-items: center;
   box-sizing: border-box;
-  cursor: pointer;  /*Indica que é clicável*/
+  cursor: pointer; /* será sobrescrito quando medindo */
   background-color: rgba(255, 255, 255, 0.05); 
   border: 1px solid rgba(0, 0, 0, 0.4);
   min-width: 0;
   min-height: 0;
   position: relative;
 }
+
+/* Cursor de medição (régua / cone) deve aparecer dentro das células */
+.grid-container.measuring .grid-square { cursor: crosshair; }
 .grid-square:hover {
   background-color: rgba(255, 255, 0, 0.1); 
 }

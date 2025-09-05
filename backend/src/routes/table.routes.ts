@@ -107,9 +107,8 @@ router.post('/join', authMiddleware, (async (req: AuthRequest, res) => {
 router.post('/:tableId/scenes', authMiddleware, (async (req: AuthRequest, res) => {
   try {
     const { tableId } = req.params;
-  // Agora aceitamos gridWidth e gridHeight para suportar grids retangulares.
-  // Se apenas gridSize vier, usamos como fallback (retrocompatibilidade).
-  const { name, imageUrl, gridSize, gridWidth, gridHeight, type } = req.body;
+  // Agora somente gridWidth e gridHeight (gridSize legado removido)
+  const { name, imageUrl, gridWidth, gridHeight, type } = req.body;
     const userId = req.user?.id;
 
     const table = await Table.findById(tableId);
@@ -120,16 +119,15 @@ router.post('/:tableId/scenes', authMiddleware, (async (req: AuthRequest, res) =
       return res.status(403).json({ message: 'Apenas o Mestre pode adicionar cenas.' });
     }
 
-    const resolvedWidth = gridWidth || gridSize || 30; // Preferência: width explícito > legado > default
-    const resolvedHeight = gridHeight || gridSize || 30;
+  const resolvedWidth = gridWidth || 30;
+  const resolvedHeight = gridHeight || 30;
 
     const newScene = new Scene({
       tableId: table._id,
       name: name || 'Nova Cena',
       imageUrl: imageUrl || '',
-      gridSize: gridSize || 30, // Armazena também para clientes antigos (se houver)
-      gridWidth: resolvedWidth,
-      gridHeight: resolvedHeight,
+  gridWidth: resolvedWidth,
+  gridHeight: resolvedHeight,
       type: type || 'battlemap',
     });
     await newScene.save();

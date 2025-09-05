@@ -142,9 +142,9 @@ export function registerTableHandlers(io: Server, socket: Socket) {
         }
     };
 
-    const requestUpdateGridSize = async (data: { tableId: string, sceneId: string, newGridSize?: number, newGridWidth?: number, newGridHeight?: number }) => {
+    const requestUpdateGridDimensions = async (data: { tableId: string, sceneId: string, newGridWidth: number, newGridHeight: number }) => {
         try {
-            const { tableId, sceneId, newGridSize, newGridWidth, newGridHeight } = data;
+            const { tableId, sceneId, newGridWidth, newGridHeight } = data;
             const userId = socket.data.user?.id; // Pega o usuário da conexão autenticada
             const table = await Table.findById(tableId).populate('scenes');
             if (!table) return;
@@ -154,18 +154,7 @@ export function registerTableHandlers(io: Server, socket: Socket) {
             return socket.emit('error', { message: 'Apenas o Mestre pode atualizar o tamanho do grid.' });
             }
 
-                        // Construímos o payload de atualização. Mantemos gridSize (legado) e ajustamos width/height se vierem.
-                        const updatePayload: any = {};
-                        if (typeof newGridSize === 'number') {
-                            updatePayload.gridSize = newGridSize;
-                            // Se width/height não forem passados explicitamente, interpretamos o tamanho legado como ambos.
-                            if (typeof newGridWidth !== 'number') updatePayload.gridWidth = newGridSize;
-                            if (typeof newGridHeight !== 'number') updatePayload.gridHeight = newGridSize;
-                        }
-                        if (typeof newGridWidth === 'number') updatePayload.gridWidth = newGridWidth;
-                        if (typeof newGridHeight === 'number') updatePayload.gridHeight = newGridHeight;
-
-                        await Scene.findByIdAndUpdate(sceneId, updatePayload);
+                        await Scene.findByIdAndUpdate(sceneId, { gridWidth: newGridWidth, gridHeight: newGridHeight });
             
             const activeScene = await Scene.findById(sceneId);
             const tokens = await Token.find({ sceneId: sceneId });
@@ -177,7 +166,8 @@ export function registerTableHandlers(io: Server, socket: Socket) {
             allScenes: table?.scenes || []
             };
 
-            socket.to(tableId).emit('sessionStateUpdated', newState);
+            // Envia para TODOS (incluindo o mestre) para garantir reatividade local consistente
+            io.to(tableId).emit('sessionStateUpdated', newState);
         } catch (error) {
             console.error('Erro ao atualizar o tamanho do grid:', error);
         }
@@ -188,6 +178,6 @@ export function registerTableHandlers(io: Server, socket: Socket) {
   socket.on('requestUpdateSessionStatus', requestUpdateSessionStatus);
   socket.on('requestSetMap', requestSetMap);
   socket.on('requestReorderScenes', requestReorderScenes);
-  socket.on('requestUpdateGridSize', requestUpdateGridSize);
+    socket.on('requestUpdateGridDimensions', requestUpdateGridDimensions);
 }
   

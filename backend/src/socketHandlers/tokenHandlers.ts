@@ -21,6 +21,21 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         return;
         }
 
+        // Carrega cena para validar limites
+        const scene = await Scene.findById(sceneId);
+        if (!scene) {
+          socket.emit('tokenPlacementError', { message: 'Cena não encontrada.' });
+          return;
+        }
+        const gridWidth = (scene as any).gridWidth ?? 30;
+        const gridHeight = (scene as any).gridHeight ?? 30;
+        const maxIndex = gridWidth * gridHeight - 1;
+        const numericIndex = parseInt(squareId.replace('sq-', ''));
+        if (isNaN(numericIndex) || numericIndex < 0 || numericIndex > maxIndex) {
+          socket.emit('tokenPlacementError', { message: 'Quadrado fora dos limites da grade.' });
+          return;
+        }
+
         // Verifica se já existe um token nesse quadrado
         const existingToken = await Token.findOne({ sceneId: sceneId, squareId: squareId });
         if (existingToken) {
@@ -116,6 +131,16 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         return;
         }
 
+  // Validação de limites destino
+  const gridWidth = (scene as any).gridWidth ?? 30;
+  const gridHeight = (scene as any).gridHeight ?? 30;
+  const maxIndex = gridWidth * gridHeight - 1;
+        const numericTarget = parseInt(targetSquareId.replace('sq-', ''));
+        if (isNaN(numericTarget) || numericTarget < 0 || numericTarget > maxIndex) {
+          socket.emit('tokenMoveError', { message: 'Destino fora dos limites do grid.' });
+          return;
+        }
+
         if (scene) {
             const entryInInitiative = scene.initiative.find(entry => entry.tokenId?.toString() === tokenToMove._id.toString());
             if (entryInInitiative && !entryInInitiative.isCurrentTurn) {
@@ -132,9 +157,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         const oldSquareId = tokenToMove.squareId; // Guarda o squareId antigo
         if (oldSquareId === targetSquareId) return;
 
-  // Resolução das dimensões reais do grid: prioriza novos campos, cai para gridSize legado.
-  const gridWidth = (scene as any).gridWidth ?? scene.gridSize ?? 30;
-  const gridHeight = (scene as any).gridHeight ?? scene.gridSize ?? 30;
+  // (gridWidth/gridHeight já definidos acima)
 
         const getCoords = (sqId: string) => {
           const index = parseInt(sqId.replace('sq-', ''));
@@ -232,7 +255,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
       const scene = await Scene.findById(tokenToUndo.sceneId);
       if (!scene) return;
 
-      const gridWidth = (scene as any).gridWidth ?? scene.gridSize ?? 30;
+  const gridWidth = (scene as any).gridWidth ?? 30;
       const getCoords = (sqId: string) => {
         const index = parseInt(sqId.replace('sq-', ''));
         return { x: index % gridWidth, y: Math.floor(index / gridWidth) };

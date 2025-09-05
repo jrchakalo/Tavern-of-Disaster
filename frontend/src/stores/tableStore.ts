@@ -11,7 +11,6 @@ export const useTableStore = defineStore('table', () => {
     const activeSceneId: Ref<string | null> = ref(null);
     const initiativeList: Ref<IInitiativeEntry[]> = ref([]);
     const squares: Ref<GridSquare[]> = ref([]);
-    const gridSize: Ref<number> = ref(30); // Legado (ainda usado em watchers / UI antiga)
     const gridWidth: Ref<number> = ref(30); // Novo: número de colunas
     const gridHeight: Ref<number> = ref(30); // Novo: número de linhas
     const sessionStatus: Ref<'PREPARING' | 'LIVE' | 'ENDED'> = ref('PREPARING');
@@ -73,10 +72,8 @@ export const useTableStore = defineStore('table', () => {
         currentMapUrl.value = data.activeScene?.imageUrl || null;
         initiativeList.value = data.activeScene?.initiative || [];
         sessionStatus.value = data.tableInfo.status as 'PREPARING' | 'LIVE' | 'ENDED';
-        // Resolve width/height com fallback para gridSize legado
-        gridSize.value = data.activeScene?.gridSize || 30;
-        gridWidth.value = data.activeScene?.gridWidth || data.activeScene?.gridSize || 30;
-        gridHeight.value = data.activeScene?.gridHeight || data.activeScene?.gridSize || 30;
+    gridWidth.value = data.activeScene?.gridWidth ?? 30;
+    gridHeight.value = data.activeScene?.gridHeight ?? 30;
         _rebuildGridRectangular(gridWidth.value, gridHeight.value, data.tokens);
     }
 
@@ -84,9 +81,8 @@ export const useTableStore = defineStore('table', () => {
         activeSceneId.value = newState.activeScene?._id || null;
         currentMapUrl.value = newState.activeScene?.imageUrl || null;
         initiativeList.value = newState.activeScene?.initiative || [];
-        gridSize.value = newState.activeScene?.gridSize || 30;
-        gridWidth.value = newState.activeScene?.gridWidth || newState.activeScene?.gridSize || 30;
-        gridHeight.value = newState.activeScene?.gridHeight || newState.activeScene?.gridSize || 30;
+    gridWidth.value = newState.activeScene?.gridWidth ?? 30;
+    gridHeight.value = newState.activeScene?.gridHeight ?? 30;
         _rebuildGridRectangular(gridWidth.value, gridHeight.value, newState.tokens);
     }
 
@@ -136,7 +132,6 @@ export const useTableStore = defineStore('table', () => {
         activeSceneId,
         initiativeList,
         squares,
-    gridSize,
     gridWidth,
     gridHeight,
         sessionStatus,
