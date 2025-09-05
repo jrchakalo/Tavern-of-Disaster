@@ -76,6 +76,7 @@ const {
   gridHeight,
   sessionStatus,
   currentMapUrl,
+  sharedMeasurements,
   // Getters
   isDM, 
   activeScene, 
@@ -209,7 +210,12 @@ function handleRightClick(square: GridSquare, event: MouseEvent) {
 
   // Com qualquer ferramenta ativa, o clique direito cancela
   if (isMeasuring.value) {
-    activeTool.value = 'none';
+    if (activeSceneId.value && sharedMeasurements.value[currentUser?.value?.id || '']) {
+      socketService.removeMyMeasurement({ tableId, sceneId: activeSceneId.value });
+    } else {
+      activeTool.value = 'none';
+    }
+    previewMeasurement.value = null;
     rulerStartPoint.value = null;
     coneOriginSquareId.value = null;
     coneAffectedSquares.value = [];
@@ -419,9 +425,18 @@ function handlePointerMove(event: PointerEvent) {
 function handlePointerUp(event: PointerEvent) {
   // Se estávamos pré-visualizando, o pointerUp FINALIZA a medição.
   if (previewMeasurement.value) {
-    // TODO: Futuramente, aqui emitiremos o evento de socket para mostrar para todos.
-    // Por enquanto, apenas limpamos a pré-visualização.
-    console.log('Medição finalizada:', previewMeasurement.value);
+    if (activeTool.value === 'ruler' && previewMeasurement.value.type === 'ruler' && activeSceneId.value) {
+      const canShare = isDM.value || !!myActiveToken.value; // DM ou jogador cujo token está no turno
+      if (canShare) {
+        socketService.shareMeasurement({
+          tableId,
+          sceneId: activeSceneId.value,
+          start: previewMeasurement.value.start,
+          end: previewMeasurement.value.end,
+          distance: previewMeasurement.value.distance || '0m'
+        });
+      }
+    }
     previewMeasurement.value = null; 
 
     (event.target as HTMLElement).releasePointerCapture(event.pointerId);
@@ -754,6 +769,7 @@ watch(currentMapUrl, () => {
               :measureEndPoint="rulerEndPoint"
               :measuredDistance="rulerDistance"
               :previewMeasurement="previewMeasurement"
+              :sharedMeasurements="Object.values(sharedMeasurements)"
               :coneAffectedSquares="coneAffectedSquares"
               :currentTurnTokenId="currentTurnTokenId"
               :squares="squares"

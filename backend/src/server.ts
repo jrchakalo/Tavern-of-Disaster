@@ -10,6 +10,7 @@ import tableRouter from './routes/table.routes';
 import { registerTableHandlers } from './socketHandlers/tableHandlers';
 import { registerTokenHandlers } from './socketHandlers/tokenHandlers';
 import { registerInitiativeHandlers } from './socketHandlers/initiativeHandlers';
+import { registerMeasurementHandlers } from './socketHandlers/measurementHandlers';
 
 dotenv.config();
 connectDB();
@@ -62,6 +63,7 @@ io.on('connection', async (socket) => {
   registerTableHandlers(io, socket);
   registerTokenHandlers(io, socket);
   registerInitiativeHandlers(io, socket);
+  registerMeasurementHandlers(io, socket);
 
   socket.on('disconnect', () => {
     console.log(`Usuário desconectado: ${socket.id}`);

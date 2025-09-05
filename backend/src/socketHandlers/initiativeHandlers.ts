@@ -106,7 +106,9 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
     scene.initiative = initiativeList;
     await scene.save();
 
-    io.to(tableId).emit('initiativeUpdated', scene.initiative);
+  io.to(tableId).emit('initiativeUpdated', scene.initiative);
+  // Limpa todas as medições compartilhadas ao final do avanço de turno
+  io.to(tableId).emit('allMeasurementsCleared');
     } catch (error) { 
         console.error("Erro ao avançar o turno:", error); 
     }

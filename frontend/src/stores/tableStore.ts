@@ -15,6 +15,15 @@ export const useTableStore = defineStore('table', () => {
     const gridHeight: Ref<number> = ref(30); // Novo: número de linhas
     const sessionStatus: Ref<'PREPARING' | 'LIVE' | 'ENDED'> = ref('PREPARING');
     const currentMapUrl: Ref<string | null> = ref(null);
+    // Medições compartilhadas: chave = userId, valor = Measurement
+    const sharedMeasurements: Ref<Record<string, {
+        userId: string;
+        username: string;
+        start: { x: number; y: number };
+        end: { x: number; y: number };
+        distance: string; // "Xm (Yft)"
+        color: string;
+    }>> = ref({});
 
     // GETTERS
     const isDM: ComputedRef<boolean> = computed(() => {
@@ -84,6 +93,8 @@ export const useTableStore = defineStore('table', () => {
     gridWidth.value = newState.activeScene?.gridWidth ?? 30;
     gridHeight.value = newState.activeScene?.gridHeight ?? 30;
         _rebuildGridRectangular(gridWidth.value, gridHeight.value, newState.tokens);
+    // Ao mudar de cena limpamos medições compartilhadas (escopo por cena)
+    sharedMeasurements.value = {};
     }
 
     function placeToken(newToken: TokenInfo) {
@@ -125,6 +136,19 @@ export const useTableStore = defineStore('table', () => {
         });
     }
 
+    // Medições compartilhadas
+    function upsertSharedMeasurement(m: { userId: string; username: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; color: string }) {
+        sharedMeasurements.value = { ...sharedMeasurements.value, [m.userId]: m };
+    }
+    function removeSharedMeasurement(userId: string) {
+        if (sharedMeasurements.value[userId]) {
+            const clone = { ...sharedMeasurements.value };
+            delete clone[userId];
+            sharedMeasurements.value = clone;
+        }
+    }
+    function clearSharedMeasurements() { sharedMeasurements.value = {}; }
+
     return {
         // State
         currentTable,
@@ -136,6 +160,7 @@ export const useTableStore = defineStore('table', () => {
     gridHeight,
         sessionStatus,
         currentMapUrl,
+        sharedMeasurements,
         // Getters
         isDM,
         activeScene,
@@ -149,6 +174,9 @@ export const useTableStore = defineStore('table', () => {
         moveToken,
         removeToken,
         updateTokenOwner,
-        updateAllTokens
+        updateAllTokens,
+        upsertSharedMeasurement,
+        removeSharedMeasurement,
+        clearSharedMeasurements
     };
 });

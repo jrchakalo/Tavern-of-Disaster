@@ -32,6 +32,10 @@ class SocketService {
     this.socket.on('sceneListUpdated', (data: IScene[]) => { this.store.scenes = data; });
     this.socket.on('sessionStatusUpdated', (data: { status: 'PREPARING' | 'LIVE' | 'ENDED' }) => { this.store.sessionStatus = data.status; });
     this.socket.on('mapUpdated', (data: { mapUrl: string }) => { this.store.currentMapUrl = data.mapUrl; });
+  // Medições compartilhadas
+  this.socket.on('measurementShared', (m) => this.store.upsertSharedMeasurement(m));
+  this.socket.on('measurementRemoved', (data: { userId: string }) => this.store.removeSharedMeasurement(data.userId));
+  this.socket.on('allMeasurementsCleared', () => this.store.clearSharedMeasurements());
 
     // Handlers de erro
     this.socket.on('connect_error', (error) => console.error('SocketService - Erro de conexão:', error.message));
@@ -97,6 +101,14 @@ class SocketService {
 
   reorderInitiative(payload: { tableId: string; sceneId: string; newOrder: IInitiativeEntry[]; }) {
     this.socket?.emit('requestReorderInitiative', payload);
+  }
+
+  // --- Medições ---
+  shareMeasurement(payload: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string }) {
+    this.socket?.emit('requestShareMeasurement', payload);
+  }
+  removeMyMeasurement(payload: { tableId: string; sceneId: string }) {
+    this.socket?.emit('requestRemoveMeasurement', payload);
   }
 }
 

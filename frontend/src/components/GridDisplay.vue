@@ -28,6 +28,7 @@ interface Props {
     distance?: string;
     affectedSquares?: string[];
   } | null;
+  sharedMeasurements?: Array<{ userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; }>; // novas medições publicadas
 }
 
 const props = defineProps<Props>();
@@ -79,6 +80,11 @@ const gridContainerStyle = computed(() => ({
 }));
 
 function handleDragStart(event: DragEvent, token: TokenInfo) {
+  // Bloqueia movimentação de tokens enquanto estiver medindo
+  if (props.isMeasuring) {
+    event.preventDefault();
+    return;
+  }
   console.log(`Iniciando o arrastar do token: ${token._id}`);
   if (event.dataTransfer) {
     // Define o tipo de operação permitida
@@ -94,6 +100,7 @@ function handleDragStart(event: DragEvent, token: TokenInfo) {
 }
 
 function handleDragOver(targetSquare: GridSquare) {
+  if (props.isMeasuring) return; // Sem preview de caminho durante medição
   if (throttleTimeout) return;
 
   throttleTimeout = window.setTimeout(() => {
@@ -116,6 +123,7 @@ function handleDragOver(targetSquare: GridSquare) {
 }
 
 function handleDrop(event: DragEvent, targetSquare: GridSquare) {
+  if (props.isMeasuring) return; // Evita drop durante medição
   event.preventDefault();
   console.log(`Token solto no quadrado: ${targetSquare.id}`);
 
@@ -233,7 +241,7 @@ function getTokenSizeInSquares(size: TokenSize): number {
                 '--token-size': getTokenSizeInSquares(square.token.size), 
                 backgroundColor: square.token.color 
               }"
-            draggable="true" @dragstart="handleDragStart($event, square.token!)">
+            :draggable="!props.isMeasuring" @dragstart="handleDragStart($event, square.token!)">
             <img v-if="square.token.imageUrl" :src="square.token.imageUrl" :alt="square.token.name" class="token-image" />
             <div v-else class="token-fallback" :style="{ backgroundColor: square.token.color }">
               <span>{{ square.token.name.substring(0, 2) }}</span>
@@ -254,6 +262,13 @@ function getTokenSizeInSquares(size: TokenSize): number {
           </text>
         </template>
       </svg>
+
+        <svg v-if="props.sharedMeasurements && props.sharedMeasurements.length" class="shared-measurements-overlay">
+          <template v-for="m in props.sharedMeasurements" :key="m.userId">
+            <line :x1="m.start.x" :y1="m.start.y" :x2="m.end.x" :y2="m.end.y" :stroke="m.color" />
+            <text :x="m.end.x + 12" :y="m.end.y - 12">{{ m.distance }}</text>
+          </template>
+        </svg>
     </div>
   </div>
 </template>
@@ -287,6 +302,8 @@ function getTokenSizeInSquares(size: TokenSize): number {
 
 /* Cursor de medição (régua / cone) deve aparecer dentro das células */
 .grid-container.measuring .grid-square { cursor: crosshair; }
+/* Durante a medição o cursor deve permanecer crosshair inclusive sobre tokens */
+.grid-container.measuring .token { cursor: crosshair !important; }
 .grid-square:hover {
   background-color: rgba(255, 255, 0, 0.1); 
 }
@@ -386,6 +403,30 @@ function getTokenSizeInSquares(size: TokenSize): number {
   stroke-width: 4px;
   stroke-linecap: butt;
   stroke-linejoin: miter;
+}
+
+.shared-measurements-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 99;
+}
+.shared-measurements-overlay line {
+  stroke-width: 3;
+  stroke-dasharray: 10 5;
+  stroke-linecap: round;
+}
+.shared-measurements-overlay text {
+  fill: #ffffff;
+  font-size: 16px;
+  font-weight: bold;
+  font-family: sans-serif;
+  paint-order: stroke;
+  stroke: #000;
+  stroke-width: 3px;
 }
 
 .cone-preview {
