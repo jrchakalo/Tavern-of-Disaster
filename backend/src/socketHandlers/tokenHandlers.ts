@@ -132,11 +132,13 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         const oldSquareId = tokenToMove.squareId; // Guarda o squareId antigo
         if (oldSquareId === targetSquareId) return;
 
-        const gridSize = scene.gridSize ?? 30; // Pega o tamanho do grid da cena, padrão 30x30 se indefinido
+  // Resolução das dimensões reais do grid: prioriza novos campos, cai para gridSize legado.
+  const gridWidth = (scene as any).gridWidth ?? scene.gridSize ?? 30;
+  const gridHeight = (scene as any).gridHeight ?? scene.gridSize ?? 30;
 
         const getCoords = (sqId: string) => {
-        const index = parseInt(sqId.replace('sq-', ''));
-        return { x: index % gridSize, y: Math.floor(index / gridSize) };
+          const index = parseInt(sqId.replace('sq-', ''));
+          return { x: index % gridWidth, y: Math.floor(index / gridWidth) };
         };
 
         const oldCoords = getCoords(tokenToMove.squareId);
@@ -230,10 +232,10 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
       const scene = await Scene.findById(tokenToUndo.sceneId);
       if (!scene) return;
 
+      const gridWidth = (scene as any).gridWidth ?? scene.gridSize ?? 30;
       const getCoords = (sqId: string) => {
         const index = parseInt(sqId.replace('sq-', ''));
-        const gridSize = scene.gridSize ?? 30;
-        return { x: index % gridSize, y: Math.floor(index / gridSize) };
+        return { x: index % gridWidth, y: Math.floor(index / gridWidth) };
       };
 
       const distance = Math.max(Math.abs(getCoords(currentPosition).x - getCoords(previousPosition).x), Math.abs(getCoords(currentPosition).y - getCoords(previousPosition).y));

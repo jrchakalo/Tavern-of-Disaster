@@ -51,7 +51,9 @@ export interface IScene {
   tableId: string;
   name: string;
   imageUrl?: string;
-  gridSize?: number; // Tamanho da grade, se necessário
+  gridSize?: number; // LEGADO: usado para retrocompatibilidade
+  gridWidth?: number; // Novo: número de colunas (largura) da grade
+  gridHeight?: number; // Novo: número de linhas (altura) da grade
   type?: 'battlemap' | 'image';
   initiative: IInitiativeEntry[];
 }

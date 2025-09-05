@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import type { GridSquare, TokenInfo, TokenSize } from '../types';
 
 const pathPreview = ref<string[]>([]); 
@@ -10,7 +10,11 @@ const THROTTLE_DELAY_MS = 50;
 
 interface Props {
   squares: GridSquare[];
+  // LEGADO: gridSize (mantém compatibilidade). Se gridWidth/gridHeight vierem, eles prevalecem.
   gridSize: number;
+  // NOVO: número de colunas e linhas para grids retangulares.
+  gridWidth?: number;
+  gridHeight?: number;
   currentTurnTokenId: string | null;
   selectedTokenId: string | null;
   isMeasuring: boolean;
@@ -35,13 +39,45 @@ const emit = defineEmits<{
     (e: 'token-move-requested', payload: { tokenId: string; targetSquareId: string }): void;
 }>();
 
-const gridContainerStyle = computed(() => {
-  return {
-    '--grid-columns': props.gridSize,
-    //'--grid-square-size': `${props.squareSizePx}px`,
-    //backgroundImage: props.mapUrl ? `url(${props.mapUrl})` : 'none',
-  };
+// Largura (colunas) e altura (linhas) efetivas
+const resolvedWidth = computed(() => props.gridWidth || props.gridSize);
+const resolvedHeight = computed(() => props.gridHeight || props.gridSize);
+
+// Tamanho (lado) de cada célula em pixels (mantendo quadrado). Estratégia: basear no espaço horizontal disponível.
+// Assim, se rows * squareSize estourar a altura, deixamos transbordar (overflow) em Y.
+// Se desejar preferir altura, poderia inverter a lógica.
+const squareSizePx = ref(32);
+const viewportRef = ref<HTMLElement | null>(null);
+let resizeObserver: ResizeObserver | null = null;
+
+function recalcSquareSize() {
+  if (!viewportRef.value) return;
+  const availWidth = viewportRef.value.clientWidth;
+  const cols = Math.max(1, resolvedWidth.value);
+  squareSizePx.value = availWidth / cols; // baseia no width – garante quadrado. Pode gerar overflow vertical.
+}
+
+onMounted(() => {
+  recalcSquareSize();
+  resizeObserver = new ResizeObserver(() => recalcSquareSize());
+  if (viewportRef.value) resizeObserver.observe(viewportRef.value);
+  window.addEventListener('resize', recalcSquareSize);
 });
+
+onBeforeUnmount(() => {
+  if (resizeObserver && viewportRef.value) resizeObserver.unobserve(viewportRef.value);
+  window.removeEventListener('resize', recalcSquareSize);
+});
+
+watch([resolvedWidth, resolvedHeight], () => recalcSquareSize());
+
+const gridContainerStyle = computed(() => ({
+  '--grid-columns': resolvedWidth.value,
+  '--grid-rows': resolvedHeight.value,
+  '--cell-size': squareSizePx.value + 'px',
+  width: `${squareSizePx.value * resolvedWidth.value}px`,
+  height: `${squareSizePx.value * resolvedHeight.value}px`, // Pode ultrapassar o viewport (overflow)
+}));
 
 function handleDragStart(event: DragEvent, token: TokenInfo) {
   console.log(`Iniciando o arrastar do token: ${token._id}`);
@@ -113,12 +149,15 @@ function handleDrop(event: DragEvent, targetSquare: GridSquare) {
   draggedTokenInfo.value = null;
 }
 
-function findShortestPath(startId: string, endId: string, gridSize: number): string[] {
+function findShortestPath(startId: string, endId: string, legacySize: number): string[] {
+  // Usa width/height reais se existirem
+  const width = resolvedWidth.value;
+  const height = resolvedHeight.value;
   const getCoords = (id: string) => {
     const index = parseInt(id.replace('sq-', ''));
-    return { x: index % gridSize, y: Math.floor(index / gridSize) };
+    return { x: index % width, y: Math.floor(index / width) };
   };
-  const getId = (x: number, y: number) => `sq-${y * gridSize + x}`;
+  const getId = (x: number, y: number) => `sq-${y * width + x}`;
 
   const queue: { path: string[] }[] = [{ path: [startId] }];
   const visited = new Set([startId]);
@@ -138,7 +177,7 @@ function findShortestPath(startId: string, endId: string, gridSize: number): str
     for (const { dx, dy } of neighbors) {
       const nextX = x + dx;
       const nextY = y + dy;
-      if (nextX >= 0 && nextX < gridSize && nextY >= 0 && nextY < gridSize) {
+  if (nextX >= 0 && nextX < width && nextY >= 0 && nextY < height) {
         const neighborId = getId(nextX, nextY);
         if (!visited.has(neighborId)) {
           visited.add(neighborId);
@@ -172,7 +211,8 @@ function getTokenSizeInSquares(size: TokenSize): number {
 </script>
 
 <template>
-  <div class="grid-container" :style="gridContainerStyle">
+  <div class="grid-viewport" ref="viewportRef">
+    <div class="grid-container" :style="gridContainerStyle">
     <div
       v-for="square in props.squares" :key="square.id"
       class="grid-square"
@@ -215,16 +255,22 @@ function getTokenSizeInSquares(size: TokenSize): number {
           </text>
         </template>
       </svg>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.grid-container {
+.grid-viewport {
   width: 100%;
   height: 100%;
+  position: relative;
+  overflow: hidden; /* Trocar para auto se quiser rolagem */
+}
+.grid-container {
   display: grid;
-  grid-template-columns: repeat(var(--grid-columns), 1fr);
-  grid-template-rows: repeat(var(--grid-columns), 1fr);
+  /* Cada célula usa tamanho fixo (var(--cell-size)) garantindo quadrado */
+  grid-template-columns: repeat(var(--grid-columns), var(--cell-size));
+  grid-template-rows: repeat(var(--grid-rows), var(--cell-size));
   position: relative;
 }
 

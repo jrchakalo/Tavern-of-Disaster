@@ -12,7 +12,12 @@ export interface IScene extends Document {
   tableId: Types.ObjectId; 
   name: string; 
   imageUrl?: string;
-  gridSize?: number; // Tamanho da grade, se necessário
+  // LEGADO: gridSize antigo (mantido para retrocompatibilidade). Use gridWidth/gridHeight daqui pra frente.
+  gridSize?: number; 
+  // NOVO: largura (número de colunas) da grade para suportar grids retangulares mantendo células quadradas
+  gridWidth?: number;
+  // NOVO: altura (número de linhas) da grade
+  gridHeight?: number;
   type: 'battlemap' | 'image';
   initiative: IInitiativeEntry[];
 }
@@ -27,7 +32,11 @@ const SceneSchema: Schema<IScene> = new Schema({
   tableId: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index: true },
   name: { type: String, required: true, default: 'Cena Padrão' },
   imageUrl: { type: String, required: false },
+  // Mantemos gridSize como campo opcional (legado) – será usado como fallback se width/height não existirem
   gridSize: { type: Number, default: 30 },
+  // Novos campos para permitir grids retangulares (ex: 50x30). Cada célula continua quadrada.
+  gridWidth: { type: Number, default: 30 },
+  gridHeight: { type: Number, default: 30 },
   type: { 
     type: String, 
     enum: ['battlemap', 'image'], 

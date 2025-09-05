@@ -11,7 +11,9 @@ export const useTableStore = defineStore('table', () => {
     const activeSceneId: Ref<string | null> = ref(null);
     const initiativeList: Ref<IInitiativeEntry[]> = ref([]);
     const squares: Ref<GridSquare[]> = ref([]);
-    const gridSize: Ref<number> = ref(30);
+    const gridSize: Ref<number> = ref(30); // Legado (ainda usado em watchers / UI antiga)
+    const gridWidth: Ref<number> = ref(30); // Novo: número de colunas
+    const gridHeight: Ref<number> = ref(30); // Novo: número de linhas
     const sessionStatus: Ref<'PREPARING' | 'LIVE' | 'ENDED'> = ref('PREPARING');
     const currentMapUrl: Ref<string | null> = ref(null);
 
@@ -54,14 +56,12 @@ export const useTableStore = defineStore('table', () => {
     });
 
     //ACTIONS
-    function _rebuildGrid(size: number, tokens: TokenInfo[]) {
-        const newSquares: GridSquare[] = [];
-        for (let i = 0; i < size * size; i++) {
-        newSquares.push({ id: `sq-${i}`, token: null });
-        }
+    function _rebuildGridRectangular(width: number, height: number, tokens: TokenInfo[]) {
+        const total = width * height;
+        const newSquares: GridSquare[] = new Array(total).fill(null).map((_, i) => ({ id: `sq-${i}`, token: null }));
         tokens.forEach(token => {
-        const square = newSquares.find(s => s.id === token.squareId);
-        if (square) square.token = token;
+            const square = newSquares.find(s => s.id === token.squareId);
+            if (square) square.token = token; // Coloca token no quadrado correspondente
         });
         squares.value = newSquares;
     }
@@ -73,8 +73,11 @@ export const useTableStore = defineStore('table', () => {
         currentMapUrl.value = data.activeScene?.imageUrl || null;
         initiativeList.value = data.activeScene?.initiative || [];
         sessionStatus.value = data.tableInfo.status as 'PREPARING' | 'LIVE' | 'ENDED';
+        // Resolve width/height com fallback para gridSize legado
         gridSize.value = data.activeScene?.gridSize || 30;
-        _rebuildGrid(gridSize.value, data.tokens);
+        gridWidth.value = data.activeScene?.gridWidth || data.activeScene?.gridSize || 30;
+        gridHeight.value = data.activeScene?.gridHeight || data.activeScene?.gridSize || 30;
+        _rebuildGridRectangular(gridWidth.value, gridHeight.value, data.tokens);
     }
 
     function updateSessionState(newState: { activeScene: IScene | null, tokens: TokenInfo[] }) {
@@ -82,7 +85,9 @@ export const useTableStore = defineStore('table', () => {
         currentMapUrl.value = newState.activeScene?.imageUrl || null;
         initiativeList.value = newState.activeScene?.initiative || [];
         gridSize.value = newState.activeScene?.gridSize || 30;
-        _rebuildGrid(gridSize.value, newState.tokens);
+        gridWidth.value = newState.activeScene?.gridWidth || newState.activeScene?.gridSize || 30;
+        gridHeight.value = newState.activeScene?.gridHeight || newState.activeScene?.gridSize || 30;
+        _rebuildGridRectangular(gridWidth.value, gridHeight.value, newState.tokens);
     }
 
     function placeToken(newToken: TokenInfo) {
@@ -131,7 +136,9 @@ export const useTableStore = defineStore('table', () => {
         activeSceneId,
         initiativeList,
         squares,
-        gridSize,
+    gridSize,
+    gridWidth,
+    gridHeight,
         sessionStatus,
         currentMapUrl,
         // Getters

@@ -62,7 +62,13 @@ class SocketService {
   }
 
   updateGridSize(tableId: string, sceneId: string, newGridSize: number) {
+    // Legado: ainda aceita uma dimensão única -> envia width/height iguais
     this.socket?.emit('requestUpdateGridSize', { tableId, sceneId, newGridSize });
+  }
+
+  updateGridDimensions(tableId: string, sceneId: string, newGridWidth: number, newGridHeight: number) {
+    // Novo: permite ajustar largura e altura independentes
+    this.socket?.emit('requestUpdateGridSize', { tableId, sceneId, newGridWidth, newGridHeight });
   }
 
   // -- Tokens --

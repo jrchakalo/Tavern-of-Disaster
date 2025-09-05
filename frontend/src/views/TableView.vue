@@ -59,7 +59,9 @@ const {
   activeSceneId, 
   initiativeList, 
   squares, 
-  gridSize, 
+  gridSize, // legado (não mais exibido)
+  gridWidth,
+  gridHeight,
   sessionStatus,
   currentMapUrl,
   // Getters
@@ -529,10 +531,11 @@ function getMousePositionOnMap(event: PointerEvent): { x: number; y: number } | 
   return { x: worldX, y: worldY };
 }
 
-watch(gridSize, (newSize, oldSize) => {
-  if (isDM.value && newSize !== oldSize && activeSceneId.value) {
-    socketService.updateGridSize(tableId, activeSceneId.value, newSize);
-  }
+// Atualização automática sempre que largura ou altura mudarem (DM apenas)
+watch([gridWidth, gridHeight], ([w, h], [ow, oh]) => {
+  if (!isDM.value || !activeSceneId.value) return;
+  if (w === ow && h === oh) return; // sem mudança real
+  socketService.updateGridDimensions(tableId, activeSceneId.value, w, h);
 });
 
 onMounted(() => {
@@ -673,7 +676,12 @@ onUnmounted(() => {
           <h4>Controles do Grid</h4>
           <div class="grid-controls">
             <label for="grid-size">Tamanho (quadrados):</label>
-            <input id="grid-size" type="number" v-model="gridSize" min="1" />
+            <div class="grid-dimensions">
+              <label>Largura:</label>
+              <input type="number" v-model.number="gridWidth" min="1" />
+              <label>Altura:</label>
+              <input type="number" v-model.number="gridHeight" min="1" />
+            </div>
           </div>
         </div>
       </div>
@@ -717,7 +725,9 @@ onUnmounted(() => {
               :coneAffectedSquares="coneAffectedSquares"
               :currentTurnTokenId="currentTurnTokenId"
               :squares="squares"
-              :gridSize="gridSize"
+              :gridSize="gridSize"  
+              :gridWidth="gridWidth" 
+              :gridHeight="gridHeight"
               :selectedTokenId="selectedTokenId"
               @square-right-click="handleRightClick"
               @square-left-click="handleLeftClickOnSquare"
@@ -863,9 +873,13 @@ panel h2 {
   transform: translate(-50%, -50%); 
   max-width: 100%;
   max-height: 100%;
+  /*evita que o grid seja selecionada pelo o usuario*/
+  user-select: none;
 }
 .map-image {
   object-fit: contain;
+  /*evita que a imagem seja selecionada pelo o usuario*/
+  user-select: none;
 }
 .grid-overlay {
   aspect-ratio: 1 / 1;
