@@ -45,7 +45,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
 
         const tokenColor = `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`;
 
-        const newToken = new Token({
+  const newToken = new Token({
         tableId,
         sceneId, 
         squareId,
@@ -54,7 +54,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         name,
         imageUrl,
         movement: data.movement || 9, 
-        remainingMovement: data.remainingMovement || 9,
+  remainingMovement: data.remainingMovement || data.movement || 9, // restante inicial igual ao movimento base
         size: data.size || 'Pequeno/Médio',
         });
 
@@ -168,8 +168,9 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         const newCoords = getCoords(targetSquareId);
 
         // Calcula a distância em quadrados (método Chebyshev, comum em D&D 5e e outros jogos de tabuleiro)
-        const distanceInSquares = Math.max(Math.abs(newCoords.x - oldCoords.x), Math.abs(newCoords.y - oldCoords.y));
-        const movementCost = distanceInSquares * 1.5; // Custo em metros
+  const distanceInSquares = Math.max(Math.abs(newCoords.x - oldCoords.x), Math.abs(newCoords.y - oldCoords.y));
+  const metersPerSquare = (scene as any).metersPerSquare ?? 1.5;
+  const movementCost = distanceInSquares * metersPerSquare; // Custo em metros baseado na escala da cena
 
         if (tokenToMove.remainingMovement < movementCost) {
         socket.emit('tokenMoveError', { message: 'Movimento insuficiente.' });
@@ -232,6 +233,81 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
     }
   };
 
+  const requestEditToken = async (data: { tableId: string; tokenId: string; name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean }) => {
+    try {
+      const { tableId, tokenId } = data;
+      const userId = socket.data.user?.id;
+      if (!userId) return;
+      const table = await Table.findById(tableId);
+      if (!table) return;
+      const isDM = table.dm.toString() === userId;
+      if (!isDM) {
+        console.log(`[AUTH] Falha: Usuário ${userId} tentou editar token ${tokenId} sem ser Mestre.`);
+        return socket.emit('error', { message: 'Apenas o Mestre pode editar tokens.' });
+      }
+      const token = await Token.findById(tokenId);
+      if (!token) return;
+      let initiativeNeedsUpdate = false;
+      if (typeof data.name === 'string' && data.name.trim()) {
+        token.name = data.name.trim();
+        initiativeNeedsUpdate = true;
+      }
+      if (typeof data.movement === 'number' && data.movement > 0) {
+        token.movement = data.movement;
+        if (data.resetRemainingMovement) {
+          token.remainingMovement = data.movement;
+        } else if (token.remainingMovement > token.movement) {
+          token.remainingMovement = token.movement; // cap
+        }
+      }
+      if (typeof data.imageUrl === 'string') {
+        token.imageUrl = data.imageUrl.trim();
+      }
+      if (typeof data.ownerId === 'string' && data.ownerId) {
+        token.ownerId = data.ownerId as any;
+      }
+      if (typeof data.size === 'string' && data.size) {
+        token.size = data.size;
+      }
+      await token.save();
+
+      // Atualiza iniciativa se nome mudou
+      if (initiativeNeedsUpdate) {
+        const scene = await Scene.findById(token.sceneId);
+        if (scene) {
+          let changed = false;
+            scene.initiative.forEach(entry => {
+              if (entry.tokenId?.toString() === token._id.toString()) {
+                entry.characterName = token.name;
+                changed = true;
+              }
+            });
+            if (changed) {
+              await scene.save();
+              io.to(tableId).emit('initiativeUpdated', scene.initiative);
+            }
+        }
+      }
+
+      const populated = await token.populate('ownerId', '_id username');
+      io.to(tableId).emit('tokenUpdated', {
+        _id: populated._id.toString(),
+        squareId: populated.squareId,
+        color: populated.color,
+        ownerId: populated.ownerId,
+        name: populated.name,
+        imageUrl: populated.imageUrl,
+        tableId: populated.tableId?.toString(),
+        sceneId: populated.sceneId?.toString(),
+        movement: populated.movement,
+        remainingMovement: populated.remainingMovement,
+        size: populated.size,
+      });
+    } catch (error) {
+      console.error('Erro ao editar token:', error);
+    }
+  };
+
   const requestUndoMove = async (data: { tableId: string, tokenId: string }) => {
     try {
       const { tableId, tokenId } = data;
@@ -262,7 +338,8 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
       };
 
       const distance = Math.max(Math.abs(getCoords(currentPosition).x - getCoords(previousPosition).x), Math.abs(getCoords(currentPosition).y - getCoords(previousPosition).y));
-      const movementCost = distance * 1.5;
+  const metersPerSquare = (scene as any).metersPerSquare ?? 1.5;
+  const movementCost = distance * metersPerSquare;
 
       tokenToUndo.squareId = previousPosition;
       tokenToUndo.remainingMovement += movementCost;
@@ -294,4 +371,5 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   socket.on('requestMoveToken', requestMoveToken);
   socket.on('requestAssignToken', requestAssignToken);
   socket.on('requestUndoMove', requestUndoMove);
+  socket.on('requestEditToken', requestEditToken);
 }

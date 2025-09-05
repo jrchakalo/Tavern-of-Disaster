@@ -173,11 +173,30 @@ export function registerTableHandlers(io: Server, socket: Socket) {
         }
     };
 
+    const requestUpdateSceneScale = async (data: { tableId: string; sceneId: string; metersPerSquare: number }) => {
+        try {
+            const { tableId, sceneId, metersPerSquare } = data;
+            const userId = socket.data.user?.id;
+            const table = await Table.findById(tableId);
+            if (!table) return;
+            if (table.dm.toString() !== userId) {
+                console.log(`[AUTH] Falha: Usuário ${userId} tentou atualizar escala da cena da mesa ${tableId}`);
+                return socket.emit('error', { message: 'Apenas o Mestre pode alterar a escala.' });
+            }
+            await Scene.findByIdAndUpdate(sceneId, { metersPerSquare });
+            const newState = await getFullSessionState(tableId, sceneId);
+            io.to(tableId).emit('sessionStateUpdated', newState);
+        } catch (error) {
+            console.error('Erro ao atualizar escala da cena:', error);
+        }
+    };
+
   socket.on('joinTable', joinTable);
   socket.on('requestSetActiveScene', requestSetActiveScene);
   socket.on('requestUpdateSessionStatus', requestUpdateSessionStatus);
   socket.on('requestSetMap', requestSetMap);
   socket.on('requestReorderScenes', requestReorderScenes);
     socket.on('requestUpdateGridDimensions', requestUpdateGridDimensions);
+    socket.on('requestUpdateSceneScale', requestUpdateSceneScale);
 }
   

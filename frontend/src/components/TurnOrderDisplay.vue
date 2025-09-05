@@ -4,6 +4,9 @@ import type { IInitiativeEntry, TokenInfo } from '../types';
 
 interface Props {
   initiativeList: IInitiativeEntry[];
+  tokens?: TokenInfo[]; // lista de tokens para exibir movimento
+  metersPerSquare?: number; // escala dinâmica
+  showMovement?: boolean; // controle
 }
 const props = defineProps<Props>();
 
@@ -27,7 +30,20 @@ const isCollapsed = ref(true); // Começa recolhido
           :key="entry._id"
           :class="{ 'active-turn': entry.isCurrentTurn }"
         >
-          <span>{{ entry.characterName }}</span>
+          <template v-if="!props.showMovement">
+            <span>{{ entry.characterName }}</span>
+          </template>
+          <template v-else>
+            <span class="entry-name">{{ entry.characterName }} | </span>
+            <span v-if="entry.tokenId && props.tokens" class="movement-badge" :title="'Movimento restante em metros'">
+              <template v-for="token in props.tokens" :key="token._id">
+                <span v-if="token._id === entry.tokenId">
+                  {{ token.remainingMovement }}m
+                  <small v-if="props.metersPerSquare"> ({{ Math.floor(token.remainingMovement / (props.metersPerSquare||1.5)) }}q)</small>
+                </span>
+              </template>
+            </span>
+          </template>
         </li>
         <li v-if="initiativeList.length === 0" class="empty-list">
           A iniciativa está vazia.

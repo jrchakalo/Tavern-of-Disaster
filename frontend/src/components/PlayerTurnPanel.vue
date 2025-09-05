@@ -7,6 +7,7 @@ interface Props {
   myActiveToken: TokenInfo | null;
   currentUser: PlayerInfo | null;
   tokensOnMap: TokenInfo[];
+  metersPerSquare: number; // escala dinâmica
 }
 const props = defineProps<Props>();
 
@@ -17,10 +18,9 @@ const emit = defineEmits<{
 
 // Propriedade computada para os quadrados restantes
 const remainingSquares = computed(() => {
-  if (props.myActiveToken) {
-    return Math.floor(props.myActiveToken.remainingMovement / 1.5);
-  }
-  return 0;
+  if (!props.myActiveToken) return 0;
+  const mps = props.metersPerSquare || 1.5;
+  return props.myActiveToken.remainingMovement / mps; // valor real (sem floor)
 });
 
 // --- LÓGICA COMPLETA para saber se o próximo turno é do jogador ---
@@ -52,7 +52,7 @@ const isMyTurnNext = computed(() => {
       <h3>Seu Turno: {{ props.myActiveToken.name }}</h3>
       <p>
         Movimento: <strong>{{ props.myActiveToken.remainingMovement }}m </strong>
-        <small>({{ remainingSquares }} quadrados)</small>
+        <small>({{ Math.floor(remainingSquares)}} quadrados )</small>
       </p>
       <div class="turn-actions">
         <button @click="emit('undo-move')">Desfazer Movimento</button>

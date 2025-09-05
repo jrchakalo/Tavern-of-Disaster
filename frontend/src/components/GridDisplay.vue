@@ -17,6 +17,7 @@ interface Props {
   currentTurnTokenId: string | null;
   selectedTokenId: string | null;
   isMeasuring: boolean;
+  metersPerSquare?: number; // ESCALA dinâmica (m por quadrado)
   measureStartPoint: { x: number; y: number } | null;
   measureEndPoint: { x: number; y: number } | null;
   measuredDistance: string;
@@ -118,7 +119,7 @@ function handleDragOver(targetSquare: GridSquare) {
   pathPreview.value = path;
 
   // Valida o custo do movimento
-  const movementCost = (path.length - 1) * 1.5;
+  const movementCost = (path.length - 1) * (props.metersPerSquare || 1.5);
   isPathValid.value = draggedTokenInfo.value.remainingMovement >= movementCost;
 }
 

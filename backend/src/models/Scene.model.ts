@@ -16,6 +16,7 @@ export interface IScene extends Document {
   gridHeight?: number; // Número de linhas
   type: 'battlemap' | 'image';
   initiative: IInitiativeEntry[];
+  metersPerSquare?: number; // escala dinâmica
 }
 
 const InitiativeEntrySchema: Schema<IInitiativeEntry> = new Schema({
@@ -37,6 +38,7 @@ const SceneSchema: Schema<IScene> = new Schema({
     default: 'battlemap'
   },
   initiative: [InitiativeEntrySchema],
+  metersPerSquare: { type: Number, default: 1.5 },
 }, {
   timestamps: true
 });

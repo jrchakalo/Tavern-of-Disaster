@@ -55,4 +55,5 @@ export interface IScene {
   gridHeight: number; // Número de linhas (altura) da grade
   type?: 'battlemap' | 'image';
   initiative: IInitiativeEntry[];
+  metersPerSquare?: number;
 }

@@ -10,6 +10,7 @@ import { useTableStore } from '../stores/tableStore';
 
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
+import TokenEditForm from '../components/TokenEditForm.vue';
 import TurnOrderDisplay from '../components/TurnOrderDisplay.vue';
 import PlayerTurnPanel from '../components/PlayerTurnPanel.vue';
 import Toolbar from '../components/Toolbar.vue';
@@ -27,6 +28,8 @@ const activePointers = ref<PointerEvent[]>([]);
 const initialPinchDistance = ref(0);
 const selectedTokenId = ref<string | null>(null);
 const showTokenForm = ref(false);
+const showTokenEditForm = ref(false);
+const tokenBeingEdited = ref<TokenInfo | null>(null);
 const targetSquareIdForToken = ref<string | null>(null);
 const mapUrlInput = ref(''); // Para o campo de input
 const newSceneName = ref('');
@@ -37,9 +40,9 @@ const gridDisplayRef = ref<any>(null);
 const mapImgRef = ref<HTMLImageElement | null>(null);
 const imageRenderedWidth = ref<number | null>(null);
 const imageRenderedHeight = ref<number | null>(null);
-// Escala configurável: quantos metros vale um quadrado (default 1.5m ~ 5ft)
-const squareMeters = ref(1.5);
-const squareFeet = computed(() => squareMeters.value * 3.28084);
+// Escala (usa valor vindo do store para refletir mudanças do Mestre nos jogadores)
+// metersPerSquare virá do store (adicionado ao storeToRefs abaixo) e será controlado pelo Mestre via input
+const squareFeet = computed(() => (metersPerSquare.value || 1.5) * 3.28084);
 
 function updateImageDimensions() {
   if (mapImgRef.value) {
@@ -77,6 +80,7 @@ const {
   sessionStatus,
   currentMapUrl,
   sharedMeasurements,
+  metersPerSquare,
   // Getters
   isDM, 
   activeScene, 
@@ -156,17 +160,19 @@ function handleRemoveFromInitiative(initiativeEntryId: string) {
   }
 }
 
-function handleEditInitiativeEntry(entry: IInitiativeEntry) {
-  const newName = prompt("Digite o novo nome:", entry.characterName);
-  if (!newName || newName.trim() === '') return;
-  if (activeSceneId.value) {
-    socketService.editInitiativeEntry({
-      tableId,
-      sceneId: activeSceneId.value,
-      initiativeEntryId: entry._id,
-      newName
-    });
-  }
+
+function openEditTokenByEntry(entry: IInitiativeEntry) {
+  if (!entry.tokenId) return;
+  const tok = tokensOnMap.value.find(t => t._id === entry.tokenId) || null;
+  tokenBeingEdited.value = tok;
+  showTokenEditForm.value = !!tok;
+}
+
+function handleSaveTokenEdit(payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean }) {
+  if (!tokenBeingEdited.value) return;
+  socketService.editToken({ tableId, tokenId: tokenBeingEdited.value._id, ...payload });
+  showTokenEditForm.value = false;
+  tokenBeingEdited.value = null;
 }
 
 function onInitiativeDragEnd() {
@@ -200,9 +206,13 @@ function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
   }
 }
 
-// Sanitiza mudanças na escala (impede valores inválidos) e poderia futuramente sincronizar via socket
-watch(squareMeters, (val, oldVal) => {
-  if (val <= 0) squareMeters.value = oldVal; // mantém anterior se inválido
+// Mestre altera escala -> envia ao servidor; jogadores apenas recebem via sessionStateUpdated
+watch(metersPerSquare, (val, oldVal) => {
+  if (!isDM.value) return; // somente Mestre emite
+  if (val <= 0) { metersPerSquare.value = oldVal; return; }
+  if (activeSceneId.value && val !== oldVal) {
+    socketService.updateSceneScale(tableId, activeSceneId.value, val);
+  }
 });
 
 function handleRightClick(square: GridSquare, event: MouseEvent) {
@@ -381,7 +391,7 @@ function handlePointerMove(event: PointerEvent) {
       const unscaledGridWidth = gridRect.width / scale;
       const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
       const distanceInSquares = pixelDistance / worldSquareSize;
-  const meters = distanceInSquares * squareMeters.value;
+  const meters = distanceInSquares * (metersPerSquare.value || 1.5);
   const feet = meters * 3.28084;
   previewMeasurement.value.distance = `${meters.toFixed(1)}m (${Math.round(feet)}ft)`;
     }
@@ -586,12 +596,13 @@ watch(currentMapUrl, () => {
   <div class="table-view-layout">
 
     <div v-if="!isDM && sessionStatus === 'LIVE'">
-      <TurnOrderDisplay :initiativeList="initiativeList" />
+  <TurnOrderDisplay :initiativeList="initiativeList" :tokens="tokensOnMap" :metersPerSquare="metersPerSquare" :showMovement="false" />
       <PlayerTurnPanel 
         :initiativeList="initiativeList"
         :myActiveToken="myActiveToken"
         :currentUser="currentUser ? { _id: currentUser.id, username: currentUser.username } : null"
         :tokensOnMap="tokensOnMap"
+  :metersPerSquare="metersPerSquare"
         @undo-move="handleUndoMove"
         @end-turn="handleNextTurn"
       />
@@ -603,7 +614,7 @@ watch(currentMapUrl, () => {
       @tool-selected="handleToolSelected" 
     />
 
-    <aside v-if="isDM" class="dm-panel" :class="{ collapsed: isDmPanelCollapsed }">
+  <aside v-if="isDM" class="dm-panel" :class="{ collapsed: isDmPanelCollapsed }">
       <button @click="isDmPanelCollapsed = !isDmPanelCollapsed" class="toggle-button">
         <span>Painel do Mestre</span>
         <span v-if="isDmPanelCollapsed">▲</span>
@@ -611,6 +622,10 @@ watch(currentMapUrl, () => {
       </button>
       
       <div v-show="!isDmPanelCollapsed" class="panel-content">
+        <div class="panel-section">
+          <h4>Iniciativa (Movimento)</h4>
+          <TurnOrderDisplay :initiativeList="initiativeList" :tokens="tokensOnMap" :metersPerSquare="metersPerSquare" :showMovement="true" />
+        </div>
         
         <div class="panel-section">
           <h4>Sessão</h4>
@@ -662,7 +677,8 @@ watch(currentMapUrl, () => {
                 <li :class="{ 'active-turn': entry.isCurrentTurn, 'draggable-item': true }">
                   <span>{{ entry.characterName }}</span>
                   <div class="initiative-buttons"> 
-                    <button @click="handleEditInitiativeEntry(entry)" class="icon-btn">✏️</button>
+                    <!-- Botão de renomear removido; edição completa via TokenEditForm -->
+                    <button v-if="entry.tokenId" @click="openEditTokenByEntry(entry)" class="icon-btn" title="Editar Token">🛠️</button>
                     <button @click="handleRemoveFromInitiative(entry._id)" class="icon-btn delete-btn-small">🗑️</button>
                   </div>
                 </li>
@@ -718,8 +734,8 @@ watch(currentMapUrl, () => {
             </div>
             <div class="scale-control">
               <label>Escala (m por quadrado):</label>
-              <input type="number" step="0.1" min="0.1" v-model.number="squareMeters" />
-              <small>{{ squareMeters.toFixed(2) }}m ≈ {{ Math.round(squareFeet) }}ft por quadrado</small>
+              <input type="number" step="0.1" min="0.1" v-model.number="metersPerSquare" />
+              <small>{{ (metersPerSquare || 0).toFixed(2) }}m ≈ {{ Math.round(squareFeet) }}ft por quadrado</small>
             </div>
           </div>
         </div>
@@ -765,6 +781,7 @@ watch(currentMapUrl, () => {
               ref="gridDisplayRef"
               class="grid-overlay"
               :isMeasuring="isMeasuring"
+              :metersPerSquare="metersPerSquare"
               :measureStartPoint="rulerStartPoint"
               :measureEndPoint="rulerEndPoint"
               :measuredDistance="rulerDistance"
@@ -812,6 +829,13 @@ watch(currentMapUrl, () => {
       v-if="showTokenForm && isDM"
       :players="currentTable?.players || []" @create-token="createToken"
       @cancel="showTokenForm = false"
+    />
+    <TokenEditForm
+      :open="showTokenEditForm"
+      :token="tokenBeingEdited"
+      :players="currentTable?.players || []"
+      @close="showTokenEditForm = false; tokenBeingEdited = null;"
+      @save="handleSaveTokenEdit"
     />
   </div>
 </template>

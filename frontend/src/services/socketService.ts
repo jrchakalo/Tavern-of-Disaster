@@ -27,11 +27,14 @@ class SocketService {
     this.socket.on('tokenMoved', (data: TokenInfo & { oldSquareId: string }) => this.store.moveToken(data));
     this.socket.on('tokenRemoved', (data: { tokenId: string }) => this.store.removeToken(data.tokenId));
     this.socket.on('tokenOwnerUpdated', (data: { tokenId: string, newOwner: PlayerInfo }) => this.store.updateTokenOwner(data.tokenId, data.newOwner));
+  this.socket.on('tokenUpdated', (data: TokenInfo) => this.store.applyTokenUpdate(data));
     this.socket.on('tokensUpdated', (data: TokenInfo[]) => this.store.updateAllTokens(data));
     this.socket.on('initiativeUpdated', (data: IInitiativeEntry[]) => { this.store.initiativeList = data; });
     this.socket.on('sceneListUpdated', (data: IScene[]) => { this.store.scenes = data; });
     this.socket.on('sessionStatusUpdated', (data: { status: 'PREPARING' | 'LIVE' | 'ENDED' }) => { this.store.sessionStatus = data.status; });
     this.socket.on('mapUpdated', (data: { mapUrl: string }) => { this.store.currentMapUrl = data.mapUrl; });
+  // Escala
+  // sessionStateUpdated já atualiza metersPerSquare via store
   // Medições compartilhadas
   this.socket.on('measurementShared', (m) => this.store.upsertSharedMeasurement(m));
   this.socket.on('measurementRemoved', (data: { userId: string }) => this.store.removeSharedMeasurement(data.userId));
@@ -69,6 +72,10 @@ class SocketService {
   this.socket?.emit('requestUpdateGridDimensions', { tableId, sceneId, newGridWidth, newGridHeight });
   }
 
+  updateSceneScale(tableId: string, sceneId: string, metersPerSquare: number) {
+    this.socket?.emit('requestUpdateSceneScale', { tableId, sceneId, metersPerSquare });
+  }
+
   // -- Tokens --
   placeToken(payload: { tableId: string; sceneId: string; squareId: string; name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; }) {
     this.socket?.emit('requestPlaceToken', payload);
@@ -80,6 +87,10 @@ class SocketService {
 
   assignToken(payload: { tableId: string; tokenId: string; newOwnerId: string; }) {
     this.socket?.emit('requestAssignToken', payload);
+  }
+
+  editToken(payload: { tableId: string; tokenId: string; name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean }) {
+    this.socket?.emit('requestEditToken', payload);
   }
 
   undoMove(tableId: string, tokenId: string) {

@@ -15,6 +15,7 @@ export const useTableStore = defineStore('table', () => {
     const gridHeight: Ref<number> = ref(30); // Novo: número de linhas
     const sessionStatus: Ref<'PREPARING' | 'LIVE' | 'ENDED'> = ref('PREPARING');
     const currentMapUrl: Ref<string | null> = ref(null);
+    const metersPerSquare: Ref<number> = ref(1.5);
     // Medições compartilhadas: chave = userId, valor = Measurement
     const sharedMeasurements: Ref<Record<string, {
         userId: string;
@@ -83,6 +84,7 @@ export const useTableStore = defineStore('table', () => {
         sessionStatus.value = data.tableInfo.status as 'PREPARING' | 'LIVE' | 'ENDED';
     gridWidth.value = data.activeScene?.gridWidth ?? 30;
     gridHeight.value = data.activeScene?.gridHeight ?? 30;
+    metersPerSquare.value = data.activeScene?.metersPerSquare ?? 1.5;
         _rebuildGridRectangular(gridWidth.value, gridHeight.value, data.tokens);
     }
 
@@ -92,6 +94,7 @@ export const useTableStore = defineStore('table', () => {
         initiativeList.value = newState.activeScene?.initiative || [];
     gridWidth.value = newState.activeScene?.gridWidth ?? 30;
     gridHeight.value = newState.activeScene?.gridHeight ?? 30;
+    metersPerSquare.value = newState.activeScene?.metersPerSquare ?? metersPerSquare.value;
         _rebuildGridRectangular(gridWidth.value, gridHeight.value, newState.tokens);
     // Ao mudar de cena limpamos medições compartilhadas (escopo por cena)
     sharedMeasurements.value = {};
@@ -126,6 +129,13 @@ export const useTableStore = defineStore('table', () => {
         }
     }
 
+    function applyTokenUpdate(updated: TokenInfo) {
+        const square = squares.value.find(sq => sq.token?._id === updated._id);
+        if (square && square.token) {
+            Object.assign(square.token, updated);
+        }
+    }
+
     // Ação para o evento de reset de rodada
     function updateAllTokens(updatedTokens: TokenInfo[]) {
         updatedTokens.forEach(updatedToken => {
@@ -149,6 +159,12 @@ export const useTableStore = defineStore('table', () => {
     }
     function clearSharedMeasurements() { sharedMeasurements.value = {}; }
 
+    function updateSceneScale(sceneId: string, newScale: number) {
+        const scene = scenes.value.find(s => s._id === sceneId);
+        if (scene) (scene as any).metersPerSquare = newScale;
+        if (sceneId === activeSceneId.value) metersPerSquare.value = newScale;
+    }
+
     return {
         // State
         currentTable,
@@ -161,6 +177,7 @@ export const useTableStore = defineStore('table', () => {
         sessionStatus,
         currentMapUrl,
         sharedMeasurements,
+    metersPerSquare,
         // Getters
         isDM,
         activeScene,
@@ -174,9 +191,11 @@ export const useTableStore = defineStore('table', () => {
         moveToken,
         removeToken,
         updateTokenOwner,
+    applyTokenUpdate,
         updateAllTokens,
         upsertSharedMeasurement,
         removeSharedMeasurement,
-        clearSharedMeasurements
+    clearSharedMeasurements,
+    updateSceneScale
     };
 });
