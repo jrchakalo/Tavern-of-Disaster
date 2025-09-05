@@ -37,6 +37,9 @@ const gridDisplayRef = ref<any>(null);
 const mapImgRef = ref<HTMLImageElement | null>(null);
 const imageRenderedWidth = ref<number | null>(null);
 const imageRenderedHeight = ref<number | null>(null);
+// Escala configurável: quantos metros vale um quadrado (default 1.5m ~ 5ft)
+const squareMeters = ref(1.5);
+const squareFeet = computed(() => squareMeters.value * 3.28084);
 
 function updateImageDimensions() {
   if (mapImgRef.value) {
@@ -196,6 +199,11 @@ function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
   }
 }
 
+// Sanitiza mudanças na escala (impede valores inválidos) e poderia futuramente sincronizar via socket
+watch(squareMeters, (val, oldVal) => {
+  if (val <= 0) squareMeters.value = oldVal; // mantém anterior se inválido
+});
+
 function handleRightClick(square: GridSquare, event: MouseEvent) {
   event.preventDefault();
 
@@ -332,7 +340,7 @@ function handlePointerDown(event: PointerEvent) {
         type: 'ruler',
         start: local,
         end: local,
-        distance: '0.0m'
+  distance: '0.0m (0ft)'
       };
     }
     // (Futuramente: else if (activeTool.value === 'cone') { ... })
@@ -367,7 +375,9 @@ function handlePointerMove(event: PointerEvent) {
       const unscaledGridWidth = gridRect.width / scale;
       const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
       const distanceInSquares = pixelDistance / worldSquareSize;
-      previewMeasurement.value.distance = `${(distanceInSquares * 1.5).toFixed(1)}m`;
+  const meters = distanceInSquares * squareMeters.value;
+  const feet = meters * 3.28084;
+  previewMeasurement.value.distance = `${meters.toFixed(1)}m (${Math.round(feet)}ft)`;
     }
     return;
   }
@@ -691,6 +701,11 @@ watch(currentMapUrl, () => {
               <label>Altura:</label>
               <input type="number" v-model.number="gridHeight" min="1" />
             </div>
+            <div class="scale-control">
+              <label>Escala (m por quadrado):</label>
+              <input type="number" step="0.1" min="0.1" v-model.number="squareMeters" />
+              <small>{{ squareMeters.toFixed(2) }}m ≈ {{ Math.round(squareFeet) }}ft por quadrado</small>
+            </div>
           </div>
         </div>
       </div>
@@ -862,6 +877,16 @@ panel h2 {
 }
 .grid-controls input {
     width: 100%;
+}
+.scale-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 0.85em;
+}
+.scale-control input {
+  width: 120px;
 }
 .viewport {
   width: 100%;
