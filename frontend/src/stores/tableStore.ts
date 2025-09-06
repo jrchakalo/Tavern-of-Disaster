@@ -24,6 +24,8 @@ export const useTableStore = defineStore('table', () => {
         end: { x: number; y: number };
         distance: string; // "Xm (Yft)"
         color: string;
+        type?: 'ruler' | 'cone';
+        affectedSquares?: string[];
     }>> = ref({});
 
     // GETTERS
@@ -147,7 +149,7 @@ export const useTableStore = defineStore('table', () => {
     }
 
     // Medições compartilhadas
-    function upsertSharedMeasurement(m: { userId: string; username: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; color: string }) {
+    function upsertSharedMeasurement(m: { userId: string; username: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone'; affectedSquares?: string[] }) {
         sharedMeasurements.value = { ...sharedMeasurements.value, [m.userId]: m };
     }
     function removeSharedMeasurement(userId: string) {

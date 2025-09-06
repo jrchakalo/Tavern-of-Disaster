@@ -7,11 +7,11 @@ import Scene from '../models/Scene.model';
 const tableMeasurements: Record<string, Record<string, any>> = {};
 
 export function registerMeasurementHandlers(io: Server, socket: Socket) {
-  const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; }) => {
+  const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone'; affectedSquares?: string[]; }) => {
     try {
       const user = socket.data.user;
       if (!user) return;
-      const { tableId, sceneId, start, end, distance } = data;
+  const { tableId, sceneId, start, end, distance, type, affectedSquares } = data;
       const table = await Table.findById(tableId).populate('dm', '_id username').populate('players', '_id username').populate('activeScene');
       if (!table) return;
       if (!table.activeScene || table.activeScene._id.toString() !== sceneId) return; // only for active scene
@@ -38,6 +38,8 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
         userId: user.id,
         username: user.username,
         start, end, distance, color,
+        type: type || 'ruler',
+        affectedSquares: Array.isArray(affectedSquares) ? affectedSquares : undefined,
         sceneId
       };
       tableMeasurements[tableId][user.id] = measurement;

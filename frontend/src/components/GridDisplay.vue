@@ -29,7 +29,8 @@ interface Props {
     distance?: string;
     affectedSquares?: string[];
   } | null;
-  sharedMeasurements?: Array<{ userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; }>; // novas medições publicadas
+  sharedMeasurements?: Array<{ userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone'; affectedSquares?: string[] }>; // novas medições publicadas
+  isDM: boolean;
 }
 
 const props = defineProps<Props>();
@@ -79,6 +80,26 @@ const gridContainerStyle = computed(() => ({
   width: `${squareSizePx.value * resolvedWidth.value}px`,
   height: `${squareSizePx.value * resolvedHeight.value}px`, // Pode ultrapassar o viewport (overflow)
 }));
+
+// Conjuntos de quadrados afetados por cones compartilhados (separados por cor: DM vs jogadores)
+const sharedConeSquaresDM = computed<Set<string>>(() => {
+  const set = new Set<string>();
+  (props.sharedMeasurements || []).forEach(m => {
+    if (m.type === 'cone' && Array.isArray(m.affectedSquares) && m.color === '#3c096c') {
+      m.affectedSquares.forEach(id => set.add(id));
+    }
+  });
+  return set;
+});
+const sharedConeSquaresPlayer = computed<Set<string>>(() => {
+  const set = new Set<string>();
+  (props.sharedMeasurements || []).forEach(m => {
+    if (m.type === 'cone' && Array.isArray(m.affectedSquares) && m.color !== '#3c096c') {
+      m.affectedSquares.forEach(id => set.add(id));
+    }
+  });
+  return set;
+});
 
 function handleDragStart(event: DragEvent, token: TokenInfo) {
   // Bloqueia movimentação de tokens enquanto estiver medindo
@@ -216,6 +237,10 @@ function getTokenSizeInSquares(size: TokenSize): number {
       return 1;
   }
 }
+
+// (Sem desenho de cone via paths; apenas quadrados pintados + rótulo de distância.)
+
+// (Sem necessidade de converter cor para fill; não desenhamos o shape do cone)
 </script>
 
 <template>
@@ -227,7 +252,8 @@ function getTokenSizeInSquares(size: TokenSize): number {
       :class="{ 
         'path-preview': pathPreview.includes(square.id) && isPathValid,
         'path-invalid': pathPreview.includes(square.id) && !isPathValid,
-        'cone-preview': props.coneAffectedSquares.includes(square.id)
+        'cone-preview-dm': (props.isDM && props.coneAffectedSquares.includes(square.id)) || sharedConeSquaresDM.has(square.id),
+        'cone-preview-player': (!props.isDM && props.coneAffectedSquares.includes(square.id)) || sharedConeSquaresPlayer.has(square.id)
       }"
       @contextmenu.prevent="onSquareRightClick(square, $event)" 
       @click="onSquareLeftClick(square, $event)"
@@ -262,11 +288,21 @@ function getTokenSizeInSquares(size: TokenSize): number {
             {{ previewMeasurement.distance }}
           </text>
         </template>
+        <template v-else-if="previewMeasurement.type === 'cone'">
+          <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
+            {{ previewMeasurement.distance }}
+          </text>
+        </template>
       </svg>
 
         <svg v-if="props.sharedMeasurements && props.sharedMeasurements.length" class="shared-measurements-overlay">
           <template v-for="m in props.sharedMeasurements" :key="m.userId">
-            <line :x1="m.start.x" :y1="m.start.y" :x2="m.end.x" :y2="m.end.y" :stroke="m.color" />
+            <template v-if="m.type === 'cone'">
+              <!-- Sem desenho de cone compartilhado: apenas os quadrados pintados via classes -->
+            </template>
+            <template v-else>
+              <line :x1="m.start.x" :y1="m.start.y" :x2="m.end.x" :y2="m.end.y" :stroke="m.color" />
+            </template>
             <text :x="m.end.x + 12" :y="m.end.y - 12">{{ m.distance }}</text>
           </template>
         </svg>
@@ -420,6 +456,9 @@ function getTokenSizeInSquares(size: TokenSize): number {
   stroke-dasharray: 10 5;
   stroke-linecap: round;
 }
+.shared-measurements-overlay polygon {
+  stroke-dasharray: 10 5;
+}
 .shared-measurements-overlay text {
   fill: #ffffff;
   font-size: 16px;
@@ -430,9 +469,13 @@ function getTokenSizeInSquares(size: TokenSize): number {
   stroke-width: 3px;
 }
 
-.cone-preview {
-  background-color: rgba(255, 165, 0, 0.4); /* Laranja de fogo semi-transparente */
+.cone-preview-player {
+  background-color: rgba(255, 165, 0, 0.35); /* Laranja para jogadores */
   border-color: rgba(255, 140, 0, 0.6);
+}
+.cone-preview-dm {
+  background-color: rgba(173, 133, 255, 0.35); /* Lilás claro para o Mestre */
+  border-color: rgba(60, 9, 108, 0.6);
 }
 </style>
 
