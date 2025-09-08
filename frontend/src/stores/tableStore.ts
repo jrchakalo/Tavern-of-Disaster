@@ -24,9 +24,23 @@ export const useTableStore = defineStore('table', () => {
         end: { x: number; y: number };
         distance: string; // "Xm (Yft)"
         color: string;
-        type?: 'ruler' | 'cone';
+        type?: 'ruler' | 'cone' | 'circle' | 'square';
         affectedSquares?: string[];
     }>> = ref({});
+
+        // Medições persistentes (lista) – não são limpas ao mudar de turno
+        const persistentMeasurements: Ref<Array<{
+            id: string;
+            userId: string;
+            username: string;
+            start: { x: number; y: number };
+            end: { x: number; y: number };
+            distance: string;
+            color: string;
+            type?: 'ruler' | 'cone' | 'circle' | 'square';
+            affectedSquares?: string[];
+            sceneId: string;
+        }>> = ref([]);
 
     // GETTERS
     const isDM: ComputedRef<boolean> = computed(() => {
@@ -149,7 +163,7 @@ export const useTableStore = defineStore('table', () => {
     }
 
     // Medições compartilhadas
-    function upsertSharedMeasurement(m: { userId: string; username: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone'; affectedSquares?: string[] }) {
+    function upsertSharedMeasurement(m: { userId: string; username: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[] }) {
         sharedMeasurements.value = { ...sharedMeasurements.value, [m.userId]: m };
     }
     function removeSharedMeasurement(userId: string) {
@@ -160,6 +174,20 @@ export const useTableStore = defineStore('table', () => {
         }
     }
     function clearSharedMeasurements() { sharedMeasurements.value = {}; }
+
+        // Persistentes
+        function addPersistentMeasurement(m: { id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[]; sceneId: string; }) {
+            // Escopo por cena ativa
+            if (m.sceneId === activeSceneId.value) {
+                persistentMeasurements.value = [...persistentMeasurements.value, m];
+            }
+        }
+        function removePersistentMeasurement(id: string) {
+            persistentMeasurements.value = persistentMeasurements.value.filter(pm => pm.id !== id);
+        }
+        function clearPersistentMeasurementsForScene(sceneId: string) {
+            persistentMeasurements.value = persistentMeasurements.value.filter(pm => pm.sceneId !== sceneId);
+        }
 
     function updateSceneScale(sceneId: string, newScale: number) {
         const scene = scenes.value.find(s => s._id === sceneId);
@@ -179,6 +207,7 @@ export const useTableStore = defineStore('table', () => {
         sessionStatus,
         currentMapUrl,
         sharedMeasurements,
+    persistentMeasurements,
     metersPerSquare,
         // Getters
         isDM,
@@ -198,6 +227,9 @@ export const useTableStore = defineStore('table', () => {
         upsertSharedMeasurement,
         removeSharedMeasurement,
     clearSharedMeasurements,
-    updateSceneScale
+    updateSceneScale,
+    addPersistentMeasurement,
+    removePersistentMeasurement,
+    clearPersistentMeasurementsForScene
     };
 });

@@ -115,8 +115,8 @@ class SocketService {
   }
 
   // --- Medições ---
-  // Suporta tanto régua quanto cone. Para cone, envie type: 'cone' e affectedSquares.
-  shareMeasurement(payload: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone'; affectedSquares?: string[] }) {
+  // Suporta régua, cone e (em breve) círculo/quadrado.
+  shareMeasurement(payload: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[] }) {
     this.socket?.emit('requestShareMeasurement', payload);
   }
   removeMyMeasurement(payload: { tableId: string; sceneId: string }) {

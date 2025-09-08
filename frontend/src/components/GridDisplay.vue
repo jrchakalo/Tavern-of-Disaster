@@ -21,15 +21,15 @@ interface Props {
   measureStartPoint: { x: number; y: number } | null;
   measureEndPoint: { x: number; y: number } | null;
   measuredDistance: string;
-  coneAffectedSquares: string[];
+  areaAffectedSquares: string[]; // quadrados afetados pela área local (cone/círculo/quadrado)
   previewMeasurement: { // <<< Apenas esta prop para todas as ferramentas
-    type: 'ruler' | 'cone';
+    type: 'ruler' | 'cone' | 'circle' | 'square';
     start: { x: number; y: number; };
     end: { x: number; y: number; };
     distance?: string;
     affectedSquares?: string[];
   } | null;
-  sharedMeasurements?: Array<{ userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone'; affectedSquares?: string[] }>; // novas medições publicadas
+  sharedMeasurements?: Array<{ userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[] }>; // novas medições publicadas
   isDM: boolean;
 }
 
@@ -81,20 +81,20 @@ const gridContainerStyle = computed(() => ({
   height: `${squareSizePx.value * resolvedHeight.value}px`, // Pode ultrapassar o viewport (overflow)
 }));
 
-// Conjuntos de quadrados afetados por cones compartilhados (separados por cor: DM vs jogadores)
-const sharedConeSquaresDM = computed<Set<string>>(() => {
+// Conjuntos de quadrados afetados por áreas compartilhadas (separados por cor: DM vs jogadores)
+const sharedAreaSquaresDM = computed<Set<string>>(() => {
   const set = new Set<string>();
   (props.sharedMeasurements || []).forEach(m => {
-    if (m.type === 'cone' && Array.isArray(m.affectedSquares) && m.color === '#3c096c') {
+  if (Array.isArray(m.affectedSquares) && m.color === '#3c096c') {
       m.affectedSquares.forEach(id => set.add(id));
     }
   });
   return set;
 });
-const sharedConeSquaresPlayer = computed<Set<string>>(() => {
+const sharedAreaSquaresPlayer = computed<Set<string>>(() => {
   const set = new Set<string>();
   (props.sharedMeasurements || []).forEach(m => {
-    if (m.type === 'cone' && Array.isArray(m.affectedSquares) && m.color !== '#3c096c') {
+  if (Array.isArray(m.affectedSquares) && m.color !== '#3c096c') {
       m.affectedSquares.forEach(id => set.add(id));
     }
   });
@@ -277,17 +277,19 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
       :class="{ 
         'path-preview': pathPreview.includes(square.id) && isPathValid,
         'path-invalid': pathPreview.includes(square.id) && !isPathValid,
-        'cone-preview-dm': (props.isDM && props.coneAffectedSquares.includes(square.id)) || sharedConeSquaresDM.has(square.id),
-        'cone-preview-player': (!props.isDM && props.coneAffectedSquares.includes(square.id)) || sharedConeSquaresPlayer.has(square.id)
+        'area-preview-dm': (props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresDM.has(square.id),
+        'area-preview-player': (!props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresPlayer.has(square.id)
       }"
       @contextmenu.prevent="onSquareRightClick(square, $event)" 
       @click="onSquareLeftClick(square, $event)"
       @dragover.prevent="handleDragOver(square)" @drop="handleDrop($event, square)" >
-      <div v-if="square.token"
+  <div v-if="square.token"
             class="token"
             :class="{ 
               'selected': square.token._id === props.selectedTokenId, 
-              'active-turn-token': square.token._id === props.currentTurnTokenId
+      'active-turn-token': square.token._id === props.currentTurnTokenId,
+      'token-area-dm': (props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresDM.has(square.id),
+      'token-area-player': (!props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresPlayer.has(square.id)
               }"
             :style="{
                 '--token-size': getTokenSizeInSquares(square.token.size), 
@@ -324,6 +326,33 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
             {{ previewMeasurement.distance }}
           </text>
         </template>
+    <template v-else-if="previewMeasurement.type === 'circle'">
+          <circle
+            class="area-outline"
+            :cx="previewMeasurement.start.x"
+            :cy="previewMeasurement.start.y"
+      :r="Math.hypot(previewMeasurement.end.x - previewMeasurement.start.x, previewMeasurement.end.y - previewMeasurement.start.y) + (squareSizePx/2)"
+            :stroke="props.isDM ? '#3c096c' : '#ff8c00'"
+            fill="none"
+          />
+          <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
+            {{ previewMeasurement.distance }}
+          </text>
+        </template>
+        <template v-else-if="previewMeasurement.type === 'square'">
+          <rect
+            class="area-outline"
+            :x="previewMeasurement.start.x - Math.hypot(previewMeasurement.end.x - previewMeasurement.start.x, previewMeasurement.end.y - previewMeasurement.start.y)"
+            :y="previewMeasurement.start.y - Math.hypot(previewMeasurement.end.x - previewMeasurement.start.x, previewMeasurement.end.y - previewMeasurement.start.y)"
+            :width="2 * Math.hypot(previewMeasurement.end.x - previewMeasurement.start.x, previewMeasurement.end.y - previewMeasurement.start.y)"
+            :height="2 * Math.hypot(previewMeasurement.end.x - previewMeasurement.start.x, previewMeasurement.end.y - previewMeasurement.start.y)"
+            :stroke="props.isDM ? '#3c096c' : '#ff8c00'"
+            fill="none"
+          />
+          <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
+            {{ previewMeasurement.distance }}
+          </text>
+        </template>
       </svg>
 
         <svg v-if="props.sharedMeasurements && props.sharedMeasurements.length" class="shared-measurements-overlay">
@@ -332,6 +361,27 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
               <path
                 class="cone-outline shared"
                 :d="getConePathD(m.start, m.end)"
+                :stroke="m.color || (props.isDM ? '#3c096c' : '#ff8c00')"
+                fill="none"
+              />
+            </template>
+      <template v-else-if="m.type === 'circle'">
+              <circle
+                class="area-outline shared"
+                :cx="m.start.x"
+                :cy="m.start.y"
+        :r="Math.hypot(m.end.x - m.start.x, m.end.y - m.start.y) + (squareSizePx/2)"
+                :stroke="m.color || (props.isDM ? '#3c096c' : '#ff8c00')"
+                fill="none"
+              />
+            </template>
+            <template v-else-if="m.type === 'square'">
+              <rect
+                class="area-outline shared"
+                :x="m.start.x - Math.hypot(m.end.x - m.start.x, m.end.y - m.start.y)"
+                :y="m.start.y - Math.hypot(m.end.x - m.start.x, m.end.y - m.start.y)"
+                :width="2 * Math.hypot(m.end.x - m.start.x, m.end.y - m.start.y)"
+                :height="2 * Math.hypot(m.end.x - m.start.x, m.end.y - m.start.y)"
                 :stroke="m.color || (props.isDM ? '#3c096c' : '#ff8c00')"
                 fill="none"
               />
@@ -389,6 +439,10 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
   background-color: rgba(255, 50, 50, 0.4); 
 }
 
+/* Destaque de área (cone/círculo/quadrado) por cor de papel (DM vs jogador) */
+.area-preview-dm { background-color: rgba(60, 9, 108, 0.28); }
+.area-preview-player { background-color: rgba(255, 140, 0, 0.28); }
+
 .token {
   width: calc(100% * var(--token-size, 1));
   height: calc(100% * var(--token-size, 1));
@@ -443,6 +497,16 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
   z-index: 6;
 }
 
+/* Realce quando o token está dentro de uma área medida */
+.token.token-area-dm {
+  box-shadow: 0 0 8px 4px rgba(60, 9, 108, 0.9);
+  outline: 2px solid rgba(60, 9, 108, 0.9);
+}
+.token.token-area-player {
+  box-shadow: 0 0 8px 4px rgba(255, 140, 0, 0.9);
+  outline: 2px solid rgba(255, 140, 0, 0.9);
+}
+
 /* Para o caso de um token estar selecionado E ser o turno dele */
 .token.selected.active-turn-token {
   box-shadow: 0 0 5px 5px #69ff69, 0 0 5px 3px yellow inset;
@@ -466,6 +530,12 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
 }
 
 .measurement-overlay .cone-outline {
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.measurement-overlay .area-outline {
   stroke-width: 4;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -497,6 +567,10 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
   stroke-width: 3;
   stroke-dasharray: 10 5;
   stroke-linecap: round;
+}
+.shared-measurements-overlay .area-outline,
+.shared-measurements-overlay .cone-outline {
+  stroke-width: 3;
 }
 .shared-measurements-overlay polygon {
   stroke-dasharray: 10 5;

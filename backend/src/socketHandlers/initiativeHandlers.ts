@@ -3,6 +3,7 @@ import { IInitiativeEntry } from '../models/Scene.model';
 import Table from '../models/Table.model';
 import Scene from '../models/Scene.model';
 import Token from '../models/Token.model';
+import { clearMeasurementsForTable } from './measurementStore';
 
 export function registerInitiativeHandlers(io: Server, socket: Socket) {
 
@@ -66,16 +67,26 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         if (!table) return;
 
         const isDM = table.dm.toString() === userId;
-        const isOwner = table.players.some(player => player._id.toString() === userId);
-
-        if (!isDM && !isOwner) { // Se o usuário não for NEM o mestre E NEM o dono
-        console.log(`[AUTH] Falha: Usuário ${userId} tentou avançar o turno sem permissão.`);
-        socket.emit('tokenMoveError', { message: 'Você não tem permissão para avançar o turno.' });
-        return;
-        }
 
         const scene = await Scene.findById(sceneId);
         if (!scene || scene.initiative.length === 0) return;
+
+        // Permissão: DM sempre; jogador só se for dono do token em turno
+        if (!isDM) {
+          const currentTurnEntry = scene.initiative.find(e => e.isCurrentTurn);
+          if (!currentTurnEntry || !currentTurnEntry.tokenId) {
+            console.log(`[AUTH] Falha: Usuário ${userId} tentou avançar o turno sem haver turno atual.`);
+            socket.emit('initiativeError', { message: 'Apenas o Mestre pode iniciar a rodada.' });
+            return;
+          }
+          const currentToken = await Token.findById(currentTurnEntry.tokenId);
+          const isOwnerOfCurrent = currentToken?.ownerId?.toString() === userId;
+          if (!isOwnerOfCurrent) {
+            console.log(`[AUTH] Falha: Usuário ${userId} tentou avançar o turno sem ser dono do token atual.`);
+            socket.emit('initiativeError', { message: 'Você só pode encerrar o seu próprio turno.' });
+            return;
+          }
+        }
 
         const initiativeList = scene.initiative;
         const currentTurnIndex = initiativeList.findIndex(entry => entry.isCurrentTurn);
@@ -107,7 +118,8 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
     await scene.save();
 
   io.to(tableId).emit('initiativeUpdated', scene.initiative);
-  // Limpa todas as medições compartilhadas ao final do avanço de turno
+  // Limpa medições compartilhadas no servidor e notifica clientes
+  clearMeasurementsForTable(tableId);
   io.to(tableId).emit('allMeasurementsCleared');
     } catch (error) { 
         console.error("Erro ao avançar o turno:", error); 
@@ -127,13 +139,16 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
             return socket.emit('error', { message: 'Apenas o Mestre pode resetar a iniciativa.' });
         }
 
-        const updatedScene = await Scene.findByIdAndUpdate(
+  const updatedScene = await Scene.findByIdAndUpdate(
             sceneId,
             { initiative: [] }, // Define o array de iniciativa como vazio
             { new: true }
         );
 
-        io.to(tableId).emit('initiativeUpdated', updatedScene?.initiative);
+  io.to(tableId).emit('initiativeUpdated', updatedScene?.initiative);
+  // Limpa medições ao resetar iniciativa
+  clearMeasurementsForTable(tableId);
+  io.to(tableId).emit('allMeasurementsCleared');
     } catch (error) { 
         console.error("Erro ao resetar a iniciativa:", error); 
     }

@@ -1,39 +1,35 @@
 import { Server, Socket } from 'socket.io';
 import Table from '../models/Table.model';
 import Scene from '../models/Scene.model';
-
-// In-memory per table scene measurements (not persisted)
-// Key: tableId -> userId -> measurement
-const tableMeasurements: Record<string, Record<string, any>> = {};
+import Token from '../models/Token.model';
+import { setMeasurement, removeMeasurement, clearAllForUser, getTablesForUser } from './measurementStore';
 
 export function registerMeasurementHandlers(io: Server, socket: Socket) {
   const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone'; affectedSquares?: string[]; }) => {
     try {
       const user = socket.data.user;
       if (!user) return;
-  const { tableId, sceneId, start, end, distance, type, affectedSquares } = data;
+      const { tableId, sceneId, start, end, distance, type, affectedSquares } = data;
       const table = await Table.findById(tableId).populate('dm', '_id username').populate('players', '_id username').populate('activeScene');
       if (!table) return;
       if (!table.activeScene || table.activeScene._id.toString() !== sceneId) return; // only for active scene
 
-      // Permissão: DM sempre pode; jogador apenas se for turno dele
-      let isDM = table.dm._id.toString() === user.id;
+      // Permissão: DM sempre pode; jogador apenas se for o dono do token em turno
+      const isDM = table.dm._id.toString() === user.id;
       let canShare = isDM;
       if (!isDM) {
-        // Checa iniciativa na cena ativa
         const scene = await Scene.findById(sceneId);
         const currentEntry = scene?.initiative?.find((e: any) => e.isCurrentTurn);
-        if (currentEntry) {
-          // Precisamos verificar se o token do turno pertence ao usuário
-          // Simplificação: backend ainda não popula dono aqui; confiamos no front? Poderíamos adicionar uma checagem mais robusta posteriormente.
-          canShare = true; // Aceita provisoriamente. TODO: refinar com token lookup.
+        if (currentEntry?.tokenId) {
+          const token = await Token.findById(currentEntry.tokenId);
+          if (token && token.ownerId?.toString() === user.id) {
+            canShare = true;
+          }
         }
       }
       if (!canShare) return; // silencioso
 
-      if (!tableMeasurements[tableId]) tableMeasurements[tableId] = {};
-
-      const color = isDM ? '#3c096c' : '#ffbf00'; // Mestre roxo, jogadores amarelo base (pode ajustar no front por usuário)
+      const color = isDM ? '#3c096c' : '#ffbf00'; // Mestre roxo, jogadores amarelo base
       const measurement = {
         userId: user.id,
         username: user.username,
@@ -42,7 +38,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
         affectedSquares: Array.isArray(affectedSquares) ? affectedSquares : undefined,
         sceneId
       };
-      tableMeasurements[tableId][user.id] = measurement;
+      setMeasurement(tableId, user.id, measurement);
       io.to(tableId).emit('measurementShared', measurement);
     } catch (e) { console.error('Erro share measurement', e); }
   };
@@ -51,22 +47,17 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
     const user = socket.data.user;
     if (!user) return;
     const { tableId } = data;
-    if (tableMeasurements[tableId] && tableMeasurements[tableId][user.id]) {
-      delete tableMeasurements[tableId][user.id];
-      io.to(tableId).emit('measurementRemoved', { userId: user.id });
-    }
+    removeMeasurement(tableId, user.id);
+    io.to(tableId).emit('measurementRemoved', { userId: user.id });
   };
 
   const handleDisconnect = () => {
     const user = socket.data.user;
     if (!user) return;
-    // Remove medições do usuário em todas as mesas onde estiver
-    Object.keys(tableMeasurements).forEach(tableId => {
-      if (tableMeasurements[tableId][user.id]) {
-        delete tableMeasurements[tableId][user.id];
-        io.to(tableId).emit('measurementRemoved', { userId: user.id });
-      }
-    });
+    // Emite remoção para todas as mesas onde o usuário tinha medição, e limpa
+    const tables = getTablesForUser(user.id);
+    tables.forEach(tid => io.to(tid).emit('measurementRemoved', { userId: user.id }));
+    clearAllForUser(user.id);
   };
 
   socket.on('requestShareMeasurement', requestShareMeasurement);
