@@ -241,6 +241,31 @@ function getTokenSizeInSquares(size: TokenSize): number {
 // (Sem desenho de cone via paths; apenas quadrados pintados + rótulo de distância.)
 
 // (Sem necessidade de converter cor para fill; não desenhamos o shape do cone)
+
+// Desenha o contorno do cone (setor de 90°) baseado em dois pontos em px locais: origem (start) e direção/comprimento (end)
+function getConePathD(start: { x: number; y: number }, end: { x: number; y: number }): string {
+  if (!start || !end) return '';
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const r = Math.hypot(dx, dy);
+  if (!isFinite(r) || r <= 0.0001) return '';
+  const base = Math.atan2(dy, dx);
+  const half = Math.PI / 4; // 90° total
+  const a1 = base - half;
+  const a2 = base + half;
+  const p1x = start.x + r * Math.cos(a1);
+  const p1y = start.y + r * Math.sin(a1);
+  const p2x = start.x + r * Math.cos(a2);
+  const p2y = start.y + r * Math.sin(a2);
+  // Caminho: lado esquerdo -> arco externo -> lado direito -> voltar para origem
+  // Usamos large-arc-flag = 0 (90°) e sweep-flag = 1
+  return [
+    `M ${start.x} ${start.y}`,
+    `L ${p1x} ${p1y}`,
+    `A ${r} ${r} 0 0 1 ${p2x} ${p2y}`,
+    `Z`
+  ].join(' ');
+}
 </script>
 
 <template>
@@ -289,6 +314,12 @@ function getTokenSizeInSquares(size: TokenSize): number {
           </text>
         </template>
         <template v-else-if="previewMeasurement.type === 'cone'">
+          <path
+            class="cone-outline"
+            :d="getConePathD(previewMeasurement.start, previewMeasurement.end)"
+            :stroke="props.isDM ? '#3c096c' : '#ff8c00'"
+            fill="none"
+          />
           <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
             {{ previewMeasurement.distance }}
           </text>
@@ -298,7 +329,12 @@ function getTokenSizeInSquares(size: TokenSize): number {
         <svg v-if="props.sharedMeasurements && props.sharedMeasurements.length" class="shared-measurements-overlay">
           <template v-for="m in props.sharedMeasurements" :key="m.userId">
             <template v-if="m.type === 'cone'">
-              <!-- Sem desenho de cone compartilhado: apenas os quadrados pintados via classes -->
+              <path
+                class="cone-outline shared"
+                :d="getConePathD(m.start, m.end)"
+                :stroke="m.color || (props.isDM ? '#3c096c' : '#ff8c00')"
+                fill="none"
+              />
             </template>
             <template v-else>
               <line :x1="m.start.x" :y1="m.start.y" :x2="m.end.x" :y2="m.end.y" :stroke="m.color" />
@@ -429,6 +465,12 @@ function getTokenSizeInSquares(size: TokenSize): number {
   stroke-linecap: round;
 }
 
+.measurement-overlay .cone-outline {
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .measurement-overlay text {
   fill: #ffffff; /* Texto branco */
   font-size: 18px;
@@ -458,6 +500,11 @@ function getTokenSizeInSquares(size: TokenSize): number {
 }
 .shared-measurements-overlay polygon {
   stroke-dasharray: 10 5;
+}
+.shared-measurements-overlay .cone-outline.shared {
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .shared-measurements-overlay text {
   fill: #ffffff;
