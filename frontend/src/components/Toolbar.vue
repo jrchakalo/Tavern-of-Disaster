@@ -7,11 +7,15 @@ type Tool = 'ruler' | 'cone' | 'circle' | 'square' | 'none';
 // O componente pai (TableView) nos dirá qual ferramenta está ativa.
 const props = defineProps<{
   activeTool: Tool;
+  persistentMode?: boolean; // quando ligado, fixa a próxima medição
+  canDelete?: boolean; // se há uma figura persistida selecionada e usuário pode apagar
 }>();
 
 // Quando um botão é clicado, emitimos um evento para o pai.
 const emit = defineEmits<{
   (e: 'tool-selected', tool: Tool): void;
+  (e: 'toggle-persistent', on: boolean): void;
+  (e: 'delete-selected'): void;
 }>();
 
 function selectTool(tool: Tool) {
@@ -19,6 +23,10 @@ function selectTool(tool: Tool) {
   // Senão, ativamos a nova ferramenta.
   const newTool = props.activeTool === tool ? 'none' : tool;
   emit('tool-selected', newTool);
+}
+
+function togglePersistent() {
+  emit('toggle-persistent', !props.persistentMode);
 }
 </script>
 
@@ -58,6 +66,21 @@ function selectTool(tool: Tool) {
     >
       ▪️
     </button>
+    
+    <hr class="divider" />
+    <button
+      class="tool-button"
+      :class="{ active: !!persistentMode }"
+      @click="togglePersistent"
+      title="Fixar medição (persistente)"
+    >📌</button>
+
+    <button
+      v-if="canDelete"
+      class="tool-button danger"
+      @click="$emit('delete-selected')"
+      title="Excluir figura persistida selecionada"
+    >🗑️</button>
     
     </div>
 </template>
@@ -102,4 +125,7 @@ function selectTool(tool: Tool) {
   color: #333;
   border-color: #fff;
 }
+.tool-button.danger { background-color: #773333; }
+.tool-button.danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.divider { border: none; border-top: 1px solid #666; margin: 6px 0; }
 </style>

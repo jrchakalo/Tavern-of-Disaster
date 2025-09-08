@@ -2,7 +2,8 @@ import { Server, Socket } from 'socket.io';
 import Table from '../models/Table.model';
 import Scene from '../models/Scene.model';
 import Token from '../models/Token.model';
-import { setMeasurement, removeMeasurement, clearAllForUser, getTablesForUser } from './measurementStore';
+import { setMeasurement, removeMeasurement, clearAllForUser, getTablesForUser, addPersistent, removePersistent, listPersistents } from './measurementStore';
+import { nanoid } from 'nanoid';
 
 export function registerMeasurementHandlers(io: Server, socket: Socket) {
   const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone'; affectedSquares?: string[]; }) => {
@@ -63,4 +64,48 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
   socket.on('requestShareMeasurement', requestShareMeasurement);
   socket.on('requestRemoveMeasurement', requestRemoveMeasurement);
   socket.on('disconnect', handleDisconnect);
+
+  // --- Persistentes ---
+  socket.on('requestAddPersistentMeasurement', async (data: { tableId: string; sceneId: string; payload: { id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'; affectedSquares?: string[] } }) => {
+    try {
+      const user = socket.data.user;
+      if (!user) return;
+      const { tableId, sceneId, payload } = data;
+      const table = await Table.findById(tableId).populate('dm','_id');
+      if (!table) return;
+      const isDM = table.dm._id.toString() === user.id;
+      // Jogador pode adicionar no próprio turno; DM sempre
+      let canAdd = isDM;
+      if (!isDM) {
+        const scene = await Scene.findById(sceneId);
+        const currentEntry = scene?.initiative?.find((e:any)=>e.isCurrentTurn);
+        if (currentEntry?.tokenId) {
+          const tok = await Token.findById(currentEntry.tokenId);
+          canAdd = tok?.ownerId?.toString() === user.id;
+        }
+      }
+      if (!canAdd) return;
+  const color = isDM ? '#3c096c' : '#ffbf00';
+  const id = payload.id || nanoid(8);
+  addPersistent(tableId, sceneId, { id, userId: user.id, username: user.username, color, sceneId, start: payload.start, end: payload.end, distance: payload.distance, type: payload.type, affectedSquares: payload.affectedSquares });
+  io.to(tableId).emit('persistentMeasurementAdded', { tableId, sceneId, ownerId: user.id, userId: user.id, id, start: payload.start, end: payload.end, distance: payload.distance, type: payload.type, affectedSquares: payload.affectedSquares, color, username: user.username });
+    } catch (e) { console.error('requestAddPersistentMeasurement', e);} 
+  });
+
+  socket.on('requestRemovePersistentMeasurement', async (data: { tableId: string; sceneId: string; id: string }) => {
+    try {
+      const user = socket.data.user; if (!user) return;
+      const { tableId, sceneId, id } = data;
+      const table = await Table.findById(tableId).populate('dm','_id');
+      if (!table) return;
+      const isDM = table.dm._id.toString() === user.id;
+      // Permitir DM sempre; autor pode remover seu próprio
+      const items = listPersistents(tableId, sceneId);
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+      if (!(isDM || item.userId === user.id)) return;
+      removePersistent(tableId, sceneId, id);
+      io.to(tableId).emit('persistentMeasurementRemoved', { sceneId, id });
+    } catch (e) { console.error('requestRemovePersistentMeasurement', e);} 
+  });
 }

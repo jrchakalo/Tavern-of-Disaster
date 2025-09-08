@@ -39,10 +39,28 @@ class SocketService {
   this.socket.on('measurementShared', (m) => this.store.upsertSharedMeasurement(m));
   this.socket.on('measurementRemoved', (data: { userId: string }) => this.store.removeSharedMeasurement(data.userId));
   this.socket.on('allMeasurementsCleared', () => this.store.clearSharedMeasurements());
+  // Persistentes
+  this.socket.on('persistentMeasurementAdded', (m) => this.store.addPersistentMeasurement({ ...m, userId: m.userId || m.ownerId }));
+  this.socket.on('persistentMeasurementRemoved', (data: { sceneId: string; id: string }) => this.store.removePersistentMeasurement(data.id));
+  this.socket.on('persistentsListed', (data: { sceneId: string; items: any[] }) => {
+    // Atualiza apenas quando a lista corresponde à cena ativa, evitando sobrescrever outra cena por engano
+    if (data.sceneId === this.store.activeSceneId) {
+      const items = (data.items || []).map(m => ({ ...m, userId: m.userId || m.ownerId }));
+      this.store.setPersistentMeasurementsForScene(data.sceneId, items);
+    }
+  });
 
     // Handlers de erro
     this.socket.on('connect_error', (error) => console.error('SocketService - Erro de conexão:', error.message));
     this.socket.on('tokenPlacementError', (error) => alert(`Erro ao colocar token: ${error.message}`));
+  }
+  // Persistentes
+  addPersistentMeasurement(payload: { tableId: string; sceneId: string; id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'; affectedSquares?: string[] }) {
+    const { tableId, sceneId, id, start, end, distance, type, affectedSquares } = payload;
+    this.socket?.emit('requestAddPersistentMeasurement', { tableId, sceneId, payload: { id, start, end, distance, type, affectedSquares } });
+  }
+  removePersistentMeasurement(payload: { tableId: string; sceneId: string; id: string }) {
+    this.socket?.emit('requestRemovePersistentMeasurement', payload);
   }
 
   disconnect() {

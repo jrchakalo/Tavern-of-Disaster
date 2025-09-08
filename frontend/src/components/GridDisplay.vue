@@ -30,7 +30,10 @@ interface Props {
     affectedSquares?: string[];
   } | null;
   sharedMeasurements?: Array<{ userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[] }>; // novas medições publicadas
+  persistentMeasurements?: Array<{ id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler'|'cone'|'circle'|'square'; affectedSquares?: string[]; sceneId: string }>; // medições persistentes
   isDM: boolean;
+  currentUserId?: string | null;
+  selectedPersistentId?: string | null;
 }
 
 const props = defineProps<Props>();
@@ -39,6 +42,8 @@ const emit = defineEmits<{
     (e: 'square-left-click', square: GridSquare, event: MouseEvent): void;
     (e: 'square-right-click', square: GridSquare, event: MouseEvent): void;
     (e: 'token-move-requested', payload: { tokenId: string; targetSquareId: string }): void;
+  (e: 'remove-persistent', payload: { id: string }): void;
+  (e: 'select-persistent', payload: { id: string | null }): void;
 }>();
 
 // Largura (colunas) e altura (linhas) efetivas
@@ -95,6 +100,26 @@ const sharedAreaSquaresPlayer = computed<Set<string>>(() => {
   const set = new Set<string>();
   (props.sharedMeasurements || []).forEach(m => {
   if (Array.isArray(m.affectedSquares) && m.color !== '#3c096c') {
+      m.affectedSquares.forEach(id => set.add(id));
+    }
+  });
+  return set;
+});
+
+// Conjuntos de quadrados afetados por áreas persistentes (pintura e glow em tokens)
+const persistentAreaSquaresDM = computed<Set<string>>(() => {
+  const set = new Set<string>();
+  (props.persistentMeasurements || []).forEach(m => {
+    if (Array.isArray(m.affectedSquares) && m.color === '#3c096c') {
+      m.affectedSquares.forEach(id => set.add(id));
+    }
+  });
+  return set;
+});
+const persistentAreaSquaresPlayer = computed<Set<string>>(() => {
+  const set = new Set<string>();
+  (props.persistentMeasurements || []).forEach(m => {
+    if (Array.isArray(m.affectedSquares) && m.color !== '#3c096c') {
       m.affectedSquares.forEach(id => set.add(id));
     }
   });
@@ -238,6 +263,20 @@ function getTokenSizeInSquares(size: TokenSize): number {
   }
 }
 
+// Converte um ponto possivelmente em unidades de grade (células) para px locais.
+// Heurística: se o valor for menor que cols/rows + 1, assumimos unidades de grade; senão, já está em px.
+function toLocalPoint(p: { x: number; y: number }): { x: number; y: number } {
+  const cols = resolvedWidth.value || 1;
+  const rows = resolvedHeight.value || 1;
+  const sx = squareSizePx.value;
+  const xIsGrid = p.x <= cols + 1;
+  const yIsGrid = p.y <= rows + 1;
+  return {
+    x: xIsGrid ? p.x * sx : p.x,
+    y: yIsGrid ? p.y * sx : p.y
+  };
+}
+
 // (Sem desenho de cone via paths; apenas quadrados pintados + rótulo de distância.)
 
 // (Sem necessidade de converter cor para fill; não desenhamos o shape do cone)
@@ -277,8 +316,8 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
       :class="{ 
         'path-preview': pathPreview.includes(square.id) && isPathValid,
         'path-invalid': pathPreview.includes(square.id) && !isPathValid,
-        'area-preview-dm': (props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresDM.has(square.id),
-        'area-preview-player': (!props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresPlayer.has(square.id)
+  'area-preview-dm': (props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresDM.has(square.id) || persistentAreaSquaresDM.has(square.id),
+  'area-preview-player': (!props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresPlayer.has(square.id) || persistentAreaSquaresPlayer.has(square.id)
       }"
       @contextmenu.prevent="onSquareRightClick(square, $event)" 
       @click="onSquareLeftClick(square, $event)"
@@ -288,8 +327,8 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
             :class="{ 
               'selected': square.token._id === props.selectedTokenId, 
       'active-turn-token': square.token._id === props.currentTurnTokenId,
-      'token-area-dm': (props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresDM.has(square.id),
-      'token-area-player': (!props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresPlayer.has(square.id)
+        'token-area-dm': (props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresDM.has(square.id) || persistentAreaSquaresDM.has(square.id),
+        'token-area-player': (!props.isDM && props.areaAffectedSquares.includes(square.id)) || sharedAreaSquaresPlayer.has(square.id) || persistentAreaSquaresPlayer.has(square.id)
               }"
             :style="{
                 '--token-size': getTokenSizeInSquares(square.token.size), 
@@ -303,7 +342,7 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
         </div>
       </div>
 
-      <svg v-if="previewMeasurement" class="measurement-overlay">
+  <svg v-if="previewMeasurement" class="measurement-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
         <template v-if="previewMeasurement.type === 'ruler'">
           <line
             :x1="previewMeasurement.start.x" :y1="previewMeasurement.start.y"
@@ -355,12 +394,12 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
         </template>
       </svg>
 
-        <svg v-if="props.sharedMeasurements && props.sharedMeasurements.length" class="shared-measurements-overlay">
+        <svg v-if="props.sharedMeasurements && props.sharedMeasurements.length" class="shared-measurements-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
           <template v-for="m in props.sharedMeasurements" :key="m.userId">
             <template v-if="m.type === 'cone'">
               <path
                 class="cone-outline shared"
-                :d="getConePathD(m.start, m.end)"
+                :d="getConePathD(toLocalPoint(m.start), toLocalPoint(m.end))"
                 :stroke="m.color || (props.isDM ? '#3c096c' : '#ff8c00')"
                 fill="none"
               />
@@ -368,9 +407,9 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
       <template v-else-if="m.type === 'circle'">
               <circle
                 class="area-outline shared"
-                :cx="m.start.x"
-                :cy="m.start.y"
-        :r="Math.hypot(m.end.x - m.start.x, m.end.y - m.start.y) + (squareSizePx/2)"
+                :cx="toLocalPoint(m.start).x"
+                :cy="toLocalPoint(m.start).y"
+                :r="Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y) + (squareSizePx/2)"
                 :stroke="m.color || (props.isDM ? '#3c096c' : '#ff8c00')"
                 fill="none"
               />
@@ -378,18 +417,38 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
             <template v-else-if="m.type === 'square'">
               <rect
                 class="area-outline shared"
-                :x="m.start.x - Math.hypot(m.end.x - m.start.x, m.end.y - m.start.y)"
-                :y="m.start.y - Math.hypot(m.end.x - m.start.x, m.end.y - m.start.y)"
-                :width="2 * Math.hypot(m.end.x - m.start.x, m.end.y - m.start.y)"
-                :height="2 * Math.hypot(m.end.x - m.start.x, m.end.y - m.start.y)"
+                :x="toLocalPoint(m.start).x - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)"
+                :y="toLocalPoint(m.start).y - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)"
+                :width="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)"
+                :height="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)"
                 :stroke="m.color || (props.isDM ? '#3c096c' : '#ff8c00')"
                 fill="none"
               />
             </template>
             <template v-else>
-              <line :x1="m.start.x" :y1="m.start.y" :x2="m.end.x" :y2="m.end.y" :stroke="m.color" />
+              <line :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" />
             </template>
-            <text :x="m.end.x + 12" :y="m.end.y - 12">{{ m.distance }}</text>
+            <text :x="toLocalPoint(m.end).x + 12" :y="toLocalPoint(m.end).y - 12">{{ m.distance }}</text>
+          </template>
+        </svg>
+
+        <!-- Persistentes -->
+        <svg v-if="props.persistentMeasurements && props.persistentMeasurements.length" class="shared-measurements-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
+          <template v-for="m in (props.persistentMeasurements.filter(pm => pm.sceneId === (/** active scene id is implicit because grid/squares belong to one scene */ pm.sceneId)))" :key="m.id">
+            <template v-if="m.type === 'cone'">
+              <path class="cone-outline shared selectable" :class="{ selected: props.selectedPersistentId === m.id }" :d="getConePathD(toLocalPoint(m.start), toLocalPoint(m.end))" :stroke="m.color" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
+            </template>
+            <template v-else-if="m.type === 'circle'">
+              <circle class="area-outline shared selectable" :class="{ selected: props.selectedPersistentId === m.id }" :cx="toLocalPoint(m.start).x" :cy="toLocalPoint(m.start).y" :r="Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y) + (squareSizePx/2)" :stroke="m.color" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
+            </template>
+            <template v-else-if="m.type === 'square'">
+              <rect class="area-outline shared selectable" :class="{ selected: props.selectedPersistentId === m.id }" :x="toLocalPoint(m.start).x - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :y="toLocalPoint(m.start).y - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :width="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :height="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :stroke="m.color" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
+            </template>
+            <template v-else>
+              <line :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" />
+            </template>
+            <text :x="toLocalPoint(m.end).x + 12" :y="toLocalPoint(m.end).y - 12">{{ m.distance }}</text>
+            <!-- Remoção via Toolbar: nenhum ícone inline -->
           </template>
         </svg>
     </div>
@@ -422,6 +481,14 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
   min-height: 0;
   position: relative;
 }
+
+.selectable { cursor: pointer; }
+.area-outline.shared.selected, .cone-outline.shared.selected {
+  stroke-width: 3px;
+  filter: drop-shadow(0 0 3px rgba(255,255,255,0.6));
+}
+.persist-remove { opacity: 0.85; cursor: pointer; }
+.persist-remove:hover { opacity: 1; }
 
 /* Cursor de medição (régua / cone) deve aparecer dentro das células */
 .grid-container.measuring .grid-square { cursor: crosshair; }

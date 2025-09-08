@@ -114,6 +114,8 @@ export const useTableStore = defineStore('table', () => {
         _rebuildGridRectangular(gridWidth.value, gridHeight.value, newState.tokens);
     // Ao mudar de cena limpamos medições compartilhadas (escopo por cena)
     sharedMeasurements.value = {};
+    // Não limpamos persistentes aqui para evitar condição de corrida.
+    // A lista correta virá via evento 'persistentsListed' e substituirá a cena ativa.
     }
 
     function placeToken(newToken: TokenInfo) {
@@ -188,6 +190,16 @@ export const useTableStore = defineStore('table', () => {
         function clearPersistentMeasurementsForScene(sceneId: string) {
             persistentMeasurements.value = persistentMeasurements.value.filter(pm => pm.sceneId !== sceneId);
         }
+        function setPersistentMeasurementsForScene(sceneId: string, items: Array<{ id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[]; sceneId?: string; }>) {
+            // Normaliza sceneId ausente para evitar descartar itens vindos do servidor
+            const normalized = items.map(i => ({ ...i, sceneId: i.sceneId || sceneId }));
+            const others = persistentMeasurements.value.filter(pm => pm.sceneId !== sceneId);
+            const currentForScene = persistentMeasurements.value.filter(pm => pm.sceneId === sceneId);
+            // Se lista recebida é vazia e já temos itens, não sobrescreve (evita wipe indevido por corrida)
+            const replacement = normalized.filter(i => i.sceneId === sceneId);
+            const finalForScene = (replacement.length === 0 && currentForScene.length > 0) ? currentForScene : replacement;
+            persistentMeasurements.value = [...others, ...finalForScene as any];
+        }
 
     function updateSceneScale(sceneId: string, newScale: number) {
         const scene = scenes.value.find(s => s._id === sceneId);
@@ -230,6 +242,7 @@ export const useTableStore = defineStore('table', () => {
     updateSceneScale,
     addPersistentMeasurement,
     removePersistentMeasurement,
-    clearPersistentMeasurementsForScene
+    clearPersistentMeasurementsForScene,
+    setPersistentMeasurementsForScene
     };
 });

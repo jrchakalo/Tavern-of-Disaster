@@ -7,12 +7,16 @@ export type Measurement = {
   end: { x: number; y: number };
   distance: string;
   color: string;
-  type?: 'ruler' | 'cone';
+  type?: 'ruler' | 'cone' | 'circle' | 'square';
   affectedSquares?: string[];
   sceneId: string;
 };
 
 const tableMeasurements: Record<string, Record<string, Measurement>> = {};
+
+// Persistentes por mesa e cena
+export type PersistentMeasurement = Measurement & { id: string };
+const persistentByTableScene: Record<string, Record<string, Record<string, PersistentMeasurement>>> = {};
 
 export function setMeasurement(tableId: string, userId: string, measurement: Measurement) {
   if (!tableMeasurements[tableId]) tableMeasurements[tableId] = {};
@@ -49,4 +53,21 @@ export function getTablesForUser(userId: string): string[] {
 
 export function getMeasurementsForTable(tableId: string): Record<string, Measurement> {
   return tableMeasurements[tableId] || {};
+}
+
+// --- Persistentes ---
+export function addPersistent(tableId: string, sceneId: string, m: PersistentMeasurement) {
+  if (!persistentByTableScene[tableId]) persistentByTableScene[tableId] = {};
+  if (!persistentByTableScene[tableId][sceneId]) persistentByTableScene[tableId][sceneId] = {};
+  persistentByTableScene[tableId][sceneId][m.id] = m;
+}
+
+export function removePersistent(tableId: string, sceneId: string, id: string) {
+  if (persistentByTableScene[tableId] && persistentByTableScene[tableId][sceneId]) {
+    delete persistentByTableScene[tableId][sceneId][id];
+  }
+}
+
+export function listPersistents(tableId: string, sceneId: string): PersistentMeasurement[] {
+  return Object.values(persistentByTableScene[tableId]?.[sceneId] || {});
 }

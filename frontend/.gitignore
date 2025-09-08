@@ -1,3 +1,6 @@
+# Ignore accidental compiled artifacts
+src/**/*.vue.js
+src/**/*.js
 # Logs
 logs
 *.log

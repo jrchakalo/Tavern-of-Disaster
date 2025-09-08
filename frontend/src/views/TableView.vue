@@ -43,6 +43,8 @@ const imageRenderedHeight = ref<number | null>(null);
 // Escala (usa valor vindo do store para refletir mudanças do Mestre nos jogadores)
 // metersPerSquare virá do store (adicionado ao storeToRefs abaixo) e será controlado pelo Mestre via input
 const squareFeet = computed(() => (metersPerSquare.value || 1.5) * 3.28084);
+// Modo persistente (📌): quando ligado, próxima medição de área vira persistente
+const persistentMode = ref<boolean>(false);
 
 function updateImageDimensions() {
   if (mapImgRef.value) {
@@ -59,6 +61,7 @@ const isMeasuring = computed(() => activeTool.value !== 'none');
 const coneOriginSquareId = ref<string | null>(null); // Quadrado onde a área começa (cone/círculo/quadrado)
 const coneAffectedSquares = ref<string[]>([]); // Lista de IDs dos quadrados afetados (genérico)
 const coneLength = ref(9); // Comprimento padrão do cone em metros (ex: Mãos Flamejantes)
+const selectedPersistentId = ref<string | null>(null);
 const previewMeasurement = ref<{
   type: 'ruler' | 'cone' | 'circle' | 'square';
   start: { x: number; y: number; };
@@ -81,6 +84,7 @@ const {
   currentMapUrl,
   sharedMeasurements,
   metersPerSquare,
+  persistentMeasurements,
   // Getters
   isDM, 
   activeScene, 
@@ -89,12 +93,22 @@ const {
   myActiveToken 
 } = storeToRefs(tableStore);
 
+// Persistentes apenas da cena ativa
+const persistentsForActiveScene = computed(() =>
+  persistentMeasurements.value.filter(pm => pm.sceneId === activeSceneId.value)
+);
+
 function handleSetActiveScene(sceneId: string) {
   socketService.setActiveScene(tableId, sceneId);
 }
 
 function handleUpdateSessionStatus(newStatus: 'LIVE' | 'ENDED') {
   socketService.updateSessionStatus(tableId, newStatus);
+}
+
+// Toggle vindo da Toolbar para fixar medições
+function handleTogglePersistent(on: boolean) {
+  persistentMode.value = on;
 }
 
 function setMap() {
@@ -137,6 +151,22 @@ function handleAssignToken(newOwnerId: string) {
   showAssignMenu.value = false;
 }
 
+function handleSelectPersistent(payload: { id: string | null }) {
+  selectedPersistentId.value = payload.id;
+}
+
+function handleDeleteSelectedPersistent() {
+  if (!activeSceneId.value || !selectedPersistentId.value) return;
+  socketService.removePersistentMeasurement({ tableId, sceneId: activeSceneId.value, id: selectedPersistentId.value });
+  selectedPersistentId.value = null;
+}
+
+// Remoção de medição persistente (DM ou autor), acionada pelo GridDisplay
+function handleRemovePersistent(payload: { id: string }) {
+  if (!activeSceneId.value) return;
+  socketService.removePersistentMeasurement({ tableId, sceneId: activeSceneId.value, id: payload.id });
+}
+
 function handleUndoMove() {
   if (currentTurnTokenId.value) {
     socketService.undoMove(tableId, currentTurnTokenId.value);
@@ -147,6 +177,7 @@ function handleNextTurn() {
   if (activeSceneId.value) {
   // Antes de avançar o turno, limpa medições locais e desseleciona ferramentas
   handleToolSelected('none');
+  selectedPersistentId.value = null;
     socketService.nextTurn(tableId, activeSceneId.value);
   }
 }
@@ -533,61 +564,121 @@ function handlePointerMove(event: PointerEvent) {
 function handlePointerUp(event: PointerEvent) {
   // Se estávamos pré-visualizando, o pointerUp FINALIZA a medição.
   if (previewMeasurement.value) {
-    if (activeTool.value === 'ruler' && previewMeasurement.value.type === 'ruler' && activeSceneId.value) {
+  if (activeTool.value === 'ruler' && previewMeasurement.value.type === 'ruler' && activeSceneId.value) {
       const canShare = isDM.value || !!myActiveToken.value; // DM ou jogador cujo token está no turno
       if (canShare) {
+    // Converte pontos locais (px) para unidades de grade (células)
+    const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+    const scale = viewTransform.value.scale || 1;
+    const unscaledGridWidth = gridRect.width / scale;
+    const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
+    const toGrid = (p: {x:number;y:number}) => ({ x: p.x / worldSquareSize, y: p.y / worldSquareSize });
         socketService.shareMeasurement({
           tableId,
           sceneId: activeSceneId.value,
-          start: previewMeasurement.value.start,
-          end: previewMeasurement.value.end,
+      start: toGrid(previewMeasurement.value.start),
+      end: toGrid(previewMeasurement.value.end),
           distance: previewMeasurement.value.distance || '0m',
           type: 'ruler'
         });
       }
-  } else if (activeTool.value === 'cone' && previewMeasurement.value.type === 'cone' && activeSceneId.value) {
+    } else if (activeTool.value === 'cone' && previewMeasurement.value.type === 'cone' && activeSceneId.value) {
       const canShare = isDM.value || !!myActiveToken.value;
       if (canShare) {
-        socketService.shareMeasurement({
-          tableId,
-          sceneId: activeSceneId.value,
-          start: previewMeasurement.value.start,
-          end: previewMeasurement.value.end,
-      distance: previewMeasurement.value.distance || '0m',
-      type: 'cone',
-      affectedSquares: coneAffectedSquares.value
-        });
+    const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+    const scale = viewTransform.value.scale || 1;
+    const unscaledGridWidth = gridRect.width / scale;
+    const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
+    const toGrid = (p: {x:number;y:number}) => ({ x: p.x / worldSquareSize, y: p.y / worldSquareSize });
+        // Se modo persistente estiver ativo, cria persistente; senão, compartilha efêmera
+        if (persistentMode.value) {
+          socketService.addPersistentMeasurement({
+            tableId,
+            sceneId: activeSceneId.value,
+      start: toGrid(previewMeasurement.value.start),
+      end: toGrid(previewMeasurement.value.end),
+            distance: previewMeasurement.value.distance || '0m',
+            type: 'cone',
+            affectedSquares: coneAffectedSquares.value
+          });
+        } else {
+          socketService.shareMeasurement({
+            tableId,
+            sceneId: activeSceneId.value,
+      start: toGrid(previewMeasurement.value.start),
+      end: toGrid(previewMeasurement.value.end),
+            distance: previewMeasurement.value.distance || '0m',
+            type: 'cone',
+            affectedSquares: coneAffectedSquares.value
+          });
+        }
       }
     } else if (activeTool.value === 'circle' && previewMeasurement.value.type === 'circle' && activeSceneId.value) {
       const canShare = isDM.value || !!myActiveToken.value;
       if (canShare) {
-        socketService.shareMeasurement({
-          tableId,
-          sceneId: activeSceneId.value,
-          start: previewMeasurement.value.start,
-          end: previewMeasurement.value.end,
-          distance: previewMeasurement.value.distance || '0m',
-          type: 'circle',
-          affectedSquares: coneAffectedSquares.value
-        });
+    const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+    const scale = viewTransform.value.scale || 1;
+    const unscaledGridWidth = gridRect.width / scale;
+    const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
+    const toGrid = (p: {x:number;y:number}) => ({ x: p.x / worldSquareSize, y: p.y / worldSquareSize });
+        if (persistentMode.value) {
+          socketService.addPersistentMeasurement({
+            tableId,
+            sceneId: activeSceneId.value,
+      start: toGrid(previewMeasurement.value.start),
+      end: toGrid(previewMeasurement.value.end),
+            distance: previewMeasurement.value.distance || '0m',
+            type: 'circle',
+            affectedSquares: coneAffectedSquares.value
+          });
+        } else {
+          socketService.shareMeasurement({
+            tableId,
+            sceneId: activeSceneId.value,
+      start: toGrid(previewMeasurement.value.start),
+      end: toGrid(previewMeasurement.value.end),
+            distance: previewMeasurement.value.distance || '0m',
+            type: 'circle',
+            affectedSquares: coneAffectedSquares.value
+          });
+        }
       }
     } else if (activeTool.value === 'square' && previewMeasurement.value.type === 'square' && activeSceneId.value) {
       const canShare = isDM.value || !!myActiveToken.value;
       if (canShare) {
-        socketService.shareMeasurement({
-          tableId,
-          sceneId: activeSceneId.value,
-          start: previewMeasurement.value.start,
-          end: previewMeasurement.value.end,
-          distance: previewMeasurement.value.distance || '0m',
-          type: 'square',
-          affectedSquares: coneAffectedSquares.value
-        });
+    const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+    const scale = viewTransform.value.scale || 1;
+    const unscaledGridWidth = gridRect.width / scale;
+    const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
+    const toGrid = (p: {x:number;y:number}) => ({ x: p.x / worldSquareSize, y: p.y / worldSquareSize });
+        if (persistentMode.value) {
+          socketService.addPersistentMeasurement({
+            tableId,
+            sceneId: activeSceneId.value,
+      start: toGrid(previewMeasurement.value.start),
+      end: toGrid(previewMeasurement.value.end),
+            distance: previewMeasurement.value.distance || '0m',
+            type: 'square',
+            affectedSquares: coneAffectedSquares.value
+          });
+          // Ao persistir, desliga o modo pin
+          persistentMode.value = false;
+        } else {
+          socketService.shareMeasurement({
+            tableId,
+            sceneId: activeSceneId.value,
+      start: toGrid(previewMeasurement.value.start),
+      end: toGrid(previewMeasurement.value.end),
+            distance: previewMeasurement.value.distance || '0m',
+            type: 'square',
+            affectedSquares: coneAffectedSquares.value
+          });
+        }
       }
     }
     previewMeasurement.value = null; 
     // Após finalizar a prévia do cone, mantemos a pintura local até que o usuário clique direito para limpar
-    if (activeTool.value === 'ruler' || activeTool.value === 'none') {
+    if (activeTool.value === 'ruler' || activeTool.value === 'none' || persistentMode.value) {
       coneAffectedSquares.value = [];
       coneOriginSquareId.value = null;
     }
@@ -782,6 +873,17 @@ watch([gridWidth, gridHeight], ([w, h], [ow, oh]) => {
   socketService.updateGridDimensions(tableId, activeSceneId.value, w, h);
 });
 
+// Limpa seleção ao trocar de cena ou quando o item selecionado some
+watch(activeSceneId, () => {
+  selectedPersistentId.value = null;
+});
+
+watch(persistentMeasurements, () => {
+  if (!selectedPersistentId.value) return;
+  const stillExists = persistentMeasurements.value.some(pm => pm.id === selectedPersistentId.value);
+  if (!stillExists) selectedPersistentId.value = null;
+});
+
 onMounted(() => {
   socketService.connect(tableId);
   // Observa resize da janela para recalcular dimensões da imagem
@@ -803,6 +905,8 @@ watch(currentTurnTokenId, (novo, antigo) => {
   if (novo === antigo) return;
   // Desseleciona qualquer ferramenta e remove medição compartilhada
   handleToolSelected('none');
+  // Desliga o pin ao trocar de turno
+  persistentMode.value = false;
   // Garante limpeza local imediata
   previewMeasurement.value = null;
   coneAffectedSquares.value = [];
@@ -875,7 +979,11 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     <Toolbar 
       v-if="sessionStatus === 'LIVE' || isDM"
       :activeTool="activeTool"
+      :canDelete="Boolean(selectedPersistentId && (isDM || persistentMeasurements.find(pm => pm.id === selectedPersistentId)?.userId === currentUser?.id))"
+  :persistentMode="persistentMode"
       @tool-selected="handleToolSelected" 
+  @toggle-persistent="handleTogglePersistent"
+      @delete-selected="handleDeleteSelectedPersistent"
     />
 
   <aside v-if="isDM" class="dm-panel" :class="{ collapsed: isDmPanelCollapsed }">
@@ -1046,6 +1154,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               :measuredDistance="rulerDistance"
               :previewMeasurement="previewMeasurement"
               :sharedMeasurements="Object.values(sharedMeasurements)"
+              :persistentMeasurements="persistentsForActiveScene"
               :areaAffectedSquares="coneAffectedSquares"
               :currentTurnTokenId="currentTurnTokenId"
               :squares="squares"
@@ -1055,9 +1164,13 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               :imageHeight="imageRenderedHeight || undefined"
               :selectedTokenId="selectedTokenId"
               :isDM="isDM"
+              :currentUserId="currentUser?.id || null"
+              :selectedPersistentId="selectedPersistentId"
               @square-right-click="handleRightClick"
               @square-left-click="handleLeftClickOnSquare"
               @token-move-requested="handleTokenMoveRequest"
+              @remove-persistent="handleRemovePersistent"
+              @select-persistent="handleSelectPersistent"
             />
           </div>
         </template>
