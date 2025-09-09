@@ -688,6 +688,8 @@ function handlePointerUp(event: PointerEvent) {
             affectedSquares: coneAffectedSquares.value,
             color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
           });
+          // Harmoniza comportamento: após persistir, desliga o PIN
+          persistentMode.value = false;
         } else {
           socketService.shareMeasurement({
             tableId,
@@ -720,6 +722,8 @@ function handlePointerUp(event: PointerEvent) {
             affectedSquares: coneAffectedSquares.value,
             color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
           });
+          // Harmoniza comportamento: após persistir, desliga o PIN
+          persistentMode.value = false;
         } else {
           socketService.shareMeasurement({
             tableId,
