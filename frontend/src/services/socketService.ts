@@ -38,7 +38,10 @@ class SocketService {
   // Medições compartilhadas
   this.socket.on('measurementShared', (m) => this.store.upsertSharedMeasurement(m));
   this.socket.on('measurementRemoved', (data: { userId: string }) => this.store.removeSharedMeasurement(data.userId));
-  this.socket.on('allMeasurementsCleared', () => this.store.clearSharedMeasurements());
+  this.socket.on('allMeasurementsCleared', (data?: { sceneId?: string }) => {
+    this.store.clearSharedMeasurements();
+    if (data?.sceneId) this.store.clearPersistentMeasurementsForScene(data.sceneId);
+  });
   // Persistentes
   this.socket.on('persistentMeasurementAdded', (m) => this.store.addPersistentMeasurement({ ...m, userId: m.userId || m.ownerId }));
   this.socket.on('persistentMeasurementRemoved', (data: { sceneId: string; id: string }) => this.store.removePersistentMeasurement(data.id));
@@ -55,9 +58,9 @@ class SocketService {
     this.socket.on('tokenPlacementError', (error) => alert(`Erro ao colocar token: ${error.message}`));
   }
   // Persistentes
-  addPersistentMeasurement(payload: { tableId: string; sceneId: string; id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'; affectedSquares?: string[] }) {
-    const { tableId, sceneId, id, start, end, distance, type, affectedSquares } = payload;
-    this.socket?.emit('requestAddPersistentMeasurement', { tableId, sceneId, payload: { id, start, end, distance, type, affectedSquares } });
+  addPersistentMeasurement(payload: { tableId: string; sceneId: string; id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'; affectedSquares?: string[]; color?: string }) {
+    const { tableId, sceneId, id, start, end, distance, type, affectedSquares, color } = payload;
+    this.socket?.emit('requestAddPersistentMeasurement', { tableId, sceneId, payload: { id, start, end, distance, type, affectedSquares, color } });
   }
   removePersistentMeasurement(payload: { tableId: string; sceneId: string; id: string }) {
     this.socket?.emit('requestRemovePersistentMeasurement', payload);
@@ -134,11 +137,20 @@ class SocketService {
 
   // --- Medições ---
   // Suporta régua, cone e (em breve) círculo/quadrado.
-  shareMeasurement(payload: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[] }) {
+  shareMeasurement(payload: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[]; color?: string }) {
+    // Guarda preferência local de cor para fallback
+    const uid = this.store && (this.store as any).currentTable?.dm?._id ? undefined : undefined;
+    if ((this.store as any).setUserMeasurementColor) {
+      try { (this.store as any).setUserMeasurementColor((this.store as any).currentUser?.id || '', payload.color || ''); } catch {}
+    }
     this.socket?.emit('requestShareMeasurement', payload);
   }
   removeMyMeasurement(payload: { tableId: string; sceneId: string }) {
     this.socket?.emit('requestRemoveMeasurement', payload);
+  }
+
+  clearAllMeasurements(tableId: string, sceneId: string) {
+    this.socket?.emit('requestClearAllMeasurements', { tableId, sceneId });
   }
 }
 

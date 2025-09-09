@@ -28,6 +28,9 @@ export const useTableStore = defineStore('table', () => {
         affectedSquares?: string[];
     }>> = ref({});
 
+    // Cores preferidas de medição por usuário (fallback quando servidor não ecoa a cor)
+    const userMeasurementColors: Ref<Record<string, string>> = ref({});
+
         // Medições persistentes (lista) – não são limpas ao mudar de turno
         const persistentMeasurements: Ref<Array<{
             id: string;
@@ -177,6 +180,15 @@ export const useTableStore = defineStore('table', () => {
     }
     function clearSharedMeasurements() { sharedMeasurements.value = {}; }
 
+    // Preferências de cor
+    function setUserMeasurementColor(userId: string, color: string) {
+        if (!userId || !color) return;
+        userMeasurementColors.value = { ...userMeasurementColors.value, [userId]: color };
+    }
+    function getUserMeasurementColor(userId: string): string | undefined {
+        return userMeasurementColors.value[userId];
+    }
+
         // Persistentes
         function addPersistentMeasurement(m: { id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[]; sceneId: string; }) {
             // Escopo por cena ativa
@@ -219,6 +231,7 @@ export const useTableStore = defineStore('table', () => {
         sessionStatus,
         currentMapUrl,
         sharedMeasurements,
+    userMeasurementColors,
     persistentMeasurements,
     metersPerSquare,
         // Getters
@@ -239,6 +252,8 @@ export const useTableStore = defineStore('table', () => {
         upsertSharedMeasurement,
         removeSharedMeasurement,
     clearSharedMeasurements,
+    setUserMeasurementColor,
+    getUserMeasurementColor,
     updateSceneScale,
     addPersistentMeasurement,
     removePersistentMeasurement,

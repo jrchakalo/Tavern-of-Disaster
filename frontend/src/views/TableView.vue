@@ -53,11 +53,11 @@ function updateImageDimensions() {
   }
 }
 
-const activeTool = ref<'ruler' | 'cone' | 'circle' | 'square' | 'none'>('none');
+const activeTool = ref<'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'none'>('none');
 const rulerStartPoint = ref<{ x: number; y: number } | null>(null);
 const rulerEndPoint = ref<{ x: number; y: number } | null>(null);
 const rulerDistance = ref('0.0m');
-const isMeasuring = computed(() => activeTool.value !== 'none');
+const isMeasuring = computed(() => activeTool.value !== 'none' && activeTool.value !== 'select');
 const coneOriginSquareId = ref<string | null>(null); // Quadrado onde a área começa (cone/círculo/quadrado)
 const coneAffectedSquares = ref<string[]>([]); // Lista de IDs dos quadrados afetados (genérico)
 const coneLength = ref(9); // Comprimento padrão do cone em metros (ex: Mãos Flamejantes)
@@ -93,6 +93,46 @@ const {
   myActiveToken 
 } = storeToRefs(tableStore);
 
+// Cor de medição
+const measurementColor = ref<string>('');
+const PLAYER_COLORS = ['#ff8c00', '#12c2e9', '#ff4d4d', '#43a047', '#ffd166', '#ff66cc', '#00bcd4', '#8bc34a', '#e91e63', '#9c27b0', '#795548', '#cddc39'];
+
+function loadOrInitUserColor() {
+  // DM é sempre roxo
+  if (isDM.value) {
+    measurementColor.value = '#3c096c';
+    return;
+  }
+  const uid = currentUser?.value?.id;
+  const sceneKey = activeSceneId.value || 'global';
+  if (!uid) { measurementColor.value = '#ff8c00'; return; }
+  const key = `tod:userColor:${uid}:${tableId}:${sceneKey}`;
+  const saved = localStorage.getItem(key);
+  if (saved && /^#?[0-9a-fA-F]{6}$/.test(saved)) {
+    measurementColor.value = saved.startsWith('#') ? saved : `#${saved}`;
+    return;
+  }
+  // Escolhe cor aleatória não-roxa
+  const random = PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)] || '#ff8c00';
+  measurementColor.value = random;
+  localStorage.setItem(key, random);
+}
+
+// Inicializa e atualiza quando papel/cena muda
+watch([isDM, activeSceneId], () => {
+  loadOrInitUserColor();
+}, { immediate: true });
+
+// Persiste quando jogador troca manualmente
+watch(measurementColor, (c) => {
+  if (isDM.value) return; // DM não persiste
+  const uid = currentUser?.value?.id;
+  const sceneKey = activeSceneId.value || 'global';
+  if (!uid || !c) return;
+  const key = `tod:userColor:${uid}:${tableId}:${sceneKey}`;
+  localStorage.setItem(key, c);
+});
+
 // Persistentes apenas da cena ativa
 const persistentsForActiveScene = computed(() =>
   persistentMeasurements.value.filter(pm => pm.sceneId === activeSceneId.value)
@@ -107,8 +147,10 @@ function handleUpdateSessionStatus(newStatus: 'LIVE' | 'ENDED') {
 }
 
 // Toggle vindo da Toolbar para fixar medições
-function handleTogglePersistent(on: boolean) {
-  persistentMode.value = on;
+function handleTogglePersistent(on: boolean) { persistentMode.value = on; }
+
+function handleColorSelected(color: string) {
+  measurementColor.value = color;
 }
 
 function setMap() {
@@ -159,6 +201,11 @@ function handleDeleteSelectedPersistent() {
   if (!activeSceneId.value || !selectedPersistentId.value) return;
   socketService.removePersistentMeasurement({ tableId, sceneId: activeSceneId.value, id: selectedPersistentId.value });
   selectedPersistentId.value = null;
+}
+
+function handleClearAllMeasurements() {
+  if (!isDM.value || !activeSceneId.value) return;
+  socketService.clearAllMeasurements(tableId, activeSceneId.value);
 }
 
 // Remoção de medição persistente (DM ou autor), acionada pelo GridDisplay
@@ -250,15 +297,21 @@ function handleRightClick(square: GridSquare, event: MouseEvent) {
 
   // Com qualquer ferramenta ativa, o clique direito cancela
   if (isMeasuring.value) {
-    if (activeSceneId.value && sharedMeasurements.value[currentUser?.value?.id || '']) {
-      socketService.removeMyMeasurement({ tableId, sceneId: activeSceneId.value });
+    // Se o PIN estiver ligado e usuário clicar com botão direito, desliga o PIN e a ferramenta
+    if (persistentMode.value) {
+      persistentMode.value = false;
+      handleToolSelected('none');
     } else {
-      activeTool.value = 'none';
+      if (activeSceneId.value && sharedMeasurements.value[currentUser?.value?.id || '']) {
+        socketService.removeMyMeasurement({ tableId, sceneId: activeSceneId.value });
+      } else {
+        activeTool.value = 'none';
+      }
+      previewMeasurement.value = null;
+      rulerStartPoint.value = null;
+      coneOriginSquareId.value = null;
+      coneAffectedSquares.value = [];
     }
-    previewMeasurement.value = null;
-    rulerStartPoint.value = null;
-    coneOriginSquareId.value = null;
-    coneAffectedSquares.value = [];
     return;
   }
 
@@ -280,6 +333,36 @@ function handleRightClick(square: GridSquare, event: MouseEvent) {
   } else if (isDM.value && !square.token) { // Se o quadrado estiver vazio
     targetSquareIdForToken.value = square.id;
     showTokenForm.value = true;
+  }
+}
+
+// Captura clique direito em qualquer área do viewport (não apenas nas células do grid)
+function handleViewportContextMenu() {
+  // Se estiver medindo e o PIN estiver ligado, desliga ambos (pin e ferramenta)
+  if (isMeasuring.value && persistentMode.value) {
+    persistentMode.value = false;
+    handleToolSelected('none');
+    return;
+  }
+  // Se estiver medindo sem PIN, apenas cancela a medição atual
+  if (isMeasuring.value) {
+    if (activeSceneId.value && sharedMeasurements.value[currentUser?.value?.id || '']) {
+      socketService.removeMyMeasurement({ tableId, sceneId: activeSceneId.value });
+    } else {
+      activeTool.value = 'none';
+    }
+    previewMeasurement.value = null;
+    rulerStartPoint.value = null;
+    coneOriginSquareId.value = null;
+    coneAffectedSquares.value = [];
+  }
+}
+
+function handleShapeContextMenu(payload: { id: string }) {
+  // Seleciona a figura e, se Mestre, remove-a
+  selectedPersistentId.value = payload.id || null;
+  if (isDM.value && activeSceneId.value) {
+    socketService.removePersistentMeasurement({ tableId, sceneId: activeSceneId.value, id: payload.id });
   }
 }
 
@@ -374,7 +457,7 @@ function handlePointerDown(event: PointerEvent) {
 
   if (isMeasuring.value) {
     // Se uma ferramenta está ativa, o pointerDown INICIA a pré-visualização.
-    if (activeTool.value === 'ruler') {
+  if (activeTool.value === 'ruler') {
       if (!gridDisplayRef.value) return;
       const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
       const scale = viewTransform.value.scale || 1;
@@ -415,6 +498,8 @@ function handlePointerDown(event: PointerEvent) {
     return;
   }
 
+  // Lógica de pan: desabilita pan quando ferramenta SELECT está ativa
+  if (activeTool.value === 'select') return;
   // Lógica original de pan
   if ((event.target as HTMLElement).closest('button, .token')) return;
   activePointers.value.push(event);
@@ -579,7 +664,8 @@ function handlePointerUp(event: PointerEvent) {
       start: toGrid(previewMeasurement.value.start),
       end: toGrid(previewMeasurement.value.end),
           distance: previewMeasurement.value.distance || '0m',
-          type: 'ruler'
+          type: 'ruler',
+          color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
         });
       }
     } else if (activeTool.value === 'cone' && previewMeasurement.value.type === 'cone' && activeSceneId.value) {
@@ -599,7 +685,8 @@ function handlePointerUp(event: PointerEvent) {
       end: toGrid(previewMeasurement.value.end),
             distance: previewMeasurement.value.distance || '0m',
             type: 'cone',
-            affectedSquares: coneAffectedSquares.value
+            affectedSquares: coneAffectedSquares.value,
+            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
           });
         } else {
           socketService.shareMeasurement({
@@ -609,7 +696,8 @@ function handlePointerUp(event: PointerEvent) {
       end: toGrid(previewMeasurement.value.end),
             distance: previewMeasurement.value.distance || '0m',
             type: 'cone',
-            affectedSquares: coneAffectedSquares.value
+            affectedSquares: coneAffectedSquares.value,
+            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
           });
         }
       }
@@ -629,7 +717,8 @@ function handlePointerUp(event: PointerEvent) {
       end: toGrid(previewMeasurement.value.end),
             distance: previewMeasurement.value.distance || '0m',
             type: 'circle',
-            affectedSquares: coneAffectedSquares.value
+            affectedSquares: coneAffectedSquares.value,
+            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
           });
         } else {
           socketService.shareMeasurement({
@@ -639,7 +728,8 @@ function handlePointerUp(event: PointerEvent) {
       end: toGrid(previewMeasurement.value.end),
             distance: previewMeasurement.value.distance || '0m',
             type: 'circle',
-            affectedSquares: coneAffectedSquares.value
+            affectedSquares: coneAffectedSquares.value,
+            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
           });
         }
       }
@@ -659,7 +749,8 @@ function handlePointerUp(event: PointerEvent) {
       end: toGrid(previewMeasurement.value.end),
             distance: previewMeasurement.value.distance || '0m',
             type: 'square',
-            affectedSquares: coneAffectedSquares.value
+            affectedSquares: coneAffectedSquares.value,
+            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
           });
           // Ao persistir, desliga o modo pin
           persistentMode.value = false;
@@ -671,16 +762,26 @@ function handlePointerUp(event: PointerEvent) {
       end: toGrid(previewMeasurement.value.end),
             distance: previewMeasurement.value.distance || '0m',
             type: 'square',
-            affectedSquares: coneAffectedSquares.value
+            affectedSquares: coneAffectedSquares.value,
+            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
           });
         }
       }
     }
     previewMeasurement.value = null; 
-    // Após finalizar a prévia do cone, mantemos a pintura local até que o usuário clique direito para limpar
-    if (activeTool.value === 'ruler' || activeTool.value === 'none' || persistentMode.value) {
+    // Limpeza dos quadrados pintados
+    const canShareNow = isDM.value || !!myActiveToken.value;
+    const isAreaTool = (activeTool.value === 'cone' || activeTool.value === 'circle' || activeTool.value === 'square');
+    if (!canShareNow) {
+      // Não é turno do jogador: limpa qualquer prévia de área
       coneAffectedSquares.value = [];
       coneOriginSquareId.value = null;
+    } else {
+      // Após finalizar a prévia, limpamos normalmente para régua, nenhuma ferramenta ou quando virou persistente
+      if (activeTool.value === 'ruler' || activeTool.value === 'none' || persistentMode.value) {
+        coneAffectedSquares.value = [];
+        coneOriginSquareId.value = null;
+      }
     }
 
     (event.target as HTMLElement).releasePointerCapture(event.pointerId);
@@ -729,6 +830,9 @@ function handleToolSelected(tool: 'ruler' | 'cone' | 'circle' | 'square' | 'none
     showTokenForm.value = false;
     selectedTokenId.value = null;
   }
+
+  // Sempre limpa seleção ao trocar de ferramenta
+  selectedPersistentId.value = null;
 
   // Ao desselecionar a ferramenta, remove também a medição compartilhada do servidor
   if (tool === 'none' && activeSceneId.value) {
@@ -981,8 +1085,12 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       :activeTool="activeTool"
       :canDelete="Boolean(selectedPersistentId && (isDM || persistentMeasurements.find(pm => pm.id === selectedPersistentId)?.userId === currentUser?.id))"
   :persistentMode="persistentMode"
+  :isDM="isDM"
+  :selectedColor="measurementColor"
       @tool-selected="handleToolSelected" 
   @toggle-persistent="handleTogglePersistent"
+  @color-selected="handleColorSelected"
+  @clear-all="handleClearAllMeasurements"
       @delete-selected="handleDeleteSelectedPersistent"
     />
 
@@ -1155,7 +1263,9 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               :previewMeasurement="previewMeasurement"
               :sharedMeasurements="Object.values(sharedMeasurements)"
               :persistentMeasurements="persistentsForActiveScene"
+              :userColorMap="tableStore.userMeasurementColors"
               :areaAffectedSquares="coneAffectedSquares"
+              :measurementColor="measurementColor"
               :currentTurnTokenId="currentTurnTokenId"
               :squares="squares"
               :gridWidth="gridWidth" 
@@ -1171,6 +1281,8 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               @token-move-requested="handleTokenMoveRequest"
               @remove-persistent="handleRemovePersistent"
               @select-persistent="handleSelectPersistent"
+              @viewport-contextmenu="handleViewportContextMenu"
+              @shape-contextmenu="handleShapeContextMenu"
             />
           </div>
         </template>

@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 
-// Define os tipos de ferramentas que teremos.
-type Tool = 'ruler' | 'cone' | 'circle' | 'square' | 'none';
+// Define os tipos de ferramentas (inclui ferramenta de seleção).
+type Tool = 'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'none';
 
 // O componente pai (TableView) nos dirá qual ferramenta está ativa.
 const props = defineProps<{
   activeTool: Tool;
   persistentMode?: boolean; // quando ligado, fixa a próxima medição
   canDelete?: boolean; // se há uma figura persistida selecionada e usuário pode apagar
+  isDM?: boolean; // para bloquear paleta no DM
+  selectedColor?: string; // cor atual de medição
 }>();
 
 // Quando um botão é clicado, emitimos um evento para o pai.
@@ -16,6 +18,8 @@ const emit = defineEmits<{
   (e: 'tool-selected', tool: Tool): void;
   (e: 'toggle-persistent', on: boolean): void;
   (e: 'delete-selected'): void;
+  (e: 'color-selected', color: string): void;
+  (e: 'clear-all'): void;
 }>();
 
 function selectTool(tool: Tool) {
@@ -28,10 +32,33 @@ function selectTool(tool: Tool) {
 function togglePersistent() {
   emit('toggle-persistent', !props.persistentMode);
 }
+
+// Paleta de cores (roxo do DM reservado)
+const COLORS = ['#ff8c00', '#12c2e9', '#ff4d4d', '#43a047', '#ffd166', '#ff66cc', '#00bcd4', '#8bc34a', '#e91e63', '#9c27b0', '#795548', '#cddc39', '#3c096c'] as const;
+const showPalette = ref(false);
+function pickColor(color: string) {
+  if (props.isDM && color !== '#3c096c') return; // DM fixo em roxo
+  if (!props.isDM && color === '#3c096c') return; // Jogadores não podem escolher roxo
+  emit('color-selected', color);
+  showPalette.value = false;
+}
+
+function requestClearAll() {
+  if (typeof window !== 'undefined' && window.confirm('Tem certeza que deseja limpar todas as medições?')) {
+    emit('clear-all');
+  }
+}
 </script>
 
 <template>
   <div class="toolbar-container">
+    <button
+      class="tool-button"
+      :class="{ active: activeTool === 'select' }"
+      @click="selectTool('select')"
+      title="Selecionar figuras persistidas"
+    >🖱️</button>
+
     <button
       class="tool-button"
       :class="{ active: activeTool === 'ruler' }"
@@ -81,6 +108,29 @@ function togglePersistent() {
       @click="$emit('delete-selected')"
       title="Excluir figura persistida selecionada"
     >🗑️</button>
+
+    <button
+      v-if="isDM"
+      class="tool-button danger"
+      title="Limpar todas as medições"
+  @click="requestClearAll"
+    >🧹</button>
+
+    <hr class="divider" />
+    <button class="tool-button" title="Escolher cor (🎨)" @click="showPalette = !showPalette">🎨</button>
+    <div v-if="showPalette" class="palette-popover" @mouseleave="showPalette=false">
+      <div class="palette-grid">
+        <button
+          v-for="c in (isDM ? COLORS : COLORS.filter(col => col !== '#3c096c'))"
+          :key="c"
+          class="color-swatch"
+          :style="{ backgroundColor: c, outline: (selectedColor===c ? '3px solid #fff' : '1px solid #999') }"
+          :disabled="(isDM && c !== '#3c096c') || (!isDM && c === '#3c096c')"
+          @click="pickColor(c)"
+        />
+      </div>
+      <small class="hint" v-if="isDM">Sua cor é sempre roxa.</small>
+    </div>
     
     </div>
 </template>
@@ -128,4 +178,20 @@ function togglePersistent() {
 .tool-button.danger { background-color: #773333; }
 .tool-button.danger:disabled { opacity: 0.5; cursor: not-allowed; }
 .divider { border: none; border-top: 1px solid #666; margin: 6px 0; }
+
+.palette-popover {
+  position: absolute;
+  left: 56px; /* ao lado da toolbar */
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(44,44,44,0.95);
+  border: 1px solid #666;
+  border-radius: 8px;
+  padding: 10px;
+  z-index: 45;
+}
+.palette-grid { display: grid; grid-template-columns: repeat(7, 22px); gap: 6px; }
+.color-swatch { width: 22px; height: 22px; border-radius: 4px; cursor: pointer; padding: 0; }
+.color-swatch:disabled { opacity: 0.5; cursor: not-allowed; }
+.hint { color: #ccc; display: block; margin-top: 8px; }
 </style>

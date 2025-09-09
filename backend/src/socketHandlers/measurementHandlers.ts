@@ -6,7 +6,7 @@ import { setMeasurement, removeMeasurement, clearAllForUser, getTablesForUser, a
 import { nanoid } from 'nanoid';
 
 export function registerMeasurementHandlers(io: Server, socket: Socket) {
-  const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone'; affectedSquares?: string[]; }) => {
+  const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[]; color?: string; }) => {
     try {
       const user = socket.data.user;
       if (!user) return;
@@ -30,7 +30,8 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       }
       if (!canShare) return; // silencioso
 
-      const color = isDM ? '#3c096c' : '#ffbf00'; // Mestre roxo, jogadores amarelo base
+      // Cor: DM sempre roxo; jogador usa a cor enviada pelo cliente, com fallback
+      const color = isDM ? '#3c096c' : (data.color || '#ff8c00');
       const measurement = {
         userId: user.id,
         username: user.username,
@@ -66,7 +67,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
   socket.on('disconnect', handleDisconnect);
 
   // --- Persistentes ---
-  socket.on('requestAddPersistentMeasurement', async (data: { tableId: string; sceneId: string; payload: { id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'; affectedSquares?: string[] } }) => {
+  socket.on('requestAddPersistentMeasurement', async (data: { tableId: string; sceneId: string; payload: { id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'; affectedSquares?: string[]; color?: string } }) => {
     try {
       const user = socket.data.user;
       if (!user) return;
@@ -84,8 +85,8 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
           canAdd = tok?.ownerId?.toString() === user.id;
         }
       }
-      if (!canAdd) return;
-  const color = isDM ? '#3c096c' : '#ffbf00';
+    if (!canAdd) return;
+  const color = isDM ? '#3c096c' : (payload.color || '#ff8c00');
   const id = payload.id || nanoid(8);
   addPersistent(tableId, sceneId, { id, userId: user.id, username: user.username, color, sceneId, start: payload.start, end: payload.end, distance: payload.distance, type: payload.type, affectedSquares: payload.affectedSquares });
   io.to(tableId).emit('persistentMeasurementAdded', { tableId, sceneId, ownerId: user.id, userId: user.id, id, start: payload.start, end: payload.end, distance: payload.distance, type: payload.type, affectedSquares: payload.affectedSquares, color, username: user.username });
@@ -107,5 +108,22 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       removePersistent(tableId, sceneId, id);
       io.to(tableId).emit('persistentMeasurementRemoved', { sceneId, id });
     } catch (e) { console.error('requestRemovePersistentMeasurement', e);} 
+  });
+
+  // Limpar todas as medições compartilhadas da mesa (DM apenas)
+  socket.on('requestClearAllMeasurements', async (data: { tableId: string; sceneId: string }) => {
+    try {
+      const user = socket.data.user; if (!user) return;
+      const { tableId, sceneId } = data;
+      const table = await Table.findById(tableId).populate('dm','_id');
+      if (!table) return;
+      const isDM = table.dm._id.toString() === user.id;
+      if (!isDM) return;
+      // Limpa em memória e notifica os clientes
+      const { clearMeasurementsForTable, clearPersistentsForScene } = await import('./measurementStore');
+      clearMeasurementsForTable(tableId);
+      if (sceneId) clearPersistentsForScene(tableId, sceneId);
+      io.to(tableId).emit('allMeasurementsCleared', { sceneId });
+    } catch (e) { console.error('requestClearAllMeasurements', e); }
   });
 }

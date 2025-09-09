@@ -71,3 +71,9 @@ export function removePersistent(tableId: string, sceneId: string, id: string) {
 export function listPersistents(tableId: string, sceneId: string): PersistentMeasurement[] {
   return Object.values(persistentByTableScene[tableId]?.[sceneId] || {});
 }
+
+export function clearPersistentsForScene(tableId: string, sceneId: string) {
+  if (persistentByTableScene[tableId] && persistentByTableScene[tableId][sceneId]) {
+    persistentByTableScene[tableId][sceneId] = {};
+  }
+}
