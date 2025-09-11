@@ -37,6 +37,7 @@ interface Props {
   measurementColor?: string;
   selectingMode?: boolean;
   userColorMap?: Record<string, string>;
+  auras?: Array<{ tokenId: string; radiusMeters: number; color: string; name: string; sceneId: string }>; // renderização de auras
 }
 
 const props = defineProps<Props>();
@@ -391,6 +392,17 @@ function getOrientedRectPoints(start: {x:number;y:number}, end: {x:number;y:numb
 function toPointsAttr(points: Array<{x:number;y:number}>): string {
   return points.map(p => `${p.x},${p.y}`).join(' ');
 }
+
+// Centro local (px) de um quadrado pelo id (ex: 'sq-42')
+function getLocalCenterForSquareId(squareId: string): { x: number; y: number } | null {
+  const cols = resolvedWidth.value || 1;
+  const idx = parseInt(squareId.replace('sq-', ''));
+  if (isNaN(idx)) return null;
+  const col = idx % cols;
+  const row = Math.floor(idx / cols);
+  const sz = squareSizePx.value;
+  return { x: col * sz + sz / 2, y: row * sz + sz / 2 };
+}
 </script>
 
 <template>
@@ -407,7 +419,7 @@ function toPointsAttr(points: Array<{x:number;y:number}>): string {
       @contextmenu.prevent="onSquareRightClick(square, $event)" 
       @click="onSquareLeftClick(square, $event)"
       @dragover.prevent="handleDragOver(square)" @drop="handleDrop($event, square)" >
-  <div v-if="square.token"
+    <div v-if="square.token"
             class="token"
             :class="{ 
               'selected': square.token._id === props.selectedTokenId, 
@@ -418,11 +430,15 @@ function toPointsAttr(points: Array<{x:number;y:number}>): string {
         backgroundColor: square.token.color,
     ...getTokenAreaStyle(square.id)
               }"
-            :draggable="!props.isMeasuring" @dragstart="handleDragStart($event, square.token!)">
+      :draggable="!props.isMeasuring" @dragstart="handleDragStart($event, square.token!)" @click.stop="onSquareLeftClick(square, $event)">
             <img v-if="square.token.imageUrl" :src="square.token.imageUrl" :alt="square.token.name" class="token-image" />
             <div v-else class="token-fallback" :style="{ backgroundColor: square.token.color }">
               <span>{{ square.token.name.substring(0, 2) }}</span>
             </div>
+            <div
+              v-if="props.auras && props.auras.some(a => a.tokenId === square.token!._id)"
+              class="token-aura-label"
+            >{{ props.auras.find(a => a.tokenId === square.token!._id)?.name }}</div>
         </div>
       </div>
 
@@ -494,13 +510,33 @@ function toPointsAttr(points: Array<{x:number;y:number}>): string {
   <template v-else-if="previewMeasurement.type === 'beam'">
           <polygon
             class="area-outline"
-            :points="toPointsAttr(getOrientedRectPoints(previewMeasurement.start, previewMeasurement.end, squareSizePx))"
+            :points="toPointsAttr(getOrientedRectPoints(previewMeasurement.start, previewMeasurement.end, Math.max(squareSizePx, 1)))"
             :stroke="props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00')"
             fill="none"
           />
           <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
             {{ previewMeasurement.distance }}
           </text>
+        </template>
+      </svg>
+
+      <!-- Auras persistentes ancoradas a tokens -->
+      <svg v-if="auras && auras.length" class="persist-measurements-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
+        <template v-for="a in auras" :key="a.tokenId">
+          <template v-if="props.squares.some(sq => sq.token && sq.token._id === a.tokenId)">
+            <circle
+              v-for="sq in props.squares.filter(sq => sq.token && sq.token._id === a.tokenId)"
+              :key="sq.id + '-' + a.tokenId"
+              class="aura-outline"
+              :cx="getLocalCenterForSquareId(sq.id)?.x || 0"
+              :cy="getLocalCenterForSquareId(sq.id)?.y || 0"
+              :r="((a.radiusMeters / (props.metersPerSquare || 1.5)) * (squareSizePx)) + (squareSizePx/2)"
+              :stroke="a.color"
+              :style="{ filter: `drop-shadow(0 0 6px ${a.color}) drop-shadow(0 0 14px ${a.color})` }"
+              fill="none"
+            />
+            
+          </template>
         </template>
       </svg>
 
@@ -669,7 +705,7 @@ function toPointsAttr(points: Array<{x:number;y:number}>): string {
   font-weight: bold;
   text-shadow: 1px 1px 1px black; /* Sombra para melhor leitura do texto, se houver */
   background-color: transparent; /* Remove a cor de fundo do container do token */
-  overflow: hidden; /* Garante que a imagem fique contida no círculo */
+  overflow: visible; /* Permite que o rótulo da aura ultrapasse o tamanho do token */
   cursor: grab;
   position: absolute;
   top: 0;
@@ -702,7 +738,8 @@ function toPointsAttr(points: Array<{x:number;y:number}>): string {
 }
 
 .token.selected {
-  box-shadow: 0 0 10px 3px var(--selection-color, #ff8c00);
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
 }
 
 .token.active-turn-token {
@@ -710,12 +747,24 @@ function toPointsAttr(points: Array<{x:number;y:number}>): string {
   z-index: 6;
 }
 
+.token-aura-label {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.7em; /* um pouco maior para melhor leitura */
+  line-height: 1.1;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.9);
+  white-space: nowrap; /* mostra palavra completa, mesmo que ultrapasse o token */
+  pointer-events: none; /* não captura cliques */
+  z-index: 2;
+}
+
 /* Realce de token agora é dinâmico via style */
 
-/* Para o caso de um token estar selecionado E ser o turno dele */
-.token.selected.active-turn-token {
-  box-shadow: 0 0 5px 5px #69ff69, 0 0 5px 3px yellow inset;
-}
+/* Para o caso de um token estar selecionado E ser o turno dele: sem glow extra */
 
 .measurement-overlay {
   position: absolute;
@@ -820,6 +869,12 @@ function toPointsAttr(points: Array<{x:number;y:number}>): string {
   stroke-width: 4.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.persist-measurements-overlay .aura-outline {
+  stroke-width: 6; /* mais fino, ainda com glow perceptível */
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-opacity: 0.6; /* um pouco mais visível */
 }
 .persist-measurements-overlay text {
   fill: #ffffff;

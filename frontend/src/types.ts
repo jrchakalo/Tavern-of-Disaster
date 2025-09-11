@@ -57,3 +57,15 @@ export interface IScene {
   initiative: IInitiativeEntry[];
   metersPerSquare?: number;
 }
+
+// Auras persistentes ancoradas a tokens
+export interface AuraInfo {
+  id: string; // normalmente igual ao tokenId
+  tokenId: string;
+  sceneId: string;
+  tableId: string;
+  name: string;
+  color: string;
+  radiusMeters: number;
+  ownerId: string; // dono do token (ou de quem criou)
+}

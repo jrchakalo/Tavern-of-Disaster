@@ -11,6 +11,8 @@ const props = defineProps<{
   canDelete?: boolean; // se há uma figura persistida selecionada e usuário pode apagar
   isDM?: boolean; // para bloquear paleta no DM
   selectedColor?: string; // cor atual de medição
+  canRemoveAura?: boolean; // se usuário pode remover aura do token selecionado
+  canAddAura?: boolean; // se usuário pode criar/editar aura do seu token neste turno
 }>();
 
 // Quando um botão é clicado, emitimos um evento para o pai.
@@ -20,6 +22,8 @@ const emit = defineEmits<{
   (e: 'delete-selected'): void;
   (e: 'color-selected', color: string): void;
   (e: 'clear-all'): void;
+  (e: 'remove-aura'): void;
+  (e: 'edit-aura'): void;
 }>();
 
 function selectTool(tool: Tool) {
@@ -124,6 +128,20 @@ function requestClearAll() {
       @click="$emit('delete-selected')"
       title="Excluir figura persistida selecionada"
     >🗑️</button>
+
+    <button
+      v-if="canAddAura"
+      class="tool-button"
+      @click="$emit('edit-aura')"
+      title="Editar/Adicionar aura do seu token"
+    >🧿</button>
+
+    <button
+      v-if="canRemoveAura"
+      class="tool-button danger"
+      @click="$emit('remove-aura')"
+      title="Remover aura do token selecionado"
+    >✖️</button>
 
     <button
       v-if="isDM"

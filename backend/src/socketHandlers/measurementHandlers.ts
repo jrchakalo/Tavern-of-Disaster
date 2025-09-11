@@ -2,7 +2,7 @@ import { Server, Socket } from 'socket.io';
 import Table from '../models/Table.model';
 import Scene from '../models/Scene.model';
 import Token from '../models/Token.model';
-import { setMeasurement, removeMeasurement, clearAllForUser, getTablesForUser, addPersistent, removePersistent, listPersistents } from './measurementStore';
+import { setMeasurement, removeMeasurement, clearAllForUser, getTablesForUser, addPersistent, removePersistent, listPersistents, upsertAura, removeAura, listAuras, clearPersistentsForScene } from './measurementStore';
 import { nanoid } from 'nanoid';
 
 export function registerMeasurementHandlers(io: Server, socket: Socket) {
@@ -120,10 +120,64 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       const isDM = table.dm._id.toString() === user.id;
       if (!isDM) return;
       // Limpa em memória e notifica os clientes
-      const { clearMeasurementsForTable, clearPersistentsForScene } = await import('./measurementStore');
+      const { clearMeasurementsForTable, clearAurasForScene } = await import('./measurementStore');
       clearMeasurementsForTable(tableId);
       if (sceneId) clearPersistentsForScene(tableId, sceneId);
+      if (sceneId) clearAurasForScene(tableId, sceneId);
       io.to(tableId).emit('allMeasurementsCleared', { sceneId });
     } catch (e) { console.error('requestClearAllMeasurements', e); }
+  });
+
+  // --- Auras ancoradas ao token ---
+  socket.on('requestUpsertAura', async (data: { tableId: string; sceneId: string; tokenId: string; name: string; color: string; radiusMeters: number; difficultTerrain?: boolean }) => {
+    try {
+      const user = socket.data.user; if (!user) return;
+  const { tableId, sceneId, tokenId, name, color, radiusMeters, difficultTerrain } = data;
+      const table = await Table.findById(tableId).populate('dm','_id');
+      if (!table) return;
+      const token = await Token.findById(tokenId);
+      if (!token) return;
+      const isDM = table.dm._id.toString() === user.id;
+      const isOwner = token.ownerId?.toString() === user.id;
+      // Permitir também o jogador cujo token está no turno atual
+      let isTurnOwner = false;
+      try {
+        const scene = await Scene.findById(sceneId);
+        const currentEntry: any = scene?.initiative?.find((e: any) => e.isCurrentTurn);
+        if (currentEntry?.tokenId) {
+          const turnTok = await Token.findById(currentEntry.tokenId);
+          if (turnTok && turnTok.ownerId?.toString() === user.id) isTurnOwner = true;
+        }
+      } catch {}
+      if (!(isDM || isOwner || isTurnOwner)) return;
+  const aura = { id: tokenId, tokenId, tableId, sceneId, name: name?.trim() || 'Aura', color, radiusMeters: Math.max(0, radiusMeters || 0), ownerId: token.ownerId?.toString() || user.id, difficultTerrain: !!difficultTerrain };
+      upsertAura(aura);
+      io.to(tableId).emit('auraUpserted', aura);
+    } catch (e) { console.error('requestUpsertAura', e); }
+  });
+
+  socket.on('requestRemoveAura', async (data: { tableId: string; sceneId: string; tokenId: string }) => {
+    try {
+      const user = socket.data.user; if (!user) return;
+      const { tableId, sceneId, tokenId } = data;
+      const table = await Table.findById(tableId).populate('dm','_id');
+      if (!table) return;
+      const token = await Token.findById(tokenId);
+      if (!token) return;
+      const isDM = table.dm._id.toString() === user.id;
+      const isOwner = token.ownerId?.toString() === user.id;
+      let isTurnOwner = false;
+      try {
+        const scene = await Scene.findById(sceneId);
+        const currentEntry: any = scene?.initiative?.find((e: any) => e.isCurrentTurn);
+        if (currentEntry?.tokenId) {
+          const turnTok = await Token.findById(currentEntry.tokenId);
+          if (turnTok && turnTok.ownerId?.toString() === user.id) isTurnOwner = true;
+        }
+      } catch {}
+      if (!(isDM || isOwner || isTurnOwner)) return;
+      removeAura(tableId, sceneId, tokenId);
+      io.to(tableId).emit('auraRemoved', { sceneId, tokenId });
+    } catch (e) { console.error('requestRemoveAura', e); }
   });
 }

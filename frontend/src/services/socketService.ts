@@ -53,6 +53,23 @@ class SocketService {
     }
   });
 
+  // Auras
+  this.socket.on('aurasListed', (data: { sceneId: string; items: any[] }) => {
+    if (data.sceneId === this.store.activeSceneId) {
+      this.store.setAurasForScene(data.sceneId, data.items || []);
+    }
+  });
+  this.socket.on('auraUpserted', (aura) => {
+    if (aura.sceneId === this.store.activeSceneId) {
+      this.store.upsertAuraLocal(aura);
+    }
+  });
+  this.socket.on('auraRemoved', (data: { sceneId: string; tokenId: string }) => {
+    if (data.sceneId === this.store.activeSceneId) {
+      this.store.removeAuraLocal(data.tokenId);
+    }
+  });
+
     // Handlers de erro
     this.socket.on('connect_error', (error) => console.error('SocketService - Erro de conexão:', error.message));
     this.socket.on('tokenPlacementError', (error) => alert(`Erro ao colocar token: ${error.message}`));
@@ -151,6 +168,14 @@ class SocketService {
 
   clearAllMeasurements(tableId: string, sceneId: string) {
     this.socket?.emit('requestClearAllMeasurements', { tableId, sceneId });
+  }
+
+  // --- Auras ---
+  upsertAura(payload: { tableId: string; sceneId: string; tokenId: string; name: string; color: string; radiusMeters: number }) {
+    this.socket?.emit('requestUpsertAura', payload);
+  }
+  removeAura(payload: { tableId: string; sceneId: string; tokenId: string }) {
+    this.socket?.emit('requestRemoveAura', payload);
   }
 }
 

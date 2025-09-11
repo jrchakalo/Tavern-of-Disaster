@@ -14,6 +14,7 @@ import TokenEditForm from '../components/TokenEditForm.vue';
 import TurnOrderDisplay from '../components/TurnOrderDisplay.vue';
 import PlayerTurnPanel from '../components/PlayerTurnPanel.vue';
 import Toolbar from '../components/Toolbar.vue';
+import AuraDialog from '../components/AuraDialog.vue';
 
 import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize } from '../types';
 
@@ -31,6 +32,9 @@ const showTokenForm = ref(false);
 const showTokenEditForm = ref(false);
 const tokenBeingEdited = ref<TokenInfo | null>(null);
 const targetSquareIdForToken = ref<string | null>(null);
+// Auras dialog state
+const showAuraDialog = ref(false);
+const auraDialogTokenId = ref<string | null>(null);
 const mapUrlInput = ref(''); // Para o campo de input
 const newSceneName = ref('');
 const newSceneImageUrl = ref('');
@@ -85,6 +89,7 @@ const {
   sharedMeasurements,
   metersPerSquare,
   persistentMeasurements,
+  auras,
   // Getters
   isDM, 
   activeScene, 
@@ -275,10 +280,12 @@ function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
   return;
   }
 
-  // Se nenhuma ferramenta estiver ativa, executa a lógica de seleção de token.
+  // Se nenhuma ferramenta estiver ativa, executa a seleção de token (toggle) ou limpa se clicar vazio
   if (square.token) {
-    selectedTokenId.value = selectedTokenId.value === square.token._id ? null : square.token._id;
+    // Toggle: se já está selecionado, desseleciona
+    selectedTokenId.value = (selectedTokenId.value === square.token._id) ? null : square.token._id;
   } else {
+    // Clique em célula vazia limpa seleção
     selectedTokenId.value = null;
   }
 }
@@ -364,6 +371,52 @@ function handleShapeContextMenu(payload: { id: string }) {
   if (isDM.value && activeSceneId.value) {
     socketService.removePersistentMeasurement({ tableId, sceneId: activeSceneId.value, id: payload.id });
   }
+}
+
+// --- Auras UI ---
+const selectedToken = computed(() => tokensOnMap.value.find(t => t._id === selectedTokenId.value) || null);
+const auraForSelected = computed(() => selectedTokenId.value ? auras.value.find(a => a.tokenId === selectedTokenId.value) || null : null);
+const canRemoveAura = computed(() => Boolean(isDM.value && selectedToken.value && auraForSelected.value));
+// Botão de editar aura: DM sempre; jogador apenas no próprio turno. Requer token selecionado e não estar medindo
+const canAddAura = computed(() => Boolean((isDM.value || myActiveToken.value) && selectedTokenId.value && !isMeasuring.value));
+
+function openAuraDialogForToken(token: TokenInfo) {
+  auraDialogTokenId.value = token._id;
+  showAuraDialog.value = true;
+}
+
+function handleAuraSave(payload: { name: string; color: string; radiusMeters: number }) {
+  if (!auraDialogTokenId.value || !activeSceneId.value) return;
+  socketService.upsertAura({
+    tableId,
+    sceneId: activeSceneId.value,
+    tokenId: auraDialogTokenId.value,
+    name: payload.name,
+    color: payload.color,
+    radiusMeters: payload.radiusMeters,
+  });
+  // A cor da aura passa a ser a última aplicada
+  measurementColor.value = payload.color;
+  showAuraDialog.value = false;
+  auraDialogTokenId.value = null;
+}
+
+function handleAuraRemove() {
+  if (!auraDialogTokenId.value || !activeSceneId.value) return;
+  socketService.removeAura({ tableId, sceneId: activeSceneId.value, tokenId: auraDialogTokenId.value });
+  showAuraDialog.value = false;
+  auraDialogTokenId.value = null;
+}
+
+function handleToolbarRemoveAura() {
+  if (!selectedTokenId.value || !activeSceneId.value) return;
+  socketService.removeAura({ tableId, sceneId: activeSceneId.value, tokenId: selectedTokenId.value });
+}
+
+function handleToolbarEditAura() {
+  if (!selectedTokenId.value) return;
+  auraDialogTokenId.value = selectedTokenId.value;
+  showAuraDialog.value = true;
 }
 
 async function handleCreateScene() {
@@ -1025,7 +1078,9 @@ function calculateBeamOrWallArea(originId: string, targetId: string, widthSquare
   const ocx = o.x + 0.5, ocy = o.y + 0.5;
   const tcx = t.x + 0.5, tcy = t.y + 0.5;
   const vx = tcx - ocx, vy = tcy - ocy;
-  const len = Math.hypot(vx, vy) || 1;
+  const len = Math.hypot(vx, vy);
+  // Se o alvo está na mesma célula (comprimento ~0), limita ao quadrado de origem
+  if (!isFinite(len) || len < 1e-6) return [originId];
   const ux = vx / len, uy = vy / len;
   const half = (widthSquares / 2);
   const visited = new Set<string>();
@@ -1129,6 +1184,13 @@ watch([gridWidth, gridHeight], ([w, h], [ow, oh]) => {
 // Limpa seleção ao trocar de cena ou quando o item selecionado some
 watch(activeSceneId, () => {
   selectedPersistentId.value = null;
+  // Reset selection and tool state when switching scenes to avoid stale UI
+  selectedTokenId.value = null;
+  showAuraDialog.value = false;
+  auraDialogTokenId.value = null;
+  persistentMode.value = false;
+  // Ensure no measuring tool remains active
+  activeTool.value = 'none';
 });
 
 watch(persistentMeasurements, () => {
@@ -1236,11 +1298,15 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   :persistentMode="persistentMode"
   :isDM="isDM"
   :selectedColor="measurementColor"
+      :canRemoveAura="canRemoveAura"
+  :canAddAura="canAddAura"
       @tool-selected="handleToolSelected" 
   @toggle-persistent="handleTogglePersistent"
   @color-selected="handleColorSelected"
   @clear-all="handleClearAllMeasurements"
       @delete-selected="handleDeleteSelectedPersistent"
+  @remove-aura="handleToolbarRemoveAura"
+  @edit-aura="handleToolbarEditAura"
     />
 
   <aside v-if="isDM" class="dm-panel" :class="{ collapsed: isDmPanelCollapsed }">
@@ -1412,6 +1478,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               :previewMeasurement="previewMeasurement"
               :sharedMeasurements="Object.values(sharedMeasurements)"
               :persistentMeasurements="persistentsForActiveScene"
+              :auras="auras"
               :userColorMap="tableStore.userMeasurementColors"
               :areaAffectedSquares="coneAffectedSquares"
               :measurementColor="measurementColor"
@@ -1470,6 +1537,18 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       :players="currentTable?.players || []"
       @close="showTokenEditForm = false; tokenBeingEdited = null;"
       @save="handleSaveTokenEdit"
+    />
+    <AuraDialog
+      :open="showAuraDialog"
+      :tokenId="auraDialogTokenId"
+      :defaultName="(auraDialogTokenId && auras.find(a => a.tokenId === auraDialogTokenId)?.name) || 'Aura'"
+      :defaultColor="(auraDialogTokenId && auras.find(a => a.tokenId === auraDialogTokenId)?.color) || measurementColor"
+  :defaultRadiusMeters="(auraDialogTokenId && auras.find(a => a.tokenId === auraDialogTokenId)?.radiusMeters) ?? 0"
+      :isDM="isDM"
+      :isOwner="Boolean(tokensOnMap.find(t => t._id === auraDialogTokenId)?.ownerId?._id === currentUser?.id)"
+      @save="handleAuraSave"
+      @remove="handleAuraRemove"
+      @close="showAuraDialog = false; auraDialogTokenId = null;"
     />
   </div>
 </template>

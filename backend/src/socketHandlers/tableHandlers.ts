@@ -2,7 +2,7 @@ import { Server, Socket } from 'socket.io';
 import Table from '../models/Table.model';
 import Token from '../models/Token.model';
 import Scene from '../models/Scene.model';
-import { listPersistents } from './measurementStore';
+import { listPersistents, listAuras } from './measurementStore';
 
 async function getFullSessionState(tableId: string, sceneId: string) {
   const activeScene = await Scene.findById(sceneId);
@@ -42,6 +42,8 @@ export function registerTableHandlers(io: Server, socket: Socket) {
                             const persistents = listPersistents(tableId, activeSceneId.toString());
                             // Envia apenas para o socket que entrou
                             socket.emit('persistentsListed', { sceneId: activeSceneId.toString(), items: persistents });
+                            const auras = listAuras(tableId, activeSceneId.toString());
+                            socket.emit('aurasListed', { sceneId: activeSceneId.toString(), items: auras });
                         }
         } catch (error) {
         console.error(`Erro ao entrar na sala ${tableId}:`, error);
@@ -70,6 +72,8 @@ export function registerTableHandlers(io: Server, socket: Socket) {
             // Após trocar de cena, publicar a lista de persistentes da nova cena
             const persistents = listPersistents(tableId, sceneId);
             io.to(tableId).emit('persistentsListed', { sceneId, items: persistents });
+            const auras = listAuras(tableId, sceneId);
+            io.to(tableId).emit('aurasListed', { sceneId, items: auras });
             console.log(`Mesa ${tableId} teve sua cena ativa atualizada para ${sceneId}`);
 
         } catch (error) {

@@ -77,3 +77,41 @@ export function clearPersistentsForScene(tableId: string, sceneId: string) {
     persistentByTableScene[tableId][sceneId] = {};
   }
 }
+
+// --- Token-anchored Auras ---
+export type Aura = {
+  id: string; // we will commonly use tokenId as id for uniqueness per token
+  tokenId: string;
+  sceneId: string;
+  tableId: string;
+  name: string;
+  color: string;
+  radiusMeters: number;
+  ownerId: string; // user who created/controls this aura
+  difficultTerrain?: boolean; // optional flag for DM tools
+};
+
+// Store per table -> scene -> tokenId -> Aura
+const aurasByTableScene: Record<string, Record<string, Record<string, Aura>>> = {};
+
+export function upsertAura(a: Aura) {
+  if (!aurasByTableScene[a.tableId]) aurasByTableScene[a.tableId] = {};
+  if (!aurasByTableScene[a.tableId][a.sceneId]) aurasByTableScene[a.tableId][a.sceneId] = {};
+  aurasByTableScene[a.tableId][a.sceneId][a.tokenId] = a;
+}
+
+export function removeAura(tableId: string, sceneId: string, tokenId: string) {
+  if (aurasByTableScene[tableId] && aurasByTableScene[tableId][sceneId]) {
+    delete aurasByTableScene[tableId][sceneId][tokenId];
+  }
+}
+
+export function listAuras(tableId: string, sceneId: string): Aura[] {
+  return Object.values(aurasByTableScene[tableId]?.[sceneId] || {});
+}
+
+export function clearAurasForScene(tableId: string, sceneId: string) {
+  if (aurasByTableScene[tableId] && aurasByTableScene[tableId][sceneId]) {
+    aurasByTableScene[tableId][sceneId] = {};
+  }
+}

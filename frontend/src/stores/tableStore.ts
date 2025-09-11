@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import type { Ref, ComputedRef } from 'vue';
 import { ref, computed } from 'vue';
-import type { IScene, ITable, IInitiativeEntry, GridSquare, TokenInfo, PlayerInfo } from '../types';
+import type { IScene, ITable, IInitiativeEntry, GridSquare, TokenInfo, PlayerInfo, AuraInfo } from '../types';
 import { currentUser } from '../services/authService';
 
 export const useTableStore = defineStore('table', () => {
@@ -16,6 +16,8 @@ export const useTableStore = defineStore('table', () => {
     const sessionStatus: Ref<'PREPARING' | 'LIVE' | 'ENDED'> = ref('PREPARING');
     const currentMapUrl: Ref<string | null> = ref(null);
     const metersPerSquare: Ref<number> = ref(1.5);
+    // Auras ancoradas a tokens (por cena)
+    const auras: Ref<AuraInfo[]> = ref([]);
     // Medições compartilhadas: chave = userId, valor = Measurement
     const sharedMeasurements: Ref<Record<string, {
         userId: string;
@@ -104,7 +106,8 @@ export const useTableStore = defineStore('table', () => {
     gridWidth.value = data.activeScene?.gridWidth ?? 30;
     gridHeight.value = data.activeScene?.gridHeight ?? 30;
     metersPerSquare.value = data.activeScene?.metersPerSquare ?? 1.5;
-        _rebuildGridRectangular(gridWidth.value, gridHeight.value, data.tokens);
+    _rebuildGridRectangular(gridWidth.value, gridHeight.value, data.tokens);
+    auras.value = []; // serão listadas via aurasListed
     }
 
     function updateSessionState(newState: { activeScene: IScene | null, tokens: TokenInfo[] }) {
@@ -117,6 +120,7 @@ export const useTableStore = defineStore('table', () => {
         _rebuildGridRectangular(gridWidth.value, gridHeight.value, newState.tokens);
     // Ao mudar de cena limpamos medições compartilhadas (escopo por cena)
     sharedMeasurements.value = {};
+    auras.value = []; // aguardará aurasListed
     // Não limpamos persistentes aqui para evitar condição de corrida.
     // A lista correta virá via evento 'persistentsListed' e substituirá a cena ativa.
     }
@@ -141,6 +145,8 @@ export const useTableStore = defineStore('table', () => {
     function removeToken(tokenId: string) {
         const squareWithToken = squares.value.find(sq => sq.token?._id === tokenId);
         if (squareWithToken) squareWithToken.token = null;
+    // Se houver aura ancorada ao token removido, removemos localmente
+    auras.value = auras.value.filter(a => a.tokenId !== tokenId);
     }
 
     function updateTokenOwner(tokenId: string, newOwner: PlayerInfo) {
@@ -189,6 +195,22 @@ export const useTableStore = defineStore('table', () => {
         return userMeasurementColors.value[userId];
     }
 
+    // --- Auras ---
+    function setAurasForScene(sceneId: string, items: AuraInfo[]) {
+        if (sceneId === activeSceneId.value) {
+            auras.value = items;
+        }
+    }
+    function upsertAuraLocal(a: AuraInfo) {
+        if (a.sceneId !== activeSceneId.value) return;
+        const idx = auras.value.findIndex(x => x.tokenId === a.tokenId);
+        if (idx >= 0) auras.value[idx] = a; else auras.value.push(a);
+        auras.value = [...auras.value];
+    }
+    function removeAuraLocal(tokenId: string) {
+        auras.value = auras.value.filter(a => a.tokenId !== tokenId);
+    }
+
         // Persistentes
     function addPersistentMeasurement(m: { id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; sceneId: string; }) {
             // Escopo por cena ativa
@@ -234,6 +256,7 @@ export const useTableStore = defineStore('table', () => {
     userMeasurementColors,
     persistentMeasurements,
     metersPerSquare,
+    auras,
         // Getters
         isDM,
         activeScene,
@@ -255,6 +278,10 @@ export const useTableStore = defineStore('table', () => {
     setUserMeasurementColor,
     getUserMeasurementColor,
     updateSceneScale,
+    // Auras
+    setAurasForScene,
+    upsertAuraLocal,
+    removeAuraLocal,
     addPersistentMeasurement,
     removePersistentMeasurement,
     clearPersistentMeasurementsForScene,
