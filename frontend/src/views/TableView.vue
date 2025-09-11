@@ -53,7 +53,7 @@ function updateImageDimensions() {
   }
 }
 
-const activeTool = ref<'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'none'>('none');
+const activeTool = ref<'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam' | 'none'>('none');
 const rulerStartPoint = ref<{ x: number; y: number } | null>(null);
 const rulerEndPoint = ref<{ x: number; y: number } | null>(null);
 const rulerDistance = ref('0.0m');
@@ -63,7 +63,7 @@ const coneAffectedSquares = ref<string[]>([]); // Lista de IDs dos quadrados afe
 const coneLength = ref(9); // Comprimento padrão do cone em metros (ex: Mãos Flamejantes)
 const selectedPersistentId = ref<string | null>(null);
 const previewMeasurement = ref<{
-  type: 'ruler' | 'cone' | 'circle' | 'square';
+  type: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
   start: { x: number; y: number; };
   end: { x: number; y: number; };
   distance?: string;
@@ -471,7 +471,7 @@ function handlePointerDown(event: PointerEvent) {
         end: local,
   distance: '0.0m (0ft)'
       };
-  } else if (activeTool.value === 'cone' || activeTool.value === 'circle' || activeTool.value === 'square') {
+  } else if (activeTool.value === 'cone' || activeTool.value === 'circle' || activeTool.value === 'square' || activeTool.value === 'line' || activeTool.value === 'beam') {
       if (!gridDisplayRef.value) return;
       const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
       const scale = viewTransform.value.scale || 1;
@@ -483,11 +483,7 @@ function handlePointerDown(event: PointerEvent) {
       const originSquare = getSquareIdFromLocalPoint(local.x, local.y);
       coneOriginSquareId.value = originSquare;
       const originCenter = originSquare ? getSquareCenterLocalPointFromId(originSquare) : local;
-      previewMeasurement.value = {
-    type: activeTool.value as any,
-        start: originCenter,
-        end: originCenter,
-      };
+  previewMeasurement.value = { type: activeTool.value as any, start: originCenter, end: originCenter };
       // Inicializa sem afetar nada (comprimento 0)
       coneAffectedSquares.value = [];
     }
@@ -589,7 +585,7 @@ function handlePointerMove(event: PointerEvent) {
       const clampedLenPx = distSquares * worldSquareSize;
       previewMeasurement.value.start = originCenter;
       previewMeasurement.value.end = { x: originCenter.x + ux * clampedLenPx, y: originCenter.y + uy * clampedLenPx };
-    } else if (previewMeasurement.value.type === 'square') {
+  } else if (previewMeasurement.value.type === 'square') {
       // Quadrado: lado contínuo (m), alinhado à grade, centrado na célula origem
       if (!coneOriginSquareId.value) return;
       const originCenter = getSquareCenterLocalPointFromId(coneOriginSquareId.value);
@@ -608,6 +604,34 @@ function handlePointerMove(event: PointerEvent) {
   // Apenas rótulo; contorno é desenhado pelo GridDisplay como quadrado centrado na origem
   previewMeasurement.value.start = originCenter;
   previewMeasurement.value.end = currentPos;
+    } else if (previewMeasurement.value.type === 'line') {
+      const dx = currentPos.x - previewMeasurement.value.start.x;
+      const dy = currentPos.y - previewMeasurement.value.start.y;
+      const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+      const unscaledGridWidth = gridRect.width / scale;
+      const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
+      const distanceInSquares = pixelDistance / worldSquareSize;
+      const meters = distanceInSquares * (metersPerSquare.value || 1.5);
+      previewMeasurement.value.distance = formatDistance(meters);
+      const originId = coneOriginSquareId.value;
+      const targetId = getSquareIdFromLocalPoint(currentPos.x, currentPos.y);
+      if (originId && targetId) {
+        coneAffectedSquares.value = calculateLineSquares(originId, targetId);
+      }
+  } else if (previewMeasurement.value.type === 'beam') {
+      const dx = currentPos.x - previewMeasurement.value.start.x;
+      const dy = currentPos.y - previewMeasurement.value.start.y;
+      const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+      const unscaledGridWidth = gridRect.width / scale;
+      const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
+      const distanceInSquares = pixelDistance / worldSquareSize;
+      const meters = distanceInSquares * (metersPerSquare.value || 1.5);
+      previewMeasurement.value.distance = formatDistance(meters);
+      const originId = coneOriginSquareId.value;
+      const targetId = getSquareIdFromLocalPoint(currentPos.x, currentPos.y);
+      if (originId && targetId) {
+        coneAffectedSquares.value = calculateBeamOrWallArea(originId, targetId, 1);
+      }
     }
     return;
   }
@@ -737,7 +761,7 @@ function handlePointerUp(event: PointerEvent) {
           });
         }
       }
-    } else if (activeTool.value === 'square' && previewMeasurement.value.type === 'square' && activeSceneId.value) {
+  } else if (activeTool.value === 'square' && previewMeasurement.value.type === 'square' && activeSceneId.value) {
       const canShare = isDM.value || !!myActiveToken.value;
       if (canShare) {
     const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
@@ -766,6 +790,73 @@ function handlePointerUp(event: PointerEvent) {
       end: toGrid(previewMeasurement.value.end),
             distance: previewMeasurement.value.distance || '0m',
             type: 'square',
+            affectedSquares: coneAffectedSquares.value,
+            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+          });
+        }
+      }
+    } else if (activeTool.value === 'line' && previewMeasurement.value.type === 'line' && activeSceneId.value) {
+      const canShare = isDM.value || !!myActiveToken.value;
+      if (canShare) {
+        const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+        const scale = viewTransform.value.scale || 1;
+        const unscaledGridWidth = gridRect.width / scale;
+        const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
+        const toGrid = (p: {x:number;y:number}) => ({ x: p.x / worldSquareSize, y: p.y / worldSquareSize });
+        if (persistentMode.value) {
+          socketService.addPersistentMeasurement({
+            tableId,
+            sceneId: activeSceneId.value,
+            start: toGrid(previewMeasurement.value.start),
+            end: toGrid(previewMeasurement.value.end),
+            distance: previewMeasurement.value.distance || '0m',
+            type: 'line',
+            affectedSquares: coneAffectedSquares.value,
+            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+          });
+          persistentMode.value = false;
+        } else {
+          socketService.shareMeasurement({
+            tableId,
+            sceneId: activeSceneId.value,
+            start: toGrid(previewMeasurement.value.start),
+            end: toGrid(previewMeasurement.value.end),
+            distance: previewMeasurement.value.distance || '0m',
+            type: 'line',
+            affectedSquares: coneAffectedSquares.value,
+            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+          });
+        }
+      }
+  } else if (activeTool.value === 'beam' && previewMeasurement.value.type === 'beam' && activeSceneId.value) {
+      const canShare = isDM.value || !!myActiveToken.value;
+      if (canShare) {
+        const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+        const scale = viewTransform.value.scale || 1;
+        const unscaledGridWidth = gridRect.width / scale;
+        const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
+        const toGrid = (p: {x:number;y:number}) => ({ x: p.x / worldSquareSize, y: p.y / worldSquareSize });
+        const type = previewMeasurement.value.type;
+        if (persistentMode.value) {
+          socketService.addPersistentMeasurement({
+            tableId,
+            sceneId: activeSceneId.value,
+            start: toGrid(previewMeasurement.value.start),
+            end: toGrid(previewMeasurement.value.end),
+            distance: previewMeasurement.value.distance || '0m',
+            type,
+            affectedSquares: coneAffectedSquares.value,
+            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+          });
+          persistentMode.value = false;
+        } else {
+          socketService.shareMeasurement({
+            tableId,
+            sceneId: activeSceneId.value,
+            start: toGrid(previewMeasurement.value.start),
+            end: toGrid(previewMeasurement.value.end),
+            distance: previewMeasurement.value.distance || '0m',
+            type,
             affectedSquares: coneAffectedSquares.value,
             color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
           });
@@ -898,6 +989,60 @@ function calculateConeArea(originId: string, targetId: string, lengthInMeters: n
   return Array.from(affected);
 }
 
+// Supercover line across grid cells between origin and target (by centers)
+function calculateLineSquares(originId: string, targetId: string): string[] {
+  const cols = gridWidth.value;
+  const rows = gridHeight.value;
+  const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
+  const getId = (x: number, y: number) => `sq-${y * cols + x}`;
+  const a = getCoords(originId);
+  const b = getCoords(targetId);
+  let x0 = a.x + 0.5, y0 = a.y + 0.5;
+  const x1 = b.x + 0.5, y1 = b.y + 0.5;
+  const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+  const visited = new Set<string>();
+  const add = (x:number,y:number) => { if (x>=0 && x<cols && y>=0 && y<rows) visited.add(getId(Math.floor(x), Math.floor(y))); };
+  add(x0, y0);
+  while (Math.floor(x0) !== Math.floor(x1) || Math.floor(y0) !== Math.floor(y1)) {
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x0 += sx; }
+    if (e2 < dx) { err += dx; y0 += sy; }
+    add(x0, y0);
+  }
+  return Array.from(visited);
+}
+
+// Beam/Wall: oriented rectangle of widthSquares along the segment
+function calculateBeamOrWallArea(originId: string, targetId: string, widthSquares = 1): string[] {
+  const cols = gridWidth.value, rows = gridHeight.value;
+  const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
+  const getId = (x: number, y: number) => `sq-${y * cols + x}`;
+  const o = getCoords(originId);
+  const t = getCoords(targetId);
+  const ocx = o.x + 0.5, ocy = o.y + 0.5;
+  const tcx = t.x + 0.5, tcy = t.y + 0.5;
+  const vx = tcx - ocx, vy = tcy - ocy;
+  const len = Math.hypot(vx, vy) || 1;
+  const ux = vx / len, uy = vy / len;
+  const half = (widthSquares / 2);
+  const visited = new Set<string>();
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const cx = x + 0.5, cy = y + 0.5;
+      const wx = cx - ocx, wy = cy - ocy;
+      const proj = wx * ux + wy * uy;
+      if (proj < 0 || proj > len) continue;
+      const perp = Math.abs(wx * (-uy) + wy * ux);
+      if (perp <= half + 0.001) visited.add(getId(x, y));
+    }
+  }
+  visited.add(originId);
+  return Array.from(visited);
+}
+
 // Converte uma posição local (coordenadas do SVG do grid) para o id do quadrado correspondente
 function getSquareIdFromLocalPoint(localX: number, localY: number): string | null {
   if (!gridDisplayRef.value) return null;
@@ -965,13 +1110,13 @@ function quantizeMeters(meters: number, step = 0.5): number {
   return Math.round(meters / s) * s;
 }
 
-// Formata distância: metros com 1 casa decimal e pés arredondado ao múltiplo de 5 ft
+// Formata distância: metros com 1 casa decimal e pés arredondado ao inteiro (1 ft)
 function formatDistance(meters: number): string {
   const feetRaw = meters * 3.28084;
-  // Arredonda para o múltiplo de 5 ft mais próximo para facilitar leitura em D&D/T20
-  const feetRounded5 = Math.round(feetRaw / 5) * 5;
+  // Arredonda para o inteiro mais próximo (1 ft de precisão)
+  const feetRounded = Math.round(feetRaw);
   const metersStr = meters.toFixed(1).replace('.', ',');
-  return `${metersStr}m (${feetRounded5}ft)`;
+  return `${metersStr}m (${feetRounded}ft)`;
 }
 
 // Atualização automática sempre que largura ou altura mudarem (DM apenas)

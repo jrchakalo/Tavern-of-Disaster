@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 
-// Define os tipos de ferramentas (inclui ferramenta de seleção).
-type Tool = 'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'none';
+// Define os tipos de ferramentas (inclui ferramenta de seleção e novas: linha/feixe).
+type Tool = 'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam' | 'none';
 
 // O componente pai (TableView) nos dirá qual ferramenta está ativa.
 const props = defineProps<{
@@ -93,6 +93,22 @@ function requestClearAll() {
     >
       ▪️
     </button>
+
+    <button
+      class="tool-button"
+      :class="{ active: activeTool === 'line' }"
+      @click="selectTool('line')"
+      title="Linha (segmento)"
+    >➖</button>
+
+    <button
+      class="tool-button"
+      :class="{ active: activeTool === 'beam' }"
+      @click="selectTool('beam')"
+      title="Feixe (1 célula de largura)"
+    >➡️</button>
+
+    
     
     <hr class="divider" />
     <button

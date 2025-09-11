@@ -24,7 +24,7 @@ export const useTableStore = defineStore('table', () => {
         end: { x: number; y: number };
         distance: string; // "Xm (Yft)"
         color: string;
-        type?: 'ruler' | 'cone' | 'circle' | 'square';
+    type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
         affectedSquares?: string[];
     }>> = ref({});
 
@@ -40,7 +40,7 @@ export const useTableStore = defineStore('table', () => {
             end: { x: number; y: number };
             distance: string;
             color: string;
-            type?: 'ruler' | 'cone' | 'circle' | 'square';
+            type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
             affectedSquares?: string[];
             sceneId: string;
         }>> = ref([]);
@@ -190,7 +190,7 @@ export const useTableStore = defineStore('table', () => {
     }
 
         // Persistentes
-        function addPersistentMeasurement(m: { id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[]; sceneId: string; }) {
+    function addPersistentMeasurement(m: { id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; sceneId: string; }) {
             // Escopo por cena ativa
             if (m.sceneId === activeSceneId.value) {
                 persistentMeasurements.value = [...persistentMeasurements.value, m];
@@ -202,7 +202,7 @@ export const useTableStore = defineStore('table', () => {
         function clearPersistentMeasurementsForScene(sceneId: string) {
             persistentMeasurements.value = persistentMeasurements.value.filter(pm => pm.sceneId !== sceneId);
         }
-        function setPersistentMeasurementsForScene(sceneId: string, items: Array<{ id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[]; sceneId?: string; }>) {
+    function setPersistentMeasurementsForScene(sceneId: string, items: Array<{ id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; sceneId?: string; }>) {
             // Normaliza sceneId ausente para evitar descartar itens vindos do servidor
             const normalized = items.map(i => ({ ...i, sceneId: i.sceneId || sceneId }));
             const others = persistentMeasurements.value.filter(pm => pm.sceneId !== sceneId);

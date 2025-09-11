@@ -6,7 +6,7 @@ import { setMeasurement, removeMeasurement, clearAllForUser, getTablesForUser, a
 import { nanoid } from 'nanoid';
 
 export function registerMeasurementHandlers(io: Server, socket: Socket) {
-  const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[]; color?: string; }) => {
+  const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; color?: string; }) => {
     try {
       const user = socket.data.user;
       if (!user) return;
@@ -67,7 +67,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
   socket.on('disconnect', handleDisconnect);
 
   // --- Persistentes ---
-  socket.on('requestAddPersistentMeasurement', async (data: { tableId: string; sceneId: string; payload: { id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'; affectedSquares?: string[]; color?: string } }) => {
+  socket.on('requestAddPersistentMeasurement', async (data: { tableId: string; sceneId: string; payload: { id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; color?: string } }) => {
     try {
       const user = socket.data.user;
       if (!user) return;

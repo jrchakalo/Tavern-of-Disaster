@@ -23,14 +23,14 @@ interface Props {
   measuredDistance: string;
   areaAffectedSquares: string[]; // quadrados afetados pela área local (cone/círculo/quadrado)
   previewMeasurement: { // <<< Apenas esta prop para todas as ferramentas
-    type: 'ruler' | 'cone' | 'circle' | 'square';
+    type: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
     start: { x: number; y: number; };
     end: { x: number; y: number; };
     distance?: string;
     affectedSquares?: string[];
   } | null;
-  sharedMeasurements?: Array<{ userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[] }>; // novas medições publicadas
-  persistentMeasurements?: Array<{ id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler'|'cone'|'circle'|'square'; affectedSquares?: string[]; sceneId: string }>; // medições persistentes
+  sharedMeasurements?: Array<{ userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[] }>; // novas medições publicadas
+  persistentMeasurements?: Array<{ id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; sceneId: string }>; // medições persistentes
   isDM: boolean;
   currentUserId?: string | null;
   selectedPersistentId?: string | null;
@@ -374,6 +374,23 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
     `Z`
   ].join(' ');
 }
+
+// Retângulo orientado entre dois pontos com largura em px; retorna lista de pontos
+function getOrientedRectPoints(start: {x:number;y:number}, end: {x:number;y:number}, widthPx: number): Array<{x:number;y:number}> {
+  const dx = end.x - start.x, dy = end.y - start.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const px = -uy, py = ux; // perpendicular unit
+  const hw = widthPx / 2;
+  const p1 = { x: start.x + px * hw, y: start.y + py * hw };
+  const p2 = { x: start.x - px * hw, y: start.y - py * hw };
+  const p3 = { x: end.x - px * hw, y: end.y - py * hw };
+  const p4 = { x: end.x + px * hw, y: end.y + py * hw };
+  return [p1, p2, p3, p4];
+}
+function toPointsAttr(points: Array<{x:number;y:number}>): string {
+  return points.map(p => `${p.x},${p.y}`).join(' ');
+}
 </script>
 
 <template>
@@ -412,6 +429,7 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
   <svg v-if="previewMeasurement" class="measurement-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
         <template v-if="previewMeasurement.type === 'ruler'">
           <line
+            class="ruler-line"
             :x1="previewMeasurement.start.x" :y1="previewMeasurement.start.y"
             :x2="previewMeasurement.end.x" :y2="previewMeasurement.end.y"
             :style="{ stroke: (props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00')) }"
@@ -422,7 +440,7 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
             {{ previewMeasurement.distance }}
           </text>
         </template>
-        <template v-else-if="previewMeasurement.type === 'cone'">
+  <template v-else-if="previewMeasurement.type === 'cone'">
           <path
             class="cone-outline"
             :d="getConePathD(previewMeasurement.start, previewMeasurement.end)"
@@ -433,7 +451,7 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
             {{ previewMeasurement.distance }}
           </text>
         </template>
-    <template v-else-if="previewMeasurement.type === 'circle'">
+  <template v-else-if="previewMeasurement.type === 'circle'">
           <circle
             class="area-outline"
             :cx="previewMeasurement.start.x"
@@ -446,13 +464,37 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
             {{ previewMeasurement.distance }}
           </text>
         </template>
-        <template v-else-if="previewMeasurement.type === 'square'">
+  <template v-else-if="previewMeasurement.type === 'square'">
           <rect
             class="area-outline"
             :x="previewMeasurement.start.x - Math.hypot(previewMeasurement.end.x - previewMeasurement.start.x, previewMeasurement.end.y - previewMeasurement.start.y)"
             :y="previewMeasurement.start.y - Math.hypot(previewMeasurement.end.x - previewMeasurement.start.x, previewMeasurement.end.y - previewMeasurement.start.y)"
             :width="2 * Math.hypot(previewMeasurement.end.x - previewMeasurement.start.x, previewMeasurement.end.y - previewMeasurement.start.y)"
             :height="2 * Math.hypot(previewMeasurement.end.x - previewMeasurement.start.x, previewMeasurement.end.y - previewMeasurement.start.y)"
+            :stroke="props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00')"
+            fill="none"
+          />
+          <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
+            {{ previewMeasurement.distance }}
+          </text>
+        </template>
+        <template v-else-if="previewMeasurement.type === 'line'">
+          <line
+            class="solid-line"
+            :x1="previewMeasurement.start.x"
+            :y1="previewMeasurement.start.y"
+            :x2="previewMeasurement.end.x"
+            :y2="previewMeasurement.end.y"
+            :style="{ stroke: (props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00')) }"
+          />
+          <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
+            {{ previewMeasurement.distance }}
+          </text>
+        </template>
+  <template v-else-if="previewMeasurement.type === 'beam'">
+          <polygon
+            class="area-outline"
+            :points="toPointsAttr(getOrientedRectPoints(previewMeasurement.start, previewMeasurement.end, squareSizePx))"
             :stroke="props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00')"
             fill="none"
           />
@@ -493,8 +535,19 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
                 fill="none"
               />
             </template>
-            <template v-else>
-        <line :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color || (props.userColorMap && props.userColorMap[m.userId]) || (props.isDM ? '#3c096c' : '#ff8c00')" />
+            <template v-else-if="!m.type || m.type === 'ruler'">
+              <line class="ruler-line" :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color || (props.userColorMap && props.userColorMap[m.userId]) || (props.isDM ? '#3c096c' : '#ff8c00')" />
+            </template>
+            <template v-else-if="m.type === 'line'">
+              <line class="solid-line" :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color || (props.userColorMap && props.userColorMap[m.userId]) || (props.isDM ? '#3c096c' : '#ff8c00')" />
+            </template>
+            <template v-else-if="m.type === 'beam'">
+              <polygon
+                class="area-outline shared beam-outline"
+                :points="toPointsAttr(getOrientedRectPoints(toLocalPoint(m.start), toLocalPoint(m.end), squareSizePx))"
+                :stroke="m.color || (props.userColorMap && props.userColorMap[m.userId]) || (props.isDM ? '#3c096c' : '#ff8c00')"
+                fill="none"
+              />
             </template>
             <text :x="toLocalPoint(m.end).x + 12" :y="toLocalPoint(m.end).y - 12">{{ m.distance }}</text>
           </template>
@@ -521,10 +574,22 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
                 <rect class="area-outline shared" :x="toLocalPoint(m.start).x - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :y="toLocalPoint(m.start).y - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :width="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :height="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :stroke="m.color" fill="none" />
               </g>
             </template>
-            <template v-else>
+            <template v-else-if="!m.type || m.type === 'ruler'">
+              <g class="selectable" :class="{ selected: props.selectedPersistentId === m.id }" @contextmenu.prevent="emit('shape-contextmenu', { id: m.id })">
+                <line :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" stroke-width="14" opacity="0" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
+                <line class="ruler-line" :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" />
+              </g>
+            </template>
+            <template v-else-if="m.type === 'line'">
               <g class="selectable" :class="{ selected: props.selectedPersistentId === m.id }" @contextmenu.prevent="emit('shape-contextmenu', { id: m.id })">
                 <line :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" stroke-width="14" opacity="0" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
                 <line :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" />
+              </g>
+            </template>
+            <template v-else-if="m.type === 'beam'">
+              <g class="selectable" :class="{ selected: props.selectedPersistentId === m.id }" @contextmenu.prevent="emit('shape-contextmenu', { id: m.id })">
+                <polygon :points="toPointsAttr(getOrientedRectPoints(toLocalPoint(m.start), toLocalPoint(m.end), squareSizePx))" :stroke="m.color" stroke-width="14" opacity="0" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
+                <polygon class="area-outline shared beam-outline" :points="toPointsAttr(getOrientedRectPoints(toLocalPoint(m.start), toLocalPoint(m.end), squareSizePx))" :stroke="m.color" fill="none" />
               </g>
             </template>
             <text :x="toLocalPoint(m.end).x + 12" :y="toLocalPoint(m.end).y - 12">{{ m.distance }}</text>
@@ -663,10 +728,15 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
 }
 
 .measurement-overlay line {
-  stroke: #00ffff; /* Cor Ciano brilhante */
+  stroke: #00ffff; /* default */
   stroke-width: 3;
-  stroke-dasharray: 8 4; /* Linha tracejada para parecer uma régua */
   stroke-linecap: round;
+}
+.measurement-overlay line.ruler-line {
+  stroke-dasharray: 8 4;
+}
+.measurement-overlay line.solid-line {
+  stroke-dasharray: none;
 }
 
 .measurement-overlay .cone-outline {
@@ -714,16 +784,19 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
 }
 .shared-measurements-overlay line {
   stroke-width: 4;
-  stroke-dasharray: 10 5;
   stroke-linecap: round;
+}
+.shared-measurements-overlay line.ruler-line {
+  stroke-dasharray: 10 5;
+}
+.shared-measurements-overlay line.solid-line {
+  stroke-dasharray: none;
 }
 .shared-measurements-overlay .area-outline,
 .shared-measurements-overlay .cone-outline {
   stroke-width: 4;
 }
-.shared-measurements-overlay polygon {
-  stroke-dasharray: 10 5;
-}
+.shared-measurements-overlay polygon.beam-outline { stroke-dasharray: none; }
 .shared-measurements-overlay .cone-outline.shared {
   stroke-width: 4.5;
   stroke-linecap: round;
@@ -735,9 +808,10 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
 /* Make persistent visuals match ephemeral (shared) styling */
 .persist-measurements-overlay line {
   stroke-width: 4;
-  stroke-dasharray: 10 5;
   stroke-linecap: round;
 }
+.persist-measurements-overlay .ruler-line { stroke-dasharray: 10 5; }
+.persist-measurements-overlay .solid-line { stroke-dasharray: none; }
 .persist-measurements-overlay .area-outline,
 .persist-measurements-overlay .cone-outline {
   stroke-width: 4;

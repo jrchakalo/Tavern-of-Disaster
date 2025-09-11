@@ -58,7 +58,7 @@ class SocketService {
     this.socket.on('tokenPlacementError', (error) => alert(`Erro ao colocar token: ${error.message}`));
   }
   // Persistentes
-  addPersistentMeasurement(payload: { tableId: string; sceneId: string; id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'; affectedSquares?: string[]; color?: string }) {
+  addPersistentMeasurement(payload: { tableId: string; sceneId: string; id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; color?: string }) {
     const { tableId, sceneId, id, start, end, distance, type, affectedSquares, color } = payload;
     this.socket?.emit('requestAddPersistentMeasurement', { tableId, sceneId, payload: { id, start, end, distance, type, affectedSquares, color } });
   }
@@ -137,7 +137,7 @@ class SocketService {
 
   // --- Medições ---
   // Suporta régua, cone e (em breve) círculo/quadrado.
-  shareMeasurement(payload: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[]; color?: string }) {
+  shareMeasurement(payload: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; color?: string }) {
     // Guarda preferência local de cor para fallback
     const uid = this.store && (this.store as any).currentTable?.dm?._id ? undefined : undefined;
     if ((this.store as any).setUserMeasurementColor) {

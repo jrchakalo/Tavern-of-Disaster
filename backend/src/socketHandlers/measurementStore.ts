@@ -7,7 +7,7 @@ export type Measurement = {
   end: { x: number; y: number };
   distance: string;
   color: string;
-  type?: 'ruler' | 'cone' | 'circle' | 'square';
+  type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
   affectedSquares?: string[];
   sceneId: string;
 };
