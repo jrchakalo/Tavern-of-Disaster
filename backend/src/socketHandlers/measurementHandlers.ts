@@ -162,22 +162,23 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       const { tableId, sceneId, tokenId } = data;
       const table = await Table.findById(tableId).populate('dm','_id');
       if (!table) return;
-      const token = await Token.findById(tokenId);
-      if (!token) return;
       const isDM = table.dm._id.toString() === user.id;
-      const isOwner = token.ownerId?.toString() === user.id;
-      let isTurnOwner = false;
-      try {
-        const scene = await Scene.findById(sceneId);
-        const currentEntry: any = scene?.initiative?.find((e: any) => e.isCurrentTurn);
-        if (currentEntry?.tokenId) {
-          const turnTok = await Token.findById(currentEntry.tokenId);
-          if (turnTok && turnTok.ownerId?.toString() === user.id) isTurnOwner = true;
-        }
-      } catch {}
-      if (!(isDM || isOwner || isTurnOwner)) return;
+      if (!isDM) return; // Apenas DM remove
       removeAura(tableId, sceneId, tokenId);
       io.to(tableId).emit('auraRemoved', { sceneId, tokenId });
     } catch (e) { console.error('requestRemoveAura', e); }
+  });
+
+  // Ping efêmero (ripple). Apenas verifica se usuário está na mesa e cena ativa bate.
+  socket.on('requestPing', async (data: { tableId: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string }) => {
+    try {
+      const user = socket.data.user; if (!user) return;
+      const { tableId, sceneId, squareId, x, y, color } = data;
+      const table = await Table.findById(tableId).populate('activeScene','_id');
+      if (!table) return;
+      if (!table.activeScene || table.activeScene._id.toString() !== sceneId) return;
+      const payload = { id: nanoid(6), userId: user.id, username: user.username, sceneId, squareId, x, y, color, ts: Date.now() };
+      io.to(tableId).emit('pingBroadcast', payload);
+    } catch (e) { console.error('requestPing', e); }
   });
 }

@@ -70,6 +70,11 @@ class SocketService {
     }
   });
 
+    // Ping
+    this.socket.on('pingBroadcast', (p: any) => {
+      this.store.addPing(p);
+    });
+
     // Handlers de erro
     this.socket.on('connect_error', (error) => console.error('SocketService - Erro de conexão:', error.message));
     this.socket.on('tokenPlacementError', (error) => alert(`Erro ao colocar token: ${error.message}`));
@@ -176,6 +181,11 @@ class SocketService {
   }
   removeAura(payload: { tableId: string; sceneId: string; tokenId: string }) {
     this.socket?.emit('requestRemoveAura', payload);
+  }
+
+  // Ping
+  sendPing(payload: { tableId: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string }) {
+    this.socket?.emit('requestPing', payload);
   }
 }
 

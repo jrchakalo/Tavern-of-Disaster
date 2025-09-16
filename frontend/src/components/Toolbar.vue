@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 
-// Define os tipos de ferramentas (inclui ferramenta de seleção e novas: linha/feixe).
+// Ferramentas
 type Tool = 'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam' | 'none';
 
-// O componente pai (TableView) nos dirá qual ferramenta está ativa.
 const props = defineProps<{
   activeTool: Tool;
-  persistentMode?: boolean; // quando ligado, fixa a próxima medição
-  canDelete?: boolean; // se há uma figura persistida selecionada e usuário pode apagar
-  isDM?: boolean; // para bloquear paleta no DM
-  selectedColor?: string; // cor atual de medição
-  canRemoveAura?: boolean; // se usuário pode remover aura do token selecionado
-  canAddAura?: boolean; // se usuário pode criar/editar aura do seu token neste turno
+  persistentMode?: boolean;
+  canDelete?: boolean;
+  isDM?: boolean;
+  selectedColor?: string;
+  canRemoveAura?: boolean;
+  canAddAura?: boolean;
 }>();
 
 // Quando um botão é clicado, emitimos um evento para o pai.
@@ -27,8 +26,6 @@ const emit = defineEmits<{
 }>();
 
 function selectTool(tool: Tool) {
-  // Se a ferramenta clicada já for a ativa, nós a desativamos.
-  // Senão, ativamos a nova ferramenta.
   const newTool = props.activeTool === tool ? 'none' : tool;
   emit('tool-selected', newTool);
 }
@@ -37,12 +34,12 @@ function togglePersistent() {
   emit('toggle-persistent', !props.persistentMode);
 }
 
-// Paleta de cores (roxo do DM reservado)
+// Paleta
 const COLORS = ['#ff8c00', '#12c2e9', '#ff4d4d', '#43a047', '#ffd166', '#ff66cc', '#00bcd4', '#8bc34a', '#e91e63', '#9c27b0', '#795548', '#cddc39', '#3c096c'] as const;
 const showPalette = ref(false);
 function pickColor(color: string) {
-  if (props.isDM && color !== '#3c096c') return; // DM fixo em roxo
-  if (!props.isDM && color === '#3c096c') return; // Jogadores não podem escolher roxo
+  if (props.isDM && color !== '#3c096c') return;
+  if (!props.isDM && color === '#3c096c') return;
   emit('color-selected', color);
   showPalette.value = false;
 }
@@ -56,102 +53,35 @@ function requestClearAll() {
 
 <template>
   <div class="toolbar-container">
-    <button
-      class="tool-button"
-      :class="{ active: activeTool === 'select' }"
-      @click="selectTool('select')"
-      title="Selecionar figuras persistidas"
-    >🖱️</button>
+  <button class="tool-button" :class="{ active: activeTool === 'select' }" @click="selectTool('select')" title="Selecionar figuras">🖱️</button>
 
-    <button
-      class="tool-button"
-      :class="{ active: activeTool === 'ruler' }"
-      @click="selectTool('ruler')"
-      title="Medir Distância (Régua)"
-    >
-      📏 </button>
+  <button class="tool-button" :class="{ active: activeTool === 'ruler' }" @click="selectTool('ruler')" title="Régua">📏</button>
 
-    <button
-      class="tool-button"
-      :class="{ active: activeTool === 'cone' }"
-      @click="selectTool('cone')"
-      title="Medir Área (Cone)"
-    >
-      🔻
-    </button>
+  <button class="tool-button" :class="{ active: activeTool === 'cone' }" @click="selectTool('cone')" title="Cone">🔻</button>
 
-    <button
-      class="tool-button"
-      :class="{ active: activeTool === 'circle' }"
-      @click="selectTool('circle')"
-      title="Área: Círculo/Esfera"
-    >
-      ⚪
-    </button>
+  <button class="tool-button" :class="{ active: activeTool === 'circle' }" @click="selectTool('circle')" title="Círculo">⚪</button>
 
-    <button
-      class="tool-button"
-      :class="{ active: activeTool === 'square' }"
-      @click="selectTool('square')"
-      title="Área: Quadrado/Cubo"
-    >
-      ▪️
-    </button>
+  <button class="tool-button" :class="{ active: activeTool === 'square' }" @click="selectTool('square')" title="Quadrado">▪️</button>
 
-    <button
-      class="tool-button"
-      :class="{ active: activeTool === 'line' }"
-      @click="selectTool('line')"
-      title="Linha (segmento)"
-    >➖</button>
+  <button class="tool-button" :class="{ active: activeTool === 'line' }" @click="selectTool('line')" title="Linha">➖</button>
 
-    <button
-      class="tool-button"
-      :class="{ active: activeTool === 'beam' }"
-      @click="selectTool('beam')"
-      title="Feixe (1 célula de largura)"
-    >➡️</button>
+  <button class="tool-button" :class="{ active: activeTool === 'beam' }" @click="selectTool('beam')" title="Feixe">➡️</button>
 
     
     
     <hr class="divider" />
-    <button
-      class="tool-button"
-      :class="{ active: !!persistentMode }"
-      @click="togglePersistent"
-      title="Fixar medição (persistente)"
-    >📌</button>
+  <button class="tool-button" :class="{ active: !!persistentMode }" @click="togglePersistent" title="Fixar">📌</button>
 
-    <button
-      v-if="canDelete"
-      class="tool-button danger"
-      @click="$emit('delete-selected')"
-      title="Excluir figura persistida selecionada"
-    >🗑️</button>
+  <button v-if="canDelete" class="tool-button danger" @click="$emit('delete-selected')" title="Excluir">🗑️</button>
 
-    <button
-      v-if="canAddAura"
-      class="tool-button"
-      @click="$emit('edit-aura')"
-      title="Editar/Adicionar aura do seu token"
-    >🧿</button>
+  <button v-if="canAddAura" class="tool-button" @click="$emit('edit-aura')" title="Editar/Adicionar aura">🧿</button>
 
-    <button
-      v-if="canRemoveAura"
-      class="tool-button danger"
-      @click="$emit('remove-aura')"
-      title="Remover aura do token selecionado"
-    >✖️</button>
+  <button v-if="canRemoveAura" class="tool-button danger" @click="$emit('remove-aura')" title="Remover aura">✖️</button>
 
-    <button
-      v-if="isDM"
-      class="tool-button danger"
-      title="Limpar todas as medições"
-  @click="requestClearAll"
-    >🧹</button>
+  <button v-if="isDM" class="tool-button danger" title="Limpar tudo" @click="requestClearAll">🧹</button>
 
     <hr class="divider" />
-    <button class="tool-button" title="Escolher cor (🎨)" @click="showPalette = !showPalette">🎨</button>
+  <button class="tool-button" title="Cor" @click="showPalette = !showPalette">🎨</button>
     <div v-if="showPalette" class="palette-popover" @mouseleave="showPalette=false">
       <div class="palette-grid">
         <button

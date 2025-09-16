@@ -10,34 +10,35 @@ const THROTTLE_DELAY_MS = 50;
 
 interface Props {
   squares: GridSquare[];
-  gridWidth: number; // colunas
-  gridHeight: number; // linhas
-  imageWidth?: number; // largura exibida da imagem (px)
-  imageHeight?: number; // altura exibida da imagem (px)
+  gridWidth: number;
+  gridHeight: number;
+  imageWidth?: number;
+  imageHeight?: number;
   currentTurnTokenId: string | null;
   selectedTokenId: string | null;
   isMeasuring: boolean;
-  metersPerSquare?: number; // ESCALA dinâmica (m por quadrado)
+  metersPerSquare?: number;
   measureStartPoint: { x: number; y: number } | null;
   measureEndPoint: { x: number; y: number } | null;
   measuredDistance: string;
-  areaAffectedSquares: string[]; // quadrados afetados pela área local (cone/círculo/quadrado)
-  previewMeasurement: { // <<< Apenas esta prop para todas as ferramentas
+  areaAffectedSquares: string[];
+  previewMeasurement: {
     type: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
-    start: { x: number; y: number; };
-    end: { x: number; y: number; };
+    start: { x: number; y: number };
+    end: { x: number; y: number };
     distance?: string;
     affectedSquares?: string[];
   } | null;
-  sharedMeasurements?: Array<{ userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[] }>; // novas medições publicadas
-  persistentMeasurements?: Array<{ id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; sceneId: string }>; // medições persistentes
+  sharedMeasurements?: Array<{ userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[] }>;
+  persistentMeasurements?: Array<{ id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; sceneId: string }>;
   isDM: boolean;
   currentUserId?: string | null;
   selectedPersistentId?: string | null;
   measurementColor?: string;
   selectingMode?: boolean;
   userColorMap?: Record<string, string>;
-  auras?: Array<{ tokenId: string; radiusMeters: number; color: string; name: string; sceneId: string }>; // renderização de auras
+  auras?: Array<{ tokenId: string; radiusMeters: number; color: string; name: string; sceneId: string }>;
+  pings?: Array<{ id: string; userId: string; username: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string; ts: number }>;
 }
 
 const props = defineProps<Props>();
@@ -52,13 +53,11 @@ const emit = defineEmits<{
   (e: 'shape-contextmenu', payload: { id: string }): void;
 }>();
 
-// Largura (colunas) e altura (linhas) efetivas
+// Largura/altura efetivas
 const resolvedWidth = computed(() => props.gridWidth);
 const resolvedHeight = computed(() => props.gridHeight);
 
-// Tamanho (lado) de cada célula em pixels (mantendo quadrado). Estratégia: basear no espaço horizontal disponível.
-// Assim, se rows * squareSize estourar a altura, deixamos transbordar (overflow) em Y.
-// Se desejar preferir altura, poderia inverter a lógica.
+// Cada célula é quadrada e baseada na largura disponível
 const squareSizePx = ref(32);
 const viewportRef = ref<HTMLElement | null>(null);
 let resizeObserver: ResizeObserver | null = null;
@@ -89,10 +88,10 @@ const gridContainerStyle = computed(() => ({
   '--grid-rows': resolvedHeight.value,
   '--cell-size': squareSizePx.value + 'px',
   width: `${squareSizePx.value * resolvedWidth.value}px`,
-  height: `${squareSizePx.value * resolvedHeight.value}px`, // Pode ultrapassar o viewport (overflow)
+  height: `${squareSizePx.value * resolvedHeight.value}px`,
 }));
 
-// Mapas (squareId -> cor) para compartilhadas e persistentes
+// Mapas de cor para áreas
 const sharedAreaColorMap = computed<Map<string, string>>(() => {
   const map = new Map<string, string>();
   (props.sharedMeasurements || []).forEach(m => {
@@ -112,7 +111,7 @@ const persistentAreaColorMap = computed<Map<string, string>>(() => {
   return map;
 });
 
-// Helpers de cor
+// Utilidades de cor
 function hexToRgba(hex: string, alpha = 0.28): string {
   let h = hex.replace('#', '');
   if (h.length === 3) h = h.split('').map(c => c + c).join('');
@@ -157,14 +156,13 @@ function complementColor(hex: string): string {
 }
 
 function getSquareAreaColor(squareId: string): string | undefined {
-  // 1) Local preview da área
   if (props.areaAffectedSquares?.includes(squareId)) {
     return props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00');
   }
-  // 2) Compartilhadas (última cor vence)
+  // Compartilhadas
   const s = sharedAreaColorMap.value.get(squareId);
   if (s) return s;
-  // 3) Persistentes
+  // Persistentes
   const p = persistentAreaColorMap.value.get(squareId);
   if (p) return p;
   return undefined;
@@ -177,10 +175,10 @@ function getSquareStyle(squareId: string): Record<string, string> {
     style.backgroundColor = hexToRgba(areaColor, 0.15);
     style.borderColor = hexToRgba(areaColor, 0.6);
   }
-  // Cor da projeção de caminho: complementar à cor da área (se houver), senão complementar à cor do usuário
+  // Cor da trilha
   const baseForPath = areaColor || props.measurementColor || '#00ffff';
   style['--path-color'] = complementColor(baseForPath);
-  // Cor de seleção (tokens selecionados) baseada na cor escolhida pelo usuário
+  // Cor de seleção
   style['--selection-color'] = props.measurementColor || '#ff8c00';
   return style;
 }
@@ -197,16 +195,13 @@ function getTokenAreaStyle(squareId: string): Record<string, string> {
 }
 
 function handleDragStart(event: DragEvent, token: TokenInfo) {
-  // Bloqueia movimentação de tokens enquanto estiver medindo
   if (props.isMeasuring) {
     event.preventDefault();
     return;
   }
   console.log(`Iniciando o arrastar do token: ${token._id}`);
   if (event.dataTransfer) {
-    // Define o tipo de operação permitida
     event.dataTransfer.effectAllowed = 'move';
-    // Armazena o id do token e o id do seu quadrado original
     event.dataTransfer.setData('application/json', JSON.stringify({
       tokenId: token._id,
       originalSquareId: token.squareId
@@ -217,53 +212,48 @@ function handleDragStart(event: DragEvent, token: TokenInfo) {
 }
 
 function handleDragOver(targetSquare: GridSquare) {
-  if (props.isMeasuring) return; // Sem preview de caminho durante medição
+  if (props.isMeasuring) return;
   if (throttleTimeout) return;
 
   throttleTimeout = window.setTimeout(() => {
-    // Quando o timer acabar, resete a flag para permitir a próxima execução
     throttleTimeout = null;
   }, THROTTLE_DELAY_MS);
 
   if (!draggedTokenInfo.value || !targetSquare || draggedTokenInfo.value.squareId === targetSquare.id) {
-    pathPreview.value = []; // Se estiver sobre o mesmo quadrado, não mostra caminho
+  pathPreview.value = [];
     return;
   }
 
-  // Calcula o caminho
   const path = findShortestPath(draggedTokenInfo.value.squareId, targetSquare.id);
   pathPreview.value = path;
 
-  // Valida o custo do movimento
   const movementCost = (path.length - 1) * (props.metersPerSquare || 1.5);
   isPathValid.value = draggedTokenInfo.value.remainingMovement >= movementCost;
 }
 
 function handleDrop(event: DragEvent, targetSquare: GridSquare) {
-  if (props.isMeasuring) return; // Evita drop durante medição
+  if (props.isMeasuring) return;
   event.preventDefault();
   console.log(`Token solto no quadrado: ${targetSquare.id}`);
 
   if (!isPathValid.value) {
-    console.log("Movimento inválido. Drop cancelado.");
-    pathPreview.value = []; // Limpa a projeção vermelha
+  console.log("Movimento inválido");
+  pathPreview.value = [];
     draggedTokenInfo.value = null;
     return;
   }
 
   if (targetSquare.token) {
-    console.log('Quadrado de destino já está ocupado. Movimento cancelado.');
+  console.log('Quadrado destino ocupado');
     return; // Não permite soltar em um quadrado já ocupado
   }
 
   if (event.dataTransfer) {
-    // Recupera os dados de dragstart
     const data = JSON.parse(event.dataTransfer.getData('application/json'));
     const { tokenId, originalSquareId } = data;
 
     console.log(`Emitindo 'token-move-requested': tokenId=<span class="math-inline">\{tokenId\}, targetSquareId\=</span>{targetSquare.id}`);
 
-    // Emite o novo evento 
     emit('token-move-requested', {
       tokenId: tokenId,
       targetSquareId: targetSquare.id
@@ -274,7 +264,6 @@ function handleDrop(event: DragEvent, targetSquare: GridSquare) {
 }
 
 function findShortestPath(startId: string, endId: string): string[] {
-  // Usa width/height reais se existirem
   const width = resolvedWidth.value;
   const height = resolvedHeight.value;
   const getCoords = (id: string) => {
@@ -311,7 +300,7 @@ function findShortestPath(startId: string, endId: string): string[] {
       }
     }
   }
-  return []; // Retorna vazio se nenhum caminho for encontrado
+  return [];
 }
 
 function onSquareLeftClick(square: GridSquare, event: MouseEvent) {
@@ -333,8 +322,7 @@ function getTokenSizeInSquares(size: TokenSize): number {
   }
 }
 
-// Converte um ponto possivelmente em unidades de grade (células) para px locais.
-// Heurística: se o valor for menor que cols/rows + 1, assumimos unidades de grade; senão, já está em px.
+// Converte coordenada de grade para px se parecer pequena
 function toLocalPoint(p: { x: number; y: number }): { x: number; y: number } {
   const cols = resolvedWidth.value || 1;
   const rows = resolvedHeight.value || 1;
@@ -347,11 +335,7 @@ function toLocalPoint(p: { x: number; y: number }): { x: number; y: number } {
   };
 }
 
-// (Sem desenho de cone via paths; apenas quadrados pintados + rótulo de distância.)
-
-// (Sem necessidade de converter cor para fill; não desenhamos o shape do cone)
-
-// Desenha o contorno do cone (setor de 90°) baseado em dois pontos em px locais: origem (start) e direção/comprimento (end)
+// Path do cone (90°)
 function getConePathD(start: { x: number; y: number }, end: { x: number; y: number }): string {
   if (!start || !end) return '';
   const dx = end.x - start.x;
@@ -376,7 +360,7 @@ function getConePathD(start: { x: number; y: number }, end: { x: number; y: numb
   ].join(' ');
 }
 
-// Retângulo orientado entre dois pontos com largura em px; retorna lista de pontos
+// Retângulo orientado (feixe/linha larga)
 function getOrientedRectPoints(start: {x:number;y:number}, end: {x:number;y:number}, widthPx: number): Array<{x:number;y:number}> {
   const dx = end.x - start.x, dy = end.y - start.y;
   const len = Math.hypot(dx, dy) || 1;
@@ -393,7 +377,7 @@ function toPointsAttr(points: Array<{x:number;y:number}>): string {
   return points.map(p => `${p.x},${p.y}`).join(' ');
 }
 
-// Centro local (px) de um quadrado pelo id (ex: 'sq-42')
+// Centro (px) de um quadrado
 function getLocalCenterForSquareId(squareId: string): { x: number; y: number } | null {
   const cols = resolvedWidth.value || 1;
   const idx = parseInt(squareId.replace('sq-', ''));
@@ -403,6 +387,8 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
   const sz = squareSizePx.value;
   return { x: col * sz + sz / 2, y: row * sz + sz / 2 };
 }
+
+// Pings agora animados puramente via CSS keyframes (duracao ~1.8s controlada pelo store para remoção)
 </script>
 
 <template>
@@ -418,6 +404,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
       :style="getSquareStyle(square.id)"
       @contextmenu.prevent="onSquareRightClick(square, $event)" 
       @click="onSquareLeftClick(square, $event)"
+  @mousedown.middle.prevent
       @dragover.prevent="handleDragOver(square)" @drop="handleDrop($event, square)" >
     <div v-if="square.token"
             class="token"
@@ -517,6 +504,30 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
           <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
             {{ previewMeasurement.distance }}
           </text>
+        </template>
+      </svg>
+
+      <!-- Pings (ripples) -->
+      <svg v-if="pings && pings.length" class="ping-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
+        <template v-for="pg in pings" :key="pg.id">
+          <circle
+            v-if="pg.squareId && getLocalCenterForSquareId(pg.squareId)"
+            class="ping-circle ping-circle-anim"
+            :cx="getLocalCenterForSquareId(pg.squareId)?.x || 0"
+            :cy="getLocalCenterForSquareId(pg.squareId)?.y || 0"
+            r="0"
+            :style="{ '--ping-radius': (squareSizePx * 1.0) + 'px', stroke: pg.color || '#ffeb3b' }"
+            fill="none"
+          />
+          <circle
+            v-else-if="pg.x != null && pg.y != null"
+            class="ping-circle ping-circle-anim"
+            :cx="pg.x"
+            :cy="pg.y"
+            r="0"
+            :style="{ '--ping-radius': (squareSizePx * 1.0) + 'px', stroke: pg.color || '#ffeb3b' }"
+            fill="none"
+          />
         </template>
       </svg>
 
@@ -893,6 +904,17 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
   paint-order: stroke;
   stroke: #000;
   stroke-width: 3px;
+}
+
+.ping-overlay {
+  position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:120;
+}
+.ping-circle { stroke-width:4; filter:drop-shadow(0 0 6px #fff); }
+.ping-circle-anim { animation: pingRipple 1.1s cubic-bezier(.22,.61,.36,1) forwards; }/* duração reduzida */
+@keyframes pingRipple {
+  0% { r:0; opacity:1; stroke-width:5; }
+  55% { opacity:0.55; }
+  100% { r: var(--ping-radius); opacity:0; stroke-width:2; }
 }
 
 .cone-preview-player {

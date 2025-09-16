@@ -90,6 +90,7 @@ const {
   metersPerSquare,
   persistentMeasurements,
   auras,
+  pings,
   // Getters
   isDM, 
   activeScene, 
@@ -271,23 +272,29 @@ function onInitiativeDragEnd() {
 }
 
 function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
-  // Se a ferramenta de régua estiver ativa, o clique esquerdo define os pontos.
-  if (activeTool.value === 'ruler') {
-  // Origem já foi definida em pointerdown (posição real do mouse). Nada a fazer aqui.
-  return; 
-  } else if (activeTool.value === 'cone') {
-  // O cone agora é controlado via pointer (click e segurar), então clique direto não faz nada extra
-  return;
-  }
-
-  // Se nenhuma ferramenta estiver ativa, executa a seleção de token (toggle) ou limpa se clicar vazio
+  if (activeTool.value === 'ruler' || activeTool.value === 'cone') return;
   if (square.token) {
-    // Toggle: se já está selecionado, desseleciona
     selectedTokenId.value = (selectedTokenId.value === square.token._id) ? null : square.token._id;
   } else {
-    // Clique em célula vazia limpa seleção
     selectedTokenId.value = null;
   }
+}
+
+
+function handleMiddleClickFree(event: MouseEvent) {
+  if (event.button !== 1 || !activeSceneId.value) return;
+  // Rate limit (será ajustado depois se necessário)
+  if ((handleMiddleClickFree as any)._last && Date.now() - (handleMiddleClickFree as any)._last < 300) return;
+  (handleMiddleClickFree as any)._last = Date.now();
+  // Coordenadas relativas ao grid interno (grid-viewport dentro do GridDisplay)
+  const mapStage = event.currentTarget as HTMLElement;
+  let viewportEl: HTMLElement | null = mapStage.querySelector('.grid-overlay .grid-viewport');
+  if (!viewportEl) viewportEl = mapStage.querySelector('.grid-overlay') as HTMLElement | null;
+  const rect = (viewportEl || mapStage).getBoundingClientRect();
+  const scale = viewTransform.value.scale || 1;
+  const x = (event.clientX - rect.left) / scale;
+  const y = (event.clientY - rect.top) / scale;
+  socketService.sendPing({ tableId, sceneId: activeSceneId.value, x, y, color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00') });
 }
 
 // Mestre altera escala -> envia ao servidor; jogadores apenas recebem via sessionStateUpdated
@@ -373,11 +380,11 @@ function handleShapeContextMenu(payload: { id: string }) {
   }
 }
 
-// --- Auras UI ---
+// Auras
 const selectedToken = computed(() => tokensOnMap.value.find(t => t._id === selectedTokenId.value) || null);
 const auraForSelected = computed(() => selectedTokenId.value ? auras.value.find(a => a.tokenId === selectedTokenId.value) || null : null);
 const canRemoveAura = computed(() => Boolean(isDM.value && selectedToken.value && auraForSelected.value));
-// Botão de editar aura: DM sempre; jogador apenas no próprio turno. Requer token selecionado e não estar medindo
+// Editar aura: DM sempre; jogador só no seu turno
 const canAddAura = computed(() => Boolean((isDM.value || myActiveToken.value) && selectedTokenId.value && !isMeasuring.value));
 
 function openAuraDialogForToken(token: TokenInfo) {
@@ -1292,7 +1299,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </div>
 
     <Toolbar 
-      v-if="sessionStatus === 'LIVE' || isDM"
+      v-if="(sessionStatus === 'LIVE' || isDM) && activeScene?.type === 'battlemap'"
       :activeTool="activeTool"
       :canDelete="Boolean(selectedPersistentId && (isDM || persistentMeasurements.find(pm => pm.id === selectedPersistentId)?.userId === currentUser?.id))"
   :persistentMode="persistentMode"
@@ -1450,6 +1457,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         <template v-if="sessionStatus === 'LIVE' || isDM">
           <div 
             class="map-stage"
+            @mousedown.middle.prevent="handleMiddleClickFree"
             :style="{ transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale})` }"
           >
             <img 
@@ -1492,6 +1500,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               :isDM="isDM"
               :currentUserId="currentUser?.id || null"
               :selectedPersistentId="selectedPersistentId"
+              :pings="pings"
               @square-right-click="handleRightClick"
               @square-left-click="handleLeftClickOnSquare"
               @token-move-requested="handleTokenMoveRequest"

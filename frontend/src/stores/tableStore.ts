@@ -16,6 +16,8 @@ export const useTableStore = defineStore('table', () => {
     const sessionStatus: Ref<'PREPARING' | 'LIVE' | 'ENDED'> = ref('PREPARING');
     const currentMapUrl: Ref<string | null> = ref(null);
     const metersPerSquare: Ref<number> = ref(1.5);
+    // Pings efêmeros
+    const pings: Ref<Array<{ id: string; userId: string; username: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string; ts: number }>> = ref([]);
     // Auras ancoradas a tokens (por cena)
     const auras: Ref<AuraInfo[]> = ref([]);
     // Medições compartilhadas: chave = userId, valor = Measurement
@@ -241,6 +243,15 @@ export const useTableStore = defineStore('table', () => {
         if (sceneId === activeSceneId.value) metersPerSquare.value = newScale;
     }
 
+    // Pings
+    function addPing(p: { id: string; userId: string; username: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string; ts: number }) {
+        if (p.sceneId !== activeSceneId.value) return;
+        pings.value.push(p);
+    // Auto remove em ~1.1s (sincronizado com animação CSS)
+    setTimeout(() => { pings.value = pings.value.filter(x => x.id !== p.id); }, 1100);
+    }
+    function clearPings() { pings.value = []; }
+
     return {
         // State
         currentTable,
@@ -257,6 +268,7 @@ export const useTableStore = defineStore('table', () => {
     persistentMeasurements,
     metersPerSquare,
     auras,
+    pings,
         // Getters
         isDM,
         activeScene,
@@ -286,5 +298,6 @@ export const useTableStore = defineStore('table', () => {
     removePersistentMeasurement,
     clearPersistentMeasurementsForScene,
     setPersistentMeasurementsForScene
+    ,addPing, clearPings
     };
 });

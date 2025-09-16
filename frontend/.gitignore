@@ -1,4 +1,4 @@
-# Ignore accidental compiled artifacts
+# JS gerado indevidamente (mantemos stubs temporários, mas ideal limpar)
 src/**/*.vue.js
 src/**/*.js
 # Logs
