@@ -66,41 +66,14 @@ async function handleLogin() {
   align-items: center;
   padding-top: 40px;
 }
-.auth-form {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  padding: 30px;
-  background-color: #3a3a3a;
-  border-radius: 8px;
-  width: 100%;
-  max-width: 400px;
-}
-h1 {
-  color: #ffc107;
-  margin-top: 0;
-}
+.auth-form { display:flex; flex-direction:column; gap:15px; padding:30px; background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); border-radius:var(--radius-md); width:100%; max-width:400px; border:1px solid var(--color-border); box-shadow:var(--elev-2); }
+h1 { color:var(--color-accent); margin-top:0; }
 label {
   text-align: left;
   font-weight: bold;
 }
-input {
-  padding: 10px;
-  border-radius: 4px;
-  border: 1px solid #555;
-}
-button {
-  padding: 12px;
-  border: none;
-  border-radius: 4px;
-  background-color: #ffc107;
-  color: #333;
-  font-weight: bold;
-  font-size: 1em;
-  cursor: pointer;
-  margin-top: 10px;
-}
-button:hover {
-  background-color: #ffca2c;
-}
+input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface-alt); color:var(--color-text); }
+input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
+button { padding:12px; border:1px solid var(--color-border-strong); border-radius:var(--radius-sm); background:var(--color-accent); color:var(--color-text); font-weight:600; font-size:1em; cursor:pointer; margin-top:10px; }
+button:hover { background:var(--color-accent-alt); }
 </style>

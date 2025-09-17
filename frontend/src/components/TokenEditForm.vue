@@ -78,8 +78,9 @@ function submit() {
 
 <style scoped>
 .edit-overlay { position: fixed; inset:0; background: rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:120; }
-.edit-form { background:#2f2f2f; color:#fff; padding:20px; border-radius:8px; width:320px; display:flex; flex-direction:column; gap:10px; }
-.edit-form input, .edit-form select { padding:6px 8px; background:#444; border:1px solid #666; border-radius:4px; color:#fff; }
+.edit-form { background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); color:var(--color-text); padding:20px; border-radius:var(--radius-md); width:320px; display:flex; flex-direction:column; gap:10px; border:1px solid var(--color-border); box-shadow:var(--elev-3); }
+.edit-form input, .edit-form select { padding:6px 8px; background:var(--color-surface-alt); border:1px solid var(--color-border); border-radius:var(--radius-sm); color:var(--color-text); }
+.edit-form input:focus, .edit-form select:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
 .buttons { display:flex; gap:10px; }
 .buttons button { flex:1; cursor:pointer; }
 .reset-row { display:flex; gap:6px; align-items:center; font-size:0.9em; }

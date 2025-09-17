@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import Icon from './Icon.vue';
 
 // Ferramentas
 type Tool = 'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam' | 'none';
@@ -60,37 +61,59 @@ function toggleCollapse() {
 
 <template>
   <div class="toolbar-container" :class="{ collapsed }">
-    <button class="collapse-toggle" :title="collapsed ? 'Expandir' : 'Recolher'" @click="toggleCollapse">{{ collapsed ? '⮞' : '⮜' }}</button>
+    <button class="collapse-toggle" :title="collapsed ? 'Expandir' : 'Recolher'" @click="toggleCollapse">
+      <Icon name="collapse" :size="22" />
+    </button>
     <div class="tools" v-show="!collapsed">
-  <button class="tool-button" :class="{ active: activeTool === 'select' }" @click="selectTool('select')" title="Selecionar figuras">🖱️</button>
-
-  <button class="tool-button" :class="{ active: activeTool === 'ruler' }" @click="selectTool('ruler')" title="Régua">📏</button>
-
-  <button class="tool-button" :class="{ active: activeTool === 'cone' }" @click="selectTool('cone')" title="Cone">🔻</button>
-
-  <button class="tool-button" :class="{ active: activeTool === 'circle' }" @click="selectTool('circle')" title="Círculo">⚪</button>
-
-  <button class="tool-button" :class="{ active: activeTool === 'square' }" @click="selectTool('square')" title="Quadrado">▪️</button>
-
-  <button class="tool-button" :class="{ active: activeTool === 'line' }" @click="selectTool('line')" title="Linha">➖</button>
-
-  <button class="tool-button" :class="{ active: activeTool === 'beam' }" @click="selectTool('beam')" title="Feixe">➡️</button>
+  <button class="tool-button" :class="{ active: activeTool === 'select' }" @click="selectTool('select')" title="Selecionar">
+    <Icon name="select" />
+  </button>
+  <button class="tool-button" :class="{ active: activeTool === 'ruler' }" @click="selectTool('ruler')" title="Régua">
+    <Icon name="ruler" />
+  </button>
+  <button class="tool-button" :class="{ active: activeTool === 'cone' }" @click="selectTool('cone')" title="Cone">
+    <Icon name="cone" />
+  </button>
+  <button class="tool-button" :class="{ active: activeTool === 'circle' }" @click="selectTool('circle')" title="Círculo">
+    <Icon name="circle" />
+  </button>
+  <button class="tool-button" :class="{ active: activeTool === 'square' }" @click="selectTool('square')" title="Quadrado">
+    <Icon name="square" />
+  </button>
+  <button class="tool-button" :class="{ active: activeTool === 'line' }" @click="selectTool('line')" title="Linha">
+    <Icon name="line" />
+  </button>
+  <button class="tool-button" :class="{ active: activeTool === 'beam' }" @click="selectTool('beam')" title="Feixe">
+    <Icon name="beam" />
+  </button>
 
     
     
     <hr class="divider" />
-  <button class="tool-button" :class="{ active: !!persistentMode }" @click="togglePersistent" title="Fixar">📌</button>
+  <button class="tool-button" :class="{ active: !!persistentMode }" @click="togglePersistent" title="Fixar">
+    <Icon name="pin" />
+  </button>
 
-  <button v-if="canDelete" class="tool-button danger" @click="$emit('delete-selected')" title="Excluir">🗑️</button>
+  <button v-if="canDelete" class="tool-button danger" @click="$emit('delete-selected')" title="Excluir">
+    <Icon name="delete" />
+  </button>
 
-  <button v-if="canAddAura" class="tool-button" @click="$emit('edit-aura')" title="Editar/Adicionar aura">🧿</button>
+  <button v-if="canAddAura" class="tool-button" @click="$emit('edit-aura')" title="Editar/Adicionar aura">
+    <Icon name="aura" />
+  </button>
 
-  <button v-if="canRemoveAura" class="tool-button danger" @click="$emit('remove-aura')" title="Remover aura">✖️</button>
+  <button v-if="canRemoveAura" class="tool-button danger" @click="$emit('remove-aura')" title="Remover aura">
+    <Icon name="auraRemove" />
+  </button>
 
-  <button v-if="isDM" class="tool-button danger" title="Limpar tudo" @click="requestClearAll">🧹</button>
+  <button v-if="isDM" class="tool-button danger" title="Limpar tudo" @click="requestClearAll">
+    <Icon name="clear" />
+  </button>
 
     <hr class="divider" />
-  <button class="tool-button" title="Cor" @click="showPalette = !showPalette">🎨</button>
+  <button class="tool-button" title="Cor" @click="showPalette = !showPalette">
+    <Icon name="color" />
+  </button>
     <div v-if="showPalette && !collapsed" class="palette-popover" @mouseleave="showPalette=false">
       <div class="palette-grid">
         <button
@@ -118,10 +141,12 @@ function toggleCollapse() {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background-color: rgba(44, 44, 44, 0.9);
+  /* Use design system surfaces & subtle translucency */
+  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt));
+  background-color: rgba(63 49 56 / 0.92); /* fallback blend */
   padding: 10px 10px 10px 10px;
   border-radius: 8px;
-  border: 1px solid #666;
+  border: 1px solid var(--color-border);
   transition: transform .28s ease, padding .25s ease;
 }
 .toolbar-container.collapsed {
@@ -129,9 +154,9 @@ function toggleCollapse() {
   padding: 10px 6px;
 }
 .collapse-toggle {
-  background:#444;
-  color:#ffc107;
-  border:1px solid #666;
+  background: var(--color-surface-alt);
+  color: var(--color-accent);
+  border:1px solid var(--color-border);
   border-radius:4px;
   width:40px;
   height:40px;
@@ -142,13 +167,13 @@ function toggleCollapse() {
   justify-content:center;
   transition: background .2s;
 }
-.collapse-toggle:hover { background:#555; }
+.collapse-toggle:hover { background: var(--color-surface); }
 .tools { display:flex; flex-direction:column; gap:10px; }
 
 .tool-button {
-  background-color: #555;
-  color: white;
-  border: 1px solid #777;
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   width: 40px;
   height: 40px;
@@ -161,25 +186,26 @@ function toggleCollapse() {
 }
 
 .tool-button:hover {
-  background-color: #666;
+  background: var(--color-surface);
 }
 
 .tool-button.active {
-  background-color: #ffc107; /* Cor de destaque amarela */
-  color: #333;
-  border-color: #fff;
+  background: var(--color-accent);
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+  box-shadow: 0 0 0 1px var(--color-border-strong), 0 0 6px rgba(var(--color-accent-rgb)/0.6);
 }
-.tool-button.danger { background-color: #773333; }
+.tool-button.danger { background: var(--color-danger); border-color: #a63b3b; }
 .tool-button.danger:disabled { opacity: 0.5; cursor: not-allowed; }
-.divider { border: none; border-top: 1px solid #666; margin: 6px 0; }
+.divider { border: none; border-top: 1px solid var(--color-border); margin: 6px 0; }
 
 .palette-popover {
   position: absolute;
   left: 56px; /* ao lado da toolbar */
   top: 50%;
   transform: translateY(-50%);
-  background: rgba(44,44,44,0.95);
-  border: 1px solid #666;
+  background: linear-gradient(180deg, var(--color-surface-alt), var(--color-surface));
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 10px;
   z-index: 45;
@@ -187,5 +213,5 @@ function toggleCollapse() {
 .palette-grid { display: grid; grid-template-columns: repeat(7, 22px); gap: 6px; }
 .color-swatch { width: 22px; height: 22px; border-radius: 4px; cursor: pointer; padding: 0; }
 .color-swatch:disabled { opacity: 0.5; cursor: not-allowed; }
-.hint { color: #ccc; display: block; margin-top: 8px; }
+.hint { color: var(--color-text-muted); display: block; margin-top: 8px; }
 </style>

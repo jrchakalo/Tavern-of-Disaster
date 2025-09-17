@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
+import Icon from './Icon.vue';
 import type { IInitiativeEntry, TokenInfo, PlayerInfo } from '../types';
 
 interface Props {
@@ -69,7 +70,9 @@ function handleDragEnd() {
       </div>
       <!-- Player controls + collapse toggle -->
       <div class="header-right" v-else>
-        <button class="collapse-btn" @click="toggleCollapse" :title="collapsed ? 'Expandir' : 'Minimizar'">{{ collapsed ? '＋' : '−' }}</button>
+        <button class="collapse-btn" @click="toggleCollapse" :title="collapsed ? 'Expandir' : 'Minimizar'">
+          <Icon :name="collapsed ? 'plus' : 'minus'" size="18" />
+        </button>
         <div class="actions" v-if="isMyTurn && !collapsed">
           <button @click="emit('undo-move')">Desfazer</button>
           <button class="next-btn" @click="emit('next-turn')">Encerrar Turno</button>
@@ -88,14 +91,14 @@ function handleDragEnd() {
         <div class="entry" :class="{ active: entry.isCurrentTurn }">
           <div class="top-row">
             <div class="left">
-              <span class="drag-handle" title="Arrastar">⠿</span>
-              <span class="dot" :style="{ background: tokenFor(entry)?.color || '#777' }" />
+              <span class="drag-handle" title="Arrastar"><Icon name="drag" size="14" /></span>
+              <span class="dot" :style="{ background: tokenFor(entry)?.color || 'var(--color-text-muted)' }" />
               <strong>{{ entry.characterName }}</strong>
               <span v-if="tokenFor(entry)" class="size">{{ tokenFor(entry)?.size }}</span>
             </div>
             <div class="row-actions" v-if="tokenFor(entry)">
-              <button title="Editar" @click="emit('edit-token', tokenFor(entry)!._id)">🛠️</button>
-              <button title="Remover" @click="emit('remove-entry', entry._id)">🗑️</button>
+              <button title="Editar" @click="emit('edit-token', tokenFor(entry)!._id)"><Icon name="wrench" size="16" /></button>
+              <button title="Remover" @click="emit('remove-entry', entry._id)"><Icon name="delete" size="16" /></button>
             </div>
           </div>
           <div v-if="tokenFor(entry)" class="movement" >
@@ -117,7 +120,7 @@ function handleDragEnd() {
       <div v-for="item in enriched" :key="item.entry._id" class="entry" :class="{ active: item.entry.isCurrentTurn }">
         <div class="top-row">
           <div class="left">
-            <span class="dot" :style="{ background: item.token?.color || '#777' }" />
+            <span class="dot" :style="{ background: item.token?.color || 'var(--color-text-muted)' }" />
             <strong>{{ item.entry.characterName }}</strong>
             <span v-if="item.token" class="size">{{ item.token.size }}</span>
           </div>
@@ -143,43 +146,43 @@ function handleDragEnd() {
 
 <style scoped>
 .initiative-panel {
-  background: rgba(40,40,40,0.95);
-  border: 1px solid #555;
+  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt));
+  border: 1px solid var(--color-border);
   padding: 12px 14px;
   border-radius: 8px;
   width: 340px;
-  color: #eee;
-  font-family: sans-serif;
+  color: var(--color-text);
+  font-family: var(--font-sans);
   backdrop-filter: blur(4px);
 }
 .initiative-panel.collapsed {
   padding-bottom: 8px;
 }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.panel-header h3 { margin: 0; font-size: 1.05rem; color: #ffc107; }
+.panel-header h3 { margin: 0; font-size: 1.05rem; color: var(--color-accent); font-family: var(--font-display); letter-spacing: .5px; }
 .header-right { display: flex; align-items: center; gap: 6px; }
-.collapse-btn { background:#444; color:#ffc107; border:1px solid #555; border-radius:4px; cursor:pointer; width:30px; height:28px; font-size:1rem; line-height:1; display:flex; align-items:center; justify-content:center; }
-.collapse-btn:hover { background:#555; }
+.collapse-btn { background: var(--color-surface-alt); color: var(--color-accent); border:1px solid var(--color-border); border-radius:4px; cursor:pointer; width:30px; height:28px; font-size:1rem; line-height:1; display:flex; align-items:center; justify-content:center; transition: background var(--transition-fast); }
+.collapse-btn:hover { background: var(--color-surface); }
 .actions { display: flex; gap: 8px; }
-.actions button { padding: 6px 10px; background:#555; color:#eee; border:1px solid #666; border-radius:4px; cursor:pointer; font-size:0.75rem; }
-.actions button:hover { background:#666; }
-.actions .next-btn { background:#3c096c; border-color:#4e1388; }
-.actions .next-btn:hover { background:#521788; }
+.actions button { padding: 6px 10px; background: var(--color-surface-alt); color: var(--color-text); border:1px solid var(--color-border); border-radius:4px; cursor:pointer; font-size:0.7rem; letter-spacing:.5px; font-weight:500; transition: background var(--transition-fast), color var(--transition-fast); }
+.actions button:hover { background: var(--color-surface); }
+.actions .next-btn { background: var(--color-accent); border-color: var(--color-border-strong); color: var(--color-text); font-weight:600; }
+.actions .next-btn:hover { background: var(--color-accent-alt); }
 .entries { display:flex; flex-direction:column; gap:6px; max-height:360px; overflow-y:auto; }
-.entry { background:#2e2e2e; padding:8px 10px; border:1px solid #444; border-radius:6px; display:flex; flex-direction:column; gap:6px; position:relative; }
-.entry.active { border-color:#69ff69; box-shadow:0 0 6px #69ff69aa; }
+.entry { background: var(--color-surface); border:1px solid var(--color-border); }
+.entry.active { border-color: var(--color-success); box-shadow:0 0 0 1px var(--color-success), 0 0 8px rgba(79 160 109 / .55); }
 .top-row { display:flex; justify-content:space-between; align-items:center; }
 .left { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.dot { width:14px; height:14px; border-radius:50%; box-shadow:0 0 4px #000; }
-.size { font-size:0.6rem; background:#444; padding:2px 6px; border-radius:12px; letter-spacing:0.5px; }
+.dot { width:14px; height:14px; border-radius:50%; box-shadow:0 0 4px rgba(0 0 0 / 0.5); }
+.size { font-size:0.55rem; background: var(--color-surface-alt); padding:2px 6px; border-radius:12px; letter-spacing:0.5px; border:1px solid var(--color-border); text-transform:uppercase; }
 .movement { display:flex; flex-direction:column; gap:4px; }
-.bar-bg { width:100%; height:6px; background:#111; border-radius:4px; overflow:hidden; box-shadow:inset 0 0 4px #000; }
-.bar-fill { height:100%; background: linear-gradient(90deg,#3c096c,#8a2be2); transition: width 0.25s ease; }
-.numbers { font-size:0.65rem; display:flex; justify-content:space-between; color:#ccc; }
+.bar-bg { width:100%; height:6px; background: #1f171b; border-radius:4px; overflow:hidden; box-shadow:inset 0 0 4px rgba(0 0 0 / 0.65); }
+.bar-fill { height:100%; background: var(--gradient-accent); transition: width 0.25s ease; }
+.numbers { font-size:0.6rem; display:flex; justify-content:space-between; color: var(--color-text-muted); }
 .row-actions { display:flex; gap:4px; }
-.row-actions button { background:none; border:none; cursor:pointer; font-size:0.85rem; color:#ddd; }
-.row-actions button:hover { color:#fff; }
-.drag-handle { cursor:grab; color:#bbb; }
+.row-actions button { background: transparent; border: 1px solid transparent; cursor:pointer; font-size:0.75rem; color: var(--color-text-muted); padding:2px 4px; border-radius:4px; transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast); }
+.row-actions button:hover { color: var(--color-text); background: var(--color-surface-alt); border-color: var(--color-border); }
+.drag-handle { cursor:grab; color: var(--color-text-muted); }
 .drag-handle:active { cursor:grabbing; }
-.empty { font-style:italic; color:#888; margin:8px 0 0; }
+.empty { font-style:italic; color: var(--color-text-muted); margin:8px 0 0; }
 </style>

@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { authToken, currentUser } from '../services/authService';
+import Icon from '../components/Icon.vue';
 import type { ITable } from '../types';
 
 const router = useRouter();
@@ -167,11 +168,11 @@ onMounted(() => {
             <span class="table-role">{{ table.dm._id === currentUser?.id ? '(Mestre)' : '(Jogador)' }}</span>
           </div>
           <div class="row-actions">
-            <button @click.stop="copyInvite(table.inviteCode)" title="Copiar código">📋</button>
-            <button v-if="table.dm._id === currentUser?.id" @click.stop="openEdit(table)" title="Renomear">✏️</button>
-            <button v-if="table.dm._id === currentUser?.id" @click.stop="managePlayers(table)" title="Gerenciar jogadores">👥</button>
-            <button v-if="table.dm._id === currentUser?.id" @click.stop="openDelete(table)" title="Excluir mesa" class="danger">🗑️</button>
-            <button v-else @click.stop="openLeave(table)" title="Sair da mesa" class="danger">🚪</button>
+            <button @click.stop="copyInvite(table.inviteCode)" title="Copiar código"><Icon name="copy" size="18" /></button>
+            <button v-if="table.dm._id === currentUser?.id" @click.stop="openEdit(table)" title="Renomear"><Icon name="edit" size="18" /></button>
+            <button v-if="table.dm._id === currentUser?.id" @click.stop="managePlayers(table)" title="Gerenciar jogadores"><Icon name="users" size="18" /></button>
+            <button v-if="table.dm._id === currentUser?.id" @click.stop="openDelete(table)" title="Excluir mesa" class="danger"><Icon name="delete" size="18" /></button>
+            <button v-else @click.stop="openLeave(table)" title="Sair da mesa" class="danger"><Icon name="exit" size="18" /></button>
           </div>
         </li>
       </ul>
@@ -245,22 +246,11 @@ onMounted(() => {
   justify-content: center;
 }
 
-.create-table-form input {
-  padding: 10px;
-  border-radius: 4px;
-  border: 1px solid #555;
-  width: 300px;
-}
+.create-table-form input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); width:300px; background:var(--color-surface-alt); color:var(--color-text); }
+.create-table-form input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
 
-.create-table-form button {
-  padding: 10px 15px;
-  border: none;
-  border-radius: 4px;
-  background-color: #ffc107;
-  color: #333;
-  font-weight: bold;
-  cursor: pointer;
-}
+.create-table-form button { padding:10px 15px; border:1px solid var(--color-border-strong); border-radius:var(--radius-sm); background:var(--color-accent); color:var(--color-text); font-weight:600; cursor:pointer; }
+.create-table-form button:hover { background:var(--color-accent-alt); }
 
 .tables-list {
   margin-top: 40px;
@@ -272,17 +262,8 @@ onMounted(() => {
   padding: 0;
 }
 
-.tables-list li {
-  background-color: #3a3a3a;
-  padding: 15px;
-  margin-bottom: 10px;
-  border-radius: 4px;
-  cursor: default;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  transition: background-color 0.2s;
-}
+.tables-list li { background:var(--color-surface); padding:15px; margin-bottom:10px; border-radius:var(--radius-sm); cursor:default; display:grid; grid-template-columns:1fr auto; gap:10px; transition:background var(--transition-fast), border-color var(--transition-fast); border:1px solid var(--color-border); }
+.tables-list li:hover { background:var(--color-surface-alt); border-color:var(--color-border-strong); }
 
 .table-details {
   display: flex;
@@ -298,18 +279,9 @@ onMounted(() => {
   color: #ddd;
 }
 
-.invite-code code {
-  background-color: #2c2c2c;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-family: 'Courier New', Courier, monospace;
-  color: #ffc107;
-  font-weight: bold;
-}
+.invite-code code { background:var(--color-surface-alt); padding:4px 8px; border-radius:var(--radius-sm); font-family:'Courier New', monospace; color:var(--color-accent); font-weight:600; border:1px solid var(--color-border); }
 
-.tables-list li:hover {
-  background-color: #4a4a4a;
-}
+.feedback { margin-top:16px; color:var(--color-accent); font-size:0.9em; }
 
 .table-name {
   font-weight: bold;
@@ -317,36 +289,29 @@ onMounted(() => {
 }
 .row-main { display:flex; gap:12px; align-items:center; cursor:pointer; }
 .row-actions { display:flex; gap:8px; }
-.row-actions button { background:#555; border:1px solid #777; color:#eee; cursor:pointer; padding:6px 8px; border-radius:4px; }
-.row-actions button:hover { background:#666; }
-.row-actions button.danger { background:#7a3333; }
-.feedback { margin-top:16px; color:#ffc107; font-size:0.9em; }
+.row-actions button { background:var(--color-surface-alt); border:1px solid var(--color-border); color:var(--color-text); cursor:pointer; padding:6px 8px; border-radius:var(--radius-sm); transition:background var(--transition-fast); }
+.row-actions button:hover { background:var(--color-surface); }
+.row-actions button.danger { background:var(--color-danger); border-color:#d06060; }
+.row-actions button.danger:hover { background:#d06060; }
 
 /* Modais */
 .modal { position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; justify-content:center; align-items:center; z-index:200; }
-.modal-content { background:#2f2f2f; padding:24px; border-radius:8px; width:360px; max-width:90%; display:flex; flex-direction:column; gap:14px; border:1px solid #555; }
+.modal-content { background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); padding:24px; border-radius:var(--radius-md); width:360px; max-width:90%; display:flex; flex-direction:column; gap:14px; border:1px solid var(--color-border); box-shadow:var(--elev-3); }
 .modal-content h3 { margin:0; }
-.modal-content input { padding:8px; border-radius:4px; border:1px solid #555; background:#444; color:#fff; }
+.modal-content input { padding:8px; border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface-alt); color:var(--color-text); }
+.modal-content input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
 .modal-actions { display:flex; justify-content:flex-end; gap:10px; }
-.modal-actions button { background:#555; border:1px solid #777; color:#eee; padding:8px 14px; border-radius:4px; cursor:pointer; }
-.modal-actions button.danger { background:#7a3333; }
-.modal-actions button:hover { background:#666; }
+.modal-actions button { background:var(--color-surface-alt); border:1px solid var(--color-border); color:var(--color-text); padding:8px 14px; border-radius:var(--radius-sm); cursor:pointer; font-weight:500; }
+.modal-actions button:hover { background:var(--color-surface); }
+.modal-actions button.danger { background:var(--color-danger); border-color:#d06060; }
+.modal-actions button.danger:hover { background:#d06060; }
 .players-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px; }
-.players-list li { display:flex; justify-content:space-between; align-items:center; background:#3d3d3d; padding:6px 10px; border-radius:4px; }
+.players-list li { display:flex; justify-content:space-between; align-items:center; background:var(--color-surface-alt); padding:6px 10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); }
 .players-list button.small { padding:4px 8px; font-size:0.75rem; }
 
-.table-role {
-  font-style: italic;
-  color: #ccc;
-  min-width: 80px;
-  text-align: right;
-}
+.table-role { font-style:italic; color:var(--color-text-muted); min-width:80px; text-align:right; }
 
-.no-tables {
-  color: #bbb;
-  margin-top: 20px;
-  text-align: center;
-}
+.no-tables { color:var(--color-text-muted); margin-top:20px; text-align:center; }
 
 .join-table-form {
   margin-top: 10px;
@@ -355,20 +320,9 @@ onMounted(() => {
   justify-content: center;
 }
 
-.join-table-form input {
-  padding: 10px;
-  border-radius: 4px;
-  border: 1px solid #555;
-  width: 300px;
-}
+.join-table-form input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); width:300px; background:var(--color-surface-alt); color:var(--color-text); }
+.join-table-form input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
 
-.join-table-form button {
-  padding: 10px 15px;
-  border: none;
-  border-radius: 4px;
-  background-color: #5cb85c; 
-  color: white;
-  font-weight: bold;
-  cursor: pointer;
-}
+.join-table-form button { padding:10px 15px; border:1px solid #63b887; border-radius:var(--radius-sm); background:var(--color-success); color:var(--color-text); font-weight:600; cursor:pointer; }
+.join-table-form button:hover { background:#63b887; }
 </style>

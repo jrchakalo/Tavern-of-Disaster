@@ -71,34 +71,16 @@ const isMyTurnNext = computed(() => {
 </template>
 
 <style scoped>
-.player-panel {
-  position: fixed;
-  top: 80px;
-  right: 20px;
-  width: 280px;
-  background-color: rgba(44, 44, 44, 0.95);
-  color: white;
-  border-radius: 8px;
-  border: 1px solid #888;
-  z-index: 20;
-  backdrop-filter: blur(5px);
-  padding: 15px;
-}
-.wait-panel {
-  text-align: center;
-  padding: 20px 0;
-  font-style: italic;
-  color: #ccc;
-}
-.wait-panel.next-up {
-  color: #ffc107; /* Cor dourada para chamar a atenção */
-  font-weight: bold;
-}
+.player-panel { position:fixed; top:80px; right:20px; width:280px; background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt)); color: var(--color-text); border-radius: var(--radius-md); border:1px solid var(--color-border); z-index:20; backdrop-filter: blur(5px); padding:15px; box-shadow: var(--elev-2); font-family: var(--font-sans); }
+.wait-panel { text-align:center; padding:20px 0; font-style:italic; color: var(--color-text-muted); }
+.wait-panel.next-up { color: var(--color-accent); font-weight:600; }
 .turn-status-panel { text-align: center; }
-.turn-status-panel h3 { margin: 0 0 10px 0; color: #ffc107; }
+.turn-status-panel h3 { margin:0 0 10px 0; color: var(--color-accent); font-family: var(--font-display); letter-spacing:.5px; }
 .turn-status-panel p { margin: 0 0 15px 0; font-size: 1.1em; }
-.turn-status-panel p small { font-size: 0.8em; color: #ccc; }
+.turn-status-panel p small { font-size:0.8em; color: var(--color-text-muted); }
 .turn-actions { display: flex; gap: 10px; }
-.turn-actions button { flex-grow: 1; padding: 10px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; background-color: #555; color: white; }
-.turn-actions .end-turn-btn { background-color: #c9302c; }
+.turn-actions button { flex-grow:1; padding:10px; border:1px solid var(--color-border); border-radius: var(--radius-sm); font-weight:600; cursor:pointer; background: var(--color-surface-alt); color: var(--color-text); transition: background var(--transition-fast); }
+.turn-actions button:hover { background: var(--color-surface); }
+.turn-actions .end-turn-btn { background: var(--color-danger); border-color:#d06060; }
+.turn-actions .end-turn-btn:hover { background: #d06060; }
 </style>

@@ -46,21 +46,10 @@ function onSubmit() {
 </template>
 
 <style scoped>
-.aura-dialog{
-  position: absolute;
-  top: 120px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(44,44,44,0.95);
-  border: 1px solid #666;
-  border-radius: 8px;
-  padding: 12px;
-  z-index: 1001;
-  min-width: 260px;
-  color: #eee;
-}
+.aura-dialog { position:absolute; top:120px; left:50%; transform:translateX(-50%); background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); border:1px solid var(--color-border); border-radius:var(--radius-md); padding:12px; z-index:1001; min-width:260px; color:var(--color-text); box-shadow:var(--elev-3); }
 label{ display:flex; gap:8px; align-items:center; margin: 6px 0; }
 input[type="number"], input[type="text"], input[type="color"]{ flex: 1; }
 .actions{ display:flex; gap:8px; justify-content:flex-end; margin-top:10px; }
-.danger{ background:#7a3333; color:#fff; }
+.danger { background:var(--color-danger); color:var(--color-text); border:1px solid #d06060; }
+.danger:hover { background:#d06060; }
 </style>

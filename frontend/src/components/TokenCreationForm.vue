@@ -102,23 +102,12 @@ onMounted(() => {
   align-items: center;
   z-index: 100;
 }
-.token-form {
-  background: #333;
-  color: white;
-  padding: 20px;
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
+.token-form { background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); color:var(--color-text); padding:20px; border-radius:var(--radius-md); display:flex; flex-direction:column; gap:10px; border:1px solid var(--color-border); box-shadow:var(--elev-3); }
 label {
   text-align: left;
 }
-input {
-  padding: 8px;
-  border-radius: 4px;
-  border: 1px solid #555;
-}
+input, select { padding:8px; border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface-alt); color:var(--color-text); }
+input:focus, select:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
 .buttons {
   display: flex;
   justify-content: space-around;

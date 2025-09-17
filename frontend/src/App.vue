@@ -33,37 +33,17 @@ function handleLogout() {
 </template>
 
 <style>
-  body{
-      background-color: #5b5b5b;
-      margin: 0;
-      min-height: 100vh;
-  }
+body { margin:0; min-height:100vh; background:linear-gradient(180deg,var(--color-bg), var(--color-bg-alt)); color:var(--color-text); font-family:var(--font-sans, system-ui, sans-serif); }
 </style>
 
 <style scoped>
-.main-header {
-  background-color: #2c2c2c;
-  padding: 10px 20px;
-  text-align: center;
-}
+.main-header { background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); padding:10px 20px; text-align:center; border-bottom:1px solid var(--color-border); box-shadow:var(--elev-1); }
 
-nav a {
-  font-weight: bold;
-  color: #ccc;
-  text-decoration: none;
-  margin: 0 15px;
-}
+nav { display:flex; justify-content:center; flex-wrap:wrap; gap:6px; }
+nav a { font-weight:600; color:var(--color-text-muted); text-decoration:none; padding:8px 14px; border-radius:var(--radius-sm); transition:background var(--transition-fast), color var(--transition-fast); display:inline-flex; align-items:center; }
+nav a:hover { background:var(--color-surface); color:var(--color-text); }
 
-nav a.router-link-exact-active {
-  color: #ffc107;
-}
+nav a.router-link-exact-active { color:var(--color-accent); background:var(--color-surface); box-shadow:0 0 0 1px var(--color-border-strong) inset; }
 
-main{
-  font-family: sans-serif;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-top: 20px;
-  padding-bottom: 50px;
-}
+main { font-family:var(--font-sans, system-ui, sans-serif); display:flex; flex-direction:column; align-items:center; margin-top:20px; padding-bottom:50px; width:100%; }
 </style>

@@ -12,6 +12,7 @@ import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import TokenEditForm from '../components/TokenEditForm.vue';
 import InitiativePanel from '../components/InitiativePanel.vue';
+import Icon from '../components/Icon.vue';
 import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
 
@@ -1372,8 +1373,9 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   <aside v-if="isDM" class="dm-panel" :class="{ collapsed: isDmPanelCollapsed }">
       <button @click="isDmPanelCollapsed = !isDmPanelCollapsed" class="toggle-button">
         <span>Painel do Mestre</span>
-        <span v-if="isDmPanelCollapsed">▲</span>
-        <span v-else>▼</span>
+        <span class="chevron" :class="{ collapsed: isDmPanelCollapsed }">
+          <Icon :name="isDmPanelCollapsed ? 'plus' : 'minus'" size="18" />
+        </span>
       </button>
       
       <div v-show="!isDmPanelCollapsed" class="panel-content">        
@@ -1437,11 +1439,11 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             >
               <template #item="{ element: scene }">
                 <li :class="{ 'active-scene': scene._id === activeSceneId }">
-                  <span class="drag-handle">⠿</span> <span>{{ scene.name }}</span>
+                  <span class="drag-handle" title="Arrastar"><Icon name="drag" size="16" /></span> <span>{{ scene.name }}</span>
                   <div class="scene-buttons">
                     <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">Ativar</button>
-                    <button @click="handleEditScene(scene)" class="icon-btn">✏️</button>
-                    <button @click="handleDeleteScene(scene._id)" :disabled="scene._id === activeSceneId" class="icon-btn delete-btn-small">🗑️</button>
+                    <button @click="handleEditScene(scene)" class="icon-btn" title="Editar"><Icon name="edit" size="16" /></button>
+                    <button @click="handleDeleteScene(scene._id)" :disabled="scene._id === activeSceneId" class="icon-btn delete-btn-small" title="Excluir"><Icon name="delete" size="16" /></button>
                   </div>
                 </li>
               </template>
@@ -1634,40 +1636,49 @@ main{
   margin-top: 0;
 }
 .dm-panel {
-  transition: width 0.3s ease, padding 0.3s ease; /* Transição suave */
+  transition: width 0.3s ease, padding 0.3s ease;
   position: absolute;
   top: 20px; 
   right: 20px;
   z-index: 50; 
-
-  /* Increased base width with responsiveness */
   width: 375px;
   max-width: clamp(340px, 28vw, 460px);
   flex-shrink: 0;
-  background-color: #3a3a3a;
+  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt));
   padding: 18px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   height: fit-content;
   max-height: calc(100vh - 40px); 
-  overflow-y: auto; /* Adiciona scroll se o conteúdo for muito grande */
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  box-shadow: var(--elev-2);
+  backdrop-filter: blur(4px);
+  font-family: var(--font-sans);
 }
 .toggle-button {
-  background-color: #3a3a3a;
-  color: #ffc107;
-  border: none;
+  background: var(--color-surface-alt);
+  color: var(--color-accent);
+  border: 1px solid var(--color-border);
   width: 100%;
   padding: 10px;
-  font-size: 1em;
-  font-weight: bold;
+  font-size: 0.95em;
+  font-weight: 600;
   cursor: pointer;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-radius: var(--radius-sm);
+  letter-spacing:.5px;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
+.toggle-button:hover { background: var(--color-surface); }
 panel h2 {
   margin-top: 0;
   text-align: center;
-  color: #ffc107;
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  letter-spacing:.5px;
 }
 .grid-controls {
     display: flex;
@@ -1709,12 +1720,13 @@ panel h2 {
   width: 100%;
   height: 85vh;
   max-width: 1600px;
-  background-color: #2c2c2c;
-  border: 10px solid rgba(0, 0, 0, 0.5);
-  border-radius: 8px;
-  overflow: hidden; /* Esconde as partes do mapa que saem da tela */
+  background: var(--color-surface);
+  border: 10px solid rgba(0 0 0 / 0.5);
+  border-radius: var(--radius-md);
+  overflow: hidden;
   position: relative; 
-  cursor: grab; /* Indica que a área pode ser arrastada */
+  cursor: grab;
+  box-shadow: var(--elev-2);
 }
 .viewport:active {
   cursor: grabbing;
@@ -1745,51 +1757,23 @@ panel h2 {
   display: block;
 }
 
-.map-placeholder {
-  color: #888;
-  grid-area: 1 / 1 / 2 / 2; 
-}
-.reset-view-btn {
-  margin-bottom: 15px;
-  padding: 8px 12px;
-  background-color: rgba(44, 44, 44, 0.8);
-  color: white;
-  border: 1px solid #888;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.reset-view-btn:hover {
-  background-color: rgba(60, 60, 60, 0.9);
-}
-.panel-section {
-  margin-top: 25px;
-  border-top: 1px solid #555;
-  padding-top: 15px;
-}
+.map-placeholder { color: var(--color-text-muted); grid-area: 1 / 1 / 2 / 2; font-style: italic; }
+.reset-view-btn { margin-bottom: 15px; padding: 8px 12px; background: var(--color-surface-alt); color: var(--color-text); border:1px solid var(--color-border); border-radius: var(--radius-sm); cursor:pointer; font: inherit; }
+.reset-view-btn:hover { background: var(--color-surface); }
+.panel-section { margin-top: 25px; border-top: 1px solid var(--color-border); padding-top: 15px; }
 .scene-list {
   list-style: none;
   padding: 0;
   max-height: 200px;
   overflow-y: auto;
 }
-.scene-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px;
-  margin-bottom: 5px;
-  border-radius: 4px;
-  background-color: #4f4f4f;
-}
+.scene-list li { display:flex; justify-content:space-between; align-items:center; padding:8px; margin-bottom:5px; border-radius: var(--radius-sm); background: var(--color-surface-alt); border:1px solid var(--color-border); transition: background var(--transition-fast), border-color var(--transition-fast); }
+.scene-list li:hover { background: var(--color-surface); border-color: var(--color-border-strong); }
 .panel-section h3, .panel-section h4 {
   margin-top: 0;
   margin-bottom: 10px;
 }
-.scene-list li.active-scene {
-  background-color: #ffc107;
-  color: #333;
-  font-weight: bold;
-}
+.scene-list li.active-scene { background: var(--color-accent); color: var(--color-text); font-weight:600; border-color: var(--color-border-strong); box-shadow:0 0 0 1px var(--color-border-strong), 0 0 6px rgba(var(--color-accent-rgb)/0.5); }
 .create-scene-form {
   margin-top: 20px;
   display: flex;
@@ -1804,15 +1788,8 @@ panel h2 {
   align-items: center;
   width: 100%;
 }
-.map-controls input {
-  padding: 5px;
-  min-width: 300px;
-  box-sizing: border-box;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 14px;
-  transition: border-color 0.3s ease;
-}
+.map-controls input { padding:5px; min-width:300px; box-sizing:border-box; border:1px solid var(--color-border); background: var(--color-surface-alt); border-radius: var(--radius-sm); font-size:14px; color: var(--color-text); font-family: var(--font-sans); }
+.map-controls input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
 .map-controls button, .create-scene-form button {
   width: 100%;
   padding: 10px;
@@ -1825,29 +1802,12 @@ panel h2 {
 .initiative-controls button {
   flex-grow: 1;
 }
-.initiative-list {
-  list-style: none;
-  padding: 0;
-  margin: 10px 0;
-  max-height: 250px; /* Limita a altura e adiciona scroll se necessário */
-  overflow-y: auto;
-  background-color: #2c2c2c;
-  border-radius: 4px;
-}
-.initiative-list li {
-  padding: 10px;
-  border-bottom: 1px solid #4f4f4f;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+.initiative-list { list-style:none; padding:0; margin:10px 0; max-height:250px; overflow-y:auto; background: var(--color-surface-alt); border-radius: var(--radius-sm); border:1px solid var(--color-border); }
+.initiative-list li { padding:10px; border-bottom:1px solid var(--color-border); display:flex; justify-content:space-between; align-items:center; }
 .initiative-list li:last-child {
   border-bottom: none;
 }
-.initiative-list li.active-turn {
-  background-color: #5a9c5a; /* Destaque verde para o turno ativo */
-  font-weight: bold;
-}
+.initiative-list li.active-turn { background: var(--color-success); font-weight:600; color: var(--color-text); }
 .add-character-form {
   display: flex;
   flex-direction: column;
@@ -1866,20 +1826,11 @@ panel h2 {
 .draggable-item {
   cursor: grab;
 }
-.drag-handle {
-  cursor: grab;
-  margin-right: 10px;
-  color: #888;
-}
+.drag-handle { cursor:grab; margin-right:10px; color: var(--color-text-muted); }
 .draggable-item:active {
   cursor: grabbing;
 }
-.empty-list-container {
-  padding: 20px;
-  text-align: center;
-  color: #888;
-  font-style: italic;
-}
+.empty-list-container { padding:20px; text-align:center; color: var(--color-text-muted); font-style:italic; }
 .initiative-buttons {
   display: flex;
   gap: 8px;
@@ -1890,46 +1841,14 @@ panel h2 {
   cursor: pointer;
   font-size: 1.1em;
 }
-.context-menu {
-  position: absolute;
-  background: #4f4f4f;
-  border: 1px solid #888;
-  border-radius: 4px;
-  padding: 5px 0;
-  z-index: 1000;
-  min-width: 150px;
-}
+.context-menu { position:absolute; background: var(--color-surface-alt); border:1px solid var(--color-border); border-radius: var(--radius-sm); padding:5px 0; z-index:1000; min-width:150px; box-shadow: var(--elev-2); }
 .context-menu ul { list-style: none; padding: 0; margin: 0; }
-.context-menu li { 
-  padding: 8px 12px; 
-  cursor: pointer;
-  color: #fff;
-}
-.context-menu li:hover { background-color: #ffc107; color: #333; }
-.context-menu button { /* Estilo para o botão "Fechar" */
-  background: none;
-  border: none;
-  color: #ccc;
-  width: 100%;
-  padding: 8px;
-  margin-top: 5px;
-  border-top: 1px solid #666;
-  cursor: pointer;
-}
-.turn-status-panel {
-  margin-top: 20px;
-  background-color: #3a3a3a;
-  padding: 15px;
-  border-radius: 8px;
-  border: 1px solid #555;
-  text-align: center;
-  width: 100%;
-  max-width: 400px;
-}
-.turn-status-panel h3 {
-  margin-top: 0;
-  color: #ffc107;
-}
+.context-menu li { padding:8px 12px; cursor:pointer; color: var(--color-text); font-size: var(--text-sm); }
+.context-menu li:hover { background: var(--color-accent); color: var(--color-text); }
+.context-menu button { background:none; border:none; color: var(--color-text-muted); width:100%; padding:8px; margin-top:5px; border-top:1px solid var(--color-border); cursor:pointer; font:inherit; }
+.context-menu button:hover { color: var(--color-text); background: var(--color-surface); }
+.turn-status-panel { margin-top:20px; background: var(--color-surface); padding:15px; border-radius: var(--radius-md); border:1px solid var(--color-border); text-align:center; width:100%; max-width:400px; box-shadow: var(--elev-1); }
+.turn-status-panel h3 { margin-top:0; color: var(--color-accent); font-family: var(--font-display); letter-spacing:.5px; }
 .initiative-list li {
     display: flex;
     justify-content: space-between;
@@ -1944,11 +1863,7 @@ panel h2 {
 .character-name {
     font-weight: bold;
 }
-.movement-info {
-    font-size: 0.8em;
-    color: #ccc;
-    opacity: 0.8;
-}
+.movement-info { font-size:0.75em; color: var(--color-text-muted); opacity:0.85; }
 .dm-initiative-float {
   position: absolute;
   top: 20px;

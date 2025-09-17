@@ -8,8 +8,7 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: HomeView,
-      meta: { requiresAuth: true } // Esta rota requer autenticação
+      component: HomeView // Landing page when logged out; dashboard when authenticated
     },
     {
       path: '/login',
