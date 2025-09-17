@@ -16,6 +16,7 @@ export interface IToken extends Document {
     previousSquareId?: string;
     moveHistory: string[];
     size: string;
+    canOverlap: boolean;
 }
 
 const TokenSchema: Schema = new Schema({
@@ -30,14 +31,24 @@ const TokenSchema: Schema = new Schema({
     remainingMovement: { type: Number, required: true, default: 9 },
     previousSquareId: { type: String, required: false },
     moveHistory: [{ type: String }],
-    size: { // <<< NOVO
+    size: {
         type: String,
         required: true,
         enum: tokenSizes,
-        default: 'Médio',
+        default: 'Pequeno/Médio',
     },
+    canOverlap: { type: Boolean, required: true, default: false },
 }, {
     timestamps: true
+});
+
+// Normaliza valores legados de size ('Médio') para 'Pequeno/Médio'
+TokenSchema.pre('save', function(next) {
+    const doc: any = this;
+    if (doc.size === 'Médio') {
+        doc.size = 'Pequeno/Médio';
+    }
+    next();
 });
 
 export default mongoose.model<IToken>("Token", TokenSchema);

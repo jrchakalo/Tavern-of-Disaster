@@ -6,12 +6,12 @@ import User from '../models/User.model';
 
 export function registerTokenHandlers(io: Server, socket: Socket) {
 
-  const requestPlaceToken = async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement: number; remainingMovement?: number; ownerId?: string, size: string }) => {
+  const requestPlaceToken = async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement: number; remainingMovement?: number; ownerId?: string; size: string; canOverlap?: boolean }) => {
     try {
         const userId = socket.data.user?.id; 
         if (!userId) return;
 
-        const { tableId, sceneId, squareId, name, imageUrl, movement, remainingMovement, ownerId, size } = data;
+  const { tableId, sceneId, squareId, name, imageUrl, movement, remainingMovement, ownerId, size, canOverlap } = data;
 
         const requesterId = socket.data.user?.id; 
         if (!requesterId) return;
@@ -36,16 +36,37 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
           return;
         }
 
-        // Verifica se já existe um token nesse quadrado
-        const existingToken = await Token.findOne({ sceneId: sceneId, squareId: squareId });
-        if (existingToken) {
-        socket.emit('tokenPlacementError', { message: 'Este quadrado já está ocupado nesta cena.' });
-        return;
+        // Função util para converter squareId em coords
+        const getCoords = (sqId: string) => {
+          const index = parseInt(sqId.replace('sq-', ''));
+          return { x: index % gridWidth, y: Math.floor(index / gridWidth) };
+        };
+        const anchor = getCoords(squareId);
+        const sizeMap: Record<string, number> = { 'Pequeno/Médio': 1, 'Grande': 2, 'Enorme': 3, 'Descomunal': 4, 'Colossal': 5 };
+        const footprintSize = sizeMap[size] || 1;
+        const footprintSquares: string[] = [];
+        for (let dy = 0; dy < footprintSize; dy++) {
+          for (let dx = 0; dx < footprintSize; dx++) {
+            const nx = anchor.x + dx;
+            const ny = anchor.y + dy;
+            if (nx >= gridWidth || ny >= gridHeight) {
+              socket.emit('tokenPlacementError', { message: 'Token não cabe dentro do grid.' });
+              return;
+            }
+            const idx = ny * gridWidth + nx;
+            footprintSquares.push(`sq-${idx}`);
+          }
+        }
+        // Verifica ocupação em qualquer square da área
+        const occupying = await Token.find({ sceneId: sceneId, squareId: { $in: footprintSquares } });
+        if (occupying.length > 0 && !canOverlap) {
+          socket.emit('tokenPlacementError', { message: 'Área ocupada por outro token.' });
+          return;
         }
 
         const tokenColor = `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`;
 
-  const newToken = new Token({
+    const newToken = new Token({
         tableId,
         sceneId, 
         squareId,
@@ -56,6 +77,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         movement: data.movement || 9, 
   remainingMovement: data.remainingMovement || data.movement || 9, // restante inicial igual ao movimento base
         size: data.size || 'Pequeno/Médio',
+    canOverlap: !!canOverlap,
         });
 
         await newToken.save();
@@ -167,6 +189,42 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         const oldCoords = getCoords(tokenToMove.squareId);
         const newCoords = getCoords(targetSquareId);
 
+        // Footprint validation for larger tokens
+        const sizeMap: Record<string, number> = { 'Pequeno/Médio': 1, 'Grande': 2, 'Enorme': 3, 'Descomunal': 4, 'Colossal': 5 };
+        const footprintSize = sizeMap[tokenToMove.size] || 1;
+        if (footprintSize > 1) {
+          // Build new footprint square ids
+          const newFootprint: string[] = [];
+          for (let dy = 0; dy < footprintSize; dy++) {
+            for (let dx = 0; dx < footprintSize; dx++) {
+              const nx = newCoords.x + dx;
+              const ny = newCoords.y + dy;
+              if (nx >= gridWidth || ny >= gridHeight) {
+                socket.emit('tokenMoveError', { message: 'Token não cabe no destino.' });
+                return;
+              }
+              newFootprint.push(`sq-${ny * gridWidth + nx}`);
+            }
+          }
+          // Current footprint squares (to allow moving within overlapping area)
+          const currentFootprint: Set<string> = new Set();
+          for (let dy = 0; dy < footprintSize; dy++) {
+            for (let dx = 0; dx < footprintSize; dx++) {
+              const cx = oldCoords.x + dx; const cy = oldCoords.y + dy;
+              if (cx >= 0 && cy >= 0 && cx < gridWidth && cy < gridHeight) {
+                currentFootprint.add(`sq-${cy * gridWidth + cx}`);
+              }
+            }
+          }
+          // Query any tokens occupying any square in new footprint (excluding self footprint squares)
+          const occupying = await Token.find({ sceneId: tokenToMove.sceneId, squareId: { $in: newFootprint } });
+          const blocking = occupying.filter(t => t._id.toString() !== tokenToMove._id.toString() && !currentFootprint.has(t.squareId));
+          if (blocking.length > 0 && !tokenToMove.canOverlap) {
+            socket.emit('tokenMoveError', { message: 'Destino ocupado por outro token.' });
+            return;
+          }
+        }
+
         // Calcula a distância em quadrados (método Chebyshev, comum em D&D 5e e outros jogos de tabuleiro)
   const distanceInSquares = Math.max(Math.abs(newCoords.x - oldCoords.x), Math.abs(newCoords.y - oldCoords.y));
   const metersPerSquare = (scene as any).metersPerSquare ?? 1.5;
@@ -233,7 +291,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
     }
   };
 
-  const requestEditToken = async (data: { tableId: string; tokenId: string; name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean }) => {
+  const requestEditToken = async (data: { tableId: string; tokenId: string; name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean; canOverlap?: boolean }) => {
     try {
       const { tableId, tokenId } = data;
       const userId = socket.data.user?.id;
@@ -268,6 +326,9 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
       }
       if (typeof data.size === 'string' && data.size) {
         token.size = data.size;
+      }
+      if (typeof data.canOverlap === 'boolean') {
+        token.canOverlap = data.canOverlap;
       }
       await token.save();
 

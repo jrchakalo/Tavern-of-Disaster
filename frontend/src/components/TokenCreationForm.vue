@@ -8,6 +8,7 @@ const tokenImageUrl = ref('');
 const tokenMovement = ref(9);
 const assignedOwnerId = ref('');
 const tokenSize = ref<TokenSize>('Pequeno/Médio');
+const canOverlap = ref(false);
 
 interface Props {
   players: PlayerInfo[]; 
@@ -15,7 +16,7 @@ interface Props {
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
-  (e: 'create-token', payload: { name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize }): void; // <<< ATUALIZADO
+  (e: 'create-token', payload: { name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; canOverlap?: boolean }): void; // includes canOverlap
   (e: 'cancel'): void;
 }>();
 
@@ -29,7 +30,8 @@ function handleSubmit() {
     imageUrl: tokenImageUrl.value,
     movement: tokenMovement.value,
     ownerId: assignedOwnerId.value,
-    size: tokenSize.value,
+  size: tokenSize.value,
+  canOverlap: canOverlap.value,
   });
   // Limpa os campos após emitir
   tokenName.value = '';
@@ -74,6 +76,10 @@ onMounted(() => {
           {{ sizeOption }}
         </option>
       </select>
+
+      <label class="toggle-row">
+        <input type="checkbox" v-model="canOverlap" /> Pode sobrepor outros tokens
+      </label>
 
       <div class="buttons">
         <button type="submit">Criar</button>

@@ -12,6 +12,7 @@ export interface TokenInfo {
   movement: number;
   remainingMovement: number;
   size: TokenSize;
+  canOverlap?: boolean;
 }
 
 export interface TokenOwner {

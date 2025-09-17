@@ -1,7 +1,6 @@
 // Arquivo de configuração para conexão com o MongoDB usando Mongoose
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import Token from "../models/Token.model";
 
 dotenv.config();
 
@@ -16,11 +15,8 @@ const connectDB = async () => {
         // Conecta ao MongoDB
         await mongoose.connect(mongoURI);
 
-        try {
-            const deleteResultToken = await Token.deleteMany({}); // Limpa a coleção de Tokens
-        } catch (clearError: any) {
-            console.error('Erro ao limpar o db:', clearError.message);
-        }
+        // Removido: limpeza destrutiva de tokens na inicialização.
+        // Isso apagava todos os tokens a cada restart, impedindo persistência.
 
         console.log("Conexão com o MongoDB estabelecida com sucesso.");
     }catch (err: any){

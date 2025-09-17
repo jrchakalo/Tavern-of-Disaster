@@ -11,8 +11,7 @@ import { useTableStore } from '../stores/tableStore';
 import GridDisplay from '../components/GridDisplay.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import TokenEditForm from '../components/TokenEditForm.vue';
-import TurnOrderDisplay from '../components/TurnOrderDisplay.vue';
-import PlayerTurnPanel from '../components/PlayerTurnPanel.vue';
+import InitiativePanel from '../components/InitiativePanel.vue';
 import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
 
@@ -172,12 +171,26 @@ function onSceneDragEnd() {
 
 function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string, size: TokenSize }) {
   if (targetSquareIdForToken.value && activeSceneId.value) {
-    socketService.placeToken({
-      tableId: tableId,
-      sceneId: activeSceneId.value,
-      squareId: targetSquareIdForToken.value,
-      ...payload
-    });
+    // Footprint validation local (para feedback imediato)
+    const sizeMap: Record<string, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 };
+    const footprint = sizeMap[payload.size] || 1;
+    if (footprint > 1) {
+      const anchorIdx = parseInt(targetSquareIdForToken.value.replace('sq-',''));
+      const anchorX = anchorIdx % gridWidth.value; const anchorY = Math.floor(anchorIdx / gridWidth.value);
+      let fits = true; let free = true;
+      for (let dy=0; dy<footprint && fits && free; dy++) {
+        for (let dx=0; dx<footprint; dx++) {
+          const nx = anchorX + dx; const ny = anchorY + dy;
+          if (nx >= gridWidth.value || ny >= gridHeight.value) { fits = false; break; }
+          const idx = ny * gridWidth.value + nx;
+          const sq = squares.value.find(s=>s.id === `sq-${idx}`);
+            if (sq && sq.token) { free = false; break; }
+        }
+      }
+      if (!fits) { alert('Token não cabe no grid nesse posicionamento.'); return; }
+      if (!free) { alert('Espaço ocupado por outro token.'); return; }
+    }
+    socketService.placeToken({ tableId, sceneId: activeSceneId.value, squareId: targetSquareIdForToken.value, ...payload });
   }
   // Fecha o formulário
   showTokenForm.value = false;
@@ -1210,12 +1223,27 @@ onMounted(() => {
   socketService.connect(tableId);
   // Observa resize da janela para recalcular dimensões da imagem
   window.addEventListener('resize', updateImageDimensions);
+  window.addEventListener('keydown', handleGlobalEsc);
 });
 
 onUnmounted(() => {
   socketService.disconnect();
   window.removeEventListener('resize', updateImageDimensions);
+  window.removeEventListener('keydown', handleGlobalEsc);
 });
+
+function handleGlobalEsc(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    // Limpa medições em andamento
+    previewMeasurement.value = null;
+    rulerStartPoint.value = null;
+    rulerEndPoint.value = null;
+    coneOriginSquareId.value = null;
+    coneAffectedSquares.value = [];
+    // Sai de ferramenta se estava medindo
+    if (isMeasuring.value) activeTool.value = 'none';
+  }
+}
 
 watch(currentMapUrl, () => {
   // Recalcula quando muda o src
@@ -1243,19 +1271,35 @@ function calculateCircleArea(originId: string, radiusMeters: number): string[] {
   const cols = gridWidth.value, rows = gridHeight.value;
   const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
   const getId = (x: number, y: number) => `sq-${y * cols + x}`;
-  const o = getCoords(originId);
-  const ocx = o.x + 0.5, ocy = o.y + 0.5;
-  const maxDist = radiusSq + 0.5; // tolerância na borda
-  const affected = new Set<string>([originId]);
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const cx = x + 0.5, cy = y + 0.5;
-      const dx = cx - ocx, dy = cy - ocy;
-      const d = Math.hypot(dx, dy);
-      if (d <= maxDist) affected.add(getId(x, y));
+  let o = getCoords(originId);
+  // Se originId pertence a um token multi-footprint, recalc centre para o centro geométrico do footprint inteiro
+  const square = squares.value.find(s => s.id === originId);
+  if (square?.token) {
+    const sizeMap: Record<TokenSize, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 } as const;
+    const span = sizeMap[square.token.size as TokenSize] || 1;
+    if (span > 1) {
+      // Anchor é o canto superior-esquerdo do footprint; centro verdadeiro desloca span/2 - 0.5
+      o = getCoords(originId);
+      const ocx = o.x + (span / 2); // (0 + span)/2 => deslocamento do canto
+      const ocy = o.y + (span / 2);
+      return computeCircle(ocx, ocy);
     }
   }
-  return Array.from(affected);
+  return computeCircle(o.x + 0.5, o.y + 0.5);
+
+  function computeCircle(ocx: number, ocy: number): string[] {
+    const maxDist = radiusSq + 0.5; // tolerância
+    const affected = new Set<string>([originId]);
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const cx = x + 0.5, cy = y + 0.5;
+        const dx = cx - ocx, dy = cy - ocy;
+        const d = Math.hypot(dx, dy);
+        if (d <= maxDist) affected.add(getId(x, y));
+      }
+    }
+    return Array.from(affected);
+  }
 }
 
 // Quadrado: lado em metros; inclui células cujos centros caem dentro de um quadrado alinhado à grade e centrado na origem
@@ -1266,10 +1310,20 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   const cols = gridWidth.value, rows = gridHeight.value;
   const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
   const getId = (x: number, y: number) => `sq-${y * cols + x}`;
-  const o = getCoords(originId);
-  const ocx = o.x + 0.5, ocy = o.y + 0.5;
-  const minX = ocx - half - 0.001, maxX = ocx + half + 0.001; // pequena tolerância
-  const minY = ocy - half - 0.001, maxY = ocy + half + 0.001;
+  let o = getCoords(originId);
+  let centerX = o.x + 0.5;
+  let centerY = o.y + 0.5;
+  const square = squares.value.find(s => s.id === originId);
+  if (square?.token) {
+    const sizeMap: Record<TokenSize, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 } as const;
+    const span = sizeMap[square.token.size as TokenSize] || 1;
+    if (span > 1) {
+      centerX = o.x + (span / 2);
+      centerY = o.y + (span / 2);
+    }
+  }
+  const minX = centerX - half - 0.001, maxX = centerX + half + 0.001; // pequena tolerância
+  const minY = centerY - half - 0.001, maxY = centerY + half + 0.001;
   const affected = new Set<string>([originId]);
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -1285,16 +1339,16 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 <template>
   <div class="table-view-layout">
 
-    <div v-if="!isDM && sessionStatus === 'LIVE'">
-  <TurnOrderDisplay :initiativeList="initiativeList" :tokens="tokensOnMap" :metersPerSquare="metersPerSquare" :showMovement="false" />
-  <PlayerTurnPanel 
+    <div v-if="!isDM && sessionStatus === 'LIVE'" class="player-initiative-wrapper">
+      <InitiativePanel
         :initiativeList="initiativeList"
-        :myActiveToken="myActiveToken"
-        :currentUser="currentUser ? { _id: currentUser.id, username: currentUser.username } : null"
         :tokensOnMap="tokensOnMap"
-  :metersPerSquare="metersPerSquare"
+        :metersPerSquare="metersPerSquare"
+        :currentUser="currentUser ? { _id: currentUser.id, username: currentUser.username } : null"
+        :isDM="false"
+        :myActiveToken="myActiveToken"
         @undo-move="handleUndoMove"
-        @end-turn="handleNextTurn"
+        @next-turn="handleNextTurn"
       />
     </div>
 
@@ -1357,33 +1411,19 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           </form>
         
           <div class="panel-section" v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
-            <h3>Iniciativa</h3>
-            <div class="initiative-controls">
-              <button @click="handleNextTurn">Próximo Turno</button>
-              <button @click="handleUndoMove" :disabled="!currentTurnTokenId">Desfazer Movimento</button>
-            </div>
-            <draggable 
-              v-if="activeScene.type === 'battlemap'"
-              v-model="initiativeList"
-              tag="ul"
-              class="initiative-list"
-              item-key="_id"
-              @end="onInitiativeDragEnd"
-            >
-              <template #item="{ element: entry }">
-                <li :class="{ 'active-turn': entry.isCurrentTurn, 'draggable-item': true }">
-                  <span>{{ entry.characterName }}</span>
-                  <div class="initiative-buttons"> 
-                    <!-- Botão de renomear removido; edição completa via TokenEditForm -->
-                    <button v-if="entry.tokenId" @click="openEditTokenByEntry(entry)" class="icon-btn" title="Editar Token">🛠️</button>
-                    <button @click="handleRemoveFromInitiative(entry._id)" class="icon-btn delete-btn-small">🗑️</button>
-                  </div>
-                </li>
-              </template>
-            </draggable>
-            <div v-if="initiativeList.length === 0" class="empty-list-container">
-              <p class="empty-list">A iniciativa está vazia.</p>
-            </div>
+            <InitiativePanel
+              :initiativeList="initiativeList"
+              :tokensOnMap="tokensOnMap"
+              :metersPerSquare="metersPerSquare"
+              :currentUser="currentUser ? { _id: currentUser.id, username: currentUser.username } : null"
+              :isDM="true"
+              :myActiveToken="myActiveToken"
+              @edit-token="(id:string)=>{ const tok=tokensOnMap.find(t=>t._id===id)||null; tokenBeingEdited=tok; showTokenEditForm=!!tok; }"
+              @remove-entry="(entryId:string)=>handleRemoveFromInitiative(entryId)"
+              @reorder="(list)=>{ initiativeList = list as any; onInitiativeDragEnd(); }"
+              @undo-move="handleUndoMove"
+              @next-turn="handleNextTurn"
+            />
           </div>
 
           <ul class="scene-list">
@@ -1509,6 +1549,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               @viewport-contextmenu="handleViewportContextMenu"
               @shape-contextmenu="handleShapeContextMenu"
             />
+            <!-- Painel flutuante descontinuado (substituído pelo do Painel Mestre) -->
           </div>
         </template>
 
@@ -1600,11 +1641,13 @@ main{
   right: 20px;
   z-index: 50; 
 
-  width: 300px;
+  /* Increased base width with responsiveness */
+  width: 375px;
+  max-width: clamp(340px, 28vw, 460px);
   flex-shrink: 0;
   background-color: #3a3a3a;
-  padding: 15px;
-  border-radius: 8px;
+  padding: 18px;
+  border-radius: 10px;
   height: fit-content;
   max-height: calc(100vh - 40px); 
   overflow-y: auto; /* Adiciona scroll se o conteúdo for muito grande */
@@ -1632,6 +1675,19 @@ panel h2 {
     flex-direction: column;
     gap: 5px;
     align-items: stretch;
+}
+/* Player initiative panel always visible bottom-right (below master panel layer) */
+.player-initiative-wrapper {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 40; /* below dm-panel z-index 50 */
+  pointer-events: none; /* allow map interactions except panel itself */
+}
+.player-initiative-wrapper .initiative-panel { pointer-events: auto; }
+@media (max-width: 900px) {
+  .player-initiative-wrapper { right: 8px; left: 8px; bottom: 8px; }
+  .player-initiative-wrapper .initiative-panel { width: 100%; }
 }
 .grid-controls label {
     font-size: 0.9em;
@@ -1893,5 +1949,11 @@ panel h2 {
     font-size: 0.8em;
     color: #ccc;
     opacity: 0.8;
+}
+.dm-initiative-float {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 60; /* above map, below toolbars if needed */
 }
 </style>

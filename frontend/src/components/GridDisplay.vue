@@ -5,6 +5,32 @@ import type { GridSquare, TokenInfo, TokenSize } from '../types';
 const pathPreview = ref<string[]>([]); 
 const isPathValid = ref(true); 
 const draggedTokenInfo = ref<TokenInfo | null>(null);
+// Conjunto de squares ocupados por partes não-âncora de tokens grandes
+const footprintOccupied = computed(()=>{
+  const occ = new Set<string>();
+  if (!props.squares) return occ;
+  const sizeMap: Record<string, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 };
+  const gridW = props.gridWidth as any as number;
+  const gridH = props.gridHeight as any as number;
+  props.squares.forEach(sq=>{
+    if (sq.token) {
+      const n = sizeMap[sq.token.size] || 1;
+      if (n>1) {
+        const anchorIdx = parseInt(sq.id.replace('sq-',''));
+        const ax = anchorIdx % gridW; const ay = Math.floor(anchorIdx / gridW);
+        for (let dy=0; dy<n; dy++) {
+          for (let dx=0; dx<n; dx++) {
+            const nx = ax + dx; const ny = ay + dy;
+            if (nx >= gridW || ny >= gridH) continue;
+            const id = `sq-${ny * gridW + nx}`;
+            if (id !== sq.id) occ.add(id);
+          }
+        }
+      }
+    }
+  });
+  return occ;
+});
 let throttleTimeout: number | null = null;
 const THROTTLE_DELAY_MS = 50;
 
@@ -74,11 +100,14 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(() => recalcSquareSize());
   if (viewportRef.value) resizeObserver.observe(viewportRef.value);
   window.addEventListener('resize', recalcSquareSize);
+  // ESC listener para cancelar movimento
+  window.addEventListener('keydown', escCancelHandler);
 });
 
 onBeforeUnmount(() => {
   if (resizeObserver && viewportRef.value) resizeObserver.unobserve(viewportRef.value);
   window.removeEventListener('resize', recalcSquareSize);
+  window.removeEventListener('keydown', escCancelHandler);
 });
 
 watch([resolvedWidth, resolvedHeight, () => props.imageWidth, () => props.imageHeight], () => recalcSquareSize());
@@ -90,6 +119,16 @@ const gridContainerStyle = computed(() => ({
   width: `${squareSizePx.value * resolvedWidth.value}px`,
   height: `${squareSizePx.value * resolvedHeight.value}px`,
 }));
+
+function escCancelHandler(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    if (draggedTokenInfo.value || pathPreview.value.length) {
+      draggedTokenInfo.value = null;
+      pathPreview.value = [];
+      isPathValid.value = true;
+    }
+  }
+}
 
 // Mapas de cor para áreas
 const sharedAreaColorMap = computed<Map<string, string>>(() => {
@@ -220,7 +259,7 @@ function handleDragOver(targetSquare: GridSquare) {
   }, THROTTLE_DELAY_MS);
 
   if (!draggedTokenInfo.value || !targetSquare || draggedTokenInfo.value.squareId === targetSquare.id) {
-  pathPreview.value = [];
+    pathPreview.value = [];
     return;
   }
 
@@ -228,7 +267,40 @@ function handleDragOver(targetSquare: GridSquare) {
   pathPreview.value = path;
 
   const movementCost = (path.length - 1) * (props.metersPerSquare || 1.5);
-  isPathValid.value = draggedTokenInfo.value.remainingMovement >= movementCost;
+
+  // Occupancy / footprint blocking preview (only if token cannot overlap)
+  let occupancyBlocked = false;
+  const dt = draggedTokenInfo.value;
+  const sizeMap: Record<string, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 };
+  const footprint = sizeMap[dt.size] || 1;
+  const gridW = props.gridWidth as any as number;
+  const gridH = props.gridHeight as any as number;
+
+  if (!dt.canOverlap) {
+    const anchorIdxTarget = parseInt(targetSquare.id.replace('sq-',''));
+    const anchorXTarget = anchorIdxTarget % gridW; const anchorYTarget = Math.floor(anchorIdxTarget / gridW);
+    const currentAnchorIdx = parseInt(dt.squareId.replace('sq-',''));
+    const currentAnchorX = currentAnchorIdx % gridW; const currentAnchorY = Math.floor(currentAnchorIdx / gridW);
+    if (footprint > 1) {
+      outer: for (let dy=0; dy<footprint; dy++) {
+        for (let dx=0; dx<footprint; dx++) {
+          const nx = anchorXTarget + dx; const ny = anchorYTarget + dy;
+          if (nx >= gridW || ny >= gridH) { occupancyBlocked = true; break outer; }
+          const sqId = `sq-${ny * gridW + nx}`;
+          const withinCurrent = nx >= currentAnchorX && nx < currentAnchorX + footprint && ny >= currentAnchorY && ny < currentAnchorY + footprint;
+          if (!withinCurrent) {
+            const sq = props.squares.find(s=>s.id === sqId);
+            if (sq && sq.token) { occupancyBlocked = true; break outer; }
+          }
+        }
+      }
+    } else {
+      // Single-square token
+      if (targetSquare.token && targetSquare.token._id !== dt._id) occupancyBlocked = true;
+    }
+  }
+
+  isPathValid.value = (dt.remainingMovement >= movementCost) && !occupancyBlocked;
 }
 
 function handleDrop(event: DragEvent, targetSquare: GridSquare) {
@@ -243,9 +315,34 @@ function handleDrop(event: DragEvent, targetSquare: GridSquare) {
     return;
   }
 
-  if (targetSquare.token) {
-  console.log('Quadrado destino ocupado');
-    return; // Não permite soltar em um quadrado já ocupado
+  // Footprint collision validation (client side) - skip if token.canOverlap
+  if (draggedTokenInfo.value && !draggedTokenInfo.value.canOverlap) {
+    const sizeMap: Record<string, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 };
+    const footprint = sizeMap[draggedTokenInfo.value.size] || 1;
+    if (footprint > 1) {
+      const gridW = props.gridWidth as any as number; // width in squares
+      const anchorIdx = parseInt(targetSquare.id.replace('sq-',''));
+      const anchorX = anchorIdx % gridW; const anchorY = Math.floor(anchorIdx / gridW);
+      let blocked = false;
+      for (let dy=0; dy<footprint && !blocked; dy++) {
+        for (let dx=0; dx<footprint; dx++) {
+          const nx = anchorX + dx; const ny = anchorY + dy;
+          if (nx >= gridW || ny >= (props.gridHeight as any as number)) { blocked = true; break; }
+          const sqId = `sq-${ny * gridW + nx}`;
+          // allow squares currently occupied by the same token's current footprint
+          const currentAnchorIdx = parseInt(draggedTokenInfo.value.squareId.replace('sq-',''));
+          const currentAnchorX = currentAnchorIdx % gridW; const currentAnchorY = Math.floor(currentAnchorIdx / gridW);
+          const withinCurrent = nx >= currentAnchorX && nx < currentAnchorX + footprint && ny >= currentAnchorY && ny < currentAnchorY + footprint;
+          if (!withinCurrent) {
+            const sq = props.squares.find(s=>s.id === sqId);
+            if (sq && sq.token) { blocked = true; break; }
+          }
+        }
+      }
+      if (blocked) { console.log('Destino bloqueado pelo footprint de outro token'); return; }
+    } else {
+      if (targetSquare.token) { console.log('Quadrado destino ocupado'); return; }
+    }
   }
 
   if (event.dataTransfer) {
@@ -399,7 +496,8 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
       class="grid-square"
       :class="{ 
         'path-preview': pathPreview.includes(square.id) && isPathValid,
-        'path-invalid': pathPreview.includes(square.id) && !isPathValid
+        'path-invalid': pathPreview.includes(square.id) && !isPathValid,
+        'footprint-occupied': footprintOccupied.has(square.id)
       }"
       :style="getSquareStyle(square.id)"
       @contextmenu.prevent="onSquareRightClick(square, $event)" 
@@ -410,7 +508,8 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
             class="token"
             :class="{ 
               'selected': square.token._id === props.selectedTokenId, 
-  'active-turn-token': square.token._id === props.currentTurnTokenId
+  'active-turn-token': square.token._id === props.currentTurnTokenId,
+  'multi-footprint': getTokenSizeInSquares(square.token.size) > 1
               }"
             :style="{
                 '--token-size': getTokenSizeInSquares(square.token.size), 
@@ -531,22 +630,49 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
         </template>
       </svg>
 
-      <!-- Auras persistentes ancoradas a tokens -->
+      <!-- Auras persistentes centralizadas no footprint do token -->
       <svg v-if="auras && auras.length" class="persist-measurements-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
         <template v-for="a in auras" :key="a.tokenId">
           <template v-if="props.squares.some(sq => sq.token && sq.token._id === a.tokenId)">
             <circle
-              v-for="sq in props.squares.filter(sq => sq.token && sq.token._id === a.tokenId)"
-              :key="sq.id + '-' + a.tokenId"
+              v-if="(() => { const tokSq = props.squares.find(s=>s.token && s.token._id===a.tokenId); return tokSq; })()"
               class="aura-outline"
-              :cx="getLocalCenterForSquareId(sq.id)?.x || 0"
-              :cy="getLocalCenterForSquareId(sq.id)?.y || 0"
-              :r="((a.radiusMeters / (props.metersPerSquare || 1.5)) * (squareSizePx)) + (squareSizePx/2)"
+              :cx="(() => { 
+                const tokSq = props.squares.find(s=>s.token && s.token._id===a.tokenId); 
+                if (!tokSq) return 0; 
+                const sizeMap = { 'Pequeno/Médio':1, 'Grande':2, 'Enorme':3, 'Descomunal':4, 'Colossal':5 }; 
+                const n = sizeMap[tokSq.token!.size] || 1; 
+                const anchorIdx = parseInt(tokSq.id.replace('sq-','')); 
+                const gridW = resolvedWidth; 
+                const ax = anchorIdx % gridW; const ay = Math.floor(anchorIdx / gridW); 
+                const centerXSquares = ax + n/2; 
+                return centerXSquares * squareSizePx; 
+              })()"
+              :cy="(() => { 
+                const tokSq = props.squares.find(s=>s.token && s.token._id===a.tokenId); 
+                if (!tokSq) return 0; 
+                const sizeMap = { 'Pequeno/Médio':1, 'Grande':2, 'Enorme':3, 'Descomunal':4, 'Colossal':5 }; 
+                const n = sizeMap[tokSq.token!.size] || 1; 
+                const anchorIdx = parseInt(tokSq.id.replace('sq-','')); 
+                const gridW = resolvedWidth; 
+                const ax = anchorIdx % gridW; const ay = Math.floor(anchorIdx / gridW); 
+                const centerYSquares = ay + n/2; 
+                return centerYSquares * squareSizePx; 
+              })()"
+              :r="(() => { 
+                const tokSq = props.squares.find(s=>s.token && s.token._id===a.tokenId); 
+                if (!tokSq) return 0; 
+                const sizeMap = { 'Pequeno/Médio':1, 'Grande':2, 'Enorme':3, 'Descomunal':4, 'Colossal':5 }; 
+                const n = sizeMap[tokSq.token!.size] || 1; 
+                const squaresPerMeter = 1 / (props.metersPerSquare || 1.5); 
+                const auraRadiusSquares = a.radiusMeters * squaresPerMeter; 
+                // adiciona metade do footprint para que a aura inclua borda externa
+                return (auraRadiusSquares + n/2) * squareSizePx; 
+              })()"
               :stroke="a.color"
               :style="{ filter: `drop-shadow(0 0 6px ${a.color}) drop-shadow(0 0 14px ${a.color})` }"
               fill="none"
             />
-            
           </template>
         </template>
       </svg>
@@ -667,11 +793,12 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
   align-items: center;
   box-sizing: border-box;
   cursor: pointer; /* será sobrescrito quando medindo */
-  background-color: rgba(255, 255, 255, 0.05); 
-  border: 1px solid rgba(0, 0, 0, 0.4);
+  background: rgba(255,255,255,0.008); /* quase imperceptível para remover sensação quadriculada */
+  border: 1px solid rgba(255,255,255,0.04); /* borda ultra leve */
   min-width: 0;
   min-height: 0;
   position: relative;
+  transition: background-color 80ms ease, box-shadow 120ms ease;
 }
 
 .selectable { cursor: pointer; }
@@ -686,9 +813,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
 .grid-container.measuring .grid-square { cursor: crosshair; }
 /* Durante a medição o cursor deve permanecer crosshair inclusive sobre tokens */
 .grid-container.measuring .token { cursor: crosshair !important; }
-.grid-square:hover {
-  background-color: rgba(255, 255, 0, 0.1); 
-}
+.grid-square:hover { background-color: rgba(255,255,255,0.08); }
 
 .path-preview {
   /* Deixa o fundo transparente e usa contorno para visibilidade sobre qualquer área */
@@ -701,12 +826,13 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
   box-shadow: inset 0 0 0 3px rgba(255, 50, 50, 0.9);
 }
 
+
 /* Cores de área agora são dinâmicas por quadrado via style */
 
 .token {
   width: calc(100% * var(--token-size, 1));
   height: calc(100% * var(--token-size, 1));
-  border-radius: 50%; /* Para fazer uma bolinha */
+  border-radius: 50%; /* default circular */
   box-sizing: border-box;
   display: flex;
   justify-content: center;
@@ -731,9 +857,22 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
   left: 0;
   width: 100%;
   height: 100%;
-  border-radius: 50%; /* Garante que o conteúdo também seja circular */
-  overflow: hidden; /* Garante que nada vaze das bordas arredondadas */
+  border-radius: 50%;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease, outline 0.2s ease;
 }
+
+/* Apenas tokens maiores que Pequeno/Médio (multi-footprint) crescem 110% dentro da área */
+.token.multi-footprint .token-image,
+.token.multi-footprint .token-fallback {
+  width: 110%;
+  height: 110%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Multi-square tokens ocupam área total com cantos suavizados (não círculo perfeito) */
 
 .token-image {
   object-fit: cover;
@@ -756,6 +895,29 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
 .token.active-turn-token {
   box-shadow: 0 0 5px 5px #69ff69; /* Exemplo: brilho verde */
   z-index: 6;
+}
+
+/* Ajustes quando multi-footprint está ampliado para evitar clipping do highlight */
+.token.multi-footprint.selected {
+  outline: none;
+  box-shadow: none;
+}
+.token.multi-footprint.active-turn-token {
+  box-shadow: none;
+}
+.token.multi-footprint.selected .token-image,
+.token.multi-footprint.selected .token-fallback {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 10px 3px rgba(255,255,255,0.5);
+}
+.token.multi-footprint.active-turn-token .token-image,
+.token.multi-footprint.active-turn-token .token-fallback {
+  box-shadow: 0 0 6px 6px #69ff69;
+}
+.token.multi-footprint.selected.active-turn-token .token-image,
+.token.multi-footprint.selected.active-turn-token .token-fallback {
+  box-shadow: 0 0 10px 6px #69ff69, 0 0 14px rgba(255,255,255,0.4);
+  outline: 2px solid rgba(255,255,255,0.6);
 }
 
 .token-aura-label {

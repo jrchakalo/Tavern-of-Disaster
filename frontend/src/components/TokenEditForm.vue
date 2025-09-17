@@ -9,7 +9,7 @@ interface Props {
 }
 const props = defineProps<Props>();
 
-const emit = defineEmits<{ (e:'close'):void; (e:'save', payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: TokenSize; resetRemainingMovement?: boolean }): void; }>();
+const emit = defineEmits<{ (e:'close'):void; (e:'save', payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: TokenSize; resetRemainingMovement?: boolean; canOverlap?: boolean }): void; }>();
 
 const name = ref('');
 const movement = ref<number>(9);
@@ -17,6 +17,7 @@ const imageUrl = ref('');
 const ownerId = ref('');
 const size = ref<TokenSize>('Pequeno/Médio');
 const resetRemainingMovement = ref(false);
+const canOverlap = ref(false);
 
 watch(() => props.token, (t) => {
   if (t) {
@@ -26,11 +27,13 @@ watch(() => props.token, (t) => {
     ownerId.value = t.ownerId?._id || '';
     size.value = t.size;
     resetRemainingMovement.value = false;
+  // @ts-ignore
+  canOverlap.value = (t as any).canOverlap || false;
   }
 }, { immediate: true });
 
 function submit() {
-  emit('save', { name: name.value, movement: movement.value, imageUrl: imageUrl.value, ownerId: ownerId.value, size: size.value, resetRemainingMovement: resetRemainingMovement.value });
+  emit('save', { name: name.value, movement: movement.value, imageUrl: imageUrl.value, ownerId: ownerId.value, size: size.value, resetRemainingMovement: resetRemainingMovement.value, canOverlap: canOverlap.value });
 }
 </script>
 
@@ -59,6 +62,10 @@ function submit() {
 
       <label class="reset-row">
         <input type="checkbox" v-model="resetRemainingMovement" /> Resetar movimento restante
+      </label>
+
+      <label class="reset-row">
+        <input type="checkbox" v-model="canOverlap" /> Pode sobrepor outros tokens
       </label>
 
       <div class="buttons">
