@@ -5,7 +5,7 @@ import type { GridSquare, TokenInfo, TokenSize } from '../types';
 const pathPreview = ref<string[]>([]); 
 const isPathValid = ref(true); 
 const draggedTokenInfo = ref<TokenInfo | null>(null);
-// Conjunto de squares ocupados por partes não-âncora de tokens grandes
+// Squares ocupados por partes não-âncora de tokens grandes (bloqueiam destino)
 const footprintOccupied = computed(()=>{
   const occ = new Set<string>();
   if (!props.squares) return occ;
@@ -79,11 +79,11 @@ const emit = defineEmits<{
   (e: 'shape-contextmenu', payload: { id: string }): void;
 }>();
 
-// Largura/altura efetivas
+// Dimensões efetivas do grid
 const resolvedWidth = computed(() => props.gridWidth);
 const resolvedHeight = computed(() => props.gridHeight);
 
-// Cada célula é quadrada e baseada na largura disponível
+// Cada célula derivada somente da largura (mantém quadrado)
 const squareSizePx = ref(32);
 const viewportRef = ref<HTMLElement | null>(null);
 let resizeObserver: ResizeObserver | null = null;
@@ -100,7 +100,7 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(() => recalcSquareSize());
   if (viewportRef.value) resizeObserver.observe(viewportRef.value);
   window.addEventListener('resize', recalcSquareSize);
-  // ESC listener para cancelar movimento
+  // ESC: cancela movimento de token em andamento
   window.addEventListener('keydown', escCancelHandler);
 });
 
@@ -130,7 +130,7 @@ function escCancelHandler(e: KeyboardEvent) {
   }
 }
 
-// Mapas de cor para áreas
+// Mapas de cor (efêmeras compartilhadas e persistentes)
 const sharedAreaColorMap = computed<Map<string, string>>(() => {
   const map = new Map<string, string>();
   (props.sharedMeasurements || []).forEach(m => {
@@ -234,11 +234,10 @@ function getTokenAreaStyle(squareId: string): Record<string, string> {
 }
 
 function handleDragStart(event: DragEvent, token: TokenInfo) {
-  if (props.isMeasuring) {
+  if (props.isMeasuring) { // Bloqueia arraste durante medição
     event.preventDefault();
     return;
   }
-  console.log(`Iniciando o arrastar do token: ${token._id}`);
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('application/json', JSON.stringify({
@@ -306,21 +305,19 @@ function handleDragOver(targetSquare: GridSquare) {
 function handleDrop(event: DragEvent, targetSquare: GridSquare) {
   if (props.isMeasuring) return;
   event.preventDefault();
-  console.log(`Token solto no quadrado: ${targetSquare.id}`);
 
-  if (!isPathValid.value) {
-  console.log("Movimento inválido");
-  pathPreview.value = [];
+  if (!isPathValid.value) { // Caminho inválido
+    pathPreview.value = [];
     draggedTokenInfo.value = null;
     return;
   }
 
-  // Footprint collision validation (client side) - skip if token.canOverlap
+  // Validação footprint (cliente) se não puder sobrepor
   if (draggedTokenInfo.value && !draggedTokenInfo.value.canOverlap) {
     const sizeMap: Record<string, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 };
     const footprint = sizeMap[draggedTokenInfo.value.size] || 1;
     if (footprint > 1) {
-      const gridW = props.gridWidth as any as number; // width in squares
+      const gridW = props.gridWidth as any as number;
       const anchorIdx = parseInt(targetSquare.id.replace('sq-',''));
       const anchorX = anchorIdx % gridW; const anchorY = Math.floor(anchorIdx / gridW);
       let blocked = false;
@@ -329,7 +326,6 @@ function handleDrop(event: DragEvent, targetSquare: GridSquare) {
           const nx = anchorX + dx; const ny = anchorY + dy;
           if (nx >= gridW || ny >= (props.gridHeight as any as number)) { blocked = true; break; }
           const sqId = `sq-${ny * gridW + nx}`;
-          // allow squares currently occupied by the same token's current footprint
           const currentAnchorIdx = parseInt(draggedTokenInfo.value.squareId.replace('sq-',''));
           const currentAnchorX = currentAnchorIdx % gridW; const currentAnchorY = Math.floor(currentAnchorIdx / gridW);
           const withinCurrent = nx >= currentAnchorX && nx < currentAnchorX + footprint && ny >= currentAnchorY && ny < currentAnchorY + footprint;
@@ -339,22 +335,16 @@ function handleDrop(event: DragEvent, targetSquare: GridSquare) {
           }
         }
       }
-      if (blocked) { console.log('Destino bloqueado pelo footprint de outro token'); return; }
+      if (blocked) { return; }
     } else {
-      if (targetSquare.token) { console.log('Quadrado destino ocupado'); return; }
+      if (targetSquare.token) { return; }
     }
   }
 
   if (event.dataTransfer) {
     const data = JSON.parse(event.dataTransfer.getData('application/json'));
-    const { tokenId, originalSquareId } = data;
-
-    console.log(`Emitindo 'token-move-requested': tokenId=<span class="math-inline">\{tokenId\}, targetSquareId\=</span>{targetSquare.id}`);
-
-    emit('token-move-requested', {
-      tokenId: tokenId,
-      targetSquareId: targetSquare.id
-    });
+    const { tokenId } = data;
+    emit('token-move-requested', { tokenId, targetSquareId: targetSquare.id });
   }
   pathPreview.value = [];
   draggedTokenInfo.value = null;
@@ -497,7 +487,9 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
       :class="{ 
         'path-preview': pathPreview.includes(square.id) && isPathValid,
         'path-invalid': pathPreview.includes(square.id) && !isPathValid,
-        'footprint-occupied': footprintOccupied.has(square.id)
+        'footprint-occupied': footprintOccupied.has(square.id),
+        'major-col': ((parseInt(square.id.replace('sq-','')) % resolvedWidth) % 5) === 0,
+        'major-row': (Math.floor(parseInt(square.id.replace('sq-','')) / resolvedWidth) % 5) === 0
       }"
       :style="getSquareStyle(square.id)"
       @contextmenu.prevent="onSquareRightClick(square, $event)" 
@@ -787,19 +779,37 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
   position: relative;
 }
 
+.grid-container {
+  /* Variáveis para facilitar ajuste de visibilidade do grid */
+  --grid-line-color: rgba(255,255,255,0.08);
+  --grid-major-line-color: rgba(255,255,255,0.08);
+  --grid-cell-bg: rgba(255,255,255,0.025);
+  --grid-cell-bg-alt: rgba(255,255,255,0.045);
+}
+
 .grid-square {
   display: flex;
   justify-content: center;
   align-items: center;
   box-sizing: border-box;
   cursor: pointer; /* será sobrescrito quando medindo */
-  background: rgba(255,255,255,0.008); /* quase imperceptível para remover sensação quadriculada */
-  border: 1px solid rgba(255,255,255,0.04); /* borda ultra leve */
+  background: var(--grid-cell-bg);
+  border: 1px solid var(--grid-line-color);
   min-width: 0;
   min-height: 0;
   position: relative;
   transition: background-color 80ms ease, box-shadow 120ms ease;
 }
+
+/* leve alternância para reforçar a malha sem poluição visual */
+.grid-square:nth-child(2n) { background: var(--grid-cell-bg-alt); }
+
+/* Linhas principais a cada 5 células (visualização mais forte) */
+.grid-square.major-col { border-left-color: var(--grid-major-line-color); }
+.grid-square.major-row { border-top-color: var(--grid-major-line-color); }
+
+/* Ajuste de hover mantendo contraste */
+.grid-square:hover { background-color: rgba(255,255,255,0.10); }
 
 .selectable { cursor: pointer; }
 .area-outline.shared.selected, .cone-outline.shared.selected {

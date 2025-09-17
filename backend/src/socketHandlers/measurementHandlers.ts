@@ -6,6 +6,7 @@ import { setMeasurement, removeMeasurement, clearAllForUser, getTablesForUser, a
 import { nanoid } from 'nanoid';
 
 export function registerMeasurementHandlers(io: Server, socket: Socket) {
+  // Compartilha medição efêmera. Jogador só pode se for turno do seu token; Mestre sempre.
   const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; color?: string; }) => {
     try {
       const user = socket.data.user;
@@ -15,7 +16,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       if (!table) return;
       if (!table.activeScene || table.activeScene._id.toString() !== sceneId) return; // only for active scene
 
-      // Permissão: DM sempre pode; jogador apenas se for o dono do token em turno
+  // Permissão: Mestre sempre; jogador apenas se é dono do token em turno
       const isDM = table.dm._id.toString() === user.id;
       let canShare = isDM;
       if (!isDM) {
@@ -30,7 +31,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       }
       if (!canShare) return; // silencioso
 
-      // Cor: DM sempre roxo; jogador usa a cor enviada pelo cliente, com fallback
+  // Cor padrão: Mestre roxo; jogador mantém cor enviada/fallback
       const color = isDM ? '#3c096c' : (data.color || '#ff8c00');
       const measurement = {
         userId: user.id,
@@ -45,6 +46,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
     } catch (e) { console.error('Erro share measurement', e); }
   };
 
+  // Remove medição efêmera própria.
   const requestRemoveMeasurement = (data: { tableId: string; sceneId: string }) => {
     const user = socket.data.user;
     if (!user) return;
@@ -53,6 +55,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
     io.to(tableId).emit('measurementRemoved', { userId: user.id });
   };
 
+  // Limpa medições efêmeras do usuário ao desconectar.
   const handleDisconnect = () => {
     const user = socket.data.user;
     if (!user) return;
@@ -67,6 +70,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
   socket.on('disconnect', handleDisconnect);
 
   // --- Persistentes ---
+  // Cria/guarda medição persistente associada à cena. Mestre sempre; jogador apenas no seu turno.
   socket.on('requestAddPersistentMeasurement', async (data: { tableId: string; sceneId: string; payload: { id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; color?: string } }) => {
     try {
       const user = socket.data.user;
@@ -93,6 +97,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
     } catch (e) { console.error('requestAddPersistentMeasurement', e);} 
   });
 
+  // Remove medição persistente (Mestre ou autor).
   socket.on('requestRemovePersistentMeasurement', async (data: { tableId: string; sceneId: string; id: string }) => {
     try {
       const user = socket.data.user; if (!user) return;
@@ -111,6 +116,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
   });
 
   // Limpar todas as medições compartilhadas da mesa (DM apenas)
+  // Limpa (Mestre) tudo: efêmeras + persistentes + auras da cena.
   socket.on('requestClearAllMeasurements', async (data: { tableId: string; sceneId: string }) => {
     try {
       const user = socket.data.user; if (!user) return;
@@ -129,6 +135,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
   });
 
   // --- Auras ancoradas ao token ---
+  // Inclui/atualiza aura ancorada a token. Permissão: Mestre, dono do token ou dono do token em turno.
   socket.on('requestUpsertAura', async (data: { tableId: string; sceneId: string; tokenId: string; name: string; color: string; radiusMeters: number; difficultTerrain?: boolean }) => {
     try {
       const user = socket.data.user; if (!user) return;
@@ -156,6 +163,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
     } catch (e) { console.error('requestUpsertAura', e); }
   });
 
+  // Remove aura (apenas Mestre).
   socket.on('requestRemoveAura', async (data: { tableId: string; sceneId: string; tokenId: string }) => {
     try {
       const user = socket.data.user; if (!user) return;
@@ -170,6 +178,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
   });
 
   // Ping efêmero (ripple). Apenas verifica se usuário está na mesa e cena ativa bate.
+  // Ping visual curto (ripple). Apenas se cena for a ativa.
   socket.on('requestPing', async (data: { tableId: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string }) => {
     try {
       const user = socket.data.user; if (!user) return;

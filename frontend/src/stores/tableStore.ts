@@ -11,15 +11,15 @@ export const useTableStore = defineStore('table', () => {
     const activeSceneId: Ref<string | null> = ref(null);
     const initiativeList: Ref<IInitiativeEntry[]> = ref([]);
     const squares: Ref<GridSquare[]> = ref([]);
-    const gridWidth: Ref<number> = ref(30); // Novo: número de colunas
-    const gridHeight: Ref<number> = ref(30); // Novo: número de linhas
+    const gridWidth: Ref<number> = ref(30); // Largura (colunas)
+    const gridHeight: Ref<number> = ref(30); // Altura (linhas)
     const sessionStatus: Ref<'PREPARING' | 'LIVE' | 'ENDED'> = ref('PREPARING');
     const currentMapUrl: Ref<string | null> = ref(null);
     const metersPerSquare: Ref<number> = ref(1.5);
     // Pings efêmeros
-    const pings: Ref<Array<{ id: string; userId: string; username: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string; ts: number }>> = ref([]);
+    const pings: Ref<Array<{ id: string; userId: string; username: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string; ts: number }>> = ref([]); // Efeito visual transitório
     // Auras ancoradas a tokens (por cena)
-    const auras: Ref<AuraInfo[]> = ref([]);
+    const auras: Ref<AuraInfo[]> = ref([]); // Auras persistentes ancoradas a tokens
     // Medições compartilhadas: chave = userId, valor = Measurement
     const sharedMeasurements: Ref<Record<string, {
         userId: string;
@@ -33,10 +33,10 @@ export const useTableStore = defineStore('table', () => {
     }>> = ref({});
 
     // Cores preferidas de medição por usuário (fallback quando servidor não ecoa a cor)
-    const userMeasurementColors: Ref<Record<string, string>> = ref({});
+    const userMeasurementColors: Ref<Record<string, string>> = ref({}); // Preferência local de cor
 
         // Medições persistentes (lista) – não são limpas ao mudar de turno
-        const persistentMeasurements: Ref<Array<{
+    const persistentMeasurements: Ref<Array<{
             id: string;
             userId: string;
             username: string;
@@ -70,16 +70,11 @@ export const useTableStore = defineStore('table', () => {
     });
 
     const myActiveToken = computed(() => {
-        // Encontra a entrada da iniciativa que está no turno atual
         const activeEntry = initiativeList.value.find(entry => entry.isCurrentTurn);
         if (!activeEntry || !activeEntry.tokenId) return null;
-
-        // Encontra o token correspondente no grid
         const tokenOnBoard = squares.value
             .map(sq => sq.token)
             .find(token => token?._id === activeEntry.tokenId);
-
-        // Retorna o token apenas se ele pertencer ao usuário logado
         if (tokenOnBoard && tokenOnBoard.ownerId?._id === currentUser.value?.id) {
             return tokenOnBoard;
         }
@@ -93,7 +88,7 @@ export const useTableStore = defineStore('table', () => {
         const newSquares: GridSquare[] = new Array(total).fill(null).map((_, i) => ({ id: `sq-${i}`, token: null }));
         tokens.forEach(token => {
             const square = newSquares.find(s => s.id === token.squareId);
-            if (square) square.token = token; // Coloca token no quadrado correspondente
+            if (square) square.token = token;
         });
         squares.value = newSquares;
     }
@@ -109,7 +104,7 @@ export const useTableStore = defineStore('table', () => {
     gridHeight.value = data.activeScene?.gridHeight ?? 30;
     metersPerSquare.value = data.activeScene?.metersPerSquare ?? 1.5;
     _rebuildGridRectangular(gridWidth.value, gridHeight.value, data.tokens);
-    auras.value = []; // serão listadas via aurasListed
+    auras.value = [];
     }
 
     function updateSessionState(newState: { activeScene: IScene | null, tokens: TokenInfo[] }) {
@@ -120,11 +115,10 @@ export const useTableStore = defineStore('table', () => {
     gridHeight.value = newState.activeScene?.gridHeight ?? 30;
     metersPerSquare.value = newState.activeScene?.metersPerSquare ?? metersPerSquare.value;
         _rebuildGridRectangular(gridWidth.value, gridHeight.value, newState.tokens);
-    // Ao mudar de cena limpamos medições compartilhadas (escopo por cena)
+    // Ao mudar de cena limpamos medições efêmeras (escopo por cena)
     sharedMeasurements.value = {};
-    auras.value = []; // aguardará aurasListed
-    // Não limpamos persistentes aqui para evitar condição de corrida.
-    // A lista correta virá via evento 'persistentsListed' e substituirá a cena ativa.
+    auras.value = [];
+    // Persistentes são substituídas via evento específico (evita condição de corrida)
     }
 
     function placeToken(newToken: TokenInfo) {
@@ -147,7 +141,7 @@ export const useTableStore = defineStore('table', () => {
     function removeToken(tokenId: string) {
         const squareWithToken = squares.value.find(sq => sq.token?._id === tokenId);
         if (squareWithToken) squareWithToken.token = null;
-    // Se houver aura ancorada ao token removido, removemos localmente
+    // Remove aura se ancorada ao token retirado
     auras.value = auras.value.filter(a => a.tokenId !== tokenId);
     }
 
@@ -170,7 +164,7 @@ export const useTableStore = defineStore('table', () => {
         updatedTokens.forEach(updatedToken => {
         const tokenOnGrid = tokensOnMap.value.find(t => t._id === updatedToken._id);
         if (tokenOnGrid) {
-            Object.assign(tokenOnGrid, updatedToken); // Atualiza o token com os novos dados
+            Object.assign(tokenOnGrid, updatedToken);
         }
         });
     }
@@ -193,9 +187,7 @@ export const useTableStore = defineStore('table', () => {
         if (!userId || !color) return;
         userMeasurementColors.value = { ...userMeasurementColors.value, [userId]: color };
     }
-    function getUserMeasurementColor(userId: string): string | undefined {
-        return userMeasurementColors.value[userId];
-    }
+    function getUserMeasurementColor(userId: string): string | undefined { return userMeasurementColors.value[userId]; }
 
     // --- Auras ---
     function setAurasForScene(sceneId: string, items: AuraInfo[]) {
@@ -215,7 +207,7 @@ export const useTableStore = defineStore('table', () => {
 
         // Persistentes
     function addPersistentMeasurement(m: { id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; sceneId: string; }) {
-            // Escopo por cena ativa
+            // Garante vínculo à cena ativa
             if (m.sceneId === activeSceneId.value) {
                 persistentMeasurements.value = [...persistentMeasurements.value, m];
             }
@@ -227,7 +219,7 @@ export const useTableStore = defineStore('table', () => {
             persistentMeasurements.value = persistentMeasurements.value.filter(pm => pm.sceneId !== sceneId);
         }
     function setPersistentMeasurementsForScene(sceneId: string, items: Array<{ id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; sceneId?: string; }>) {
-            // Normaliza sceneId ausente para evitar descartar itens vindos do servidor
+            // Normaliza sceneId ausente (defesa contra payload incompleto do servidor)
             const normalized = items.map(i => ({ ...i, sceneId: i.sceneId || sceneId }));
             const others = persistentMeasurements.value.filter(pm => pm.sceneId !== sceneId);
             const currentForScene = persistentMeasurements.value.filter(pm => pm.sceneId === sceneId);

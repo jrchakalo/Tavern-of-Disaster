@@ -7,6 +7,7 @@ import { clearMeasurementsForTable } from './measurementStore';
 
 export function registerInitiativeHandlers(io: Server, socket: Socket) {
 
+  // Adiciona token à iniciativa (apenas Mestre). Evita duplicatas do mesmo token.
   const requestAddCharacterToInitiative = async (data: { tableId: string, sceneId: string, tokenId: string }) => {
     try {
         const { tableId, sceneId, tokenId } = data;
@@ -16,8 +17,7 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         if (!table) return;
 
         if (table.dm.toString() !== userId) {
-        console.log(`[AUTH] Falha: Usuário ${userId} tentou adicionar personagem à iniciativa da mesa ${tableId}, mas não é o mestre.`);
-        return socket.emit('error', { message: 'Apenas o Mestre pode adicionar personagens à iniciativa.' });
+          return socket.emit('error', { message: 'Apenas o Mestre pode adicionar personagens à iniciativa.' });
         }
 
         if (!tokenId) {
@@ -32,10 +32,7 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         }
 
         const scene = await Scene.findById(sceneId);
-        if (scene && scene.initiative.some(entry => entry.tokenId?.toString() === tokenId)) {
-            socket.emit('error', { message: 'Este token já está na iniciativa.' });
-            return;
-        }
+    if (scene && scene.initiative.some(entry => entry.tokenId?.toString() === tokenId)) return socket.emit('error', { message: 'Este token já está na iniciativa.' });
 
         const newEntry = { 
         characterName: token.name,
@@ -49,15 +46,14 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         { new: true }
         );
 
-        if (updatedScene) {
-        io.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
-        }
+  if (updatedScene) io.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
     } catch (error) { 
         console.error("Erro ao adicionar personagem à iniciativa:", error); 
     }
   };
 
 
+  // Avança para o próximo turno. Se voltar ao início da lista: nova rodada -> reseta movimento.
   const requestNextTurn = async (data: { tableId: string, sceneId: string }) => {
     try {
         const { tableId, sceneId } = data;
@@ -74,18 +70,10 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         // Permissão: DM sempre; jogador só se for dono do token em turno
         if (!isDM) {
           const currentTurnEntry = scene.initiative.find(e => e.isCurrentTurn);
-          if (!currentTurnEntry || !currentTurnEntry.tokenId) {
-            console.log(`[AUTH] Falha: Usuário ${userId} tentou avançar o turno sem haver turno atual.`);
-            socket.emit('initiativeError', { message: 'Apenas o Mestre pode iniciar a rodada.' });
-            return;
-          }
+          if (!currentTurnEntry || !currentTurnEntry.tokenId) return socket.emit('initiativeError', { message: 'Apenas o Mestre pode iniciar a rodada.' });
           const currentToken = await Token.findById(currentTurnEntry.tokenId);
           const isOwnerOfCurrent = currentToken?.ownerId?.toString() === userId;
-          if (!isOwnerOfCurrent) {
-            console.log(`[AUTH] Falha: Usuário ${userId} tentou avançar o turno sem ser dono do token atual.`);
-            socket.emit('initiativeError', { message: 'Você só pode encerrar o seu próprio turno.' });
-            return;
-          }
+          if (!isOwnerOfCurrent) return socket.emit('initiativeError', { message: 'Você só pode encerrar o seu próprio turno.' });
         }
 
         const initiativeList = scene.initiative;
@@ -98,8 +86,8 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
 
         // Encontra o próximo turno, voltando ao início se chegar ao fim
         const nextTurnIndex = (currentTurnIndex + 1) % initiativeList.length;
-        if (nextTurnIndex === 0) {
-        console.log(`Nova rodada iniciada na cena ${sceneId}. Resetando movimento de todos os tokens.`);
+    if (nextTurnIndex === 0) {
+    // Nova rodada: restaura movimento e registra casa atual como base do histórico
         await Token.updateMany(
         { sceneId: sceneId },
         [{ $set: { 
@@ -126,6 +114,7 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
     }
   };
 
+  // Remove todas as entradas da iniciativa (apenas Mestre) e limpa medições.
   const requestResetInitiative = async (data: { tableId: string, sceneId: string }) => {
     try {
         const { tableId, sceneId } = data;
@@ -134,10 +123,7 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         const table = await Table.findById(tableId);
         if (!table) return;
         
-        if (table.dm.toString() !== userId) {
-            console.log(`[AUTH] Falha: Usuário ${userId} tentou resetar a iniciativa da mesa ${tableId}, mas não é o mestre.`);
-            return socket.emit('error', { message: 'Apenas o Mestre pode resetar a iniciativa.' });
-        }
+    if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode resetar a iniciativa.' });
 
   const updatedScene = await Scene.findByIdAndUpdate(
             sceneId,
@@ -154,6 +140,7 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
     }
   };
 
+  // Remove entrada específica e deleta token associado (se houver). Apenas Mestre.
   const requestRemoveFromInitiative = async (data: { tableId: string; sceneId: string; initiativeEntryId: string }) => {
     try {
         const { tableId, sceneId, initiativeEntryId } = data;
@@ -161,10 +148,7 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         const userId = socket.data.user?.id;
         const table = await Table.findById(tableId);
         if (!table) return;
-        if (table.dm.toString() !== userId) {
-        console.log(`[AUTH] Falha: Usuário ${userId} tentou remover da iniciativa da mesa ${tableId}, mas não é o mestre.`);
-        return socket.emit('error', { message: 'Apenas o Mestre pode remover personagens da iniciativa.' });
-        }
+  if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode remover personagens da iniciativa.' });
 
         // Encontra a cena
         const scene = await Scene.findById(sceneId);
@@ -183,19 +167,15 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         );
 
         if (updatedScene) {
-        // Notifica sobre a lista de iniciativa atualizada
-        io.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
-
-        // Notifica que um token foi removido
-        if (entryToRemove?.tokenId) {
-            io.to(tableId).emit('tokenRemoved', { tokenId: entryToRemove.tokenId.toString() });
-        }
+          io.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
+          if (entryToRemove?.tokenId) io.to(tableId).emit('tokenRemoved', { tokenId: entryToRemove.tokenId.toString() });
         }
     } catch (error) { 
         console.error("Erro ao remover da iniciativa:", error); 
     }
   };
 
+  // Reordena manualmente a lista (apenas Mestre). Mantém flags isCurrentTurn conforme recebido.
   const requestReorderInitiative = async (data: { tableId: string; sceneId: string; newOrder: IInitiativeEntry[] }) => {
     try {
         const { tableId, sceneId, newOrder } = data;
@@ -203,10 +183,7 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
 
         const table = await Table.findById(tableId);
         if (!table) return;
-        if (table.dm.toString() !== userId) {
-        console.log(`[AUTH] Falha: Usuário ${userId} tentou reordenar a iniciativa da mesa ${tableId}, mas não é o mestre.`);
-        return socket.emit('error', { message: 'Apenas o Mestre pode reordenar a iniciativa.' });
-        }
+  if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode reordenar a iniciativa.' });
 
         // Atualiza todo o array 'initiative' da cena com a nova ordem recebida
         const updatedScene = await Scene.findByIdAndUpdate(
@@ -215,15 +192,13 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         { new: true }
         );
 
-        if (updatedScene) {
-        // Em vez de io.to, usamos socket.to para manter a fluidez para o mestre
-        socket.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
-        }
+  if (updatedScene) socket.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
     } catch (error) { 
         console.error("Erro ao reordenar iniciativa:", error); 
     }
   };
 
+  // Renomeia uma entrada; reflete também no token (se vinculado). Apenas Mestre.
   const requestEditInitiativeEntry = async (data: { tableId: string; sceneId: string; initiativeEntryId: string; newName: string }) => {
     try {
       const { tableId, sceneId, initiativeEntryId, newName } = data;
@@ -231,10 +206,7 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
 
       const table = await Table.findById(tableId);
       if (!table) return;
-      if (table.dm.toString() !== userId) {
-        console.log(`[AUTH] Falha: Usuário ${userId} tentou editar entrada da iniciativa da mesa ${tableId}, mas não é o mestre.`);
-        return socket.emit('error', { message: 'Apenas o Mestre pode editar entradas da iniciativa.' });
-      }
+      if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode editar entradas da iniciativa.' });
 
       const scene = await Scene.findById(sceneId);
       if (!scene) return;

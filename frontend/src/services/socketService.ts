@@ -8,7 +8,7 @@ class SocketService {
   private store = useTableStore();
 
   connect(tableId: string) {
-    if (this.socket) return; // Já está conectado
+    if (this.socket) return; // Evita duplicar conexão
 
     this.socket = io('ws://localhost:3001', {
       transports: ['websocket'],
@@ -20,7 +20,7 @@ class SocketService {
       this.socket?.emit('joinTable', tableId);
     });
 
-    // Handlers de eventos
+  // ---- Recepção de eventos do servidor ----
     this.socket.on('initialSessionState', (data) => this.store.setInitialState(data));
     this.socket.on('sessionStateUpdated', (data) => this.store.updateSessionState(data));
     this.socket.on('tokenPlaced', (data: TokenInfo) => this.store.placeToken(data));
@@ -29,20 +29,18 @@ class SocketService {
     this.socket.on('tokenOwnerUpdated', (data: { tokenId: string, newOwner: PlayerInfo }) => this.store.updateTokenOwner(data.tokenId, data.newOwner));
   this.socket.on('tokenUpdated', (data: TokenInfo) => this.store.applyTokenUpdate(data));
     this.socket.on('tokensUpdated', (data: TokenInfo[]) => this.store.updateAllTokens(data));
-    this.socket.on('initiativeUpdated', (data: IInitiativeEntry[]) => { this.store.initiativeList = data; });
+  this.socket.on('initiativeUpdated', (data: IInitiativeEntry[]) => { this.store.initiativeList = data; });
     this.socket.on('sceneListUpdated', (data: IScene[]) => { this.store.scenes = data; });
     this.socket.on('sessionStatusUpdated', (data: { status: 'PREPARING' | 'LIVE' | 'ENDED' }) => { this.store.sessionStatus = data.status; });
     this.socket.on('mapUpdated', (data: { mapUrl: string }) => { this.store.currentMapUrl = data.mapUrl; });
-  // Escala
-  // sessionStateUpdated já atualiza metersPerSquare via store
-  // Medições compartilhadas
+    // Medições efêmeras / compartilhadas
   this.socket.on('measurementShared', (m) => this.store.upsertSharedMeasurement(m));
   this.socket.on('measurementRemoved', (data: { userId: string }) => this.store.removeSharedMeasurement(data.userId));
   this.socket.on('allMeasurementsCleared', (data?: { sceneId?: string }) => {
     this.store.clearSharedMeasurements();
     if (data?.sceneId) this.store.clearPersistentMeasurementsForScene(data.sceneId);
   });
-  // Persistentes
+    // Medições persistentes (ficam até serem removidas ou limpar turno)
   this.socket.on('persistentMeasurementAdded', (m) => this.store.addPersistentMeasurement({ ...m, userId: m.userId || m.ownerId }));
   this.socket.on('persistentMeasurementRemoved', (data: { sceneId: string; id: string }) => this.store.removePersistentMeasurement(data.id));
   this.socket.on('persistentsListed', (data: { sceneId: string; items: any[] }) => {
@@ -53,7 +51,7 @@ class SocketService {
     }
   });
 
-  // Auras
+    // Auras ancoradas a tokens
   this.socket.on('aurasListed', (data: { sceneId: string; items: any[] }) => {
     if (data.sceneId === this.store.activeSceneId) {
       this.store.setAurasForScene(data.sceneId, data.items || []);
@@ -70,16 +68,17 @@ class SocketService {
     }
   });
 
-    // Ping
+  // Pings rápidos (efeito ripple)
     this.socket.on('pingBroadcast', (p: any) => {
       this.store.addPing(p);
     });
 
-    // Handlers de erro
+  // Erros de conexão / feedback simples
     this.socket.on('connect_error', (error) => console.error('SocketService - Erro de conexão:', error.message));
     this.socket.on('tokenPlacementError', (error) => alert(`Erro ao colocar token: ${error.message}`));
   }
-  // Persistentes
+  // ---- Emissores de requisições ----
+  // Medições persistentes
   addPersistentMeasurement(payload: { tableId: string; sceneId: string; id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; color?: string }) {
     const { tableId, sceneId, id, start, end, distance, type, affectedSquares, color } = payload;
     this.socket?.emit('requestAddPersistentMeasurement', { tableId, sceneId, payload: { id, start, end, distance, type, affectedSquares, color } });
@@ -94,7 +93,7 @@ class SocketService {
     console.log('SocketService - Desconectado.');
   }
 
-  // Emissores de eventos
+  // Cena / sessão
   setActiveScene(tableId: string, sceneId: string) {
     this.socket?.emit('requestSetActiveScene', { tableId, sceneId });
   }
@@ -119,7 +118,7 @@ class SocketService {
     this.socket?.emit('requestUpdateSceneScale', { tableId, sceneId, metersPerSquare });
   }
 
-  // -- Tokens --
+  // Tokens
   placeToken(payload: { tableId: string; sceneId: string; squareId: string; name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; }) {
     this.socket?.emit('requestPlaceToken', payload);
   }
@@ -140,7 +139,7 @@ class SocketService {
     this.socket?.emit('requestUndoMove', { tableId, tokenId });
   }
 
-  // -- Iniciativa --
+  // Iniciativa
   nextTurn(tableId: string, sceneId: string) {
     this.socket?.emit('requestNextTurn', { tableId, sceneId });
   }
@@ -157,8 +156,7 @@ class SocketService {
     this.socket?.emit('requestReorderInitiative', payload);
   }
 
-  // --- Medições ---
-  // Suporta régua, cone e (em breve) círculo/quadrado.
+  // Medições efêmeras (régua, cone, círculo, quadrado, linha, feixe)
   shareMeasurement(payload: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; color?: string }) {
     // Guarda preferência local de cor para fallback
     const uid = this.store && (this.store as any).currentTable?.dm?._id ? undefined : undefined;
@@ -175,7 +173,7 @@ class SocketService {
     this.socket?.emit('requestClearAllMeasurements', { tableId, sceneId });
   }
 
-  // --- Auras ---
+  // Auras
   upsertAura(payload: { tableId: string; sceneId: string; tokenId: string; name: string; color: string; radiusMeters: number }) {
     this.socket?.emit('requestUpsertAura', payload);
   }
@@ -189,5 +187,5 @@ class SocketService {
   }
 }
 
-// Exportamos uma única instância
+// Instância singleton
 export const socketService = new SocketService();

@@ -201,4 +201,86 @@ router.delete('/:tableId/scenes/:sceneId', authMiddleware, (async (req: AuthRequ
     }
 }) as RequestHandler);
 
+// Atualizar nome da mesa (apenas Mestre)
+router.put('/:tableId', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId } = req.params;
+    const { name } = req.body;
+    const userId = req.user?.id;
+    if (!name || !name.trim()) return res.status(400).json({ message: 'Nome inválido.' });
+    const table = await Table.findById(tableId);
+    if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
+    if (table.dm.toString() !== userId) return res.status(403).json({ message: 'Apenas o Mestre pode renomear a mesa.' });
+    table.name = name.trim();
+    await table.save();
+    res.json({ message: 'Mesa atualizada.', table });
+  } catch (error) {
+    console.error('Erro ao renomear mesa:', error);
+    res.status(500).json({ message: 'Erro interno.' });
+  }
+}) as RequestHandler);
+
+// Remover jogador da mesa (apenas Mestre; não pode remover a si mesmo via esta rota)
+router.delete('/:tableId/players/:playerId', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId, playerId } = req.params;
+    const userId = req.user?.id;
+    const table = await Table.findById(tableId);
+    if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
+    if (table.dm.toString() !== userId) return res.status(403).json({ message: 'Apenas o Mestre pode remover jogadores.' });
+    if (playerId === userId) return res.status(400).json({ message: 'Use exclusão da mesa para removê-la por completo.' });
+    const before = table.players.length;
+    table.players = table.players.filter(p => p.toString() !== playerId);
+    if (table.players.length === before) return res.status(404).json({ message: 'Jogador não está na mesa.' });
+    await table.save();
+    res.json({ message: 'Jogador removido.' });
+  } catch (error) {
+    console.error('Erro ao remover jogador:', error);
+    res.status(500).json({ message: 'Erro interno.' });
+  }
+}) as RequestHandler);
+
+// Jogador sair da mesa
+router.post('/:tableId/leave', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId } = req.params;
+    const userId = req.user?.id;
+    const table = await Table.findById(tableId);
+    if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
+    if (table.dm.toString() === userId) {
+      return res.status(400).json({ message: 'Mestre não pode sair; exclua a mesa.' });
+    }
+    const before = table.players.length;
+    table.players = table.players.filter(p => p.toString() !== userId);
+    if (table.players.length === before) return res.status(400).json({ message: 'Você não faz parte desta mesa.' });
+    await table.save();
+    res.json({ message: 'Você saiu da mesa.' });
+  } catch (error) {
+    console.error('Erro ao sair da mesa:', error);
+    res.status(500).json({ message: 'Erro interno.' });
+  }
+}) as RequestHandler);
+
+// Excluir mesa (apenas Mestre). Remove cenas e tokens relacionados.
+router.delete('/:tableId', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId } = req.params;
+    const userId = req.user?.id;
+    const table = await Table.findById(tableId);
+    if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
+    if (table.dm.toString() !== userId) return res.status(403).json({ message: 'Apenas o Mestre pode excluir a mesa.' });
+    // Remove cenas e tokens
+    const scenes = await Scene.find({ tableId: table._id });
+    for (const sc of scenes) {
+      await Token.deleteMany({ sceneId: sc._id });
+    }
+    await Scene.deleteMany({ tableId: table._id });
+    await Table.findByIdAndDelete(tableId);
+    res.json({ message: 'Mesa excluída.' });
+  } catch (error) {
+    console.error('Erro ao excluir mesa:', error);
+    res.status(500).json({ message: 'Erro interno.' });
+  }
+}) as RequestHandler);
+
 export default router;

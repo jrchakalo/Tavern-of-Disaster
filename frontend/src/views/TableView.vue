@@ -34,19 +34,18 @@ const targetSquareIdForToken = ref<string | null>(null);
 // Auras dialog state
 const showAuraDialog = ref(false);
 const auraDialogTokenId = ref<string | null>(null);
-const mapUrlInput = ref(''); // Para o campo de input
+const mapUrlInput = ref(''); // URL digitada para imagem de cena
 const newSceneName = ref('');
 const newSceneImageUrl = ref('');
-const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena, padrão é 'battlemap
+const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena
 const isDmPanelCollapsed = ref(false);
 const gridDisplayRef = ref<any>(null);
 const mapImgRef = ref<HTMLImageElement | null>(null);
 const imageRenderedWidth = ref<number | null>(null);
 const imageRenderedHeight = ref<number | null>(null);
-// Escala (usa valor vindo do store para refletir mudanças do Mestre nos jogadores)
-// metersPerSquare virá do store (adicionado ao storeToRefs abaixo) e será controlado pelo Mestre via input
+// Escala (m por quadrado) controlada pelo Mestre
 const squareFeet = computed(() => (metersPerSquare.value || 1.5) * 3.28084);
-// Modo persistente (📌): quando ligado, próxima medição de área vira persistente
+// Modo persistente: próxima medição vira persistente
 const persistentMode = ref<boolean>(false);
 
 function updateImageDimensions() {
@@ -61,9 +60,9 @@ const rulerStartPoint = ref<{ x: number; y: number } | null>(null);
 const rulerEndPoint = ref<{ x: number; y: number } | null>(null);
 const rulerDistance = ref('0.0m');
 const isMeasuring = computed(() => activeTool.value !== 'none' && activeTool.value !== 'select');
-const coneOriginSquareId = ref<string | null>(null); // Quadrado onde a área começa (cone/círculo/quadrado)
-const coneAffectedSquares = ref<string[]>([]); // Lista de IDs dos quadrados afetados (genérico)
-const coneLength = ref(9); // Comprimento padrão do cone em metros (ex: Mãos Flamejantes)
+const coneOriginSquareId = ref<string | null>(null); // Origem área
+const coneAffectedSquares = ref<string[]>([]); // Quadrados afetados
+const coneLength = ref(9); // Comprimento padrão do cone (m)
 const selectedPersistentId = ref<string | null>(null);
 const previewMeasurement = ref<{
   type: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
@@ -103,7 +102,7 @@ const measurementColor = ref<string>('');
 const PLAYER_COLORS = ['#ff8c00', '#12c2e9', '#ff4d4d', '#43a047', '#ffd166', '#ff66cc', '#00bcd4', '#8bc34a', '#e91e63', '#9c27b0', '#795548', '#cddc39'];
 
 function loadOrInitUserColor() {
-  // DM é sempre roxo
+  // Mestre é sempre roxo
   if (isDM.value) {
     measurementColor.value = '#3c096c';
     return;
@@ -138,7 +137,7 @@ watch(measurementColor, (c) => {
   localStorage.setItem(key, c);
 });
 
-// Persistentes apenas da cena ativa
+// Medições persistentes da cena ativa
 const persistentsForActiveScene = computed(() =>
   persistentMeasurements.value.filter(pm => pm.sceneId === activeSceneId.value)
 );
@@ -171,7 +170,7 @@ function onSceneDragEnd() {
 
 function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string, size: TokenSize }) {
   if (targetSquareIdForToken.value && activeSceneId.value) {
-    // Footprint validation local (para feedback imediato)
+  // Validação footprint local
     const sizeMap: Record<string, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 };
     const footprint = sizeMap[payload.size] || 1;
     if (footprint > 1) {
@@ -227,7 +226,7 @@ function handleClearAllMeasurements() {
   socketService.clearAllMeasurements(tableId, activeSceneId.value);
 }
 
-// Remoção de medição persistente (DM ou autor), acionada pelo GridDisplay
+// Remoção de medição persistente (Mestre ou autor)
 function handleRemovePersistent(payload: { id: string }) {
   if (!activeSceneId.value) return;
   socketService.removePersistentMeasurement({ tableId, sceneId: activeSceneId.value, id: payload.id });
@@ -241,7 +240,7 @@ function handleUndoMove() {
 
 function handleNextTurn() {
   if (activeSceneId.value) {
-  // Antes de avançar o turno, limpa medições locais e desseleciona ferramentas
+  // Avançar turno: limpa medições e ferramentas
   handleToolSelected('none');
   selectedPersistentId.value = null;
     socketService.nextTurn(tableId, activeSceneId.value);
@@ -296,10 +295,10 @@ function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
 
 function handleMiddleClickFree(event: MouseEvent) {
   if (event.button !== 1 || !activeSceneId.value) return;
-  // Rate limit (será ajustado depois se necessário)
+  // Rate limit ping
   if ((handleMiddleClickFree as any)._last && Date.now() - (handleMiddleClickFree as any)._last < 300) return;
   (handleMiddleClickFree as any)._last = Date.now();
-  // Coordenadas relativas ao grid interno (grid-viewport dentro do GridDisplay)
+  // Coordenadas relativas ao grid interno
   const mapStage = event.currentTarget as HTMLElement;
   let viewportEl: HTMLElement | null = mapStage.querySelector('.grid-overlay .grid-viewport');
   if (!viewportEl) viewportEl = mapStage.querySelector('.grid-overlay') as HTMLElement | null;
@@ -310,7 +309,7 @@ function handleMiddleClickFree(event: MouseEvent) {
   socketService.sendPing({ tableId, sceneId: activeSceneId.value, x, y, color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00') });
 }
 
-// Mestre altera escala -> envia ao servidor; jogadores apenas recebem via sessionStateUpdated
+// Mestre altera escala; jogadores recebem
 watch(metersPerSquare, (val, oldVal) => {
   if (!isDM.value) return; // somente Mestre emite
   if (val <= 0) { metersPerSquare.value = oldVal; return; }
@@ -322,9 +321,9 @@ watch(metersPerSquare, (val, oldVal) => {
 function handleRightClick(square: GridSquare, event: MouseEvent) {
   event.preventDefault();
 
-  // Com qualquer ferramenta ativa, o clique direito cancela
+  // Ferramenta ativa: clique direito cancela
   if (isMeasuring.value) {
-    // Se o PIN estiver ligado e usuário clicar com botão direito, desliga o PIN e a ferramenta
+  // PIN ligado: cancela ferramenta + pin
     if (persistentMode.value) {
       persistentMode.value = false;
       handleToolSelected('none');
@@ -598,7 +597,7 @@ function handlePointerMove(event: PointerEvent) {
       const feet = meters * 3.28084;
       previewMeasurement.value.distance = `${meters.toFixed(1)}m (${Math.round(feet)}ft)`;
   } else if (previewMeasurement.value.type === 'cone') {
-      // Cone: rótulo usa distância contínua do mouse quantizada a 0,5m.
+  // Cone: distância quantizada 0,5m
       if (!coneOriginSquareId.value) return;
       const originCenter = getSquareCenterLocalPointFromId(coneOriginSquareId.value);
       if (!originCenter) return;
@@ -637,7 +636,7 @@ function handlePointerMove(event: PointerEvent) {
         };
       }
     } else if (previewMeasurement.value.type === 'circle') {
-      // Círculo: raio contínuo (m), pinta centros dentro do raio com pequena tolerância
+  // Círculo
       if (!coneOriginSquareId.value) return;
       const originCenter = getSquareCenterLocalPointFromId(coneOriginSquareId.value);
       if (!originCenter) return;
@@ -659,7 +658,7 @@ function handlePointerMove(event: PointerEvent) {
       previewMeasurement.value.start = originCenter;
       previewMeasurement.value.end = { x: originCenter.x + ux * clampedLenPx, y: originCenter.y + uy * clampedLenPx };
   } else if (previewMeasurement.value.type === 'square') {
-      // Quadrado: lado contínuo (m), alinhado à grade, centrado na célula origem
+  // Quadrado centrado na origem
       if (!coneOriginSquareId.value) return;
       const originCenter = getSquareCenterLocalPointFromId(coneOriginSquareId.value);
       if (!originCenter) return;
@@ -941,11 +940,11 @@ function handlePointerUp(event: PointerEvent) {
     const canShareNow = isDM.value || !!myActiveToken.value;
     const isAreaTool = (activeTool.value === 'cone' || activeTool.value === 'circle' || activeTool.value === 'square');
     if (!canShareNow) {
-      // Não é turno do jogador: limpa qualquer prévia de área
+  // Não é turno do jogador: limpa prévia
       coneAffectedSquares.value = [];
       coneOriginSquareId.value = null;
     } else {
-      // Após finalizar a prévia, limpamos normalmente para régua, nenhuma ferramenta ou quando virou persistente
+  // Limpeza normal pós medição (régua/none/persistente)
       if (activeTool.value === 'ruler' || activeTool.value === 'none' || persistentMode.value) {
         coneAffectedSquares.value = [];
         coneOriginSquareId.value = null;
@@ -977,7 +976,7 @@ function handleWheel(event: WheelEvent) {
 
 function resetView() {
   viewTransform.value.scale = 1;
-  // Centraliza sem depender de offsets anteriores
+  // Centraliza visão
   viewTransform.value.x = 0;
   viewTransform.value.y = 0;
 }
@@ -985,7 +984,7 @@ function resetView() {
 function handleToolSelected(tool: 'ruler' | 'cone' | 'circle' | 'square' | 'none') {
   activeTool.value = tool;
 
-  // SEMPRE reseta o estado de TODAS as ferramentas de medição ao trocar de ferramenta.
+  // Reset geral ao trocar ferramenta
   rulerStartPoint.value = null;
   rulerEndPoint.value = null;
   rulerDistance.value = '0.0m';
@@ -993,7 +992,7 @@ function handleToolSelected(tool: 'ruler' | 'cone' | 'circle' | 'square' | 'none
   coneAffectedSquares.value = [];
   previewMeasurement.value = null;
 
-  // Se qualquer ferramenta for ATIVADA fazemos a limpeza da UI.
+  // Ativar ferramenta: limpa UI
   if (tool !== 'none') {
     showTokenForm.value = false;
     selectedTokenId.value = null;
@@ -1002,7 +1001,7 @@ function handleToolSelected(tool: 'ruler' | 'cone' | 'circle' | 'square' | 'none
   // Sempre limpa seleção ao trocar de ferramenta
   selectedPersistentId.value = null;
 
-  // Ao desselecionar a ferramenta, remove também a medição compartilhada do servidor
+  // Ferramenta none: remove medição compartilhada
   if (tool === 'none' && activeSceneId.value) {
     try {
       socketService.removeMyMeasurement({ tableId, sceneId: activeSceneId.value });
@@ -1014,7 +1013,7 @@ function handleToolSelected(tool: 'ruler' | 'cone' | 'circle' | 'square' | 'none
 function calculateConeArea(originId: string, targetId: string, lengthInMeters: number): string[] {
   if (originId === targetId) return [];
 
-  // Usa a escala dinâmica (m por quadrado) definida na cena
+  // Escala dinâmica (m/quadrado)
   const mPerSq = metersPerSquare.value || 1.5;
   const lengthInSquares = Math.max(0, Math.floor(lengthInMeters / mPerSq));
 
@@ -1029,14 +1028,14 @@ function calculateConeArea(originId: string, targetId: string, lengthInMeters: n
   const origin = getCoords(originId);
   const target = getCoords(targetId);
 
-  // Vetores usando centros de célula
+  // Vetores pelos centros
   const originCenter = { x: origin.x + 0.5, y: origin.y + 0.5 };
   const targetCenter = { x: target.x + 0.5, y: target.y + 0.5 };
   const dir = { x: targetCenter.x - originCenter.x, y: targetCenter.y - originCenter.y };
   const dirLen = Math.hypot(dir.x, dir.y) || 1;
   const nx = dir.x / dirLen;
   const ny = dir.y / dirLen;
-  // Ângulo total fixo em 90° (meio-ângulo = 45°)
+  // Ângulo 90° (±45°)
   const halfAngle = (45 * Math.PI) / 180;
   const cosHalf = Math.cos(halfAngle);
 
@@ -1062,7 +1061,7 @@ function calculateConeArea(originId: string, targetId: string, lengthInMeters: n
   return Array.from(affected);
 }
 
-// Supercover line across grid cells between origin and target (by centers)
+// Linha supercover (células atravessadas)
 function calculateLineSquares(originId: string, targetId: string): string[] {
   const cols = gridWidth.value;
   const rows = gridHeight.value;
@@ -1088,7 +1087,7 @@ function calculateLineSquares(originId: string, targetId: string): string[] {
   return Array.from(visited);
 }
 
-// Beam/Wall: oriented rectangle of widthSquares along the segment
+// Feixe/Parede: retângulo orientado
 function calculateBeamOrWallArea(originId: string, targetId: string, widthSquares = 1): string[] {
   const cols = gridWidth.value, rows = gridHeight.value;
   const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
@@ -1118,7 +1117,7 @@ function calculateBeamOrWallArea(originId: string, targetId: string, widthSquare
   return Array.from(visited);
 }
 
-// Converte uma posição local (coordenadas do SVG do grid) para o id do quadrado correspondente
+// Local (px) -> id do quadrado
 function getSquareIdFromLocalPoint(localX: number, localY: number): string | null {
   if (!gridDisplayRef.value) return null;
   const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
@@ -1134,7 +1133,7 @@ function getSquareIdFromLocalPoint(localX: number, localY: number): string | nul
   return `sq-${row * cols + col}`;
 }
 
-// Retorna o centro local (px) da célula dado o id (ex: 'sq-42'), respeitando pan/zoom
+// Centro local (px) para id
 function getSquareCenterLocalPointFromId(squareId: string): { x: number; y: number } | null {
   if (!gridDisplayRef.value) return null;
   const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
@@ -1178,14 +1177,14 @@ function getMousePositionOnMap(event: PointerEvent): { x: number; y: number } | 
   return { x: worldX, y: worldY };
 }
 
-// Arredonda metros para múltiplos de 'step' (ex.: 0.5m)
+// Arredonda metros para múltiplos de step
 function quantizeMeters(meters: number, step = 0.5): number {
   if (!isFinite(meters) || meters < 0) return 0;
   const s = step > 0 ? step : 0.5;
   return Math.round(meters / s) * s;
 }
 
-// Formata distância: metros com 1 casa decimal e pés arredondado ao inteiro (1 ft)
+// Formata: X.Ym (Zft)
 function formatDistance(meters: number): string {
   const feetRaw = meters * 3.28084;
   // Arredonda para o inteiro mais próximo (1 ft de precisão)
@@ -1204,7 +1203,7 @@ watch([gridWidth, gridHeight], ([w, h], [ow, oh]) => {
 // Limpa seleção ao trocar de cena ou quando o item selecionado some
 watch(activeSceneId, () => {
   selectedPersistentId.value = null;
-  // Reset selection and tool state when switching scenes to avoid stale UI
+  // Reset seleção/ferramentas ao trocar cena
   selectedTokenId.value = null;
   showAuraDialog.value = false;
   auraDialogTokenId.value = null;
@@ -1221,7 +1220,7 @@ watch(persistentMeasurements, () => {
 
 onMounted(() => {
   socketService.connect(tableId);
-  // Observa resize da janela para recalcular dimensões da imagem
+  // Resize janela -> recalcula dimensões imagem
   window.addEventListener('resize', updateImageDimensions);
   window.addEventListener('keydown', handleGlobalEsc);
 });
@@ -1234,7 +1233,7 @@ onUnmounted(() => {
 
 function handleGlobalEsc(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    // Limpa medições em andamento
+  // ESC: limpa medições
     previewMeasurement.value = null;
     rulerStartPoint.value = null;
     rulerEndPoint.value = null;
@@ -1246,24 +1245,24 @@ function handleGlobalEsc(e: KeyboardEvent) {
 }
 
 watch(currentMapUrl, () => {
-  // Recalcula quando muda o src
+  // Recalcula ao trocar imagem
   setTimeout(updateImageDimensions, 50);
 });
 
 // Ao finalizar o turno (mudança do token em turno), limpamos medições locais e desselecionamos ferramentas
 watch(currentTurnTokenId, (novo, antigo) => {
   if (novo === antigo) return;
-  // Desseleciona qualquer ferramenta e remove medição compartilhada
+  // Novo turno: limpa ferramenta/medição
   handleToolSelected('none');
-  // Desliga o pin ao trocar de turno
+  // Desliga pin
   persistentMode.value = false;
-  // Garante limpeza local imediata
+  // Limpeza local
   previewMeasurement.value = null;
   coneAffectedSquares.value = [];
   coneOriginSquareId.value = null;
 });
 
-// --- Áreas adicionais ---
+// Áreas adicionais
 // Círculo: inclui células cujos centros estão a uma distância <= raio + tolerância em quadrados
 function calculateCircleArea(originId: string, radiusMeters: number): string[] {
   const mPerSq = metersPerSquare.value || 1.5;
@@ -1272,13 +1271,13 @@ function calculateCircleArea(originId: string, radiusMeters: number): string[] {
   const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
   const getId = (x: number, y: number) => `sq-${y * cols + x}`;
   let o = getCoords(originId);
-  // Se originId pertence a um token multi-footprint, recalc centre para o centro geométrico do footprint inteiro
+  // Multi-footprint: centro geométrico
   const square = squares.value.find(s => s.id === originId);
   if (square?.token) {
     const sizeMap: Record<TokenSize, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 } as const;
     const span = sizeMap[square.token.size as TokenSize] || 1;
     if (span > 1) {
-      // Anchor é o canto superior-esquerdo do footprint; centro verdadeiro desloca span/2 - 0.5
+  // Anchor -> centro
       o = getCoords(originId);
       const ocx = o.x + (span / 2); // (0 + span)/2 => deslocamento do canto
       const ocy = o.y + (span / 2);
@@ -1302,7 +1301,7 @@ function calculateCircleArea(originId: string, radiusMeters: number): string[] {
   }
 }
 
-// Quadrado: lado em metros; inclui células cujos centros caem dentro de um quadrado alinhado à grade e centrado na origem
+// Quadrado: lado em metros centrado
 function calculateSquareArea(originId: string, sideMeters: number): string[] {
   const mPerSq = metersPerSquare.value || 1.5;
   const sideSq = Math.max(0, sideMeters / mPerSq);
@@ -1322,7 +1321,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       centerY = o.y + (span / 2);
     }
   }
-  const minX = centerX - half - 0.001, maxX = centerX + half + 0.001; // pequena tolerância
+  const minX = centerX - half - 0.001, maxX = centerX + half + 0.001; // tolerância
   const minY = centerY - half - 0.001, maxY = centerY + half + 0.001;
   const affected = new Set<string>([originId]);
   for (let y = 0; y < rows; y++) {

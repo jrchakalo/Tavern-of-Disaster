@@ -6,6 +6,7 @@ import User from '../models/User.model';
 
 export function registerTokenHandlers(io: Server, socket: Socket) {
 
+  // Coloca um novo token no grid + adiciona entrada na iniciativa. Valida footprint e ocupação.
   const requestPlaceToken = async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement: number; remainingMovement?: number; ownerId?: string; size: string; canOverlap?: boolean }) => {
     try {
         const userId = socket.data.user?.id; 
@@ -16,10 +17,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         const requesterId = socket.data.user?.id; 
         if (!requesterId) return;
 
-        if (!sceneId) {
-        socket.emit('tokenPlacementError', { message: 'ID da cena não fornecido.' });
-        return;
-        }
+  if (!sceneId) return socket.emit('tokenPlacementError', { message: 'ID da cena não fornecido.' });
 
         // Carrega cena para validar limites
         const scene = await Scene.findById(sceneId);
@@ -59,10 +57,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         }
         // Verifica ocupação em qualquer square da área
         const occupying = await Token.find({ sceneId: sceneId, squareId: { $in: footprintSquares } });
-        if (occupying.length > 0 && !canOverlap) {
-          socket.emit('tokenPlacementError', { message: 'Área ocupada por outro token.' });
-          return;
-        }
+        if (occupying.length > 0 && !canOverlap) return socket.emit('tokenPlacementError', { message: 'Área ocupada por outro token.' });
 
         const tokenColor = `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`;
 
@@ -81,7 +76,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         });
 
         await newToken.save();
-        // Após salvar o token, também o adicionamos à iniciativa da cena
+  // Após salvar, criamos entrada na iniciativa para manter sincronizado
         const newEntry = { 
         characterName: newToken.name,
         tokenId: newToken._id,
@@ -105,34 +100,23 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
     }
   };
 
+  // Move token validando turno (jogador só move no seu turno) + movimento restante + footprint.
   const requestMoveToken = async (data: { tableId: string, tokenId: string; targetSquareId: string }) => {
-    console.log(`Recebido 'requestMoveToken' de ${socket.id}:`, data);
     try {
         const userId = socket.data.user?.id;
         if (!userId) return;
 
         const { tableId, tokenId, targetSquareId } = data;
 
-        if (!tokenId || !targetSquareId) {
-        socket.emit('tokenMoveError', { message: 'Dados inválidos para mover token.' });
-        return;
-        }
+  if (!tokenId || !targetSquareId) return socket.emit('tokenMoveError', { message: 'Dados inválidos para mover token.' });
 
         // Verifica se o quadrado de destino já está ocupado por OUTRO token
         const occupyingToken = await Token.findOne({ tableId: tableId, squareId: targetSquareId });
-        if (occupyingToken && occupyingToken._id.toString() !== tokenId) {
-        console.log(`Tentativa de mover token para quadrado ${targetSquareId} já ocupado por ${occupyingToken._id}`);
-        socket.emit('tokenMoveError', { message: 'Quadrado de destino já está ocupado.' });
-        return;
-        }
+  if (occupyingToken && occupyingToken._id.toString() !== tokenId) return socket.emit('tokenMoveError', { message: 'Quadrado de destino já está ocupado.' });
 
         // Encontra o token a ser movido
         const tokenToMove = await Token.findById(tokenId);
-        if (!tokenToMove) {
-        console.log(`Token com ID ${tokenId} não encontrado para mover.`);
-        socket.emit('tokenMoveError', { message: 'Token não encontrado.' });
-        return;
-        }
+  if (!tokenToMove) return socket.emit('tokenMoveError', { message: 'Token não encontrado.' });
 
         const table = await Table.findById(tableId);
         if (!table) return;
@@ -140,39 +124,24 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         const isDM = table.dm.toString() === userId;
         const isOwner = tokenToMove.ownerId.toString() === userId;
 
-        if (!isDM && !isOwner) { // Se o usuário não for NEM o mestre E NEM o dono
-        console.log(`[AUTH] Falha: Usuário ${userId} tentou mover token ${tokenId} sem permissão.`);
-        socket.emit('tokenMoveError', { message: 'Você não tem permissão para mover este token.' });
-        return;
-        }
+  if (!isDM && !isOwner) return socket.emit('tokenMoveError', { message: 'Você não tem permissão para mover este token.' });
 
         const scene = await Scene.findById(tokenToMove.sceneId);
-        if (!scene){
-        console.log(`Cena com ID ${tokenToMove.sceneId} não encontrada para mover o token.`);
-        socket.emit('tokenMoveError', { message: 'Cena não encontrada.' });
-        return;
-        }
+  if (!scene) return socket.emit('tokenMoveError', { message: 'Cena não encontrada.' });
 
   // Validação de limites destino
   const gridWidth = (scene as any).gridWidth ?? 30;
   const gridHeight = (scene as any).gridHeight ?? 30;
   const maxIndex = gridWidth * gridHeight - 1;
         const numericTarget = parseInt(targetSquareId.replace('sq-', ''));
-        if (isNaN(numericTarget) || numericTarget < 0 || numericTarget > maxIndex) {
-          socket.emit('tokenMoveError', { message: 'Destino fora dos limites do grid.' });
-          return;
-        }
+        if (isNaN(numericTarget) || numericTarget < 0 || numericTarget > maxIndex) return socket.emit('tokenMoveError', { message: 'Destino fora dos limites do grid.' });
 
         if (scene) {
             const entryInInitiative = scene.initiative.find(entry => entry.tokenId?.toString() === tokenToMove._id.toString());
             if (entryInInitiative && !entryInInitiative.isCurrentTurn) {
                 // Apenas Mestres podem mover fora do turno.
                 const table = await Table.findById(tableId);
-                if(table?.dm.toString() !== userId) { // Se quem está movendo não é o mestre
-                    console.log(`Usuário ${userId} tentou mover token ${tokenId} fora do seu turno.`);
-                    socket.emit('tokenMoveError', { message: 'Você só pode mover no seu turno.' });
-                    return;
-                }
+        if(table?.dm.toString() !== userId) return socket.emit('tokenMoveError', { message: 'Você só pode mover no seu turno.' });
             }
         }
 
@@ -199,10 +168,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
             for (let dx = 0; dx < footprintSize; dx++) {
               const nx = newCoords.x + dx;
               const ny = newCoords.y + dy;
-              if (nx >= gridWidth || ny >= gridHeight) {
-                socket.emit('tokenMoveError', { message: 'Token não cabe no destino.' });
-                return;
-              }
+              if (nx >= gridWidth || ny >= gridHeight) return socket.emit('tokenMoveError', { message: 'Token não cabe no destino.' });
               newFootprint.push(`sq-${ny * gridWidth + nx}`);
             }
           }
@@ -219,10 +185,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
           // Query any tokens occupying any square in new footprint (excluding self footprint squares)
           const occupying = await Token.find({ sceneId: tokenToMove.sceneId, squareId: { $in: newFootprint } });
           const blocking = occupying.filter(t => t._id.toString() !== tokenToMove._id.toString() && !currentFootprint.has(t.squareId));
-          if (blocking.length > 0 && !tokenToMove.canOverlap) {
-            socket.emit('tokenMoveError', { message: 'Destino ocupado por outro token.' });
-            return;
-          }
+          if (blocking.length > 0 && !tokenToMove.canOverlap) return socket.emit('tokenMoveError', { message: 'Destino ocupado por outro token.' });
         }
 
         // Calcula a distância em quadrados (método Chebyshev, comum em D&D 5e e outros jogos de tabuleiro)
@@ -230,17 +193,13 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   const metersPerSquare = (scene as any).metersPerSquare ?? 1.5;
   const movementCost = distanceInSquares * metersPerSquare; // Custo em metros baseado na escala da cena
 
-        if (tokenToMove.remainingMovement < movementCost) {
-        socket.emit('tokenMoveError', { message: 'Movimento insuficiente.' });
-        return;
-        }
+  if (tokenToMove.remainingMovement < movementCost) return socket.emit('tokenMoveError', { message: 'Movimento insuficiente.' });
 
         tokenToMove.moveHistory.push(tokenToMove.squareId);
         tokenToMove.squareId = data.targetSquareId;
         tokenToMove.remainingMovement -= movementCost;
         await tokenToMove.save();
 
-        console.log(`Token ${tokenId} movido de ${oldSquareId} para ${targetSquareId}`);
         const populatedToken = await tokenToMove.populate('ownerId', '_id username');
         // Notifica todos os clientes sobre o movimento do token
         io.to(tableId).emit('tokenMoved', {
@@ -262,6 +221,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
     }
   };
 
+  // Atribui novo dono a um token (apenas Mestre) para permitir controle ao jogador.
   const requestAssignToken = async (data: { tableId: string; tokenId: string; newOwnerId: string }) => {
     try {
         const { tableId, tokenId, newOwnerId } = data;
@@ -269,10 +229,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         const userId = socket.data.user?.id;
         const table = await Table.findById(tableId);
         if (!table) return;
-        if (table.dm.toString() !== userId) {
-            console.log(`[AUTH] Falha: Usuário ${userId} tentou atribuir token da mesa ${tableId}, mas não é o mestre.`);
-            return socket.emit('error', { message: 'Apenas o Mestre pode atribuir tokens.' });
-        }
+    if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode atribuir tokens.' });
 
         const updatedToken = await Token.findByIdAndUpdate(
             data.tokenId,
@@ -291,6 +248,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
     }
   };
 
+  // Edita atributos do token (apenas Mestre). Se nome muda, reflete na iniciativa.
   const requestEditToken = async (data: { tableId: string; tokenId: string; name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean; canOverlap?: boolean }) => {
     try {
       const { tableId, tokenId } = data;
@@ -299,10 +257,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
       const table = await Table.findById(tableId);
       if (!table) return;
       const isDM = table.dm.toString() === userId;
-      if (!isDM) {
-        console.log(`[AUTH] Falha: Usuário ${userId} tentou editar token ${tokenId} sem ser Mestre.`);
-        return socket.emit('error', { message: 'Apenas o Mestre pode editar tokens.' });
-      }
+      if (!isDM) return socket.emit('error', { message: 'Apenas o Mestre pode editar tokens.' });
       const token = await Token.findById(tokenId);
       if (!token) return;
       let initiativeNeedsUpdate = false;
@@ -369,6 +324,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
     }
   };
 
+  // Desfaz último movimento restaurando custo de deslocamento. Permite apenas Mestre ou dono.
   const requestUndoMove = async (data: { tableId: string, tokenId: string }) => {
     try {
       const { tableId, tokenId } = data;
@@ -383,7 +339,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
       // Validação de permissão
       const isDM = table.dm.toString() === userId;
       const isOwner = tokenToUndo.ownerId.toString() === userId;
-      if (!isDM && !isOwner) return;
+  if (!isDM && !isOwner) return; // Silencioso: sem permissão
 
       const currentPosition = tokenToUndo.squareId;
       const previousPosition = tokenToUndo.moveHistory.pop()!; 

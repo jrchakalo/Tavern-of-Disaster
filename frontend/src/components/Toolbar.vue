@@ -49,10 +49,19 @@ function requestClearAll() {
     emit('clear-all');
   }
 }
+
+// Estado de recolhimento
+const collapsed = ref(false);
+function toggleCollapse() {
+  collapsed.value = !collapsed.value;
+  if (collapsed.value) showPalette.value = false;
+}
 </script>
 
 <template>
-  <div class="toolbar-container">
+  <div class="toolbar-container" :class="{ collapsed }">
+    <button class="collapse-toggle" :title="collapsed ? 'Expandir' : 'Recolher'" @click="toggleCollapse">{{ collapsed ? '⮞' : '⮜' }}</button>
+    <div class="tools" v-show="!collapsed">
   <button class="tool-button" :class="{ active: activeTool === 'select' }" @click="selectTool('select')" title="Selecionar figuras">🖱️</button>
 
   <button class="tool-button" :class="{ active: activeTool === 'ruler' }" @click="selectTool('ruler')" title="Régua">📏</button>
@@ -82,7 +91,7 @@ function requestClearAll() {
 
     <hr class="divider" />
   <button class="tool-button" title="Cor" @click="showPalette = !showPalette">🎨</button>
-    <div v-if="showPalette" class="palette-popover" @mouseleave="showPalette=false">
+    <div v-if="showPalette && !collapsed" class="palette-popover" @mouseleave="showPalette=false">
       <div class="palette-grid">
         <button
           v-for="c in (isDM ? COLORS : COLORS.filter(col => col !== '#3c096c'))"
@@ -95,7 +104,7 @@ function requestClearAll() {
       </div>
       <small class="hint" v-if="isDM">Sua cor é sempre roxa.</small>
     </div>
-    
+    </div>
     </div>
 </template>
 
@@ -105,15 +114,36 @@ function requestClearAll() {
   top: 50%;
   left: 10px;
   transform: translateY(-50%);
-  z-index: 40; /* Abaixo do painel do mestre, mas acima do mapa */
+  z-index: 40;
   display: flex;
   flex-direction: column;
   gap: 10px;
   background-color: rgba(44, 44, 44, 0.9);
-  padding: 10px;
+  padding: 10px 10px 10px 10px;
   border-radius: 8px;
   border: 1px solid #666;
+  transition: transform .28s ease, padding .25s ease;
 }
+.toolbar-container.collapsed {
+  transform: translate(calc(-100% + 46px), -50%);
+  padding: 10px 6px;
+}
+.collapse-toggle {
+  background:#444;
+  color:#ffc107;
+  border:1px solid #666;
+  border-radius:4px;
+  width:40px;
+  height:40px;
+  font-size:1.1em;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition: background .2s;
+}
+.collapse-toggle:hover { background:#555; }
+.tools { display:flex; flex-direction:column; gap:10px; }
 
 .tool-button {
   background-color: #555;
