@@ -66,7 +66,7 @@ html, body, #app {
 }
 body {
 	margin: 0;
-	background: radial-gradient(circle at 30% 20%, #3a2f36, #2e242a 65%) fixed;
+	background: radial-gradient(circle at 30% 20%, #3a2f36, #2e242a 65%) fixed; /* restaurado */
 	color: var(--color-text);
 	font-family: var(--font-sans);
 	-webkit-font-smoothing: antialiased;
@@ -115,6 +115,23 @@ p { line-height: 1.5; }
 .btn.danger { --btn-bg: var(--color-danger); --btn-bg-rgb: 196 71 71; border-color: #d06060; }
 .btn.success { --btn-bg: var(--color-success); --btn-bg-rgb: 79 160 109; border-color: #63b887; }
 .btn.block { width: 100%; justify-content: center; }
+.btn-sm { padding: 4px 12px; font-size: 0.72rem; line-height:1.1; border-radius: var(--radius-sm); }
+.btn-xs { padding: 3px 10px; font-size: 0.65rem; line-height:1.05; border-radius: var(--radius-sm); }
+.btn-ghost { background: var(--color-surface-alt); border:1px solid var(--color-border); --btn-bg-rgb: 74 58 67; }
+.btn-ghost:hover { background: var(--color-surface); }
+.btn-danger-outline { background: transparent; color: var(--color-danger); border:1px solid var(--color-danger); }
+.btn-danger-outline:hover { background: rgba(196 71 71 / .15); }
+.session-btn { font-weight:600; letter-spacing:.6px; }
+.session-start { --btn-bg: var(--color-success); --btn-bg-rgb: 79 160 109; border-color: #63b887; }
+.session-end { --btn-bg: var(--color-danger); --btn-bg-rgb: 196 71 71; border-color: #d06060; }
+.session-pause { --btn-bg: var(--color-warning); --btn-bg-rgb: 210 156 68; border-color: #d29c44; }
+
+/* Compact inputs */
+.input-sm { padding: 4px 8px !important; font-size: 0.7rem !important; border-radius: var(--radius-sm) !important; }
+.input-xs { padding: 3px 6px !important; font-size: 0.65rem !important; border-radius: var(--radius-sm) !important; }
+.field-row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.field-group { display:flex; flex-direction:column; gap:4px; }
+.inline-fields { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
 
 /* Inputs */
 input[type=text], input[type=number], input[type=password], input[type=email], select, textarea {

@@ -1385,30 +1385,30 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             <button 
               v-if="sessionStatus === 'PREPARING' || sessionStatus === 'ENDED'" 
               @click="handleUpdateSessionStatus('LIVE')"
-              class="start-btn"
-            >
-              Iniciar Sessão
-            </button>
+              class="btn btn-sm session-btn session-start"
+            >Iniciar Sessão</button>
             <button 
               v-if="sessionStatus === 'LIVE'" 
               @click="handleUpdateSessionStatus('ENDED')"
-              class="end-btn"
-            >
-              Encerrar Sessão
-            </button>
+              class="btn btn-sm session-btn session-end"
+            >Encerrar Sessão</button>
           </div>
         </div>
         
         <div class="panel-section scene-manager">
           <form @submit.prevent="handleCreateScene" class="create-scene-form">
             <h4>Criar Nova Cena</h4>
-            <input v-model="newSceneName" placeholder="Nome da Cena" required />
-            <input v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
-            <select v-model="newSceneType">
-              <option value="battlemap">Battlemap</option>
-              <option value="image">Imagem</option>
-            </select>
-            <button type="submit">Adicionar Cena</button>
+            <div class="field-group">
+              <input class="input-sm" v-model="newSceneName" placeholder="Nome da Cena" required />
+              <input class="input-sm" v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
+              <div class="inline-fields">
+                <select class="input-sm" v-model="newSceneType">
+                  <option value="battlemap">Battlemap</option>
+                  <option value="image">Imagem</option>
+                </select>
+                <button type="submit" class="btn btn-xs alt">Adicionar Cena</button>
+              </div>
+            </div>
           </form>
         
           <div class="panel-section" v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
@@ -1453,9 +1453,11 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           <div class="panel-section">
             <h4>Editar Imagem da Cena Ativa</h4>
             <div class="map-controls">
-              <label for="map-url">URL da Imagem:</label>
-              <input id="map-url" type="url" v-model="mapUrlInput" placeholder="URL da imagem da cena" />
-              <button @click="setMap">Definir Imagem</button>
+              <label for="map-url">URL:</label>
+              <div class="inline-fields" style="width:100%">
+                <input id="map-url" class="input-sm" type="url" v-model="mapUrlInput" placeholder="Imagem da cena" />
+                <button @click="setMap" type="button" class="btn btn-xs btn-ghost">Definir</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1465,14 +1467,14 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           <div class="grid-controls">
             <label for="grid-size">Tamanho (quadrados):</label>
             <div class="grid-dimensions">
-              <label>Largura:</label>
-              <input type="number" v-model.number="gridWidth" min="1" />
-              <label>Altura:</label>
-              <input type="number" v-model.number="gridHeight" min="1" />
+              <label>L:</label>
+              <input class="input-xs" style="width:62px" type="number" v-model.number="gridWidth" min="1" />
+              <label>A:</label>
+              <input class="input-xs" style="width:62px" type="number" v-model.number="gridHeight" min="1" />
             </div>
             <div class="scale-control">
               <label>Escala (m por quadrado):</label>
-              <input type="number" step="0.1" min="0.1" v-model.number="metersPerSquare" />
+              <input class="input-xs" style="width:98px" type="number" step="0.1" min="0.1" v-model.number="metersPerSquare" />
               <small>{{ (metersPerSquare || 0).toFixed(2) }}m ≈ {{ Math.round(squareFeet) }}ft por quadrado</small>
             </div>
           </div>
@@ -1794,6 +1796,16 @@ panel h2 {
   width: 100%;
   padding: 10px;
 }
+.inline-fields button, .inline-fields .btn { width:auto; padding: 6px 10px; }
+.inline-fields .btn-xs { padding: 3px 10px; }
+.dm-panel .btn-xs { font-weight:600; letter-spacing:.4px; }
+.grid-controls .grid-dimensions input.input-xs,
+.grid-controls .scale-control input.input-xs {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+.dm-panel .input-sm, .dm-panel .input-xs { background: var(--color-surface-alt); border:1px solid var(--color-border); }
 .initiative-controls {
   display: flex;
   gap: 10px;
