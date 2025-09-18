@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { setAuthToken } from '../services/authService';
+import { toast } from '../services/toast';
 
 const email = ref('');
 const password = ref('');
@@ -30,15 +31,16 @@ async function handleLogin() {
       localStorage.setItem('authToken', data.token);
       setAuthToken(data.token); // Atualiza o token de autenticação global
 
-      alert(data.message);
+      // Sucesso: sem modal/alert intrusivo. Toast opcional curto ou nenhum.
+      toast.success(data.message || 'Login realizado.');
       // Redireciona para a página principal após o login
       router.push('/');
     } else {
-      alert(`Erro no login: ${data.message}`);
+      toast.error(data.message || 'Erro no login.');
     }
   } catch (error) {
     console.error('Falha na requisição de login:', error);
-    alert('Não foi possível conectar ao servidor. Tente novamente mais tarde.');
+    toast.error('Não foi possível conectar ao servidor. Tente novamente mais tarde.');
   }
 }
 </script>

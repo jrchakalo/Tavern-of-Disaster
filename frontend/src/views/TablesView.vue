@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { authToken, currentUser } from '../services/authService';
+import { toast } from '../services/toast';
 import Icon from '../components/Icon.vue';
 import type { ITable } from '../types';
 
@@ -58,21 +59,38 @@ async function removePlayer(playerId: string) {
   if (!confirm('Remover este jogador da mesa?')) return;
   const res = await fetch(`http://localhost:3001/api/tables/${managingPlayers.value._id}/players/${playerId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${authToken.value}` }});
   const data = await res.json();
-  if (res.ok) { fetchMyTables(); } else alert(data.message || 'Erro');
+  if (res.ok) { 
+    toast.success('Jogador removido.');
+    fetchMyTables(); 
+  } else {
+    toast.error(data.message || 'Erro');
+  }
 }
 function openLeave(table: ITable) { leaving.value = table; }
 async function confirmLeave() {
   if (!leaving.value || !authToken.value) return;
   const res = await fetch(`http://localhost:3001/api/tables/${leaving.value._id}/leave`, { method: 'POST', headers: { Authorization: `Bearer ${authToken.value}` }});
   const data = await res.json();
-  if (res.ok) { leaving.value = null; fetchMyTables(); } else alert(data.message || 'Erro');
+  if (res.ok) { 
+    toast.success('Você saiu da mesa.');
+    leaving.value = null; 
+    fetchMyTables(); 
+  } else {
+    toast.error(data.message || 'Erro');
+  }
 }
 function openDelete(table: ITable) { deleting.value = table; }
 async function confirmDelete() {
   if (!deleting.value || !authToken.value) return;
   const res = await fetch(`http://localhost:3001/api/tables/${deleting.value._id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${authToken.value}` }});
   const data = await res.json();
-  if (res.ok) { deleting.value = null; fetchMyTables(); } else alert(data.message || 'Erro');
+  if (res.ok) { 
+    toast.success('Mesa excluída.');
+    deleting.value = null; 
+    fetchMyTables(); 
+  } else {
+    toast.error(data.message || 'Erro');
+  }
 }
 function copyInvite(invite: string) {
   navigator.clipboard.writeText(invite).then(()=>{ feedback.value = 'Código copiado!'; setTimeout(()=>feedback.value='',2000); });
@@ -94,11 +112,11 @@ async function handleCreateTable() {
     const newTableData = await response.json();
 
     if (response.ok) {
-      alert(`Mesa "${newTableData.name}" criada! Código de convite: ${newTableData.inviteCode}`);
+  toast.success(`Mesa "${newTableData.name}" criada! Código: ${newTableData.inviteCode}`);
   newTableName.value = '';
   fetchMyTables();
     } else {
-      alert(`Erro ao criar mesa: ${newTableData.message}`);
+  toast.error(`Erro ao criar mesa: ${newTableData.message}`);
     }
   } catch (error) {
     console.error('Erro de rede ao criar mesa:', error);
@@ -125,11 +143,11 @@ async function handleJoinTable() {
     const data = await response.json();
 
     if (response.ok) {
-  alert(data.message);
+  toast.info(data.message || 'Operação realizada.');
   inviteCodeInput.value = '';
   fetchMyTables();
     } else {
-      alert(`Erro ao entrar na mesa: ${data.message}`);
+  toast.error(`Erro ao entrar na mesa: ${data.message}`);
     }
   } catch (error) {
     console.error('Erro de rede ao entrar na mesa:', error);
@@ -296,11 +314,11 @@ onMounted(() => {
 
 /* Modais */
 .modal { position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; justify-content:center; align-items:center; z-index:200; }
-.modal-content { background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); padding:24px; border-radius:var(--radius-md); width:360px; max-width:90%; display:flex; flex-direction:column; gap:14px; border:1px solid var(--color-border); box-shadow:var(--elev-3); }
+.modal-content { background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); padding:24px 20px; border-radius:var(--radius-md); width:380px; max-width:90%; display:flex; flex-direction:column; gap:14px; border:1px solid var(--color-border); box-shadow:var(--elev-3); }
 .modal-content h3 { margin:0; }
 .modal-content input { padding:8px; border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface-alt); color:var(--color-text); }
 .modal-content input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
-.modal-actions { display:flex; justify-content:flex-end; gap:10px; }
+.modal-actions { display:flex; justify-content:space-between; gap:10px; }
 .modal-actions button { background:var(--color-surface-alt); border:1px solid var(--color-border); color:var(--color-text); padding:8px 14px; border-radius:var(--radius-sm); cursor:pointer; font-weight:500; }
 .modal-actions button:hover { background:var(--color-surface); }
 .modal-actions button.danger { background:var(--color-danger); border-color:#d06060; }

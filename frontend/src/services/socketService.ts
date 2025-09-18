@@ -1,3 +1,4 @@
+import { toast } from './toast';
 import { io, Socket } from 'socket.io-client';
 import { useTableStore } from '../stores/tableStore';
 import { authToken } from './authService';
@@ -25,7 +26,10 @@ class SocketService {
     this.socket.on('sessionStateUpdated', (data) => this.store.updateSessionState(data));
     this.socket.on('tokenPlaced', (data: TokenInfo) => this.store.placeToken(data));
     this.socket.on('tokenMoved', (data: TokenInfo & { oldSquareId: string }) => this.store.moveToken(data));
-    this.socket.on('tokenRemoved', (data: { tokenId: string }) => this.store.removeToken(data.tokenId));
+    this.socket.on('tokenRemoved', (data: { tokenId: string }) => { 
+      this.store.removeToken(data.tokenId);
+      try { toast.success('Token removido.'); } catch {}
+    });
     this.socket.on('tokenOwnerUpdated', (data: { tokenId: string, newOwner: PlayerInfo }) => this.store.updateTokenOwner(data.tokenId, data.newOwner));
   this.socket.on('tokenUpdated', (data: TokenInfo) => this.store.applyTokenUpdate(data));
     this.socket.on('tokensUpdated', (data: TokenInfo[]) => this.store.updateAllTokens(data));
@@ -47,10 +51,14 @@ class SocketService {
   this.socket.on('allMeasurementsCleared', (data?: { sceneId?: string }) => {
     this.store.clearSharedMeasurements();
     if (data?.sceneId) this.store.clearPersistentMeasurementsForScene(data.sceneId);
+    try { toast.success('Medições limpas.'); } catch {}
   });
     // Medições persistentes (ficam até serem removidas ou limpar turno)
   this.socket.on('persistentMeasurementAdded', (m) => this.store.addPersistentMeasurement({ ...m, userId: m.userId || m.ownerId }));
-  this.socket.on('persistentMeasurementRemoved', (data: { sceneId: string; id: string }) => this.store.removePersistentMeasurement(data.id));
+  this.socket.on('persistentMeasurementRemoved', (data: { sceneId: string; id: string }) => {
+    this.store.removePersistentMeasurement(data.id);
+    try { toast.success('Medição removida.'); } catch {}
+  });
   this.socket.on('persistentsListed', (data: { sceneId: string; items: any[] }) => {
     // Atualiza apenas quando a lista corresponde à cena ativa, evitando sobrescrever outra cena por engano
     if (data.sceneId === this.store.activeSceneId) {
@@ -83,7 +91,7 @@ class SocketService {
 
   // Erros de conexão / feedback simples
     this.socket.on('connect_error', (error) => console.error('SocketService - Erro de conexão:', error.message));
-    this.socket.on('tokenPlacementError', (error) => alert(`Erro ao colocar token: ${error.message}`));
+      this.socket.on('tokenPlacementError', (error) => toast.error(`Erro ao colocar token: ${error.message}`));
   }
   // ---- Emissores de requisições ----
   // Medições persistentes

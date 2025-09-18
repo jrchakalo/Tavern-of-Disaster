@@ -185,17 +185,27 @@ router.delete('/:tableId/scenes/:sceneId', authMiddleware, (async (req: AuthRequ
         if (!table || table.dm.toString() !== userId) {
             return res.status(403).json({ message: 'Acesso negado.' });
         }
-        if (table.activeScene?.toString() === sceneId) {
-            return res.status(400).json({ message: 'Não é possível excluir a cena ativa.' });
-        }
+    const isDeletingActive = table.activeScene?.toString() === sceneId;
 
-        // Remove a cena da lista da mesa
-        await Table.findByIdAndUpdate(tableId, { $pull: { scenes: sceneId } });
-        // Deleta o documento da cena em si
-        await Scene.findByIdAndDelete(sceneId);
-        await Token.deleteMany({ sceneId: sceneId });
+    // Remove a cena da lista da mesa (em memória para decidir próxima ativa)
+    const newScenes = table.scenes.filter(s => s.toString() !== sceneId);
+    table.scenes = newScenes as any;
 
-        res.status(200).json({ message: 'Cena excluída com sucesso.' });
+    // Se está removendo a ativa, define a primeira restante como ativa (ou null se vazio)
+    if (isDeletingActive) {
+      table.activeScene = newScenes.length > 0 ? (newScenes[0] as any) : undefined;
+    }
+    await table.save();
+
+    // Deleta a cena e tokens relacionados
+    await Scene.findByIdAndDelete(sceneId);
+    await Token.deleteMany({ sceneId: sceneId });
+
+    res.status(200).json({ 
+      message: 'Cena excluída com sucesso.', 
+      activeScene: table.activeScene || null,
+      scenes: table.scenes
+    });
     } catch (error) {
         res.status(500).json({ message: 'Erro ao excluir a cena.' });
     }

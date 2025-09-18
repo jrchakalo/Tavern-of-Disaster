@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { RouterLink, RouterView, useRouter, useRoute } from 'vue-router';
 import { authToken, clearAuthToken } from './services/authService';
+import ToastHost from './components/ui/ToastHost.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -33,6 +34,7 @@ function handleLogout() {
   <main :class="{ 'home-fit': isHome }">
     <RouterView />
   </main>
+  <ToastHost position="top-right" />
 </template>
 
 <style>

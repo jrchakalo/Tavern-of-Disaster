@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { toast } from '../services/toast';
 import { PlayerInfo, TokenSize } from '../types'; 
 import { tokenSizes } from '../types';
 
@@ -22,7 +23,7 @@ const emit = defineEmits<{
 
 function handleSubmit() {
   if (!tokenName.value.trim()) {
-    alert('O nome do token é obrigatório!');
+    toast.warning('O nome do token é obrigatório!');
     return;
   }
   emit('create-token', {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router'; 
+import { toast } from '../services/toast';
 
 const username = ref('');
 const email = ref('');
@@ -31,14 +32,14 @@ async function handleRegister() {
     const data = await response.json();
 
     if (response.ok) { // Se a resposta for bem-sucedida
-      alert(data.message); // Exibe "Usuário registrado com sucesso!"
+      toast.success(data.message || 'Usuário registrado com sucesso!');
       router.push('/login'); 
     } else { 
-      alert(`Erro no registro: ${data.message}`); // Exibe a mensagem de erro do backend
+      toast.error(`Erro no registro: ${data.message}`);
     }
   } catch (error) {
     console.error('Falha na requisição de registro:', error);
-    alert('Não foi possível conectar ao servidor. Tente novamente mais tarde.');
+    toast.error('Não foi possível conectar ao servidor. Tente novamente mais tarde.');
   }
 }
 </script>

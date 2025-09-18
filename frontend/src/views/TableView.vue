@@ -5,6 +5,7 @@ import draggable from 'vuedraggable';
 
 import { storeToRefs } from 'pinia';
 import { authToken, currentUser } from '../services/authService';
+import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
 import { useTableStore } from '../stores/tableStore';
 
@@ -241,8 +242,8 @@ function createToken(payload: { name: string, imageUrl: string, movement: number
             if (sq && sq.token) { free = false; break; }
         }
       }
-      if (!fits) { alert('Token não cabe no grid nesse posicionamento.'); return; }
-      if (!free) { alert('Espaço ocupado por outro token.'); return; }
+  if (!fits) { toast.warning('Token não cabe no grid nesse posicionamento.'); return; }
+  if (!free) { toast.warning('Espaço ocupado por outro token.'); return; }
     }
     socketService.placeToken({ tableId, sceneId: activeSceneId.value, squareId: targetSquareIdForToken.value, ...payload });
   }
@@ -517,7 +518,7 @@ async function handleCreateScene() {
       newSceneName.value = '';
       newSceneImageUrl.value = '';
     } else {
-      alert(`Erro: ${newScene.message}`);
+      toast.error(newScene.message || 'Erro ao criar cena.');
     }
   } catch (error) { console.error("Erro ao criar cena", error); }
 }
@@ -546,7 +547,7 @@ function handleEditScene(scene: IScene) {
         scenes.value[index] = updatedScene;
       }
     } else {
-      alert(`Erro: ${updatedScene.message}`);
+      toast.error(updatedScene.message || 'Erro ao editar cena.');
     }
   })
   .catch(err => console.error("Erro ao editar cena:", err));
@@ -569,10 +570,22 @@ async function handleDeleteScene(sceneId: string) {
     const data = await response.json();
     if (response.ok) {
       // Remove a cena da lista local para refletir a mudança imediatamente
+      const wasActive = activeSceneId.value === sceneId;
       scenes.value = scenes.value.filter(s => s._id !== sceneId);
-      alert(data.message);
+      if (wasActive) {
+        const first = scenes.value[0];
+        if (first) {
+          // Atualiza ativa localmente e avisa o servidor para manter sincronizado
+          handleSetActiveScene(first._id);
+        } else {
+          // Sem cenas restantes
+          // Zera mapa e ativos locais
+          (tableStore as any).currentMapUrl = null;
+        }
+      }
+      toast.success(data.message || 'Cena excluída.');
     } else {
-      alert(`Erro: ${data.message}`);
+      toast.error(data.message || 'Erro ao excluir cena.');
     }
   } catch (error) { console.error("Erro ao excluir cena:", error); }
 }
@@ -1492,7 +1505,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
                   <div class="scene-buttons">
                     <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">Ativar</button>
                     <button @click="handleEditScene(scene)" class="icon-btn" title="Editar"><Icon name="edit" size="16" /></button>
-                    <button @click="handleDeleteScene(scene._id)" :disabled="scene._id === activeSceneId" class="icon-btn delete-btn-small" title="Excluir"><Icon name="delete" size="16" /></button>
+                    <button @click="handleDeleteScene(scene._id)" class="icon-btn delete-btn-small" title="Excluir"><Icon name="delete" size="16" /></button>
                   </div>
                 </li>
               </template>
