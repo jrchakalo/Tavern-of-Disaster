@@ -13,9 +13,15 @@ export const useTableStore = defineStore('table', () => {
     const squares: Ref<GridSquare[]> = ref([]);
     const gridWidth: Ref<number> = ref(30); // Largura (colunas)
     const gridHeight: Ref<number> = ref(30); // Altura (linhas)
-    const sessionStatus: Ref<'PREPARING' | 'LIVE' | 'ENDED'> = ref('PREPARING');
+    const sessionStatus: Ref<'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'> = ref('PREPARING');
+    const pauseUntil: Ref<Date | null> = ref(null);
+    // Transição curta antes do LIVE
+    const transitionMs: Ref<number> = ref(0);
+    const transitionAt: Ref<number> = ref(0);
     const currentMapUrl: Ref<string | null> = ref(null);
     const metersPerSquare: Ref<number> = ref(1.5);
+    // Diferença entre o relógio do servidor e do cliente
+    const clockSkewMs: Ref<number> = ref(0);
     // Pings efêmeros
     const pings: Ref<Array<{ id: string; userId: string; username: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string; ts: number }>> = ref([]); // Efeito visual transitório
     // Auras ancoradas a tokens (por cena)
@@ -99,7 +105,8 @@ export const useTableStore = defineStore('table', () => {
         activeSceneId.value = data.activeScene?._id || null;
         currentMapUrl.value = data.activeScene?.imageUrl || null;
         initiativeList.value = data.activeScene?.initiative || [];
-        sessionStatus.value = data.tableInfo.status as 'PREPARING' | 'LIVE' | 'ENDED';
+    sessionStatus.value = data.tableInfo.status as 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED';
+    pauseUntil.value = (data.tableInfo as any).pauseUntil ? new Date((data.tableInfo as any).pauseUntil) : null;
     gridWidth.value = data.activeScene?.gridWidth ?? 30;
     gridHeight.value = data.activeScene?.gridHeight ?? 30;
     metersPerSquare.value = data.activeScene?.metersPerSquare ?? 1.5;
@@ -254,6 +261,9 @@ export const useTableStore = defineStore('table', () => {
     gridWidth,
     gridHeight,
         sessionStatus,
+        pauseUntil,
+        transitionMs,
+        transitionAt,
         currentMapUrl,
         sharedMeasurements,
     userMeasurementColors,
@@ -261,6 +271,7 @@ export const useTableStore = defineStore('table', () => {
     metersPerSquare,
     auras,
     pings,
+    clockSkewMs,
         // Getters
         isDM,
         activeScene,

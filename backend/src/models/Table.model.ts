@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
-export const tableStatuses = ['PREPARING', 'LIVE', 'ENDED'];
+export const tableStatuses = ['PREPARING', 'LIVE', 'PAUSED', 'ENDED'];
 
 export interface ITable extends Document {
   _id: Types.ObjectId;
@@ -11,6 +11,7 @@ export interface ITable extends Document {
   activeScene?: Types.ObjectId;
   scenes: Types.ObjectId[];
   status: string;
+  pauseUntil?: Date | null;
 }
 
 const TableSchema: Schema<ITable> = new Schema({
@@ -25,6 +26,7 @@ const TableSchema: Schema<ITable> = new Schema({
     enum: tableStatuses,
     default: 'PREPARING', // Toda nova mesa começa em modo de preparação
   },
+  pauseUntil: { type: Date, required: false, default: null },
 }, {
   timestamps: true
 });

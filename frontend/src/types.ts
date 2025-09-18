@@ -32,7 +32,7 @@ export interface ITable {
   players: PlayerInfo[];
   inviteCode: string;
   activeScene?: string | null | undefined;
-  status: 'PREPARING' | 'LIVE' | 'ENDED';
+  status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED';
 }
 
 export interface PlayerInfo {

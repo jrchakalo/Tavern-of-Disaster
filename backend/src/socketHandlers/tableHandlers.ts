@@ -79,24 +79,48 @@ export function registerTableHandlers(io: Server, socket: Socket) {
         }
     };
 
-    const requestUpdateSessionStatus = async (data: { tableId: string, newStatus: 'LIVE' | 'ENDED' }) => {
+    const requestUpdateSessionStatus = async (data: { tableId: string, newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED', pauseSeconds?: number }) => {
         try {
-            const { tableId, newStatus } = data;
+            const { tableId, newStatus, pauseSeconds } = data;
             const userId = socket.data.user?.id;
 
             const table = await Table.findById(tableId);
             if (!table || table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode alterar o status da sessão.' });
 
             table.status = newStatus;
+            if (newStatus === 'PAUSED') {
+                const sec = Math.max(0, Math.floor(Number(pauseSeconds) || 0));
+                if (sec > 0) {
+                    const until = new Date(Date.now() + sec * 1000);
+                    (table as any).pauseUntil = until;
+                } else {
+                    (table as any).pauseUntil = null;
+                }
+            } else {
+                (table as any).pauseUntil = null;
+            }
             await table.save();
 
             // Broadcast novo status
 
-            
-            io.to(tableId).emit('sessionStatusUpdated', { status: newStatus });
+            io.to(tableId).emit('sessionStatusUpdated', { status: newStatus, pauseUntil: (table as any).pauseUntil || null, serverNowMs: Date.now() });
 
         } catch (error) { 
             console.error("Erro ao atualizar status da sessão:", error); 
+        }
+    };
+
+    // Sinaliza uma transição curta (ex.: 3s) antes do LIVE para todos os clientes
+    const requestStartTransition = async (data: { tableId: string, durationMs?: number }) => {
+        try {
+            const { tableId, durationMs } = data;
+            const userId = socket.data.user?.id;
+            const table = await Table.findById(tableId);
+            if (!table || table.dm.toString() !== userId) return;
+            const dur = Math.max(500, Math.min(10000, Number(durationMs) || 3000));
+            io.to(tableId).emit('sessionTransition', { durationMs: dur });
+        } catch (error) {
+            console.error('Erro ao iniciar transição:', error);
         }
     };
 
@@ -189,7 +213,8 @@ export function registerTableHandlers(io: Server, socket: Socket) {
 
   socket.on('joinTable', joinTable);
   socket.on('requestSetActiveScene', requestSetActiveScene);
-  socket.on('requestUpdateSessionStatus', requestUpdateSessionStatus);
+    socket.on('requestUpdateSessionStatus', requestUpdateSessionStatus);
+    socket.on('requestStartTransition', requestStartTransition);
   socket.on('requestSetMap', requestSetMap);
   socket.on('requestReorderScenes', requestReorderScenes);
     socket.on('requestUpdateGridDimensions', requestUpdateGridDimensions);

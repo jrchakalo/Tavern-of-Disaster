@@ -30,10 +30,20 @@ Currently implemented core features:
 * Per-scene grid scaling & dynamic meters-per-square broadcast by DM
 * Ping system for players to draw quick attention
 * Color selection & per-user measurement color persistence
+* Session life cicle (Preparing → Live → Pause → Ended)
 * Basic table CRUD and invite/join flow
 * Responsive design
 
-Roadmap ideas (not guaranteed / exploratory): interactive dice and tests, character sheet, fog of war, area templates library, campaign notes, media layers, dark/light theme toggle, animation micro-interactions.
+Roadmap ideas (not guaranteed / exploratory): 
+
+* Upload of images, tokens and battlemaps
+* Interactive dice and tests
+* Character sheet
+* Fog of war, area templates library
+* Campaign notes
+* Media layers
+* Dark/light theme toggle
+* Animation micro-interactions.
 
 ---
 

@@ -123,6 +123,7 @@ function handleDragEnd() {
             <span class="dot" :style="{ background: item.token?.color || 'var(--color-text-muted)' }" />
             <strong>{{ item.entry.characterName }}</strong>
             <span v-if="item.token" class="size">{{ item.token.size }}</span>
+            <span v-if="item.entry.isCurrentTurn && item.isOwner" class="my-turn-badge">É o seu turno!</span>
           </div>
           <div class="row-actions" v-if="false"></div>
         </div>
@@ -171,6 +172,7 @@ function handleDragEnd() {
 .entries { display:flex; flex-direction:column; gap:6px; max-height:360px; overflow-y:auto; }
 .entry { background: var(--color-surface); border:1px solid var(--color-border); }
 .entry.active { border-color: var(--color-success); box-shadow:0 0 0 1px var(--color-success), 0 0 8px rgba(79 160 109 / .55); }
+.entry .my-turn-badge { margin-left: 6px; padding: 2px 6px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; color: var(--color-text); border:1px solid var(--color-border); background: linear-gradient(90deg, rgba(18,194,233,0.18), rgba(196,113,237,0.18)); }
 .top-row { display:flex; justify-content:space-between; align-items:center; }
 .left { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .dot { width:14px; height:14px; border-radius:50%; box-shadow:0 0 4px rgba(0 0 0 / 0.5); }

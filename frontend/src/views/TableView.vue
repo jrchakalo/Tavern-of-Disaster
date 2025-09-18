@@ -48,6 +48,10 @@ const imageRenderedHeight = ref<number | null>(null);
 const squareFeet = computed(() => (metersPerSquare.value || 1.5) * 3.28084);
 // Modo persistente: próxima medição vira persistente
 const persistentMode = ref<boolean>(false);
+// Subsections collapse state (DM panel)
+const isSessionCollapsed = ref(false);
+const isScenesCollapsed = ref(false);
+const isGridCollapsed = ref(false);
 
 function updateImageDimensions() {
   if (mapImgRef.value) {
@@ -98,6 +102,43 @@ const {
   myActiveToken 
 } = storeToRefs(tableStore);
 
+// Transição curta antes do LIVE
+const showTransition = ref(false);
+const transitionVideoRef = ref<HTMLVideoElement | null>(null);
+// Quem pode interagir/visualizar o mapa (DM ou sessão ao vivo)
+const canUseMap = computed(() => isDM.value || sessionStatus.value === 'LIVE');
+// Pausa: Mestre define duração e jogadores veem contador
+const pauseInput = ref<number>(5); // default 5min
+const nowTs = ref<number>(Date.now());
+const pauseRemaining = computed(() => {
+  if (sessionStatus.value !== 'PAUSED' || !tableStore.pauseUntil) return 0;
+  const until = tableStore.pauseUntil?.getTime?.() || (tableStore.pauseUntil as any)?.valueOf?.() || 0;
+  // Corrige defasagem de relógio entre cliente e servidor
+  const skew = (tableStore as any).clockSkewMs || 0;
+  const clientNowCorrected = nowTs.value + skew;
+  const ms = Math.max(0, until - clientNowCorrected);
+  return Math.ceil(ms / 1000);
+});
+
+let intervalId: number | null = null;
+onMounted(() => {
+  intervalId = window.setInterval(() => { nowTs.value = Date.now(); }, 500);
+});
+onUnmounted(() => {
+  if (intervalId) clearInterval(intervalId);
+  intervalId = null;
+});
+
+// Observa evento de transição vindo do servidor para todos os clientes
+watch(() => tableStore.transitionAt, (at) => {
+  if (!at) return;
+  showTransition.value = true;
+  // tenta iniciar reprodução
+  setTimeout(() => { transitionVideoRef.value?.play?.(); }, 0);
+  const duration = tableStore.transitionMs || 3000;
+  setTimeout(() => { showTransition.value = false; }, duration);
+});
+
 // Cor de medição
 const measurementColor = ref<string>('');
 const PLAYER_COLORS = ['#ff8c00', '#12c2e9', '#ff4d4d', '#43a047', '#ffd166', '#ff66cc', '#00bcd4', '#8bc34a', '#e91e63', '#9c27b0', '#795548', '#cddc39'];
@@ -147,8 +188,21 @@ function handleSetActiveScene(sceneId: string) {
   socketService.setActiveScene(tableId, sceneId);
 }
 
-function handleUpdateSessionStatus(newStatus: 'LIVE' | 'ENDED') {
-  socketService.updateSessionStatus(tableId, newStatus);
+function handleUpdateSessionStatus(newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED') {
+  const options: any = {};
+  if (newStatus === 'PAUSED') options.pauseSeconds = Math.max(0, Math.floor((pauseInput.value * 60) || 0));
+  socketService.updateSessionStatus(tableId, newStatus, options);
+}
+
+async function startSessionWithTransition() {
+  // dispara transição para todos por ~3s e muda status para LIVE após isso
+  socketService.startTransition(tableId, 3000);
+  showTransition.value = true;
+  // tenta tocar o vídeo local também
+  setTimeout(() => { transitionVideoRef.value?.play?.(); }, 0);
+  await new Promise(res => setTimeout(res, 3000));
+  showTransition.value = false;
+  handleUpdateSessionStatus('LIVE');
 }
 
 // Toggle vindo da Toolbar para fixar medições
@@ -1356,18 +1410,18 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       v-if="(sessionStatus === 'LIVE' || isDM) && activeScene?.type === 'battlemap'"
       :activeTool="activeTool"
       :canDelete="Boolean(selectedPersistentId && (isDM || persistentMeasurements.find(pm => pm.id === selectedPersistentId)?.userId === currentUser?.id))"
-  :persistentMode="persistentMode"
-  :isDM="isDM"
-  :selectedColor="measurementColor"
+      :persistentMode="persistentMode"
+      :isDM="isDM"
+      :selectedColor="measurementColor"
       :canRemoveAura="canRemoveAura"
-  :canAddAura="canAddAura"
+      :canAddAura="canAddAura"
       @tool-selected="handleToolSelected" 
-  @toggle-persistent="handleTogglePersistent"
-  @color-selected="handleColorSelected"
-  @clear-all="handleClearAllMeasurements"
+      @toggle-persistent="handleTogglePersistent"
+      @color-selected="handleColorSelected"
+      @clear-all="handleClearAllMeasurements"
       @delete-selected="handleDeleteSelectedPersistent"
-  @remove-aura="handleToolbarRemoveAura"
-  @edit-aura="handleToolbarEditAura"
+      @remove-aura="handleToolbarRemoveAura"
+      @edit-aura="handleToolbarEditAura"
     />
 
   <aside v-if="isDM" class="dm-panel" :class="{ collapsed: isDmPanelCollapsed }">
@@ -1380,15 +1434,38 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       
       <div v-show="!isDmPanelCollapsed" class="panel-content">        
         <div class="panel-section">
-          <h4>Sessão</h4>
-          <div class="session-controls">
-            <button 
-              v-if="sessionStatus === 'PREPARING' || sessionStatus === 'ENDED'" 
-              @click="handleUpdateSessionStatus('LIVE')"
-              class="btn btn-sm session-btn session-start"
-            >Iniciar Sessão</button>
+          <button class="subsection-toggle" @click="isSessionCollapsed = !isSessionCollapsed">
+            <h4>Sessão</h4>
+            <span class="chevron"><Icon :name="isSessionCollapsed ? 'plus' : 'minus'" size="16" /></span>
+          </button>
+          <div class="session-controls" v-show="!isSessionCollapsed">
+            <button
+              v-if="sessionStatus === 'ENDED'"
+              @click="handleUpdateSessionStatus('PREPARING')"
+              class="btn btn-sm session-btn session-prepare"
+            >Preparar Sessão</button>
+            <div v-if="sessionStatus === 'PREPARING'" class="row gap-2">
+              <button 
+                @click="startSessionWithTransition"
+                class="btn btn-sm session-btn session-start"
+              >Iniciar Sessão</button>
+            </div>
             <button 
               v-if="sessionStatus === 'LIVE'" 
+              @click="handleUpdateSessionStatus('PAUSED')"
+              class="btn btn-sm session-btn session-pause"
+            >Pausar</button>
+            <div v-if="sessionStatus === 'LIVE' || sessionStatus === 'PAUSED'" class="row gap-2" style="margin-top:15px; align-items:center;">
+              <label style="font-size:.85rem">Duração da pausa (min):</label>
+              <input class="input-xs" type="number" min="0" step="0.5" v-model.number="pauseInput" style="width:110px" />
+            </div>
+            <button 
+              v-if="sessionStatus === 'PAUSED'" 
+              @click="handleUpdateSessionStatus('LIVE')"
+              class="btn btn-sm session-btn session-resume"
+            >Retomar</button>
+            <button 
+              v-if="sessionStatus === 'LIVE' || sessionStatus === 'PAUSED'" 
               @click="handleUpdateSessionStatus('ENDED')"
               class="btn btn-sm session-btn session-end"
             >Encerrar Sessão</button>
@@ -1396,39 +1473,11 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         </div>
         
         <div class="panel-section scene-manager">
-          <form @submit.prevent="handleCreateScene" class="create-scene-form">
-            <h4>Criar Nova Cena</h4>
-            <div class="field-group">
-              <input class="input-sm" v-model="newSceneName" placeholder="Nome da Cena" required />
-              <input class="input-sm" v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
-              <div class="inline-fields">
-                <select class="input-sm" v-model="newSceneType">
-                  <option value="battlemap">Battlemap</option>
-                  <option value="image">Imagem</option>
-                </select>
-                <button type="submit" class="btn btn-xs alt">Adicionar Cena</button>
-              </div>
-            </div>
-          </form>
-        
-          <div class="panel-section" v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
-            <InitiativePanel
-              :initiativeList="initiativeList"
-              :tokensOnMap="tokensOnMap"
-              :metersPerSquare="metersPerSquare"
-              :currentUser="currentUser ? { _id: currentUser.id, username: currentUser.username } : null"
-              :isDM="true"
-              :myActiveToken="myActiveToken"
-              @edit-token="(id:string)=>{ const tok=tokensOnMap.find(t=>t._id===id)||null; tokenBeingEdited=tok; showTokenEditForm=!!tok; }"
-              @remove-entry="(entryId:string)=>handleRemoveFromInitiative(entryId)"
-              @reorder="(list)=>{ initiativeList = list as any; onInitiativeDragEnd(); }"
-              @undo-move="handleUndoMove"
-              @next-turn="handleNextTurn"
-            />
-          </div>
-
-          <ul class="scene-list">
-            <h3>Cenas</h3>
+          <button class="subsection-toggle" @click="isScenesCollapsed = !isScenesCollapsed">
+            <h4>Cenas</h4>
+            <span class="chevron"><Icon :name="isScenesCollapsed ? 'plus' : 'minus'" size="16" /></span>
+          </button>
+          <div class="scenes-list-block" v-show="!isScenesCollapsed">
             <draggable
               v-model="scenes"
               tag="ul"
@@ -1448,23 +1497,57 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
                 </li>
               </template>
             </draggable>
-          </ul>
+          </div>
 
-          <div class="panel-section">
-            <h4>Editar Imagem da Cena Ativa</h4>
+          <div class="panel-section" v-show="!isScenesCollapsed">
+            <h4>Imagem da Cena Ativa</h4>
             <div class="map-controls">
-              <label for="map-url">URL:</label>
               <div class="inline-fields" style="width:100%">
-                <input id="map-url" class="input-sm" type="url" v-model="mapUrlInput" placeholder="Imagem da cena" />
+                <input id="map-url" class="input-sm" type="url" v-model="mapUrlInput" placeholder="URL da imagem da cena" />
                 <button @click="setMap" type="button" class="btn btn-xs btn-ghost">Definir</button>
               </div>
             </div>
           </div>
+
+          <form @submit.prevent="handleCreateScene" class="create-scene-form" v-show="!isScenesCollapsed">
+            <h4>Criar Nova Cena</h4>
+            <div class="field-group">
+              <input class="input-sm" v-model="newSceneName" placeholder="Nome da Cena" required />
+              <input class="input-sm" v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
+              <div class="inline-fields">
+                <select class="input-sm" v-model="newSceneType">
+                  <option value="battlemap">Battlemap</option>
+                  <option value="image">Imagem</option>
+                </select>
+                <button type="submit" class="btn btn-xs alt">Adicionar Cena</button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <!-- Initiative table now after Scenes and before Grid controls -->
+        <div class="panel-section" v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
+          <InitiativePanel
+            :initiativeList="initiativeList"
+            :tokensOnMap="tokensOnMap"
+            :metersPerSquare="metersPerSquare"
+            :currentUser="currentUser ? { _id: currentUser.id, username: currentUser.username } : null"
+            :isDM="true"
+            :myActiveToken="myActiveToken"
+            @edit-token="(id:string)=>{ const tok=tokensOnMap.find(t=>t._id===id)||null; tokenBeingEdited=tok; showTokenEditForm=!!tok; }"
+            @remove-entry="(entryId:string)=>handleRemoveFromInitiative(entryId)"
+            @reorder="(list)=>{ initiativeList = list as any; onInitiativeDragEnd(); }"
+            @undo-move="handleUndoMove"
+            @next-turn="handleNextTurn"
+          />
         </div>
 
         <div v-if="activeScene?.type === 'battlemap'" class="panel-section">
-          <h4>Controles do Grid</h4>
-          <div class="grid-controls">
+          <button class="subsection-toggle" @click="isGridCollapsed = !isGridCollapsed">
+            <h4>Controles do Grid</h4>
+            <span class="chevron"><Icon :name="isGridCollapsed ? 'plus' : 'minus'" size="16" /></span>
+          </button>
+          <div class="grid-controls" v-show="!isGridCollapsed">
             <label for="grid-size">Tamanho (quadrados):</label>
             <div class="grid-dimensions">
               <label>L:</label>
@@ -1483,12 +1566,9 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </aside>
 
     <main class="battlemap-main">
-      <h1 v-if="currentTable && sessionStatus === 'LIVE' || isDM">{{ currentTable.name }}</h1>
-      <h3 v-if="activeSceneId && sessionStatus === 'LIVE' || isDM" class="active-scene-name">Cena Ativa: {{ scenes.find(s => s._id === activeSceneId)?.name }}</h3>
-      <button v-if="sessionStatus === 'LIVE' || isDM" @click="resetView" class="reset-view-btn">Resetar Visão</button>
       <div 
-        v-if="sessionStatus === 'LIVE' || isDM"
-  class="viewport" :class="{ measuring: isMeasuring }"
+        v-if="canUseMap"
+        class="viewport" :class="{ measuring: isMeasuring }"
         ref="viewportRef"
         @wheel.prevent="handleWheel"
         @pointerdown="handlePointerDown"
@@ -1512,7 +1592,11 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               @dragstart.prevent 
               ref="mapImgRef" 
               @load="updateImageDimensions" />
-            <div v-else class="map-placeholder">
+            <div
+              v-else
+              class="map-placeholder"
+              style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center; max-width:80%; pointer-events:none;"
+            >
               <p>Nenhum mapa definido para esta cena.</p>
               <p v-if="isDM">Use o Painel do Mestre para definir uma imagem.</p>
             </div>
@@ -1552,7 +1636,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               @viewport-contextmenu="handleViewportContextMenu"
               @shape-contextmenu="handleShapeContextMenu"
             />
-            <!-- Painel flutuante descontinuado (substituído pelo do Painel Mestre) -->
           </div>
         </template>
 
@@ -1573,12 +1656,38 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           <button @click="showAssignMenu = false">Fechar</button>
         </div>
       </div>
-      <div v-else-if="!isDM && (sessionStatus === 'PREPARING' || sessionStatus === 'ENDED')" class="waiting-room">
-        <p v-if="sessionStatus === 'PREPARING'">Nenhuma sessão em andamento, aguarde até o Mestre iniciar a sessão.</p>
-        <p v-if="sessionStatus === 'ENDED'">A sessão foi encerrada.</p>
+      <div v-else-if="!isDM && (sessionStatus === 'PREPARING' || sessionStatus === 'PAUSED' || sessionStatus === 'ENDED')" class="session-overlay" :class="`mode-${sessionStatus.toLowerCase()}`">
+        <div class="overlay-card surface">
+          <template v-if="sessionStatus === 'PREPARING'">
+            <video class="overlay-media" autoplay loop muted playsinline src="/media/preparing.mp4"></video>
+            <h2>O Mestre está preparando a sessão…</h2>
+            <p>Afie suas lâminas e pegue seus dados — a aventura começa em instantes.</p>
+          </template>
+          <template v-else-if="sessionStatus === 'PAUSED'">
+            <video class="overlay-media" autoplay loop muted playsinline src="/media/paused.mp4"></video>
+            <h2>Pequena pausa, já voltamos!</h2>
+            <p>Hora de hidratar, alongar e revisar estratégias.</p>
+            <div v-if="pauseRemaining > 0" class="countdown">Retomando em {{ Math.floor(pauseRemaining/60) }}:{{ String(pauseRemaining%60).padStart(2,'0') }}</div>
+          </template>
+          <template v-else-if="sessionStatus === 'ENDED'">
+            <img class="overlay-media" src="/media/ended.jpg" alt="Sessão encerrada" />
+            <h2>E é aqui...</h2>
+            <p>Obrigado por jogar — até a próxima sessão.</p>
+          </template>
+        </div>
+      </div>
+
+      <!-- Transição curta antes de entrar no LIVE (todos veem) -->
+      <div v-if="showTransition" class="transition-overlay">
+        <div class="overlay-card surface">
+          <video ref="transitionVideoRef" class="overlay-media" autoplay muted playsinline src="/media/transition.mp4"></video>
+          <h2>Vamos começar!</h2>
+        </div>
       </div>
     </main>
 
+    <button v-if="canUseMap" @click="resetView" class="reset-view-btn below">Recentralizar</button>
+    
     <TokenCreationForm
       v-if="showTokenForm && isDM"
       :players="currentTable?.players || []" @create-token="createToken"
@@ -1675,6 +1784,21 @@ main{
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 .toggle-button:hover { background: var(--color-surface); }
+/* Subsection toggles */
+.subsection-toggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0;
+  margin: 0 0 10px 0; /* igual aos h4 padrões */
+  cursor: pointer;
+  font: inherit; /* mantém a mesma família/tamanho base */
+  color: inherit; /* mantém a cor de texto */
+}
+.subsection-toggle .chevron { color: var(--color-text-muted); display:flex; align-items:center; }
 panel h2 {
   margin-top: 0;
   text-align: center;
@@ -1730,6 +1854,26 @@ panel h2 {
   cursor: grab;
   box-shadow: var(--elev-2);
 }
+.session-overlay {
+  display:flex; align-items:center; justify-content:center; height:70vh; width:100%;
+}
+.session-overlay.mode-preparing { background: var(--overlay-preparing-bg, --color-bg); }
+.session-overlay.mode-paused { background: var(--overlay-paused-bg, --color-bg); }
+.session-overlay.mode-ended { background: var(--overlay-ended-bg, --color-bg); }
+.overlay-card { 
+  width:min(780px, 92vw); padding:18px; border:1px solid var(--color-border); border-radius:16px; 
+  background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); box-shadow:var(--elev-3);
+  text-align:center; display:flex; flex-direction:column; gap:12px;
+}
+.overlay-media { width:100%; max-height:100%; object-fit:cover; border-radius:12px; border:1px solid var(--color-border); }
+.countdown { font-weight:700; color:var(--color-accent-alt); font-family: var(--font-display); }
+.session-btn.session-prepare { background: var(--color-surface-alt); color: var(--color-text); }
+.session-btn.session-start { background: var(--color-success); color: var(--color-text); }
+.session-btn.session-pause { background: var(--color-warning, #f5a524); color: var(--color-text); }
+.session-btn.session-resume { margin-right: 20px; background: var(--color-accent); color: var(--color-text); }
+.session-btn.session-end { margin-top: 15px; background: var(--color-danger); color: var(--color-text); }
+
+.transition-overlay { position: fixed; inset:0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,.6); z-index: 100; }
 .viewport:active {
   cursor: grabbing;
 }
@@ -1758,10 +1902,10 @@ panel h2 {
   pointer-events: none;
   display: block;
 }
-
-.map-placeholder { color: var(--color-text-muted); grid-area: 1 / 1 / 2 / 2; font-style: italic; }
-.reset-view-btn { margin-bottom: 15px; padding: 8px 12px; background: var(--color-surface-alt); color: var(--color-text); border:1px solid var(--color-border); border-radius: var(--radius-sm); cursor:pointer; font: inherit; }
+.reset-view-btn { padding: 8px 12px; background: var(--color-surface-alt); color: var(--color-text); border:1px solid var(--color-border); border-radius: var(--radius-sm); cursor:pointer; font: inherit; display:block; margin: 10px auto 0; }
+.reset-view-btn.below { margin-top: 10px; }
 .reset-view-btn:hover { background: var(--color-surface); }
+ 
 .panel-section { margin-top: 25px; border-top: 1px solid var(--color-border); padding-top: 15px; }
 .scene-list {
   list-style: none;

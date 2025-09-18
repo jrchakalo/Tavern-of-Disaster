@@ -31,7 +31,15 @@ class SocketService {
     this.socket.on('tokensUpdated', (data: TokenInfo[]) => this.store.updateAllTokens(data));
   this.socket.on('initiativeUpdated', (data: IInitiativeEntry[]) => { this.store.initiativeList = data; });
     this.socket.on('sceneListUpdated', (data: IScene[]) => { this.store.scenes = data; });
-    this.socket.on('sessionStatusUpdated', (data: { status: 'PREPARING' | 'LIVE' | 'ENDED' }) => { this.store.sessionStatus = data.status; });
+    this.socket.on('sessionStatusUpdated', (data: { status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'; pauseUntil?: string | null; serverNowMs?: number }) => {
+      this.store.sessionStatus = data.status;
+      this.store.pauseUntil = data.pauseUntil ? new Date(data.pauseUntil) : null;
+      if (typeof data.serverNowMs === 'number') {
+        const localNow = Date.now();
+        this.store.clockSkewMs = data.serverNowMs - localNow;
+      }
+    });
+    this.socket.on('sessionTransition', (data: { durationMs: number }) => { this.store.transitionMs = data.durationMs || 3000; this.store.transitionAt = Date.now(); });
     this.socket.on('mapUpdated', (data: { mapUrl: string }) => { this.store.currentMapUrl = data.mapUrl; });
     // Medições efêmeras / compartilhadas
   this.socket.on('measurementShared', (m) => this.store.upsertSharedMeasurement(m));
@@ -98,8 +106,12 @@ class SocketService {
     this.socket?.emit('requestSetActiveScene', { tableId, sceneId });
   }
 
-  updateSessionStatus(tableId: string, newStatus: 'LIVE' | 'ENDED') {
-    this.socket?.emit('requestUpdateSessionStatus', { tableId, newStatus });
+  updateSessionStatus(tableId: string, newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED', options?: { pauseSeconds?: number }) {
+    this.socket?.emit('requestUpdateSessionStatus', { tableId, newStatus, pauseSeconds: options?.pauseSeconds });
+  }
+
+  startTransition(tableId: string, durationMs?: number) {
+    this.socket?.emit('requestStartTransition', { tableId, durationMs });
   }
 
   setMap(tableId: string, mapUrl: string) {

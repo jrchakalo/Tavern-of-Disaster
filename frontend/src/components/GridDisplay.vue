@@ -506,7 +506,13 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
             :style="{
                 '--token-size': getTokenSizeInSquares(square.token.size), 
         backgroundColor: square.token.color,
-    ...getTokenAreaStyle(square.id)
+  ...getTokenAreaStyle(square.id),
+  // Realce do token no turno do usuário usa a mesma cor de medição
+  ...(square.token._id === props.currentTurnTokenId 
+    && props.currentUserId 
+    && (square.token.ownerId && (square.token.ownerId as any)._id) === props.currentUserId 
+    && props.measurementColor 
+    ? { '--active-turn-glow': hexToRgba(props.measurementColor, 0.9) } : {})
               }"
       :draggable="!props.isMeasuring" @dragstart="handleDragStart($event, square.token!)" @click.stop="onSquareLeftClick(square, $event)">
             <img v-if="square.token.imageUrl" :src="square.token.imageUrl" :alt="square.token.name" class="token-image" />
@@ -903,7 +909,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
 }
 
 .token.active-turn-token {
-  box-shadow: 0 0 5px 5px #69ff69; /* Exemplo: brilho verde */
+  box-shadow: 0 0 5px 5px var(--active-turn-glow, #69ff69);
   z-index: 6;
 }
 
@@ -922,11 +928,11 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
 }
 .token.multi-footprint.active-turn-token .token-image,
 .token.multi-footprint.active-turn-token .token-fallback {
-  box-shadow: 0 0 6px 6px #69ff69;
+  box-shadow: 0 0 6px 6px var(--active-turn-glow, #69ff69);
 }
 .token.multi-footprint.selected.active-turn-token .token-image,
 .token.multi-footprint.selected.active-turn-token .token-fallback {
-  box-shadow: 0 0 10px 6px #69ff69, 0 0 14px rgba(255,255,255,0.4);
+  box-shadow: 0 0 10px 6px var(--active-turn-glow, #69ff69), 0 0 14px rgba(255,255,255,0.4);
   outline: 2px solid rgba(255,255,255,0.6);
 }
 
