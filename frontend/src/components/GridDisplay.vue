@@ -781,8 +781,8 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
 
 .grid-container {
   /* Variáveis para facilitar ajuste de visibilidade do grid */
-  --grid-line-color: rgba(255,255,255,0.08);
-  --grid-major-line-color: rgba(255,255,255,0.08);
+  --grid-line-color: rgba(255,255,255,0.15);
+  --grid-major-line-color: rgba(255,255,255,0.15);
   --grid-cell-bg: rgba(255,255,255,0.025);
   --grid-cell-bg-alt: rgba(255,255,255,0.045);
 }

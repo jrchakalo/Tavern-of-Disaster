@@ -8,7 +8,6 @@ import Icon from '../components/Icon.vue';
 const features = [
   { icon: 'square', title: 'Grid & Medições', desc: 'Movimento e alcance visíveis em tempo real.' },
   { icon: 'beam', title: 'Formas Táticas', desc: 'Cone, raio, linha, círculo e mais para efeitos.' },
-  { icon: 'aura', title: 'Auras Persistentes', desc: 'Gerencie zonas e condições contínuas.' },
   { icon: 'wrench', title: 'Ferramentas do Mestre', desc: 'Controle iniciativa, ordem e ajustes rápidos.' },
   { icon: 'users', title: 'Para o Grupo', desc: 'Interface minimalista focada na sessão.' },
 ];
@@ -85,12 +84,26 @@ onMounted(() => {
     runCycle();
     window.addEventListener('resize', computeLine);
   });
+  // Impede rolagem global enquanto esta view está ativa
+  const html = document.documentElement;
+  const body = document.body;
+  html.style.overflow = 'hidden';
+  body.style.overflow = 'hidden';
+  html.style.height = '100%';
+  body.style.height = '100%';
 });
 
 import { onBeforeUnmount } from 'vue';
 onBeforeUnmount(() => {
   window.removeEventListener('resize', computeLine);
   clearCycleTimers();
+  // Restaura rolagem global ao sair da Home
+  const html = document.documentElement;
+  const body = document.body;
+  html.style.overflow = '';
+  body.style.overflow = '';
+  html.style.height = '';
+  body.style.height = '';
 });
 
 </script>
@@ -143,16 +156,18 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </section>
-      <section class="features-band fade-in-up" style="animation-delay:.15s">
-        <div class="feature-grid">
+      <section class="features-band fade-in-up" style="animation-delay:.1s">
+        <div class="feature-wrap">
           <div v-for="f in features" :key="f.title" class="surface feature-card hoverable">
-            <div class="feature-icon"><Icon :name="f.icon" size="28" /></div>
-            <h3>{{ f.title }}</h3>
-            <p class="text-muted" style="margin-top:-4px">{{ f.desc }}</p>
+            <div class="feature-icon"><Icon :name="f.icon" size="24" /></div>
+            <div class="feature-text">
+              <h3>{{ f.title }}</h3>
+              <p class="text-muted">{{ f.desc }}</p>
+            </div>
           </div>
         </div>
       </section>
-      <footer class="site-footer fade-in-up dark" style="animation-delay:.3s">
+      <footer class="site-footer fade-in-up dark" style="animation-delay:.2s">
         <div class="container">© 2025 Tavern of Disaster</div>
       </footer>
     </div>
@@ -190,7 +205,7 @@ onBeforeUnmount(() => {
           </ul>
         </div>
       </section>
-      <footer>
+      <footer class="site-footer">
         <div class="container">© 2025 Tavern of Disaster</div>
       </footer>
     </div>
@@ -198,13 +213,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.home-wrapper {
-  min-height:100vh;
-  display:flex;
-  flex-direction:column;
-}
-.home-wrapper { width:100%; }
-.landing { display:flex; flex-direction:column; gap:var(--space-8); }
+.home-wrapper { width:100%; height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
+.landing { display:flex; flex-direction:column; height:100%; overflow:hidden; }
+.hero { flex:1 1 auto; min-height:0; display:flex; align-items:center; }
 .hero { padding: clamp(2rem,5vw,4rem) 1rem 0; }
 .hero-inner { display:grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); align-items:center; gap:clamp(2rem,4vw,4rem); max-width:1180px; margin:0 auto; width:100%; }
 .hero-copy { display:flex; flex-direction:column; gap:var(--space-4); align-items:center; text-align:center; }
@@ -322,25 +333,51 @@ onBeforeUnmount(() => {
   100% { opacity:0; transform:scale(.4) rotate(360deg); }
 }
 .caption { font-size:.75rem; text-align:center; }
-.features-band { padding:0 1rem 3rem; max-width:1180px; margin:0 auto; width:100%; }
-.feature-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:var(--space-4); }
-.feature-card { padding:16px 18px 18px; border:1px solid var(--color-border); border-radius:12px; display:flex; flex-direction:column; gap:4px; }
-.feature-icon { width:42px; height:42px; display:flex; align-items:center; justify-content:center; border-radius:10px; background:var(--color-surface-alt); color:var(--color-accent); box-shadow:inset 0 0 0 1px var(--color-border); }
-.feature-card:hover { background:var(--color-surface-alt); }
 
-/* Dashboard */
-.dashboard { max-width:1180px; margin:0 auto; padding: clamp(2rem,4vw,3rem) 1rem 3rem; display:flex; flex-direction:column; gap:var(--space-6); }
+/* Features band: horizontal, sem rolagem vertical */
+.features-band { padding: 0 0.5rem 0.25rem; }
+.feature-wrap { 
+  max-width:1180px; margin:0 auto; padding: 6px 0.5rem 10px; 
+  display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); 
+  gap:18px; align-items:start; justify-items:center;
+}
+.feature-card { 
+  box-sizing:border-box;
+  width: 100%; max-width: 260px; aspect-ratio: 1 / 1; 
+  padding:16px 18px; border:1px solid var(--color-border); border-radius:14px; 
+  display:flex; flex-direction:column; align-items:flex-start; gap:10px; 
+  background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); box-shadow:var(--elev-2);
+}
+.feature-card.hoverable:hover { transform:translateY(-2px); box-shadow:var(--elev-3); transition:transform .2s, box-shadow .2s; }
+.feature-icon { width:56px; height:56px; display:flex; align-items:center; justify-content:center; border-radius:12px; background:var(--color-surface-alt); color:var(--color-accent); box-shadow:inset 0 0 0 1px var(--color-border); flex:0 0 auto; }
+.feature-text h3 { margin:4px 0 0; font-size:1rem; }
+.feature-text p { margin:0; font-size:0.88rem; line-height:1.35; }
+
+/* Em telas pequenas, volta a ser trilho horizontal para caber sem quebrar layout e manter sem scroll vertical */
+@media (max-width: 680px) {
+  .feature-wrap { display:block; overflow-x:auto; overflow-y:hidden; white-space:nowrap; padding: 8px 0.5rem 12px; }
+  .feature-card { display:inline-flex; vertical-align:top; margin-right:16px; width:220px; aspect-ratio: 1 / 1; max-width:none; }
+}
+
+/* Dashboard dentro do viewport, sem rolagem e com rodapé visível */
+.dashboard { max-width:1180px; margin:0 auto; padding: 1.25rem 1rem 0.75rem; display:flex; flex-direction:column; gap:var(--space-4); height:100%; overflow:hidden; }
 .dash-top { display:flex; flex-wrap:wrap; justify-content:space-between; gap:var(--space-4); align-items:flex-end; }
 .quick-actions { display:flex; gap:var(--space-3); flex-wrap:wrap; }
-.dashboard-panels { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:var(--space-4); }
-.panel { padding:18px 20px 22px; border:1px solid var(--color-border); border-radius:14px; background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); box-shadow:var(--elev-2); display:flex; flex-direction:column; gap:12px; }
+.dashboard-panels { display:grid; grid-auto-rows:min-content; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:var(--space-3); flex:1 1 auto; min-height:0; align-content:start; }
+.panel { padding:18px 20px 22px; border:1px solid var(--color-border); border-radius:14px; background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); box-shadow:var(--elev-2); display:flex; flex-direction:column; gap:12px; max-width:420px; justify-self:stretch; }
 .panel:hover { transform:translateY(-2px); box-shadow:var(--elev-3); transition:transform .25s, box-shadow .25s; }
 .shortcut-list, .mini-features { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px; font-size:.85rem; }
 .mini-features li { display:flex; align-items:center; gap:6px; color:var(--color-text-muted); }
+
+/* Rodapés colados ao fundo nas duas variantes */
+.landing > .site-footer { margin-top:auto; }
+.dashboard > .site-footer { margin-top:auto; }
 
 @media (max-width: 760px) {
   .hero-inner { grid-template-columns:1fr; }
   .dash-top { flex-direction:column; align-items:flex-start; }
   .preview-card { width:100%; }
 }
+
+/* Removido desbloqueio de scroll em telas pequenas: nenhuma rolagem permitida */
 </style>
