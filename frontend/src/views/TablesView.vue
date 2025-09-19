@@ -7,6 +7,7 @@ import Icon from '../components/Icon.vue';
 import type { ITable } from '../types';
 
 const router = useRouter();
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const newTableName = ref('');
 const userTables = ref<ITable[]>([]);
 const inviteCodeInput = ref('');
@@ -18,11 +19,12 @@ const leaving = ref<ITable | null>(null);
 const deleting = ref<ITable | null>(null);
 const feedback = ref('');
 
+
 async function fetchMyTables() {
   if (!authToken.value) return; // Sem token
 
   try {
-    const response = await fetch('http://localhost:3001/api/tables/mytables', {
+    const response = await fetch(`${API_BASE_URL}/api/tables/mytables`, {
       method: 'GET',
       headers: {
   'Authorization': `Bearer ${authToken.value}`,
@@ -45,7 +47,7 @@ function openEdit(table: ITable) {
 async function saveEdit() {
   if (!editingTable.value || !authToken.value) return;
   try {
-    const res = await fetch(`http://localhost:3001/api/tables/${editingTable.value._id}`, {
+    const res = await fetch(`${API_BASE_URL}/api/tables/${editingTable.value._id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken.value}` }, body: JSON.stringify({ name: editName.value })
     });
     const data = await res.json();
@@ -57,7 +59,7 @@ function managePlayers(table: ITable) { managingPlayers.value = table; }
 async function removePlayer(playerId: string) {
   if (!managingPlayers.value || !authToken.value) return;
   if (!confirm('Remover este jogador da mesa?')) return;
-  const res = await fetch(`http://localhost:3001/api/tables/${managingPlayers.value._id}/players/${playerId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${authToken.value}` }});
+  const res = await fetch(`${API_BASE_URL}/api/tables/${managingPlayers.value._id}/players/${playerId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${authToken.value}` }});
   const data = await res.json();
   if (res.ok) { 
     toast.success('Jogador removido.');
@@ -69,7 +71,7 @@ async function removePlayer(playerId: string) {
 function openLeave(table: ITable) { leaving.value = table; }
 async function confirmLeave() {
   if (!leaving.value || !authToken.value) return;
-  const res = await fetch(`http://localhost:3001/api/tables/${leaving.value._id}/leave`, { method: 'POST', headers: { Authorization: `Bearer ${authToken.value}` }});
+  const res = await fetch(`${API_BASE_URL}/api/tables/${leaving.value._id}/leave`, { method: 'POST', headers: { Authorization: `Bearer ${authToken.value}` }});
   const data = await res.json();
   if (res.ok) { 
     toast.success('Você saiu da mesa.');
@@ -82,7 +84,7 @@ async function confirmLeave() {
 function openDelete(table: ITable) { deleting.value = table; }
 async function confirmDelete() {
   if (!deleting.value || !authToken.value) return;
-  const res = await fetch(`http://localhost:3001/api/tables/${deleting.value._id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${authToken.value}` }});
+  const res = await fetch(`${API_BASE_URL}/api/tables/${deleting.value._id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${authToken.value}` }});
   const data = await res.json();
   if (res.ok) { 
     toast.success('Mesa excluída.');
@@ -100,7 +102,7 @@ async function handleCreateTable() {
   if (!newTableName.value.trim() || !authToken.value) return;
 
   try {
-    const response = await fetch('http://localhost:3001/api/tables/create', {
+    const response = await fetch(`${API_BASE_URL}/api/tables/create`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -131,7 +133,7 @@ async function handleJoinTable() {
   if (!inviteCodeInput.value.trim() || !authToken.value) return;
 
   try {
-    const response = await fetch('http://localhost:3001/api/tables/join', {
+    const response = await fetch(`${API_BASE_URL}/api/tables/join`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

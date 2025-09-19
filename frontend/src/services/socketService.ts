@@ -11,7 +11,9 @@ class SocketService {
   connect(tableId: string) {
     if (this.socket) return; // Evita duplicar conexão
 
-    this.socket = io('ws://localhost:3001', {
+    const socketURL = import.meta.env.VITE_API_URL || 'ws://localhost:3001';
+
+    this.socket = io(socketURL, {
       transports: ['websocket'],
       auth: { token: authToken.value }
     });

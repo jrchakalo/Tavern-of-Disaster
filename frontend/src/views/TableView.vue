@@ -33,6 +33,7 @@ const showTokenForm = ref(false);
 const showTokenEditForm = ref(false);
 const tokenBeingEdited = ref<TokenInfo | null>(null);
 const targetSquareIdForToken = ref<string | null>(null);
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 // Auras dialog state
 const showAuraDialog = ref(false);
 const auraDialogTokenId = ref<string | null>(null);
@@ -498,7 +499,7 @@ async function handleCreateScene() {
   if (!newSceneName.value.trim() || !tableId) return;
 
   try {
-    const response = await fetch(`http://localhost:3001/api/tables/${tableId}/scenes`, {
+    const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/scenes`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -530,7 +531,7 @@ function handleEditScene(scene: IScene) {
   if (newName === null) return; // Usuário cancelou
 
   // Chama a nova API PUT para editar
-  fetch(`http://localhost:3001/api/tables/${tableId}/scenes/${scene._id}`, {
+  fetch(`${API_BASE_URL}/api/tables/${tableId}/scenes/${scene._id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -560,7 +561,7 @@ async function handleDeleteScene(sceneId: string) {
   }
 
   try {
-    const response = await fetch(`http://localhost:3001/api/tables/${tableId}/scenes/${sceneId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/scenes/${sceneId}`, {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${authToken.value}`,

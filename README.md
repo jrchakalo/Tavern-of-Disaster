@@ -1,5 +1,5 @@
 <div align="center">
-  <img align="center" alt="Tavern of Disaster Logo" height="245" width="297" src="./frontend/public/logotof.png" />
+  <img align="center" alt="Tavern of Disaster Logo" height="500" width="500" src="./frontend/public/logotof.png" />
 </div>
 
 <div align="center" style="display: inline_block"><br>
@@ -7,6 +7,7 @@
   <img align="center" alt="versao" src="http://img.shields.io/static/v1?label=VERSION&message=0.5&color=blue&style=for-the-badge">
   <img align="center" alt="projeto" src="http://img.shields.io/static/v1?label=PROJECT&message=PERSONAL&color=purple&style=for-the-badge">
   <br/>
+  <br>
   <!-- Technology badges -->
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-393?logo=nodedotjs&logoColor=white&style=for-the-badge" />
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white&style=for-the-badge" />
@@ -88,24 +89,13 @@ Default dev endpoints:
 * Backend API / Socket: `http://localhost:3001`
 * Frontend: `http://localhost:5173`
 
-Environment variables: copy `.env.example` to `.env` in the project root and set values.
-Frontend (optional) create `frontend/.env.local`:
-```
-VITE_API_URL=http://localhost:3001
-VITE_SOCKET_URL=http://localhost:3001
-```
+Environment variables: copy `.env.example` to `.env` in the backend folder and set values.
 
 ---
 
 ## Deployment
 
-Experimental deployment: [Tavern of Disaster]()
-
-Production build (manual):
-```bash
-cd frontend && npm run build
-```
-Serve `frontend/dist` behind your preferred static host; ensure backend server URL is reachable and, if necessary, configure CORS & environment.
+[Tavern of Disaster]()
 
 ---
 
