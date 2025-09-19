@@ -95,7 +95,7 @@ Environment variables: copy `.env.example` to `.env` in the backend folder and s
 
 ## Deployment
 
-[Tavern of Disaster](tavernofdisaster.vercel.app/)
+[Tavern of Disaster](https://tavernofdisaster.vercel.app/)
 
 ---
 
