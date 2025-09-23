@@ -1869,8 +1869,8 @@ panel h2 {
   box-shadow: var(--elev-2);
 }
 @media (max-width: 900px) {
-  /* Reduce map-stage height on mobile to allow page scroll */
-  .viewport { height: calc(100dvh - 240px); }
+  /* Fix mobile: use large viewport height so the map doesn't stretch/shrink on scroll */
+  .viewport { height: calc(100lvh - 240px); }
 }
 .session-overlay {
   display:flex; align-items:center; justify-content:center; height:70vh; width:100%;
@@ -1925,7 +1925,7 @@ panel h2 {
 .reset-view-btn:hover { background: var(--color-surface); }
 @media (max-width: 900px) {
   /* Ensure there's space for the toolbar below the reset button */
-  .reset-view-btn.below { margin-bottom: 58px; }
+  .reset-view-btn.below { margin-top: 6px; margin-bottom: 80px; }
 }
  
 .panel-section { margin-top: 25px; border-top: 1px solid var(--color-border); padding-top: 15px; }
