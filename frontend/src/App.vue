@@ -57,8 +57,12 @@ main.home-fit { margin-top:0; padding-bottom:0; height: calc(100dvh - var(--head
   main.home-fit { height: auto; min-height: calc(100dvh - var(--header-h)); overflow:auto; }
 }
 /* On short desktop windows, allow vertical scroll to avoid clipping home cards */
-@media (max-height: 760px) {
+@media (hover: hover) and (pointer: fine) and (max-height: 760px) {
   main.home-fit { height: auto; min-height: calc(100dvh - var(--header-h)); overflow:auto; }
+}
+/* On desktop in general, prefer auto height + scroll so logged-out cards never get cut */
+@media (hover: hover) and (pointer: fine) {
+  main.home-fit { height: auto; min-height: calc(100dvh - var(--header-h)); overflow:auto; display:block; align-items: initial; }
 }
 
 

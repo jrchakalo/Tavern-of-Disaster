@@ -1404,7 +1404,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 <template>
   <div class="table-view-layout">
 
-    <div v-if="!isDM && sessionStatus === 'LIVE'" class="player-initiative-wrapper">
+  <div v-if="!isDM && sessionStatus === 'LIVE' && activeScene?.type === 'battlemap'" class="player-initiative-wrapper">
       <InitiativePanel
         :initiativeList="initiativeList"
         :tokensOnMap="tokensOnMap"
@@ -2058,5 +2058,6 @@ panel h2 {
 @media (max-width: 900px) {
   .dm-panel { position: fixed; left: 10px; right: 10px; top: 10px; width: auto; max-height: calc(100dvh - 20px); }
   .viewport { border-width: 6px; }
+  .battlemap-main { padding-bottom: 80px; } /* breathing room for docked toolbar */
 }
 </style>

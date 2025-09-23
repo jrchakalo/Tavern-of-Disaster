@@ -345,7 +345,7 @@ onBeforeUnmount(() => {
   .features-band { margin-top: 6px; }
   .feature-wrap { display:block; overflow-x:auto; overflow-y:hidden; white-space:nowrap; padding: 8px 0.5rem 12px; }
   /* Let cards auto-size vertically so text never overflows; keep narrow width and allow horizontal scroll */
-  .feature-card { display:inline-flex; vertical-align:top; margin-right:16px; width:240px; max-width:none; overflow:hidden; }
+  .feature-card { display:inline-flex; vertical-align:top; margin-right:16px; width:220px; max-width:none; overflow:hidden; }
 }
 
 /* Dashboard dentro do viewport, sem rolagem e com rodapé visível */
