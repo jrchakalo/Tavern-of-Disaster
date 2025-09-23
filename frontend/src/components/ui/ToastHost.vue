@@ -64,7 +64,7 @@ onBeforeUnmount(() => {
   pointer-events: auto;
   margin-top: 10px;
   min-width: 220px;
-  max-width: 380px;
+  max-width: min(380px, 92vw);
   padding: 10px 14px;
   border-radius: 8px;
   border: 1px solid var(--color-border);
@@ -81,4 +81,12 @@ onBeforeUnmount(() => {
 
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(-6px); }
 .toast-enter-active, .toast-leave-active { transition: opacity 180ms ease, transform 180ms ease; }
+
+@media (max-width: 900px) {
+  .toast-host.top-right, .toast-host.bottom-right { right: 10px; }
+  .toast-host.top-left, .toast-host.bottom-left { left: 10px; }
+  .toast-host.top-right, .toast-host.top-left { top: 10px; }
+  .toast-host.bottom-right, .toast-host.bottom-left { bottom: 10px; }
+  .toast { margin-top: 8px; }
+}
 </style>

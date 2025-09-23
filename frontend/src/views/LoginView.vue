@@ -64,12 +64,12 @@ async function handleLogin() {
 
 <style scoped>
 .auth-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding-top: 40px;
+  display: grid;
+  place-items: center;
+  padding: 24px 12px 40px;
+  width: 100%;
 }
-.auth-form { display:flex; flex-direction:column; gap:15px; padding:30px; background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); border-radius:var(--radius-md); width:100%; max-width:400px; border:1px solid var(--color-border); box-shadow:var(--elev-2); }
+.auth-form { display:flex; flex-direction:column; gap:15px; padding:24px; background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); border-radius:var(--radius-md); width:100%; max-width:420px; border:1px solid var(--color-border); box-shadow:var(--elev-2); }
 h1 { color:var(--color-accent); margin-top:0; }
 label {
   text-align: left;

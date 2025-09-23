@@ -84,26 +84,12 @@ onMounted(() => {
     runCycle();
     window.addEventListener('resize', computeLine);
   });
-  // Impede rolagem global enquanto esta view está ativa
-  const html = document.documentElement;
-  const body = document.body;
-  html.style.overflow = 'hidden';
-  body.style.overflow = 'hidden';
-  html.style.height = '100%';
-  body.style.height = '100%';
 });
 
 import { onBeforeUnmount } from 'vue';
 onBeforeUnmount(() => {
   window.removeEventListener('resize', computeLine);
   clearCycleTimers();
-  // Restaura rolagem global ao sair da Home
-  const html = document.documentElement;
-  const body = document.body;
-  html.style.overflow = '';
-  body.style.overflow = '';
-  html.style.height = '';
-  body.style.height = '';
 });
 
 </script>
@@ -167,9 +153,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </section>
-      <footer class="site-footer fade-in-up dark" style="animation-delay:.2s">
-        <div class="container">© 2025 Tavern of Disaster</div>
-      </footer>
+      
     </div>
 
     <!-- Logged IN dashboard -->
@@ -205,16 +189,14 @@ onBeforeUnmount(() => {
           </ul>
         </div>
       </section>
-      <footer class="site-footer">
-        <div class="container">© 2025 Tavern of Disaster</div>
-      </footer>
+      
     </div>
   </div>
 </template>
 
 <style scoped>
-.home-wrapper { width:100%; height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
-.landing { display:flex; flex-direction:column; height:100%; overflow:hidden; }
+.home-wrapper { width:100%; height:100dvh; display:flex; flex-direction:column; }
+.landing { display:flex; flex-direction:column; flex:1 1 auto; overflow:hidden; }
 .hero { flex:1 1 auto; min-height:0; display:flex; align-items:center; }
 .hero { padding: clamp(2rem,5vw,4rem) 1rem 0; }
 .hero-inner { display:grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); align-items:center; gap:clamp(2rem,4vw,4rem); max-width:1180px; margin:0 auto; width:100%; }
@@ -355,6 +337,9 @@ onBeforeUnmount(() => {
 
 /* Em telas pequenas, volta a ser trilho horizontal para caber sem quebrar layout e manter sem scroll vertical */
 @media (max-width: 680px) {
+  .hero { padding: 1.25rem 0.75rem 0; }
+  .hero-inner { gap: 1.5rem; }
+  .preview-card { width: 100%; max-width: 420px; margin: 0 auto; }
   .feature-wrap { display:block; overflow-x:auto; overflow-y:hidden; white-space:nowrap; padding: 8px 0.5rem 12px; }
   .feature-card { display:inline-flex; vertical-align:top; margin-right:16px; width:220px; aspect-ratio: 1 / 1; max-width:none; }
 }
@@ -369,15 +354,14 @@ onBeforeUnmount(() => {
 .shortcut-list, .mini-features { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px; font-size:.85rem; }
 .mini-features li { display:flex; align-items:center; gap:6px; color:var(--color-text-muted); }
 
-/* Rodapés colados ao fundo nas duas variantes */
-.landing > .site-footer { margin-top:auto; }
-.dashboard > .site-footer { margin-top:auto; }
+/* footer removido */
 
 @media (max-width: 760px) {
   .hero-inner { grid-template-columns:1fr; }
   .dash-top { flex-direction:column; align-items:flex-start; }
   .preview-card { width:100%; }
+  .home-wrapper { height:auto; min-height:100dvh; }
 }
 
-/* Removido desbloqueio de scroll em telas pequenas: nenhuma rolagem permitida */
+/* Em telas grandes, evitamos rolagem vertical excessiva mantendo seções dentro do viewport */
 </style>

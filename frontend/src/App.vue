@@ -52,5 +52,10 @@ nav a:hover { background:var(--color-surface); color:var(--color-text); }
 nav a.router-link-exact-active { color:var(--color-accent); background:var(--color-surface); box-shadow:0 0 0 1px var(--color-border-strong) inset; }
 
 main { font-family:var(--font-sans, system-ui, sans-serif); display:flex; flex-direction:column; align-items:center; margin-top:20px; padding-bottom:50px; width:100%; }
-main.home-fit { margin-top:0; padding-bottom:0; height: calc(100dvh - var(--header-h)); overflow:hidden; }
+main.home-fit { margin-top:0; padding-bottom:0; height: calc(100dvh - var(--header-h)); overflow:hidden; display:flex; width:100%; }
+@media (max-width: 760px) {
+  main.home-fit { height: auto; min-height: calc(100dvh - var(--header-h)); overflow:auto; }
+}
+
+
 </style>

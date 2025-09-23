@@ -58,7 +58,7 @@ async function saveEdit() {
 function managePlayers(table: ITable) { managingPlayers.value = table; }
 async function removePlayer(playerId: string) {
   if (!managingPlayers.value || !authToken.value) return;
-  if (!confirm('Remover este jogador da mesa?')) return;
+  // Non-blocking flow: action proceeds and feedback via toast
   const res = await fetch(`${API_BASE_URL}/api/tables/${managingPlayers.value._id}/players/${playerId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${authToken.value}` }});
   const data = await res.json();
   if (res.ok) { 
@@ -264,9 +264,10 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   justify-content: center;
+  flex-wrap: wrap;
 }
 
-.create-table-form input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); width:300px; background:var(--color-surface-alt); color:var(--color-text); }
+.create-table-form input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); width:100%; max-width:420px; background:var(--color-surface-alt); color:var(--color-text); }
 .create-table-form input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
 
 .create-table-form button { padding:10px 15px; border:1px solid var(--color-border-strong); border-radius:var(--radius-sm); background:var(--color-accent); color:var(--color-text); font-weight:600; cursor:pointer; }
@@ -289,6 +290,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 20px;
+  flex-wrap: wrap;
 }
 
 .invite-code {
@@ -308,7 +310,7 @@ onMounted(() => {
   font-size: 1.2em;
 }
 .row-main { display:flex; gap:12px; align-items:center; cursor:pointer; }
-.row-actions { display:flex; gap:8px; }
+.row-actions { display:flex; gap:8px; flex-wrap: wrap; }
 .row-actions button { background:var(--color-surface-alt); border:1px solid var(--color-border); color:var(--color-text); cursor:pointer; padding:6px 8px; border-radius:var(--radius-sm); transition:background var(--transition-fast); }
 .row-actions button:hover { background:var(--color-surface); }
 .row-actions button.danger { background:var(--color-danger); border-color:#d06060; }
@@ -338,9 +340,15 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   justify-content: center;
+  flex-wrap: wrap;
 }
 
-.join-table-form input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); width:300px; background:var(--color-surface-alt); color:var(--color-text); }
+.join-table-form input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); width:100%; max-width:420px; background:var(--color-surface-alt); color:var(--color-text); }
+
+@media (max-width: 560px) {
+  .tables-list li { grid-template-columns: 1fr; }
+  .table-role { min-width: auto; text-align: left; }
+}
 .join-table-form input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
 
 .join-table-form button { padding:10px 15px; border:1px solid #63b887; border-radius:var(--radius-sm); background:var(--color-success); color:var(--color-text); font-weight:600; cursor:pointer; }

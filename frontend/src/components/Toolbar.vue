@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import Icon from './Icon.vue';
+import { toast } from '../services/toast';
 
 // Ferramentas
 type Tool = 'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam' | 'none';
@@ -45,10 +46,20 @@ function pickColor(color: string) {
   showPalette.value = false;
 }
 
+// Two-step confirm (non-blocking) for clear-all
+const clearConfirming = ref(false);
+let clearTimer: number | undefined;
 function requestClearAll() {
-  if (typeof window !== 'undefined' && window.confirm('Tem certeza que deseja limpar todas as medições?')) {
-    emit('clear-all');
+  if (!clearConfirming.value) {
+    clearConfirming.value = true;
+    toast.warning('Toque novamente para limpar todas as medições.', 2200);
+    if (clearTimer) window.clearTimeout(clearTimer);
+    clearTimer = window.setTimeout(() => { clearConfirming.value = false; clearTimer = undefined; }, 2500);
+    return;
   }
+  if (clearTimer) { window.clearTimeout(clearTimer); clearTimer = undefined; }
+  clearConfirming.value = false;
+  emit('clear-all');
 }
 
 // Estado de recolhimento
@@ -106,7 +117,7 @@ function toggleCollapse() {
     <Icon name="auraRemove" />
   </button>
 
-  <button v-if="isDM" class="tool-button danger" title="Limpar tudo" @click="requestClearAll">
+  <button v-if="isDM" class="tool-button danger" :class="{ confirming: clearConfirming }" :title="clearConfirming ? 'Toque novamente para confirmar' : 'Limpar tudo'" @click="requestClearAll">
     <Icon name="clear" />
   </button>
 
@@ -197,6 +208,7 @@ function toggleCollapse() {
 }
 .tool-button.danger { background: var(--color-danger); border-color: #a63b3b; }
 .tool-button.danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.tool-button.danger.confirming { box-shadow: 0 0 0 2px rgba(255,255,255,0.6) inset, 0 0 10px rgba(214, 96, 96, 0.7); }
 .divider { border: none; border-top: 1px solid var(--color-border); margin: 6px 0; }
 
 .palette-popover {
@@ -214,4 +226,35 @@ function toggleCollapse() {
 .color-swatch { width: 22px; height: 22px; border-radius: 4px; cursor: pointer; padding: 0; }
 .color-swatch:disabled { opacity: 0.5; cursor: not-allowed; }
 .hint { color: var(--color-text-muted); display: block; margin-top: 8px; }
+
+/* Mobile: dock to bottom-left with horizontal layout */
+@media (max-width: 900px) {
+  .toolbar-container {
+    position: fixed;
+    top: auto;
+    bottom: 10px;
+    left: 10px;
+    transform: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+  }
+  .toolbar-container.collapsed { transform: none; padding: 8px; }
+  .tools { flex-direction: row; gap: 8px; }
+  .collapse-toggle { width: 36px; height: 36px; }
+  .tool-button { width: 36px; height: 36px; }
+  .palette-popover {
+    left: 0;
+    right: auto;
+    top: auto;
+    bottom: 56px;
+    transform: none;
+    max-width: 92vw;
+  }
+}
+
+@media (max-height: 560px) {
+  .toolbar-container { top: 54%; }
+}
 </style>

@@ -71,7 +71,7 @@ const isMyTurnNext = computed(() => {
 </template>
 
 <style scoped>
-.player-panel { position:fixed; top:80px; right:20px; width:280px; background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt)); color: var(--color-text); border-radius: var(--radius-md); border:1px solid var(--color-border); z-index:20; backdrop-filter: blur(5px); padding:15px; box-shadow: var(--elev-2); font-family: var(--font-sans); }
+.player-panel { position:fixed; top:80px; right:20px; width: min(280px, 92vw); background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt)); color: var(--color-text); border-radius: var(--radius-md); border:1px solid var(--color-border); z-index:20; backdrop-filter: blur(5px); padding:15px; box-shadow: var(--elev-2); font-family: var(--font-sans); }
 .wait-panel { text-align:center; padding:20px 0; font-style:italic; color: var(--color-text-muted); }
 .wait-panel.next-up { color: var(--color-accent); font-weight:600; }
 .turn-status-panel { text-align: center; }
@@ -83,4 +83,17 @@ const isMyTurnNext = computed(() => {
 .turn-actions button:hover { background: var(--color-surface); }
 .turn-actions .end-turn-btn { background: var(--color-danger); border-color:#d06060; }
 .turn-actions .end-turn-btn:hover { background: #d06060; }
+
+@media (max-width: 900px) {
+  .player-panel {
+    top: auto;
+    bottom: 10px;
+    right: 10px;
+    left: 10px;
+    width: auto;
+    border-radius: 10px;
+    padding: 12px;
+  }
+  .turn-actions { gap: 8px; }
+}
 </style>

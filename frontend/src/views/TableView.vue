@@ -305,7 +305,7 @@ function handleNextTurn() {
 }
 
 function handleRemoveFromInitiative(initiativeEntryId: string) {
-  if (!confirm("Isso também irá deletar o token do mapa. Tem certeza?")) return;
+  // Evita confirm() bloqueante; fluxo segue direto e feedback vem via toast do socket
   if (activeSceneId.value) {
     socketService.removeFromInitiative({
       tableId,
@@ -555,11 +555,6 @@ function handleEditScene(scene: IScene) {
 }
 
 async function handleDeleteScene(sceneId: string) {
-  // Pede confirmação antes de uma ação destrutiva
-  if (!confirm("Tem certeza que deseja excluir esta cena? Esta ação não pode ser desfeita.")) {
-    return;
-  }
-
   try {
     const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/scenes/${sceneId}`, {
       method: 'DELETE',
@@ -1684,7 +1679,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             <div v-if="pauseRemaining > 0" class="countdown">Retomando em {{ Math.floor(pauseRemaining/60) }}:{{ String(pauseRemaining%60).padStart(2,'0') }}</div>
           </template>
           <template v-else-if="sessionStatus === 'ENDED'">
-            <img class="overlay-media" src="/media/ended.jpg" alt="Sessão encerrada" />
+            <video class="overlay-media" autoplay loop muted playsinline src="/media/ended.mp4"></video>
             <h2>E é aqui...</h2>
             <p>Obrigado por jogar — até a próxima sessão.</p>
           </template>
@@ -1773,7 +1768,7 @@ main{
   padding: 18px;
   border-radius: var(--radius-md);
   height: fit-content;
-  max-height: calc(100vh - 40px); 
+  max-height: calc(100dvh - 40px); 
   overflow-y: auto;
   border: 1px solid var(--color-border);
   color: var(--color-text);
@@ -1858,7 +1853,7 @@ panel h2 {
 }
 .viewport {
   width: 100%;
-  height: 85vh;
+  height: calc(100dvh - 140px);
   max-width: 1600px;
   background: var(--color-surface);
   border: 10px solid rgba(0 0 0 / 0.5);
@@ -2039,5 +2034,16 @@ panel h2 {
   top: 20px;
   left: 20px;
   z-index: 60; /* above map, below toolbars if needed */
+}
+
+@media (max-width: 1024px) {
+  .table-view-layout { padding: 12px; }
+  .dm-panel { right: 12px; top: 12px; width: min(92vw, 420px); }
+  .viewport { height: calc(100dvh - 120px); }
+}
+
+@media (max-width: 900px) {
+  .dm-panel { position: fixed; left: 10px; right: 10px; top: 10px; width: auto; max-height: calc(100dvh - 20px); }
+  .viewport { height: calc(100dvh - 20px); border-width: 6px; }
 }
 </style>

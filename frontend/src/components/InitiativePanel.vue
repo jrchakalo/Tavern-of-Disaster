@@ -151,7 +151,7 @@ function handleDragEnd() {
   border: 1px solid var(--color-border);
   padding: 12px 14px;
   border-radius: 8px;
-  width: 340px;
+  width: min(340px, 100%);
   color: var(--color-text);
   font-family: var(--font-sans);
   backdrop-filter: blur(4px);

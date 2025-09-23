@@ -120,6 +120,9 @@ const gridContainerStyle = computed(() => ({
   height: `${squareSizePx.value * resolvedHeight.value}px`,
 }));
 
+// Touch-friendly but not obstructive stroke width for selecting persistent shapes on tiny screens
+const hitStroke = computed(() => Math.max(8, Math.min(16, Math.round(squareSizePx.value * 0.45))));
+
 function escCancelHandler(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     if (draggedTokenInfo.value || pathPreview.value.length) {
@@ -729,37 +732,37 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
           <template v-for="m in (props.persistentMeasurements.filter(pm => pm.sceneId === (/** active scene id is implicit because grid/squares belong to one scene */ pm.sceneId)))" :key="m.id">
             <template v-if="m.type === 'cone'">
               <g class="selectable" :class="{ selected: props.selectedPersistentId === m.id }" @contextmenu.prevent="emit('shape-contextmenu', { id: m.id })">
-                <path :d="getConePathD(toLocalPoint(m.start), toLocalPoint(m.end))" :stroke="m.color" stroke-width="14" opacity="0" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
+                <path :d="getConePathD(toLocalPoint(m.start), toLocalPoint(m.end))" :stroke="m.color" :stroke-width="hitStroke" opacity="0" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
                 <path class="cone-outline shared" :d="getConePathD(toLocalPoint(m.start), toLocalPoint(m.end))" :stroke="m.color" fill="none" />
               </g>
             </template>
             <template v-else-if="m.type === 'circle'">
               <g class="selectable" :class="{ selected: props.selectedPersistentId === m.id }" @contextmenu.prevent="emit('shape-contextmenu', { id: m.id })">
-                <circle :cx="toLocalPoint(m.start).x" :cy="toLocalPoint(m.start).y" :r="Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y) + (squareSizePx/2)" :stroke="m.color" stroke-width="14" opacity="0" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
+                <circle :cx="toLocalPoint(m.start).x" :cy="toLocalPoint(m.start).y" :r="Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y) + (squareSizePx/2)" :stroke="m.color" :stroke-width="hitStroke" opacity="0" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
                 <circle class="area-outline shared" :cx="toLocalPoint(m.start).x" :cy="toLocalPoint(m.start).y" :r="Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y) + (squareSizePx/2)" :stroke="m.color" fill="none" />
               </g>
             </template>
             <template v-else-if="m.type === 'square'">
               <g class="selectable" :class="{ selected: props.selectedPersistentId === m.id }" @contextmenu.prevent="emit('shape-contextmenu', { id: m.id })">
-                <rect :x="toLocalPoint(m.start).x - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :y="toLocalPoint(m.start).y - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :width="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :height="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :stroke="m.color" stroke-width="14" opacity="0" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
+                <rect :x="toLocalPoint(m.start).x - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :y="toLocalPoint(m.start).y - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :width="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :height="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :stroke="m.color" :stroke-width="hitStroke" opacity="0" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
                 <rect class="area-outline shared" :x="toLocalPoint(m.start).x - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :y="toLocalPoint(m.start).y - Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :width="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :height="2 * Math.hypot(toLocalPoint(m.end).x - toLocalPoint(m.start).x, toLocalPoint(m.end).y - toLocalPoint(m.start).y)" :stroke="m.color" fill="none" />
               </g>
             </template>
             <template v-else-if="!m.type || m.type === 'ruler'">
               <g class="selectable" :class="{ selected: props.selectedPersistentId === m.id }" @contextmenu.prevent="emit('shape-contextmenu', { id: m.id })">
-                <line :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" stroke-width="14" opacity="0" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
+                <line :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" :stroke-width="hitStroke" opacity="0" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
                 <line class="ruler-line" :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" />
               </g>
             </template>
             <template v-else-if="m.type === 'line'">
               <g class="selectable" :class="{ selected: props.selectedPersistentId === m.id }" @contextmenu.prevent="emit('shape-contextmenu', { id: m.id })">
-                <line :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" stroke-width="14" opacity="0" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
+                <line :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" :stroke-width="hitStroke" opacity="0" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
                 <line :x1="toLocalPoint(m.start).x" :y1="toLocalPoint(m.start).y" :x2="toLocalPoint(m.end).x" :y2="toLocalPoint(m.end).y" :stroke="m.color" />
               </g>
             </template>
             <template v-else-if="m.type === 'beam'">
               <g class="selectable" :class="{ selected: props.selectedPersistentId === m.id }" @contextmenu.prevent="emit('shape-contextmenu', { id: m.id })">
-                <polygon :points="toPointsAttr(getOrientedRectPoints(toLocalPoint(m.start), toLocalPoint(m.end), squareSizePx))" :stroke="m.color" stroke-width="14" opacity="0" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
+                <polygon :points="toPointsAttr(getOrientedRectPoints(toLocalPoint(m.start), toLocalPoint(m.end), squareSizePx))" :stroke="m.color" :stroke-width="hitStroke" opacity="0" fill="none" style="pointer-events: stroke" @click.stop="emit('select-persistent', { id: (props.selectedPersistentId === m.id ? null : m.id) })" />
                 <polygon class="area-outline shared beam-outline" :points="toPointsAttr(getOrientedRectPoints(toLocalPoint(m.start), toLocalPoint(m.end), squareSizePx))" :stroke="m.color" fill="none" />
               </g>
             </template>
