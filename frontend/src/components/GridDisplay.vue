@@ -65,6 +65,7 @@ interface Props {
   userColorMap?: Record<string, string>;
   auras?: Array<{ tokenId: string; radiusMeters: number; color: string; name: string; sceneId: string }>;
   pings?: Array<{ id: string; userId: string; username: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string; ts: number }>;
+  viewScale?: number; // escala atual do viewport (zoom)
 }
 
 const props = defineProps<Props>();
@@ -604,7 +605,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
         </div>
       </div>
 
-  <svg v-if="previewMeasurement" class="measurement-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
+  <svg v-if="previewMeasurement" class="measurement-overlay" :style="{ '--view-scale': String(props.viewScale || 1) }" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
         <template v-if="previewMeasurement.type === 'ruler'">
           <line
             class="ruler-line"
@@ -613,7 +614,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
             :style="{ stroke: (props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00')) }"
           />
           <text
-            :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15"
+            :x="previewMeasurement.start.x + 12" :y="previewMeasurement.start.y - 12"
           >
             {{ previewMeasurement.distance }}
           </text>
@@ -625,7 +626,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
             :stroke="props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00')"
             fill="none"
           />
-          <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
+          <text :x="previewMeasurement.start.x + 12" :y="previewMeasurement.start.y - 12">
             {{ previewMeasurement.distance }}
           </text>
         </template>
@@ -638,7 +639,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
             :stroke="props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00')"
             fill="none"
           />
-          <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
+          <text :x="previewMeasurement.start.x + 12" :y="previewMeasurement.start.y - 12">
             {{ previewMeasurement.distance }}
           </text>
         </template>
@@ -652,7 +653,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
             :stroke="props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00')"
             fill="none"
           />
-          <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
+          <text :x="previewMeasurement.start.x + 12" :y="previewMeasurement.start.y - 12">
             {{ previewMeasurement.distance }}
           </text>
         </template>
@@ -665,7 +666,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
             :y2="previewMeasurement.end.y"
             :style="{ stroke: (props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00')) }"
           />
-          <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
+          <text :x="previewMeasurement.start.x + 12" :y="previewMeasurement.start.y - 12">
             {{ previewMeasurement.distance }}
           </text>
         </template>
@@ -676,14 +677,14 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
             :stroke="props.measurementColor || (props.isDM ? '#3c096c' : '#ff8c00')"
             fill="none"
           />
-          <text :x="previewMeasurement.end.x + 15" :y="previewMeasurement.end.y - 15">
+          <text :x="previewMeasurement.start.x + 12" :y="previewMeasurement.start.y - 12">
             {{ previewMeasurement.distance }}
           </text>
         </template>
       </svg>
 
       <!-- Pings (ripples) -->
-      <svg v-if="pings && pings.length" class="ping-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
+  <svg v-if="pings && pings.length" class="ping-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
         <template v-for="pg in pings" :key="pg.id">
           <circle
             v-if="pg.squareId && getLocalCenterForSquareId(pg.squareId)"
@@ -707,7 +708,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
       </svg>
 
       <!-- Auras persistentes centralizadas no footprint do token -->
-      <svg v-if="auras && auras.length" class="persist-measurements-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
+  <svg v-if="auras && auras.length" class="persist-measurements-overlay" :style="{ '--view-scale': String(props.viewScale || 1) }" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
         <template v-for="a in auras" :key="a.tokenId">
           <template v-if="props.squares.some(sq => sq.token && sq.token._id === a.tokenId)">
             <circle
@@ -753,7 +754,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
         </template>
       </svg>
 
-  <svg v-if="props.sharedMeasurements && props.sharedMeasurements.length" class="shared-measurements-overlay" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
+  <svg v-if="props.sharedMeasurements && props.sharedMeasurements.length" class="shared-measurements-overlay" :style="{ '--view-scale': String(props.viewScale || 1) }" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none">
           <template v-for="m in props.sharedMeasurements" :key="m.userId">
             <template v-if="m.type === 'cone'">
               <path
@@ -798,12 +799,12 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
                 fill="none"
               />
             </template>
-            <text :x="toLocalPoint(m.end).x + 12" :y="toLocalPoint(m.end).y - 12">{{ m.distance }}</text>
+            <text :x="toLocalPoint(m.start).x + 10" :y="toLocalPoint(m.start).y - 10">{{ m.distance }}</text>
           </template>
         </svg>
 
         <!-- Persistentes -->
-  <svg v-if="props.persistentMeasurements && props.persistentMeasurements.length" class="persist-measurements-overlay" :style="{ pointerEvents: 'auto' }" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none" @contextmenu.prevent="emit('viewport-contextmenu')">
+  <svg v-if="props.persistentMeasurements && props.persistentMeasurements.length" class="persist-measurements-overlay" :style="{ pointerEvents: 'auto', '--view-scale': String(props.viewScale || 1) }" :viewBox="`0 0 ${squareSizePx * resolvedWidth} ${squareSizePx * resolvedHeight}`" preserveAspectRatio="none" @contextmenu.prevent="emit('viewport-contextmenu')">
           <template v-for="m in (props.persistentMeasurements.filter(pm => pm.sceneId === (/** active scene id is implicit because grid/squares belong to one scene */ pm.sceneId)))" :key="m.id">
             <template v-if="m.type === 'cone'">
               <g class="selectable" :class="{ selected: props.selectedPersistentId === m.id }" @contextmenu.prevent="emit('shape-contextmenu', { id: m.id })">
@@ -841,7 +842,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
                 <polygon class="area-outline shared beam-outline" :points="toPointsAttr(getOrientedRectPoints(toLocalPoint(m.start), toLocalPoint(m.end), squareSizePx))" :stroke="m.color" fill="none" />
               </g>
             </template>
-            <text :x="toLocalPoint(m.end).x + 12" :y="toLocalPoint(m.end).y - 12">{{ m.distance }}</text>
+            <text :x="toLocalPoint(m.start).x + 10" :y="toLocalPoint(m.start).y - 10">{{ m.distance }}</text>
             <!-- Remoção via Toolbar: nenhum ícone inline -->
           </template>
         </svg>
@@ -1071,7 +1072,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
 
 .measurement-overlay text {
   fill: #ffffff; /* Texto branco */
-  font-size: 18px;
+  font-size: 16px;
   font-weight: bold;
   font-family: sans-serif;
   /* Contorno preto forte para máxima legibilidade */
@@ -1147,7 +1148,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
 }
 .persist-measurements-overlay text {
   fill: #ffffff;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: bold;
   font-family: sans-serif;
   paint-order: stroke;
@@ -1156,12 +1157,20 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
 }
 .shared-measurements-overlay text {
   fill: #ffffff;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: bold;
   font-family: sans-serif;
   paint-order: stroke;
   stroke: #000;
   stroke-width: 3px;
+}
+
+/* Mobile: reduzir o tamanho do texto de medição para caber melhor */
+@media (max-width: 900px) {
+  /* Tornar responsivo ao zoom: quanto maior o zoom (viewScale), menor a fonte relativa */
+  .measurement-overlay text { font-size: calc(13px / var(--view-scale, 1)); stroke-width: 3px; }
+  .shared-measurements-overlay text { font-size: calc(12px / var(--view-scale, 1)); stroke-width: 2.5px; }
+  .persist-measurements-overlay text { font-size: calc(12px / var(--view-scale, 1)); stroke-width: 2.5px; }
 }
 
 .ping-overlay {

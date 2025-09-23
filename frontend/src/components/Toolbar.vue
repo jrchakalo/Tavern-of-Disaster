@@ -36,8 +36,20 @@ function togglePersistent() {
   emit('toggle-persistent', !props.persistentMode);
 }
 
-// Paleta
-const COLORS = ['#ff8c00', '#12c2e9', '#ff4d4d', '#43a047', '#ffd166', '#ff66cc', '#00bcd4', '#8bc34a', '#e91e63', '#9c27b0', '#795548', '#cddc39', '#3c096c'] as const;
+// Paleta (agora como modal para funcionar bem no mobile)
+// Cores revisadas para evitar repetidas ou muito próximas; manter roxo do DM (#3c096c)
+const COLORS = [
+  '#f44336', // vermelho
+  '#ff9800', // laranja
+  '#facc15', // amarelo
+  '#22c55e', // verde
+  '#06b6d4', // ciano
+  '#3b82f6', // azul
+  '#a855f7', // violeta
+  '#ec4899', // rosa
+  '#795548', // marrom
+  '#3c096c', // roxo (DM)
+] as const;
 const showPalette = ref(false);
 function pickColor(color: string) {
   if (props.isDM && color !== '#3c096c') return;
@@ -127,19 +139,29 @@ function toggleCollapse() {
   <button class="tool-button" title="Cor" @click="showPalette = !showPalette">
     <Icon name="color" />
   </button>
-    <div v-if="showPalette && !collapsed" class="palette-popover" @mouseleave="showPalette=false">
-      <div class="palette-grid">
-        <button
-          v-for="c in (isDM ? COLORS : COLORS.filter(col => col !== '#3c096c'))"
-          :key="c"
-          class="color-swatch"
-          :style="{ backgroundColor: c, outline: (selectedColor===c ? '3px solid #fff' : '1px solid #999') }"
-          :disabled="(isDM && c !== '#3c096c') || (!isDM && c === '#3c096c')"
-          @click="pickColor(c)"
-        />
+  
+  <!-- Modal de paleta de cores: teleport para o <body> para evitar problemas de centragem no desktop -->
+  <teleport to="body">
+    <div v-if="showPalette" class="modal-backdrop" @click.self="showPalette=false">
+      <div class="palette-modal" role="dialog" aria-modal="true" aria-label="Selecionar cor">
+        <div class="modal-header">
+          <h3 class="modal-title">Selecionar cor</h3>
+          <button class="close-btn" @click="showPalette=false" aria-label="Fechar">×</button>
+        </div>
+        <div class="palette-grid">
+          <button
+            v-for="c in (isDM ? COLORS : COLORS.filter(col => col !== '#3c096c'))"
+            :key="c"
+            class="color-swatch"
+            :style="{ backgroundColor: c, outline: (selectedColor===c ? '3px solid #fff' : '1px solid #999') }"
+            :disabled="(isDM && c !== '#3c096c') || (!isDM && c === '#3c096c')"
+            @click="pickColor(c)"
+          />
+        </div>
+        <small class="hint" v-if="isDM">Sua cor é sempre roxa.</small>
       </div>
-      <small class="hint" v-if="isDM">Sua cor é sempre roxa.</small>
     </div>
+  </teleport>
     </div>
     </div>
 </template>
@@ -214,21 +236,41 @@ function toggleCollapse() {
 .divider { border: none; border-top: 1px solid var(--color-border); margin: 6px 0; }
 
 
-.palette-popover {
-  position: absolute;
-  left: 56px; /* ao lado da toolbar */
-  top: 50%;
-  transform: translateY(-50%);
-  background: linear-gradient(180deg, var(--color-surface-alt), var(--color-surface));
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 10px;
-  z-index: 45;
+/* Modal (popup) da paleta */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 100; /* acima da toolbar */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.palette-grid { display: grid; grid-template-columns: repeat(7, 22px); gap: 6px; }
-.color-swatch { width: 22px; height: 22px; border-radius: 4px; cursor: pointer; padding: 0; }
+.palette-modal {
+  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt));
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: var(--elev-3);
+  padding: 12px;
+  width: min(360px, 92vw);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.modal-title { font-size: 1rem; color: var(--color-text); margin: 0; }
+.close-btn {
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 18px; line-height: 1;
+}
+.palette-grid { display: grid; grid-template-columns: repeat(7, 28px); gap: 8px; }
+.color-swatch { width: 28px; height: 28px; border-radius: 6px; cursor: pointer; padding: 0; }
 .color-swatch:disabled { opacity: 0.5; cursor: not-allowed; }
-.hint { color: var(--color-text-muted); display: block; margin-top: 8px; }
+.hint { color: var(--color-text-muted); display: block; margin-top: 10px; }
 
 /* Mobile: dock to bottom-left with horizontal layout */
 @media (max-width: 900px) {
@@ -250,14 +292,6 @@ function toggleCollapse() {
   .tools { flex-direction: row; gap: 8px; }
   .collapse-toggle { width: 36px; height: 36px; }
   .tool-button { width: 36px; height: 36px; }
-  .palette-popover {
-    left: 0;
-    right: auto;
-    top: auto;
-    bottom: 56px;
-    transform: none;
-    max-width: 92vw;
-  }
 }
 
 @media (max-height: 560px) {

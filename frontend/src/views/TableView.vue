@@ -1600,6 +1600,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               ref="gridDisplayRef"
               class="grid-overlay"
               :isMeasuring="isMeasuring"
+              :viewScale="viewTransform.scale"
               :metersPerSquare="metersPerSquare"
               :measureStartPoint="rulerStartPoint"
               :measureEndPoint="rulerEndPoint"

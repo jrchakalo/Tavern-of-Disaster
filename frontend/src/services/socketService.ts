@@ -53,7 +53,6 @@ class SocketService {
   this.socket.on('allMeasurementsCleared', (data?: { sceneId?: string }) => {
     this.store.clearSharedMeasurements();
     if (data?.sceneId) this.store.clearPersistentMeasurementsForScene(data.sceneId);
-    try { toast.success('Medições limpas.'); } catch {}
   });
     // Medições persistentes (ficam até serem removidas ou limpar turno)
   this.socket.on('persistentMeasurementAdded', (m) => this.store.addPersistentMeasurement({ ...m, userId: m.userId || m.ownerId }));

@@ -4,7 +4,6 @@ import { currentUser } from '../services/authService';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 
 import Icon from '../components/Icon.vue';
-// Simplified feature list (icons mapped to existing stroke set where possible)
 const features = [
   { icon: 'square', title: 'Grid & Medições', desc: 'Movimento e alcance visíveis em tempo real.' },
   { icon: 'beam', title: 'Formas Táticas', desc: 'Cone, raio, linha, círculo e mais para efeitos.' },
