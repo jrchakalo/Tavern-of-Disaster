@@ -187,4 +187,12 @@ function handleDragEnd() {
 .drag-handle { cursor:grab; color: var(--color-text-muted); }
 .drag-handle:active { cursor:grabbing; }
 .empty { font-style:italic; color: var(--color-text-muted); margin:8px 0 0; }
+
+@media (max-width: 900px) {
+  .initiative-panel { width: 100%; max-width: 320px; padding: 10px 12px; border-radius: 10px; }
+  .panel-header h3 { font-size: 0.95rem; }
+  .actions button { padding: 5px 8px; font-size: 0.65rem; }
+  .entries { max-height: 260px; }
+  .numbers { font-size: 0.55rem; }
+}
 </style>

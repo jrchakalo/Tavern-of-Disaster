@@ -79,6 +79,8 @@ const previewMeasurement = ref<{
   affectedSquares?: string[];
 } | null>(null);
 
+// Mobile drag for player initiative wrapper removed per latest request
+
 const tableStore = useTableStore();
 const {
   //State
@@ -1415,23 +1417,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       />
     </div>
 
-    <Toolbar 
-      v-if="(sessionStatus === 'LIVE' || isDM) && activeScene?.type === 'battlemap'"
-      :activeTool="activeTool"
-      :canDelete="Boolean(selectedPersistentId && (isDM || persistentMeasurements.find(pm => pm.id === selectedPersistentId)?.userId === currentUser?.id))"
-      :persistentMode="persistentMode"
-      :isDM="isDM"
-      :selectedColor="measurementColor"
-      :canRemoveAura="canRemoveAura"
-      :canAddAura="canAddAura"
-      @tool-selected="handleToolSelected" 
-      @toggle-persistent="handleTogglePersistent"
-      @color-selected="handleColorSelected"
-      @clear-all="handleClearAllMeasurements"
-      @delete-selected="handleDeleteSelectedPersistent"
-      @remove-aura="handleToolbarRemoveAura"
-      @edit-aura="handleToolbarEditAura"
-    />
 
   <aside v-if="isDM" class="dm-panel" :class="{ collapsed: isDmPanelCollapsed }">
       <button @click="isDmPanelCollapsed = !isDmPanelCollapsed" class="toggle-button">
@@ -1696,6 +1681,24 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </main>
 
     <button v-if="canUseMap" @click="resetView" class="reset-view-btn below">Recentralizar</button>
+
+    <Toolbar 
+      v-if="(sessionStatus === 'LIVE' || isDM) && activeScene?.type === 'battlemap'"
+      :activeTool="activeTool"
+      :canDelete="Boolean(selectedPersistentId && (isDM || persistentMeasurements.find(pm => pm.id === selectedPersistentId)?.userId === currentUser?.id))"
+      :persistentMode="persistentMode"
+      :isDM="isDM"
+      :selectedColor="measurementColor"
+      :canRemoveAura="canRemoveAura"
+      :canAddAura="canAddAura"
+      @tool-selected="handleToolSelected" 
+      @toggle-persistent="handleTogglePersistent"
+      @color-selected="handleColorSelected"
+      @clear-all="handleClearAllMeasurements"
+      @delete-selected="handleDeleteSelectedPersistent"
+      @remove-aura="handleToolbarRemoveAura"
+      @edit-aura="handleToolbarEditAura"
+    />
     
     <TokenCreationForm
       v-if="showTokenForm && isDM"
@@ -1822,17 +1825,18 @@ panel h2 {
     align-items: stretch;
 }
 /* Player initiative panel always visible bottom-right (below master panel layer) */
+/* Player initiative panel placement */
 .player-initiative-wrapper {
   position: fixed;
-  bottom: 16px;
+  bottom: 18px;
   right: 16px;
-  z-index: 40; /* below dm-panel z-index 50 */
+  z-index: 42; /* below dm-panel (50), above grid */
   pointer-events: none; /* allow map interactions except panel itself */
 }
 .player-initiative-wrapper .initiative-panel { pointer-events: auto; }
 @media (max-width: 900px) {
-  .player-initiative-wrapper { right: 8px; left: 8px; bottom: 8px; }
-  .player-initiative-wrapper .initiative-panel { width: 100%; }
+  /* On mobile: dock above the map stage area for better panning */
+  .player-initiative-wrapper { position: static; margin: 8px 8px 6px; }
 }
 .grid-controls label {
     font-size: 0.9em;
@@ -1862,6 +1866,10 @@ panel h2 {
   position: relative; 
   cursor: grab;
   box-shadow: var(--elev-2);
+}
+@media (max-width: 900px) {
+  /* Reduce map-stage height on mobile to allow page scroll */
+  .viewport { height: calc(100dvh - 240px); }
 }
 .session-overlay {
   display:flex; align-items:center; justify-content:center; height:70vh; width:100%;
@@ -1914,6 +1922,10 @@ panel h2 {
 .reset-view-btn { padding: 8px 12px; background: var(--color-surface-alt); color: var(--color-text); border:1px solid var(--color-border); border-radius: var(--radius-sm); cursor:pointer; font: inherit; display:block; margin: 10px auto 0; }
 .reset-view-btn.below { margin-top: 10px; }
 .reset-view-btn:hover { background: var(--color-surface); }
+@media (max-width: 900px) {
+  /* Ensure there's space for the toolbar below the reset button */
+  .reset-view-btn.below { margin-bottom: 58px; }
+}
  
 .panel-section { margin-top: 25px; border-top: 1px solid var(--color-border); padding-top: 15px; }
 .scene-list {
@@ -2039,11 +2051,11 @@ panel h2 {
 @media (max-width: 1024px) {
   .table-view-layout { padding: 12px; }
   .dm-panel { right: 12px; top: 12px; width: min(92vw, 420px); }
-  .viewport { height: calc(100dvh - 120px); }
+  /* maintain default viewport height rules */
 }
 
 @media (max-width: 900px) {
   .dm-panel { position: fixed; left: 10px; right: 10px; top: 10px; width: auto; max-height: calc(100dvh - 20px); }
-  .viewport { height: calc(100dvh - 20px); border-width: 6px; }
+  .viewport { border-width: 6px; }
 }
 </style>

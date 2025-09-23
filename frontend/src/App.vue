@@ -56,6 +56,10 @@ main.home-fit { margin-top:0; padding-bottom:0; height: calc(100dvh - var(--head
 @media (max-width: 760px) {
   main.home-fit { height: auto; min-height: calc(100dvh - var(--header-h)); overflow:auto; }
 }
+/* On short desktop windows, allow vertical scroll to avoid clipping home cards */
+@media (max-height: 760px) {
+  main.home-fit { height: auto; min-height: calc(100dvh - var(--header-h)); overflow:auto; }
+}
 
 
 </style>

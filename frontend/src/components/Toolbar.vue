@@ -68,6 +68,8 @@ function toggleCollapse() {
   collapsed.value = !collapsed.value;
   if (collapsed.value) showPalette.value = false;
 }
+
+// Mobile drag removed per latest request
 </script>
 
 <template>
@@ -211,6 +213,7 @@ function toggleCollapse() {
 .tool-button.danger.confirming { box-shadow: 0 0 0 2px rgba(255,255,255,0.6) inset, 0 0 10px rgba(214, 96, 96, 0.7); }
 .divider { border: none; border-top: 1px solid var(--color-border); margin: 6px 0; }
 
+
 .palette-popover {
   position: absolute;
   left: 56px; /* ao lado da toolbar */
@@ -232,13 +235,16 @@ function toggleCollapse() {
   .toolbar-container {
     position: fixed;
     top: auto;
-    bottom: 10px;
+    bottom: 6px; /* just above bottom edge */
     left: 10px;
     transform: none;
     flex-direction: row;
     align-items: center;
     gap: 8px;
     padding: 8px;
+    max-width: calc(100vw - 20px);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
   }
   .toolbar-container.collapsed { transform: none; padding: 8px; }
   .tools { flex-direction: row; gap: 8px; }

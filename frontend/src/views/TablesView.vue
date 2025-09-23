@@ -353,4 +353,12 @@ onMounted(() => {
 
 .join-table-form button { padding:10px 15px; border:1px solid #63b887; border-radius:var(--radius-sm); background:var(--color-success); color:var(--color-text); font-weight:600; cursor:pointer; }
 .join-table-form button:hover { background:#63b887; }
+
+/* Mobile sizing reductions */
+@media (max-width: 560px) {
+  .create-table-form input,
+  .join-table-form input { max-width: 300px; font-size: 0.95rem; padding: 8px; }
+  .create-table-form button,
+  .join-table-form button { padding: 8px 12px; font-size: 0.95rem; }
+}
 </style>

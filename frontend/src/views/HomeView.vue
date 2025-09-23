@@ -97,7 +97,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="home-wrapper">
     <!-- Logged OUT landing -->
-    <div v-if="!isLoggedIn" class="landing">
+  <div v-if="!isLoggedIn" class="landing">
       <section class="hero fade-in-up">
         <div class="hero-inner">
           <div class="hero-copy">
@@ -195,8 +195,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.home-wrapper { width:100%; height:100dvh; display:flex; flex-direction:column; }
-.landing { display:flex; flex-direction:column; flex:1 1 auto; overflow:hidden; }
+.home-wrapper { width:100%; min-height:100dvh; display:flex; flex-direction:column; }
+/* Logged-out landing uses full-page gradient background and can grow beyond viewport */
+.landing { display:flex; flex-direction:column; flex:1 1 auto; min-height:100dvh; background:linear-gradient(180deg,var(--color-bg), var(--color-bg-alt)); }
 .hero { flex:1 1 auto; min-height:0; display:flex; align-items:center; }
 .hero { padding: clamp(2rem,5vw,4rem) 1rem 0; }
 .hero-inner { display:grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); align-items:center; gap:clamp(2rem,4vw,4rem); max-width:1180px; margin:0 auto; width:100%; }
@@ -321,11 +322,11 @@ onBeforeUnmount(() => {
 .feature-wrap { 
   max-width:1180px; margin:0 auto; padding: 6px 0.5rem 10px; 
   display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); 
-  gap:18px; align-items:start; justify-items:center;
+  gap:18px; align-items:start; justify-items:stretch;
 }
 .feature-card { 
   box-sizing:border-box;
-  width: 100%; max-width: 260px; aspect-ratio: 1 / 1; 
+  width: 100%; max-width: 340px; /* allow more width on desktop */
   padding:16px 18px; border:1px solid var(--color-border); border-radius:14px; 
   display:flex; flex-direction:column; align-items:flex-start; gap:10px; 
   background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); box-shadow:var(--elev-2);
@@ -333,15 +334,19 @@ onBeforeUnmount(() => {
 .feature-card.hoverable:hover { transform:translateY(-2px); box-shadow:var(--elev-3); transition:transform .2s, box-shadow .2s; }
 .feature-icon { width:56px; height:56px; display:flex; align-items:center; justify-content:center; border-radius:12px; background:var(--color-surface-alt); color:var(--color-accent); box-shadow:inset 0 0 0 1px var(--color-border); flex:0 0 auto; }
 .feature-text h3 { margin:4px 0 0; font-size:1rem; }
-.feature-text p { margin:0; font-size:0.88rem; line-height:1.35; }
+.feature-text p { margin:0; font-size:0.95rem; line-height:1.5; overflow-wrap: anywhere; word-break: break-word; hyphens:auto; max-width:100%; }
+.feature-text { width:100%; overflow:hidden; }
 
 /* Em telas pequenas, volta a ser trilho horizontal para caber sem quebrar layout e manter sem scroll vertical */
 @media (max-width: 680px) {
   .hero { padding: 1.25rem 0.75rem 0; }
   .hero-inner { gap: 1.5rem; }
-  .preview-card { width: 100%; max-width: 420px; margin: 0 auto; }
+  .preview-card { width: 100%; max-width: 420px; margin: 0 auto 14px; }
+  /* add breathing space between the preview and the cards on phones */
+  .features-band { margin-top: 6px; }
   .feature-wrap { display:block; overflow-x:auto; overflow-y:hidden; white-space:nowrap; padding: 8px 0.5rem 12px; }
-  .feature-card { display:inline-flex; vertical-align:top; margin-right:16px; width:220px; aspect-ratio: 1 / 1; max-width:none; }
+  /* Let cards auto-size vertically so text never overflows; keep narrow width and allow horizontal scroll */
+  .feature-card { display:inline-flex; vertical-align:top; margin-right:16px; width:240px; max-width:none; overflow:hidden; }
 }
 
 /* Dashboard dentro do viewport, sem rolagem e com rodapé visível */

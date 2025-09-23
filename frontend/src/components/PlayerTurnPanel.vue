@@ -86,13 +86,15 @@ const isMyTurnNext = computed(() => {
 
 @media (max-width: 900px) {
   .player-panel {
-    top: auto;
-    bottom: 10px;
+    top: 10px;
+    bottom: auto;
     right: 10px;
-    left: 10px;
-    width: auto;
+    left: auto;
+    width: min(320px, 92vw);
     border-radius: 10px;
     padding: 12px;
+    max-height: 40vh;
+    overflow: auto;
   }
   .turn-actions { gap: 8px; }
 }

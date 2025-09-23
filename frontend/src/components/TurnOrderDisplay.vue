@@ -54,7 +54,7 @@ const isCollapsed = ref(true); // Começa recolhido
 </template>
 
 <style scoped>
-.turn-order-display { position: fixed; top: 80px; left: 20px; background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt)); color: var(--color-text); border-radius: var(--radius-md); border: 1px solid var(--color-border); z-index: 20; overflow: hidden; transition: width 0.3s ease; backdrop-filter: blur(5px); width: min(280px, 92vw); box-shadow: var(--elev-2); font-family: var(--font-sans); }
+.turn-order-display { position: fixed; top: 80px; left: 20px; background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt)); color: var(--color-text); border-radius: var(--radius-md); border: 1px solid var(--color-border); z-index: 35; overflow: hidden; transition: width 0.3s ease; backdrop-filter: blur(5px); width: min(280px, 92vw); box-shadow: var(--elev-2); font-family: var(--font-sans); }
 .turn-order-display.collapsed .content {
   display: none;
 }
@@ -82,8 +82,8 @@ const isCollapsed = ref(true); // Começa recolhido
 
 @media (max-width: 900px) {
   .turn-order-display {
-    top: auto;
-    bottom: 10px;
+    top: 10px;
+    bottom: auto;
     left: 10px;
     right: 10px;
     width: auto;

@@ -86,6 +86,7 @@ const resolvedHeight = computed(() => props.gridHeight);
 // Cada célula derivada somente da largura (mantém quadrado)
 const squareSizePx = ref(32);
 const viewportRef = ref<HTMLElement | null>(null);
+const gridEl = ref<HTMLElement | null>(null);
 let resizeObserver: ResizeObserver | null = null;
 
 function recalcSquareSize() {
@@ -353,6 +354,75 @@ function handleDrop(event: DragEvent, targetSquare: GridSquare) {
   draggedTokenInfo.value = null;
 }
 
+// --- Touch/mobile token dragging using Pointer Events ---
+const pointerDragging = ref(false);
+const pointerDragId = ref<number | null>(null);
+
+function getSquareAtClientPoint(clientX: number, clientY: number): GridSquare | null {
+  const el = gridEl.value as HTMLElement | null;
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  if (x < 0 || y < 0) return null;
+  const cellW = rect.width / (resolvedWidth.value || 1);
+  const cellH = rect.height / (resolvedHeight.value || 1);
+  const col = Math.floor(x / cellW);
+  const row = Math.floor(y / cellH);
+  if (col < 0 || row < 0 || col >= resolvedWidth.value || row >= resolvedHeight.value) return null;
+  const id = `sq-${row * resolvedWidth.value + col}`;
+  return props.squares.find(s => s.id === id) || null;
+}
+
+function onTokenPointerDown(event: PointerEvent, token: TokenInfo) {
+  if (props.isMeasuring) return;
+  // Use pointer drag only for touch/pen; let desktop continue using HTML5 drag
+  if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
+  // Only left/primary button or touch
+  if (event.button != null && event.button !== 0) return;
+  pointerDragging.value = true;
+  pointerDragId.value = event.pointerId;
+  try { (event.target as HTMLElement)?.setPointerCapture?.(event.pointerId); } catch {}
+  draggedTokenInfo.value = token;
+  pathPreview.value = [];
+  isPathValid.value = true;
+  event.stopPropagation();
+  event.preventDefault();
+}
+
+function onTokenPointerMove(event: PointerEvent) {
+  if (!pointerDragging.value || pointerDragId.value !== event.pointerId) return;
+  const sq = getSquareAtClientPoint(event.clientX, event.clientY);
+  if (sq) {
+    handleDragOver(sq);
+  }
+  event.stopPropagation();
+  event.preventDefault();
+}
+
+function onTokenPointerUp(event: PointerEvent) {
+  if (!pointerDragging.value || pointerDragId.value !== event.pointerId) return;
+  const sq = getSquareAtClientPoint(event.clientX, event.clientY);
+  try { (event.target as HTMLElement)?.releasePointerCapture?.(event.pointerId); } catch {}
+  pointerDragging.value = false;
+  pointerDragId.value = null;
+  if (!draggedTokenInfo.value || !sq) { pathPreview.value = []; draggedTokenInfo.value = null; return; }
+  // Recompute preview/validity for the final target
+  handleDragOver(sq);
+  // If no movement or invalid path, cancel
+  if (sq.id === draggedTokenInfo.value.squareId || !isPathValid.value) {
+    pathPreview.value = [];
+    draggedTokenInfo.value = null;
+    return;
+  }
+  // Emit move similar to handleDrop
+  emit('token-move-requested', { tokenId: draggedTokenInfo.value._id, targetSquareId: sq.id });
+  pathPreview.value = [];
+  draggedTokenInfo.value = null;
+  event.stopPropagation();
+  event.preventDefault();
+}
+
 function findShortestPath(startId: string, endId: string): string[] {
   const width = resolvedWidth.value;
   const height = resolvedHeight.value;
@@ -483,7 +553,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
 
 <template>
   <div class="grid-viewport" ref="viewportRef" :style="{ width: squareSizePx * resolvedWidth + 'px', height: squareSizePx * resolvedHeight + 'px' }">
-    <div class="grid-container" :class="{ measuring: props.isMeasuring }" :style="gridContainerStyle">
+    <div class="grid-container" ref="gridEl" :class="{ measuring: props.isMeasuring }" :style="gridContainerStyle">
     <div
       v-for="square in props.squares" :key="square.id"
       class="grid-square"
@@ -517,7 +587,12 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
     && props.measurementColor 
     ? { '--active-turn-glow': hexToRgba(props.measurementColor, 0.9) } : {})
               }"
-      :draggable="!props.isMeasuring" @dragstart="handleDragStart($event, square.token!)" @click.stop="onSquareLeftClick(square, $event)">
+      :draggable="!props.isMeasuring" 
+      @dragstart="handleDragStart($event, square.token!)"
+  @pointerdown="onTokenPointerDown($event, square.token!)"
+  @pointermove="onTokenPointerMove($event)"
+  @pointerup="onTokenPointerUp($event)"
+      @click.stop="onSquareLeftClick(square, $event)">
             <img v-if="square.token.imageUrl" :src="square.token.imageUrl" :alt="square.token.name" class="token-image" />
             <div v-else class="token-fallback" :style="{ backgroundColor: square.token.color }">
               <span>{{ square.token.name.substring(0, 2) }}</span>
@@ -786,6 +861,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
   grid-template-columns: repeat(var(--grid-columns), var(--cell-size));
   grid-template-rows: repeat(var(--grid-rows), var(--cell-size));
   position: relative;
+  touch-action: none; /* allow custom pan/zoom/drag */
 }
 
 .grid-container {
@@ -867,6 +943,7 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
   top: 0;
   left: 0;
   z-index: 5;
+  touch-action: none; /* enable pointer events for drag */
 }
 
 .token-image,

@@ -69,14 +69,18 @@ async function handleLogin() {
   padding: 24px 12px 40px;
   width: 100%;
 }
-.auth-form { display:flex; flex-direction:column; gap:15px; padding:24px; background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); border-radius:var(--radius-md); width:100%; max-width:420px; border:1px solid var(--color-border); box-shadow:var(--elev-2); }
+.auth-form { display:flex; flex-direction:column; gap:14px; padding:20px; background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); border-radius:var(--radius-md); width:100%; max-width:360px; border:1px solid var(--color-border); box-shadow:var(--elev-2); }
 h1 { color:var(--color-accent); margin-top:0; }
 label {
   text-align: left;
   font-weight: bold;
 }
-input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface-alt); color:var(--color-text); }
+input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface-alt); color:var(--color-text); font-size:0.95rem; }
 input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
-button { padding:12px; border:1px solid var(--color-border-strong); border-radius:var(--radius-sm); background:var(--color-accent); color:var(--color-text); font-weight:600; font-size:1em; cursor:pointer; margin-top:10px; }
+button { padding:10px; border:1px solid var(--color-border-strong); border-radius:var(--radius-sm); background:var(--color-accent); color:var(--color-text); font-weight:600; font-size:0.95rem; cursor:pointer; margin-top:8px; }
 button:hover { background:var(--color-accent-alt); }
+
+@media (max-width: 420px) {
+  .auth-form { max-width: 320px; padding:16px; gap:12px; }
+}
 </style>
