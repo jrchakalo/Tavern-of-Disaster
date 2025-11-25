@@ -7,6 +7,7 @@ import { authToken, currentUser } from '../services/authService';
 import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
 import { useTableStore } from '../stores/tableStore';
+import { useCharacterStore } from '../stores/characterStore';
 
 import MapViewport from '../components/MapViewport.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
@@ -16,7 +17,7 @@ import Icon from '../components/Icon.vue';
 import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
 
-import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize } from '../types';
+import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character } from '../types';
 
 type MeasurementTool = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
 type ToolMode = MeasurementTool | 'select' | 'none';
@@ -132,6 +133,32 @@ const {
   myActiveToken 
 } = storeToRefs(tableStore);
 
+const characterStore = useCharacterStore();
+const { loadingByTable: characterLoadingMap, errorByTable: characterErrorMap, selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
+
+const showCharacterSheet = ref(false);
+const activeCharacterId = ref<string | null>(null);
+const charactersForTable = computed(() => characterStore.charactersForTable(tableId));
+const activeCharacter = computed<Character | null>(() => {
+  if (!activeCharacterId.value) return null;
+  return charactersForTable.value.find((char) => char._id === activeCharacterId.value) || null;
+});
+const characterFetchScope = computed(() => (isDM.value ? 'dm' : 'player'));
+const isCharacterListLoading = computed(() => Boolean(characterLoadingMap.value[tableId]));
+const characterError = computed(() => characterErrorMap.value[tableId] ?? null);
+const hasCharacters = computed(() => charactersForTable.value.length > 0);
+
+const characterOwnerDirectory = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {};
+  const table = currentTable.value;
+  if (!table) return map;
+  map[table.dm._id] = table.dm.username;
+  table.players.forEach((player) => {
+    map[player._id] = player.username;
+  });
+  return map;
+});
+
 const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
 
 // Transição curta antes do LIVE
@@ -226,6 +253,74 @@ watch(measurementColor, (c) => {
   if (!uid || !c) return;
   const key = `tod:userColor:${uid}:${tableId}:${sceneKey}`;
   localStorage.setItem(key, c);
+});
+
+async function fetchCharactersForTable() {
+  if (!tableId) return;
+  try {
+    await characterStore.fetchForTable(tableId, { scope: characterFetchScope.value });
+  } catch (error) {
+    console.error('[characters] falha ao carregar', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível carregar as fichas.';
+    toast.error(message);
+  }
+}
+
+function refreshCharacters() {
+  fetchCharactersForTable();
+}
+
+function openCharacterSheet(characterId: string) {
+  activeCharacterId.value = characterId;
+  showCharacterSheet.value = true;
+  characterStore.setSelectedCharacter(characterId);
+}
+
+function closeCharacterSheet() {
+  showCharacterSheet.value = false;
+  activeCharacterId.value = null;
+  characterStore.setSelectedCharacter(null);
+}
+
+async function handleQuickCreateCharacter() {
+  if (!tableId) return;
+  const baseName = 'Novo Personagem';
+  const nextNumber = charactersForTable.value.length + 1;
+  try {
+    const created = await characterStore.createCharacter(tableId, { name: `${baseName} ${nextNumber}` });
+    toast.success('Ficha criada.');
+    openCharacterSheet(created._id);
+  } catch (error) {
+    console.error('[characters] erro ao criar', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível criar a ficha.';
+    toast.error(message);
+  }
+}
+
+function resolveCharacterOwnerName(ownerId?: string | null) {
+  if (!ownerId) return 'Sem dono';
+  const table = currentTable.value;
+  if (table?.dm._id === ownerId) return `${table.dm.username} (Mestre)`;
+  return characterOwnerDirectory.value[ownerId] || 'Jogador';
+}
+
+watch(characterFetchScope, () => {
+  fetchCharactersForTable();
+}, { immediate: true });
+
+watch(charactersForTable, (list) => {
+  if (activeCharacterId.value && !list.some((char) => char._id === activeCharacterId.value)) {
+    closeCharacterSheet();
+  }
+});
+
+watch(selectedCharacterStoreId, (newId) => {
+  if (newId === activeCharacterId.value) {
+    showCharacterSheet.value = Boolean(newId);
+    return;
+  }
+  activeCharacterId.value = newId;
+  showCharacterSheet.value = Boolean(newId);
 });
 
 // Medições persistentes da cena ativa
