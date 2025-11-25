@@ -79,6 +79,7 @@ interface MapViewportProps {
   onImageLoad?: () => void;
   onAssignToken: (playerId: string) => void;
   onCloseAssignMenu: () => void;
+  onOpenCharacterFromToken?: (characterId: string) => void;
 }
 
 const props = withDefaults(defineProps<MapViewportProps>(), {
@@ -100,7 +101,8 @@ const props = withDefaults(defineProps<MapViewportProps>(), {
   selectedPersistentId: null,
   pings: () => [],
   assignMenuTargetToken: null,
-  players: () => []
+  players: () => [],
+  onOpenCharacterFromToken: undefined
 });
 
 const hasBattlemap = computed(() => props.currentMapUrl && props.activeSceneType === 'battlemap');
@@ -197,6 +199,14 @@ function handleGridDisplayRef(instance: ComponentPublicInstance | null) {
     >
       <h4 v-if="props.assignMenuTargetToken">Atribuir "{{ props.assignMenuTargetToken.name }}"</h4>
       <ul>
+        <li
+          v-if="props.assignMenuTargetToken?.characterId"
+          class="context-action"
+          @click="props.onOpenCharacterFromToken && props.onOpenCharacterFromToken(props.assignMenuTargetToken.characterId)"
+        >
+          Abrir ficha
+        </li>
+        <li v-if="props.assignMenuTargetToken?.characterId" class="divider" aria-hidden="true"></li>
         <li v-for="player in props.players" :key="player._id" @click="props.onAssignToken(player._id)">
           {{ player.username }}
         </li>
@@ -278,9 +288,22 @@ function handleGridDisplayRef(instance: ComponentPublicInstance | null) {
   color: var(--color-text);
   font-size: var(--text-sm);
 }
+.context-menu li.context-action {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .context-menu li:hover {
   background: var(--color-accent);
   color: var(--color-text);
+}
+.context-menu li.divider {
+  border-top: 1px solid var(--color-border);
+  margin: 4px 0;
+  padding: 0;
+  cursor: default;
+  pointer-events: none;
 }
 .context-menu button {
   background: none;

@@ -447,6 +447,11 @@ function handleAssignToken(newOwnerId: string) {
   showAssignMenu.value = false;
 }
 
+function handleOpenCharacterFromToken(characterId?: string | null) {
+  if (!characterId) return;
+  openCharacterSheet(characterId);
+}
+
 function handleSelectPersistent(payload: { id: string | null }) {
   selectedPersistentId.value = payload.id;
 }
@@ -1698,6 +1703,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :on-image-load="updateImageDimensions"
         :on-assign-token="handleAssignToken"
         :on-close-assign-menu="closeAssignMenu"
+        :on-open-character-from-token="handleOpenCharacterFromToken"
       />
       <div v-else-if="!isDM && (sessionStatus === 'PREPARING' || sessionStatus === 'PAUSED' || sessionStatus === 'ENDED')" class="session-overlay" :class="`mode-${sessionStatus.toLowerCase()}`">
         <div class="overlay-card surface">

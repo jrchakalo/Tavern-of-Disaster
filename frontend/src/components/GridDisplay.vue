@@ -598,6 +598,11 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
             <div v-else class="token-fallback" :style="{ backgroundColor: square.token.color }">
               <span>{{ square.token.name.substring(0, 2) }}</span>
             </div>
+            <span
+              v-if="square.token.characterId"
+              class="token-character-indicator"
+              title="Token vinculado a uma ficha"
+            >PC</span>
             <div
               v-if="props.auras && props.auras.some(a => a.tokenId === square.token!._id)"
               class="token-aura-label"
@@ -992,6 +997,21 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
 .token.active-turn-token {
   box-shadow: 0 0 5px 5px var(--active-turn-glow, #69ff69);
   z-index: 6;
+}
+
+.token-character-indicator {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffe082;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 2px 4px;
+  border-radius: 999px;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  z-index: 3;
 }
 
 /* Ajustes quando multi-footprint está ampliado para evitar clipping do highlight */
