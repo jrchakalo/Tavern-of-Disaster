@@ -35,6 +35,7 @@ export type PlaceTokenPayload = {
   ownerId?: string;
   size: string;
   canOverlap?: boolean;
+  characterId?: string | null;
 };
 
 export async function placeTokenForTable(userId: string, payload: PlaceTokenPayload) {
@@ -94,6 +95,7 @@ export async function editTokenForTable(userId: string, data: {
   size?: string;
   resetRemainingMovement?: boolean;
   canOverlap?: boolean;
+  characterId?: string | null;
 }) {
   const { tableId, tokenId } = data;
   const table = await getTableById(tableId);
@@ -106,6 +108,9 @@ export async function editTokenForTable(userId: string, data: {
   if (typeof data.ownerId === 'string' && data.ownerId) updates.ownerId = data.ownerId;
   if (typeof data.size === 'string' && data.size) updates.size = data.size;
   if (typeof data.canOverlap === 'boolean') updates.canOverlap = data.canOverlap;
+  if (data.characterId !== undefined) {
+    updates.characterId = data.characterId;
+  }
   const updated = await updateToken(tokenId, updates, { resetRemainingMovement: !!data.resetRemainingMovement });
   if (!updated) return null;
   let updatedInitiative;

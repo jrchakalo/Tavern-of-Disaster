@@ -11,7 +11,12 @@ export async function addTokenToInitiative(sceneId: string, token: IToken) {
   assertCondition(!!scene, 'Cena não encontrada.', 404);
   const alreadyExists = scene!.initiative.some((entry: IInitiativeEntry) => entry.tokenId?.toString() === token._id.toString());
   assertCondition(!alreadyExists, 'Token já está na iniciativa.', 400);
-  scene!.initiative.push({ characterName: token.name, tokenId: token._id, isCurrentTurn: false } as IInitiativeEntry);
+  scene!.initiative.push({
+    characterName: token.name,
+    tokenId: token._id,
+    characterId: token.characterId ?? undefined,
+    isCurrentTurn: false,
+  } as IInitiativeEntry);
   await scene!.save();
   return scene!.initiative;
 }
