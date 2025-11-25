@@ -86,14 +86,17 @@ export function calculateMovementCost(
   return chebyshevDistance * metersPerSquare;
 }
 
-async function resolveCharacterForTable(characterId: string | null | undefined, tableId: Types.ObjectId | string) {
+async function resolveCharacterForTable(
+  characterId: string | null | undefined,
+  tableId: Types.ObjectId | string
+): Promise<Types.ObjectId | null> {
   if (!characterId) return null;
   assertCondition(Types.ObjectId.isValid(characterId), 'Personagem inválido.', 400);
   const character = await Character.findById(characterId);
   assertCondition(!!character, 'Personagem não encontrado.', 404);
   const normalizedTableId = typeof tableId === 'string' ? tableId : tableId.toString();
   assertCondition(character!.tableId.toString() === normalizedTableId, 'Personagem não pertence à mesa informada.', 400);
-  return character!._id;
+  return character!._id as Types.ObjectId;
 }
 
 export async function createToken(payload: {
