@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import draggable from 'vuedraggable';
 
 import { storeToRefs } from 'pinia';
 import { authToken, currentUser } from '../services/authService';
@@ -9,7 +8,7 @@ import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
 import { useTableStore } from '../stores/tableStore';
 
-import GridDisplay from '../components/GridDisplay.vue';
+import MapViewport from '../components/MapViewport.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import TokenEditForm from '../components/TokenEditForm.vue';
 import InitiativePanel from '../components/InitiativePanel.vue';
@@ -18,6 +17,12 @@ import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
 
 import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize } from '../types';
+
+type MeasurementTool = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
+type ToolMode = MeasurementTool | 'select' | 'none';
+type GridDisplayExpose = { $el: HTMLElement };
+type MiddleClickHandler = ((event: MouseEvent) => void) & { lastTriggerTs?: number };
+const isMeasurementTool = (tool: ToolMode): tool is MeasurementTool => tool !== 'select' && tool !== 'none';
 
 const route = useRoute();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
@@ -42,7 +47,7 @@ const newSceneName = ref('');
 const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena
 const isDmPanelCollapsed = ref(false);
-const gridDisplayRef = ref<any>(null);
+const gridDisplayRef = ref<GridDisplayExpose | null>(null);
 const mapImgRef = ref<HTMLImageElement | null>(null);
 const imageRenderedWidth = ref<number | null>(null);
 const imageRenderedHeight = ref<number | null>(null);
@@ -62,17 +67,32 @@ function updateImageDimensions() {
   }
 }
 
-const activeTool = ref<'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam' | 'none'>('none');
+function setViewportEl(el: HTMLDivElement | null) {
+  viewportRef.value = el;
+}
+
+function setMapImageEl(el: HTMLImageElement | null) {
+  mapImgRef.value = el;
+}
+
+function setGridDisplayInstance(instance: GridDisplayExpose | null) {
+  gridDisplayRef.value = instance;
+}
+
+function closeAssignMenu() {
+  showAssignMenu.value = false;
+}
+
+const activeTool = ref<ToolMode>('none');
 const rulerStartPoint = ref<{ x: number; y: number } | null>(null);
 const rulerEndPoint = ref<{ x: number; y: number } | null>(null);
 const rulerDistance = ref('0.0m');
-const isMeasuring = computed(() => activeTool.value !== 'none' && activeTool.value !== 'select');
+const isMeasuring = computed(() => isMeasurementTool(activeTool.value));
 const coneOriginSquareId = ref<string | null>(null); // Origem área
 const coneAffectedSquares = ref<string[]>([]); // Quadrados afetados
-const coneLength = ref(9); // Comprimento padrão do cone (m)
 const selectedPersistentId = ref<string | null>(null);
 const previewMeasurement = ref<{
-  type: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
+  type: MeasurementTool;
   start: { x: number; y: number; };
   end: { x: number; y: number; };
   distance?: string;
@@ -98,6 +118,12 @@ const {
   persistentMeasurements,
   auras,
   pings,
+  connectionStatus,
+  pauseUntil,
+  transitionAt,
+  transitionMs,
+  userMeasurementColors,
+  clockSkewMs,
   // Getters
   isDM, 
   activeScene, 
@@ -105,6 +131,8 @@ const {
   currentTurnTokenId, 
   myActiveToken 
 } = storeToRefs(tableStore);
+
+const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
 
 // Transição curta antes do LIVE
 const showTransition = ref(false);
@@ -115,14 +143,31 @@ const canUseMap = computed(() => isDM.value || sessionStatus.value === 'LIVE');
 const pauseInput = ref<number>(5); // default 5min
 const nowTs = ref<number>(Date.now());
 const pauseRemaining = computed(() => {
-  if (sessionStatus.value !== 'PAUSED' || !tableStore.pauseUntil) return 0;
-  const until = tableStore.pauseUntil?.getTime?.() || (tableStore.pauseUntil as any)?.valueOf?.() || 0;
+  if (sessionStatus.value !== 'PAUSED' || !pauseUntil.value) return 0;
+  const until = pauseUntil.value.getTime();
   // Corrige defasagem de relógio entre cliente e servidor
-  const skew = (tableStore as any).clockSkewMs || 0;
+  const skew = clockSkewMs.value || 0;
   const clientNowCorrected = nowTs.value + skew;
   const ms = Math.max(0, until - clientNowCorrected);
   return Math.ceil(ms / 1000);
 });
+
+const connectionLabel = computed(() => {
+  switch (connectionStatus.value) {
+    case 'connecting':
+      return 'Conectando…';
+    case 'reconnecting':
+      return 'Reconectando…';
+    case 'disconnected':
+      return 'Desconectado';
+    case 'error':
+      return 'Erro de conexão';
+    default:
+      return 'Conectado';
+  }
+});
+
+const isConnectionDegraded = computed(() => ['reconnecting', 'disconnected', 'error'].includes(connectionStatus.value));
 
 let intervalId: number | null = null;
 onMounted(() => {
@@ -134,12 +179,12 @@ onUnmounted(() => {
 });
 
 // Observa evento de transição vindo do servidor para todos os clientes
-watch(() => tableStore.transitionAt, (at) => {
+watch(transitionAt, (at) => {
   if (!at) return;
   showTransition.value = true;
   // tenta iniciar reprodução
   setTimeout(() => { transitionVideoRef.value?.play?.(); }, 0);
-  const duration = tableStore.transitionMs || 3000;
+  const duration = transitionMs.value || 3000;
   setTimeout(() => { showTransition.value = false; }, duration);
 });
 
@@ -193,7 +238,7 @@ function handleSetActiveScene(sceneId: string) {
 }
 
 function handleUpdateSessionStatus(newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED') {
-  const options: any = {};
+  const options: { pauseSeconds?: number } = {};
   if (newStatus === 'PAUSED') options.pauseSeconds = Math.max(0, Math.floor((pauseInput.value * 60) || 0));
   socketService.updateSessionStatus(tableId, newStatus, options);
 }
@@ -225,6 +270,11 @@ function setMap() {
 function onSceneDragEnd() {
   const orderedSceneIds = scenes.value.map(scene => scene._id);
   socketService.reorderScenes(tableId, orderedSceneIds);
+}
+
+function onSceneReorder(updatedScenes: IScene[]) {
+  scenes.value = [...updatedScenes];
+  onSceneDragEnd();
 }
 
 function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string, size: TokenSize }) {
@@ -318,13 +368,6 @@ function handleRemoveFromInitiative(initiativeEntryId: string) {
 }
 
 
-function openEditTokenByEntry(entry: IInitiativeEntry) {
-  if (!entry.tokenId) return;
-  const tok = tokensOnMap.value.find(t => t._id === entry.tokenId) || null;
-  tokenBeingEdited.value = tok;
-  showTokenEditForm.value = !!tok;
-}
-
 function handleSaveTokenEdit(payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean }) {
   if (!tokenBeingEdited.value) return;
   socketService.editToken({ tableId, tokenId: tokenBeingEdited.value._id, ...payload });
@@ -342,7 +385,12 @@ function onInitiativeDragEnd() {
   }
 }
 
-function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
+function handleInitiativeReorder(newOrder: IInitiativeEntry[]) {
+  initiativeList.value = [...newOrder];
+  onInitiativeDragEnd();
+}
+
+function handleLeftClickOnSquare(square: GridSquare) {
   if (activeTool.value === 'ruler' || activeTool.value === 'cone') return;
   if (square.token) {
     selectedTokenId.value = (selectedTokenId.value === square.token._id) ? null : square.token._id;
@@ -352,11 +400,11 @@ function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
 }
 
 
-function handleMiddleClickFree(event: MouseEvent) {
+const handleMiddleClickFree: MiddleClickHandler = (event) => {
   if (event.button !== 1 || !activeSceneId.value) return;
   // Rate limit ping
-  if ((handleMiddleClickFree as any)._last && Date.now() - (handleMiddleClickFree as any)._last < 300) return;
-  (handleMiddleClickFree as any)._last = Date.now();
+  if (handleMiddleClickFree.lastTriggerTs && Date.now() - handleMiddleClickFree.lastTriggerTs < 300) return;
+  handleMiddleClickFree.lastTriggerTs = Date.now();
   // Coordenadas relativas ao grid interno
   const mapStage = event.currentTarget as HTMLElement;
   let viewportEl: HTMLElement | null = mapStage.querySelector('.grid-overlay .grid-viewport');
@@ -366,7 +414,7 @@ function handleMiddleClickFree(event: MouseEvent) {
   const x = (event.clientX - rect.left) / scale;
   const y = (event.clientY - rect.top) / scale;
   socketService.sendPing({ tableId, sceneId: activeSceneId.value, x, y, color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00') });
-}
+};
 
 // Mestre altera escala; jogadores recebem
 watch(metersPerSquare, (val, oldVal) => {
@@ -457,11 +505,6 @@ const auraForSelected = computed(() => selectedTokenId.value ? auras.value.find(
 const canRemoveAura = computed(() => Boolean(isDM.value && selectedToken.value && auraForSelected.value));
 // Editar aura: DM sempre; jogador só no seu turno
 const canAddAura = computed(() => Boolean((isDM.value || myActiveToken.value) && selectedTokenId.value && !isMeasuring.value));
-
-function openAuraDialogForToken(token: TokenInfo) {
-  auraDialogTokenId.value = token._id;
-  showAuraDialog.value = true;
-}
 
 function handleAuraSave(payload: { name: string; color: string; radiusMeters: number }) {
   if (!auraDialogTokenId.value || !activeSceneId.value) return;
@@ -578,7 +621,7 @@ async function handleDeleteScene(sceneId: string) {
         } else {
           // Sem cenas restantes
           // Zera mapa e ativos locais
-          (tableStore as any).currentMapUrl = null;
+          currentMapUrl.value = null;
         }
       }
       toast.success(data.message || 'Cena excluída.');
@@ -618,10 +661,11 @@ function handlePointerDown(event: PointerEvent) {
         y: (event.clientY - gridRect.top) / scale
       };
       // Determina o quadrado de origem baseado na posição local e usa o CENTRO dessa célula como ápice
-      const originSquare = getSquareIdFromLocalPoint(local.x, local.y);
-      coneOriginSquareId.value = originSquare;
-      const originCenter = originSquare ? getSquareCenterLocalPointFromId(originSquare) : local;
-  previewMeasurement.value = { type: activeTool.value as any, start: originCenter, end: originCenter };
+        const originSquare = getSquareIdFromLocalPoint(local.x, local.y);
+        coneOriginSquareId.value = originSquare;
+        const originCenter = originSquare ? getSquareCenterLocalPointFromId(originSquare) : local;
+        const measurementType = activeTool.value as MeasurementTool;
+        previewMeasurement.value = { type: measurementType, start: originCenter, end: originCenter };
       // Inicializa sem afetar nada (comprimento 0)
       coneAffectedSquares.value = [];
     }
@@ -1004,7 +1048,6 @@ function handlePointerUp(event: PointerEvent) {
     previewMeasurement.value = null; 
     // Limpeza dos quadrados pintados
     const canShareNow = isDM.value || !!myActiveToken.value;
-    const isAreaTool = (activeTool.value === 'cone' || activeTool.value === 'circle' || activeTool.value === 'square');
     if (!canShareNow) {
   // Não é turno do jogador: limpa prévia
       coneAffectedSquares.value = [];
@@ -1217,32 +1260,6 @@ function getSquareCenterLocalPointFromId(squareId: string): { x: number; y: numb
   return { x: col * cellW + cellW / 2, y: row * cellH + cellH / 2 };
 }
 
-function getMousePositionOnMap(event: PointerEvent): { x: number; y: number } | null {
-  if (!viewportRef.value) return null;
-
-  const viewportRect = viewportRef.value.getBoundingClientRect();
-  const viewportWidth = viewportRef.value.clientWidth;
-  const viewportHeight = viewportRef.value.clientHeight;
-
-  // Centro do viewport, que é a origem da transformação de escala
-  const centerX = viewportWidth / 2;
-  const centerY = viewportHeight / 2;
-
-  // Posição do mouse relativa ao viewport (a "mesa")
-  const mouseX = event.clientX - viewportRect.left;
-  const mouseY = event.clientY - viewportRect.top;
-
-  // Extrai os valores de pan e zoom do estado
-  const panX = viewTransform.value.x;
-  const scale = viewTransform.value.scale;
-  const panY = viewTransform.value.y;
-  
-  const worldX = (mouseX - centerX) / scale + centerX - (panX / scale);
-  const worldY = (mouseY - centerY) / scale + centerY - (panY / scale);
-
-  return { x: worldX, y: worldY };
-}
-
 // Arredonda metros para múltiplos de step
 function quantizeMeters(meters: number, step = 0.5): number {
   if (!isFinite(meters) || meters < 0) return 0;
@@ -1336,21 +1353,21 @@ function calculateCircleArea(originId: string, radiusMeters: number): string[] {
   const cols = gridWidth.value, rows = gridHeight.value;
   const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
   const getId = (x: number, y: number) => `sq-${y * cols + x}`;
-  let o = getCoords(originId);
+  const originCoords = getCoords(originId);
+  let centerX = originCoords.x + 0.5;
+  let centerY = originCoords.y + 0.5;
   // Multi-footprint: centro geométrico
   const square = squares.value.find(s => s.id === originId);
   if (square?.token) {
     const sizeMap: Record<TokenSize, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 } as const;
     const span = sizeMap[square.token.size as TokenSize] || 1;
     if (span > 1) {
-  // Anchor -> centro
-      o = getCoords(originId);
-      const ocx = o.x + (span / 2); // (0 + span)/2 => deslocamento do canto
-      const ocy = o.y + (span / 2);
-      return computeCircle(ocx, ocy);
+      // Anchor -> centro real do token
+      centerX = originCoords.x + (span / 2);
+      centerY = originCoords.y + (span / 2);
     }
   }
-  return computeCircle(o.x + 0.5, o.y + 0.5);
+  return computeCircle(centerX, centerY);
 
   function computeCircle(ocx: number, ocy: number): string[] {
     const maxDist = radiusSq + 0.5; // tolerância
@@ -1375,16 +1392,16 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   const cols = gridWidth.value, rows = gridHeight.value;
   const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
   const getId = (x: number, y: number) => `sq-${y * cols + x}`;
-  let o = getCoords(originId);
-  let centerX = o.x + 0.5;
-  let centerY = o.y + 0.5;
+  const originCoords = getCoords(originId);
+  let centerX = originCoords.x + 0.5;
+  let centerY = originCoords.y + 0.5;
   const square = squares.value.find(s => s.id === originId);
   if (square?.token) {
     const sizeMap: Record<TokenSize, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 } as const;
     const span = sizeMap[square.token.size as TokenSize] || 1;
     if (span > 1) {
-      centerX = o.x + (span / 2);
-      centerY = o.y + (span / 2);
+      centerX = originCoords.x + (span / 2);
+      centerY = originCoords.y + (span / 2);
     }
   }
   const minX = centerX - half - 0.001, maxX = centerX + half + 0.001; // tolerância
@@ -1403,6 +1420,10 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 
 <template>
   <div class="table-view-layout">
+    <div class="connection-indicator" :class="['status-' + connectionStatus, { degraded: isConnectionDegraded }]">
+      <span class="dot"></span>
+      <span>{{ connectionLabel }}</span>
+    </div>
 
   <div v-if="!isDM && sessionStatus === 'LIVE' && activeScene?.type === 'battlemap'" class="player-initiative-wrapper">
       <InitiativePanel
@@ -1427,97 +1448,37 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       </button>
       
       <div v-show="!isDmPanelCollapsed" class="panel-content">        
-        <div class="panel-section">
-          <button class="subsection-toggle" @click="isSessionCollapsed = !isSessionCollapsed">
-            <h4>Sessão</h4>
-            <span class="chevron"><Icon :name="isSessionCollapsed ? 'plus' : 'minus'" size="16" /></span>
-          </button>
-          <div class="session-controls" v-show="!isSessionCollapsed">
-            <button
-              v-if="sessionStatus === 'ENDED'"
-              @click="handleUpdateSessionStatus('PREPARING')"
-              class="btn btn-sm session-btn session-prepare"
-            >Preparar Sessão</button>
-            <div v-if="sessionStatus === 'PREPARING'" class="row gap-2">
-              <button 
-                @click="startSessionWithTransition"
-                class="btn btn-sm session-btn session-start"
-              >Iniciar Sessão</button>
-            </div>
-            <button 
-              v-if="sessionStatus === 'LIVE'" 
-              @click="handleUpdateSessionStatus('PAUSED')"
-              class="btn btn-sm session-btn session-pause"
-            >Pausar</button>
-            <div v-if="sessionStatus === 'LIVE' || sessionStatus === 'PAUSED'" class="row gap-2" style="margin-top:15px; align-items:center;">
-              <label style="font-size:.85rem">Duração da pausa (min):</label>
-              <input class="input-xs" type="number" min="0" step="0.5" v-model.number="pauseInput" style="width:110px" />
-            </div>
-            <button 
-              v-if="sessionStatus === 'PAUSED'" 
-              @click="handleUpdateSessionStatus('LIVE')"
-              class="btn btn-sm session-btn session-resume"
-            >Retomar</button>
-            <button 
-              v-if="sessionStatus === 'LIVE' || sessionStatus === 'PAUSED'" 
-              @click="handleUpdateSessionStatus('ENDED')"
-              class="btn btn-sm session-btn session-end"
-            >Encerrar Sessão</button>
-          </div>
-        </div>
+        <DMSessionControls
+          :session-status="sessionStatus"
+          :pause-input="pauseInput"
+          :pause-remaining="pauseRemaining"
+          :is-collapsed="isSessionCollapsed"
+          @toggle="isSessionCollapsed = !isSessionCollapsed"
+          @update:pauseInput="pauseInput = $event"
+          @update-status="handleUpdateSessionStatus"
+          @start-session="startSessionWithTransition"
+        />
         
-        <div class="panel-section scene-manager">
-          <button class="subsection-toggle" @click="isScenesCollapsed = !isScenesCollapsed">
-            <h4>Cenas</h4>
-            <span class="chevron"><Icon :name="isScenesCollapsed ? 'plus' : 'minus'" size="16" /></span>
-          </button>
-          <div class="scenes-list-block" v-show="!isScenesCollapsed">
-            <draggable
-              v-model="scenes"
-              tag="ul"
-              class="scene-list"
-              item-key="_id"
-              @end="onSceneDragEnd"
-              handle=".drag-handle"
-            >
-              <template #item="{ element: scene }">
-                <li :class="{ 'active-scene': scene._id === activeSceneId }">
-                  <span class="drag-handle" title="Arrastar"><Icon name="drag" size="16" /></span> <span>{{ scene.name }}</span>
-                  <div class="scene-buttons">
-                    <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">Ativar</button>
-                    <button @click="handleEditScene(scene)" class="icon-btn" title="Editar"><Icon name="edit" size="16" /></button>
-                    <button @click="handleDeleteScene(scene._id)" class="icon-btn delete-btn-small" title="Excluir"><Icon name="delete" size="16" /></button>
-                  </div>
-                </li>
-              </template>
-            </draggable>
-          </div>
-
-          <div class="panel-section" v-show="!isScenesCollapsed">
-            <h4>Imagem da Cena Ativa</h4>
-            <div class="map-controls">
-              <div class="inline-fields" style="width:100%">
-                <input id="map-url" class="input-sm" type="url" v-model="mapUrlInput" placeholder="URL da imagem da cena" />
-                <button @click="setMap" type="button" class="btn btn-xs btn-ghost">Definir</button>
-              </div>
-            </div>
-          </div>
-
-          <form @submit.prevent="handleCreateScene" class="create-scene-form" v-show="!isScenesCollapsed">
-            <h4>Criar Nova Cena</h4>
-            <div class="field-group">
-              <input class="input-sm" v-model="newSceneName" placeholder="Nome da Cena" required />
-              <input class="input-sm" v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
-              <div class="inline-fields">
-                <select class="input-sm" v-model="newSceneType">
-                  <option value="battlemap">Battlemap</option>
-                  <option value="image">Imagem</option>
-                </select>
-                <button type="submit" class="btn btn-xs alt">Adicionar Cena</button>
-              </div>
-            </div>
-          </form>
-        </div>
+        <SceneManager
+          :scenes="scenes"
+          :active-scene-id="activeSceneId"
+          :is-collapsed="isScenesCollapsed"
+          :map-url-input="mapUrlInput"
+          :new-scene-name="newSceneName"
+          :new-scene-image-url="newSceneImageUrl"
+          :new-scene-type="newSceneType"
+          @toggle="isScenesCollapsed = !isScenesCollapsed"
+          @set-active-scene="handleSetActiveScene"
+          @edit-scene="handleEditScene"
+          @delete-scene="handleDeleteScene"
+          @reorder="onSceneReorder"
+          @set-map="setMap"
+          @create-scene="handleCreateScene"
+          @update:mapUrlInput="mapUrlInput = $event"
+          @update:newSceneName="newSceneName = $event"
+          @update:newSceneImageUrl="newSceneImageUrl = $event"
+          @update:newSceneType="newSceneType = $event"
+        />
 
         <!-- Initiative table now after Scenes and before Grid controls -->
         <div class="panel-section" v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
@@ -1530,7 +1491,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             :myActiveToken="myActiveToken"
             @edit-token="(id:string)=>{ const tok=tokensOnMap.find(t=>t._id===id)||null; tokenBeingEdited=tok; showTokenEditForm=!!tok; }"
             @remove-entry="(entryId:string)=>handleRemoveFromInitiative(entryId)"
-            @reorder="(list)=>{ initiativeList = list as any; onInitiativeDragEnd(); }"
+            @reorder="handleInitiativeReorder"
             @undo-move="handleUndoMove"
             @next-turn="handleNextTurn"
           />
@@ -1560,97 +1521,57 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </aside>
 
     <main class="battlemap-main">
-      <div 
+      <MapViewport
         v-if="canUseMap"
-        class="viewport" :class="{ measuring: isMeasuring }"
-        ref="viewportRef"
-        @wheel.prevent="handleWheel"
-        @pointerdown="handlePointerDown"
-        @pointermove="handlePointerMove"
-        @pointerup="handlePointerUp"
-        @mouseleave="handlePointerUp" style="touch-action: none;" >
-
-        
-        <template v-if="sessionStatus === 'LIVE' || isDM">
-          <div 
-            class="map-stage"
-            @mousedown.middle.prevent="handleMiddleClickFree"
-            :style="{ transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale})` }"
-          >
-            <img 
-              v-if="currentMapUrl" 
-              :src="currentMapUrl" 
-              alt="Mapa de Batalha" 
-              class="map-image" 
-              draggable="false" 
-              @dragstart.prevent 
-              ref="mapImgRef" 
-              @load="updateImageDimensions" />
-            <div
-              v-else
-              class="map-placeholder"
-              style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center; max-width:80%; pointer-events:none;"
-            >
-              <p>Nenhum mapa definido para esta cena.</p>
-              <p v-if="isDM">Use o Painel do Mestre para definir uma imagem.</p>
-            </div>
-
-            <GridDisplay
-              v-if="currentMapUrl && activeScene?.type === 'battlemap'"
-              ref="gridDisplayRef"
-              class="grid-overlay"
-              :isMeasuring="isMeasuring"
-              :viewScale="viewTransform.scale"
-              :metersPerSquare="metersPerSquare"
-              :measureStartPoint="rulerStartPoint"
-              :measureEndPoint="rulerEndPoint"
-              :measuredDistance="rulerDistance"
-              :previewMeasurement="previewMeasurement"
-              :sharedMeasurements="Object.values(sharedMeasurements)"
-              :persistentMeasurements="persistentsForActiveScene"
-              :auras="auras"
-              :userColorMap="tableStore.userMeasurementColors"
-              :areaAffectedSquares="coneAffectedSquares"
-              :measurementColor="measurementColor"
-              :currentTurnTokenId="currentTurnTokenId"
-              :squares="squares"
-              :gridWidth="gridWidth" 
-              :gridHeight="gridHeight"
-              :imageWidth="imageRenderedWidth || undefined"
-              :imageHeight="imageRenderedHeight || undefined"
-              :selectedTokenId="selectedTokenId"
-              :isDM="isDM"
-              :currentUserId="currentUser?.id || null"
-              :selectedPersistentId="selectedPersistentId"
-              :pings="pings"
-              @square-right-click="handleRightClick"
-              @square-left-click="handleLeftClickOnSquare"
-              @token-move-requested="handleTokenMoveRequest"
-              @remove-persistent="handleRemovePersistent"
-              @select-persistent="handleSelectPersistent"
-              @viewport-contextmenu="handleViewportContextMenu"
-              @shape-contextmenu="handleShapeContextMenu"
-            />
-          </div>
-        </template>
-
-        <div 
-          v-if="showAssignMenu" 
-          class="context-menu" 
-          :style="{ top: `${assignMenuPosition.y}px`, left: `${assignMenuPosition.x}px` }"
-          @click.stop 
-          @contextmenu.prevent
-          @pointerdown.stop
-        >
-          <h4>Atribuir "{{ assignMenuTargetToken?.name }}"</h4>
-          <ul>
-            <li v-for="player in currentTable?.players" :key="player._id" @click="handleAssignToken(player._id)">
-              {{ player.username }}
-            </li>
-          </ul>
-          <button @click="showAssignMenu = false">Fechar</button>
-        </div>
-      </div>
+        :is-measuring="isMeasuring"
+        :view-transform="viewTransform"
+        :current-map-url="currentMapUrl"
+        :active-scene-type="activeScene?.type"
+        :grid-width="gridWidth"
+        :grid-height="gridHeight"
+        :meters-per-square="metersPerSquare"
+        :ruler-start-point="rulerStartPoint"
+        :ruler-end-point="rulerEndPoint"
+        :ruler-distance="rulerDistance"
+        :preview-measurement="previewMeasurement"
+        :shared-measurements="sharedMeasurementList"
+        :persistent-measurements="persistentsForActiveScene"
+        :auras="auras"
+        :user-measurement-colors="userMeasurementColors"
+        :cone-affected-squares="coneAffectedSquares"
+        :measurement-color="measurementColor"
+        :current-turn-token-id="currentTurnTokenId"
+        :squares="squares"
+        :image-rendered-width="imageRenderedWidth"
+        :image-rendered-height="imageRenderedHeight"
+        :selected-token-id="selectedTokenId"
+        :is-dm="isDM"
+        :current-user-id="currentUser?.id || null"
+        :selected-persistent-id="selectedPersistentId"
+        :pings="pings"
+        :show-assign-menu="showAssignMenu"
+        :assign-menu-position="assignMenuPosition"
+        :assign-menu-target-token="assignMenuTargetToken"
+        :players="currentTable?.players || []"
+        :map-image-ref-setter="setMapImageEl"
+        :viewport-ref-setter="setViewportEl"
+        :grid-display-ref-setter="setGridDisplayInstance"
+        :on-wheel="handleWheel"
+        :on-pointer-down="handlePointerDown"
+        :on-pointer-move="handlePointerMove"
+        :on-pointer-up="handlePointerUp"
+        :on-middle-click="handleMiddleClickFree"
+        :on-square-right-click="handleRightClick"
+        :on-square-left-click="handleLeftClickOnSquare"
+        :on-token-move-request="handleTokenMoveRequest"
+        :on-remove-persistent="handleRemovePersistent"
+        :on-select-persistent="handleSelectPersistent"
+        :on-viewport-contextmenu="handleViewportContextMenu"
+        :on-shape-contextmenu="handleShapeContextMenu"
+        :on-image-load="updateImageDimensions"
+        :on-assign-token="handleAssignToken"
+        :on-close-assign-menu="closeAssignMenu"
+      />
       <div v-else-if="!isDM && (sessionStatus === 'PREPARING' || sessionStatus === 'PAUSED' || sessionStatus === 'ENDED')" class="session-overlay" :class="`mode-${sessionStatus.toLowerCase()}`">
         <div class="overlay-card surface">
           <template v-if="sessionStatus === 'PREPARING'">
@@ -1748,6 +1669,40 @@ main{
   padding: 20px;
   box-sizing: border-box; /* Garante que o padding não aumente a largura total */
   position: relative;
+}
+.connection-indicator {
+  position: absolute;
+  top: 8px;
+  left: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 0.85rem;
+  color: var(--color-text);
+  box-shadow: var(--elev-1);
+}
+.connection-indicator .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success, #2ecc71);
+  display: inline-block;
+}
+.connection-indicator.status-reconnecting .dot,
+.connection-indicator.status-connecting .dot {
+  background: var(--color-warning, #f5a524);
+}
+.connection-indicator.status-disconnected .dot,
+.connection-indicator.status-error .dot {
+  background: var(--color-danger, #e53935);
+}
+.connection-indicator.degraded {
+  border-color: var(--color-danger, #e53935);
+  color: var(--color-danger, #e53935);
 }
 .battlemap-main {
   flex-grow: 1; /* Faz o battlemap ocupar o espaço principal */
@@ -1856,22 +1811,6 @@ panel h2 {
 .scale-control input {
   width: 120px;
 }
-.viewport {
-  width: 100%;
-  height: calc(100dvh - 140px);
-  max-width: 1600px;
-  background: var(--color-surface);
-  border: 10px solid rgba(0 0 0 / 0.5);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  position: relative; 
-  cursor: grab;
-  box-shadow: var(--elev-2);
-}
-@media (max-width: 900px) {
-  /* Fix mobile: use large viewport height so the map doesn't stretch/shrink on scroll */
-  .viewport { height: calc(100lvh - 240px); }
-}
 .session-overlay {
   display:flex; align-items:center; justify-content:center; height:70vh; width:100%;
 }
@@ -1892,34 +1831,6 @@ panel h2 {
 .session-btn.session-end { margin-top: 15px; background: var(--color-danger); color: var(--color-text); }
 
 .transition-overlay { position: fixed; inset:0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,.6); z-index: 100; }
-.viewport:active {
-  cursor: grabbing;
-}
-.viewport.measuring { cursor: crosshair; }
-.map-stage {
-  width: 100%;
-  height: 100%;
-  position: relative; /* Para que a imagem e o grid se alinhem a ele */
-  transition: transform 0.1s ease-out; /* Transição suave para o zoom */
-  overflow: hidden; /* Clipa tanto vertical quanto horizontal */
-  transform-origin: center center;
-}
-.map-image,
-.grid-overlay {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  max-width: 100%;
-  max-height: 100%;
-  user-select: none;
-}
-.map-image {
-  object-fit: contain;
-  user-select: none;
-  pointer-events: none;
-  display: block;
-}
 .reset-view-btn { padding: 8px 12px; background: var(--color-surface-alt); color: var(--color-text); border:1px solid var(--color-border); border-radius: var(--radius-sm); cursor:pointer; font: inherit; display:block; margin: 10px auto 0; }
 .reset-view-btn.below { margin-top: 10px; }
 .reset-view-btn:hover { background: var(--color-surface); }
@@ -2019,12 +1930,6 @@ panel h2 {
   cursor: pointer;
   font-size: 1.1em;
 }
-.context-menu { position:absolute; background: var(--color-surface-alt); border:1px solid var(--color-border); border-radius: var(--radius-sm); padding:5px 0; z-index:1000; min-width:150px; box-shadow: var(--elev-2); }
-.context-menu ul { list-style: none; padding: 0; margin: 0; }
-.context-menu li { padding:8px 12px; cursor:pointer; color: var(--color-text); font-size: var(--text-sm); }
-.context-menu li:hover { background: var(--color-accent); color: var(--color-text); }
-.context-menu button { background:none; border:none; color: var(--color-text-muted); width:100%; padding:8px; margin-top:5px; border-top:1px solid var(--color-border); cursor:pointer; font:inherit; }
-.context-menu button:hover { color: var(--color-text); background: var(--color-surface); }
 .turn-status-panel { margin-top:20px; background: var(--color-surface); padding:15px; border-radius: var(--radius-md); border:1px solid var(--color-border); text-align:center; width:100%; max-width:400px; box-shadow: var(--elev-1); }
 .turn-status-panel h3 { margin-top:0; color: var(--color-accent); font-family: var(--font-display); letter-spacing:.5px; }
 .initiative-list li {
@@ -2057,7 +1962,6 @@ panel h2 {
 
 @media (max-width: 900px) {
   .dm-panel { position: fixed; left: 10px; right: 10px; top: 10px; width: auto; max-height: calc(100dvh - 20px); }
-  .viewport { border-width: 6px; }
   .battlemap-main { padding-bottom: 80px; } /* breathing room for docked toolbar */
 }
 </style>

@@ -13,25 +13,33 @@ export type Measurement = {
 };
 
 const tableMeasurements: Record<string, Record<string, Measurement>> = {};
+const tableActivityMs: Record<string, number> = {};
 
 // Persistentes por mesa e cena
 export type PersistentMeasurement = Measurement & { id: string };
 const persistentByTableScene: Record<string, Record<string, Record<string, PersistentMeasurement>>> = {};
 
+function markActivity(tableId: string) {
+  tableActivityMs[tableId] = Date.now();
+}
+
 export function setMeasurement(tableId: string, userId: string, measurement: Measurement) {
   if (!tableMeasurements[tableId]) tableMeasurements[tableId] = {};
   tableMeasurements[tableId][userId] = measurement;
+  markActivity(tableId);
 }
 
 export function removeMeasurement(tableId: string, userId: string) {
   if (tableMeasurements[tableId] && tableMeasurements[tableId][userId]) {
     delete tableMeasurements[tableId][userId];
+    markActivity(tableId);
   }
 }
 
 export function clearMeasurementsForTable(tableId: string) {
   if (tableMeasurements[tableId]) {
-    tableMeasurements[tableId] = {};
+    delete tableMeasurements[tableId];
+    markActivity(tableId);
   }
 }
 
@@ -39,8 +47,28 @@ export function clearAllForUser(userId: string) {
   Object.keys(tableMeasurements).forEach(tid => {
     if (tableMeasurements[tid] && tableMeasurements[tid][userId]) {
       delete tableMeasurements[tid][userId];
+      if (Object.keys(tableMeasurements[tid]).length === 0) {
+        delete tableMeasurements[tid];
+      }
+      markActivity(tid);
     }
   });
+}
+
+export function clearMeasurementsForScene(tableId: string, sceneId: string) {
+  const tableEntries = tableMeasurements[tableId];
+  if (!tableEntries) return;
+  let modified = false;
+  Object.entries(tableEntries).forEach(([userId, measurement]) => {
+    if (measurement.sceneId === sceneId) {
+      delete tableEntries[userId];
+      modified = true;
+    }
+  });
+  if (modified) {
+    if (Object.keys(tableEntries).length === 0) delete tableMeasurements[tableId];
+    markActivity(tableId);
+  }
 }
 
 export function getTablesForUser(userId: string): string[] {
@@ -60,11 +88,13 @@ export function addPersistent(tableId: string, sceneId: string, m: PersistentMea
   if (!persistentByTableScene[tableId]) persistentByTableScene[tableId] = {};
   if (!persistentByTableScene[tableId][sceneId]) persistentByTableScene[tableId][sceneId] = {};
   persistentByTableScene[tableId][sceneId][m.id] = m;
+  markActivity(tableId);
 }
 
 export function removePersistent(tableId: string, sceneId: string, id: string) {
   if (persistentByTableScene[tableId] && persistentByTableScene[tableId][sceneId]) {
     delete persistentByTableScene[tableId][sceneId][id];
+    markActivity(tableId);
   }
 }
 
@@ -75,6 +105,7 @@ export function listPersistents(tableId: string, sceneId: string): PersistentMea
 export function clearPersistentsForScene(tableId: string, sceneId: string) {
   if (persistentByTableScene[tableId] && persistentByTableScene[tableId][sceneId]) {
     persistentByTableScene[tableId][sceneId] = {};
+    markActivity(tableId);
   }
 }
 
@@ -98,11 +129,13 @@ export function upsertAura(a: Aura) {
   if (!aurasByTableScene[a.tableId]) aurasByTableScene[a.tableId] = {};
   if (!aurasByTableScene[a.tableId][a.sceneId]) aurasByTableScene[a.tableId][a.sceneId] = {};
   aurasByTableScene[a.tableId][a.sceneId][a.tokenId] = a;
+  markActivity(a.tableId);
 }
 
 export function removeAura(tableId: string, sceneId: string, tokenId: string) {
   if (aurasByTableScene[tableId] && aurasByTableScene[tableId][sceneId]) {
     delete aurasByTableScene[tableId][sceneId][tokenId];
+    markActivity(tableId);
   }
 }
 
@@ -113,5 +146,29 @@ export function listAuras(tableId: string, sceneId: string): Aura[] {
 export function clearAurasForScene(tableId: string, sceneId: string) {
   if (aurasByTableScene[tableId] && aurasByTableScene[tableId][sceneId]) {
     aurasByTableScene[tableId][sceneId] = {};
+    markActivity(tableId);
   }
 }
+
+export function clearAllForTable(tableId: string) {
+  clearMeasurementsForTable(tableId);
+  if (persistentByTableScene[tableId]) {
+    delete persistentByTableScene[tableId];
+  }
+  if (aurasByTableScene[tableId]) {
+    delete aurasByTableScene[tableId];
+  }
+  delete tableActivityMs[tableId];
+}
+
+export function cleanupInactiveTables(maxIdleMs: number) {
+  if (!maxIdleMs || maxIdleMs <= 0) return;
+  const now = Date.now();
+  Object.entries(tableActivityMs).forEach(([tableId, lastActivity]) => {
+    if (now - lastActivity > maxIdleMs) {
+      clearAllForTable(tableId);
+    }
+  });
+}
+
+export { markActivity };

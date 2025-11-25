@@ -14,7 +14,6 @@ const inviteCodeInput = ref('');
 const editingTable = ref<ITable | null>(null);
 const editName = ref('');
 const managingPlayers = ref<ITable | null>(null);
-const removing = ref(false);
 const leaving = ref<ITable | null>(null);
 const deleting = ref<ITable | null>(null);
 const feedback = ref('');
@@ -53,7 +52,10 @@ async function saveEdit() {
     const data = await res.json();
     if (res.ok) { feedback.value = 'Mesa atualizada.'; editingTable.value = null; fetchMyTables(); }
     else feedback.value = data.message || 'Erro.';
-  } catch (e) { feedback.value = 'Falha rede.'; }
+  } catch (error) {
+    console.error('Erro ao salvar mesa:', error);
+    feedback.value = 'Falha rede.';
+  }
 }
 function managePlayers(table: ITable) { managingPlayers.value = table; }
 async function removePlayer(playerId: string) {
