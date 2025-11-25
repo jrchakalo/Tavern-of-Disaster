@@ -217,3 +217,15 @@ export interface DiceRolledPayload {
   tags?: string[];
   createdAt: string;
 }
+
+export type LogEntryType = 'roll' | 'system' | 'movement' | 'chat';
+
+export interface LogEntry {
+  id: string;
+  type: LogEntryType;
+  authorId?: string;
+  authorName?: string;
+  createdAt: string;
+  content: string;
+  raw?: unknown;
+}

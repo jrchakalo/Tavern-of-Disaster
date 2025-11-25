@@ -17,11 +17,14 @@ import type {
     TableInfoDTO,
     MeasurementDTO,
     AuraDTO,
+    DiceRolledPayload,
+    LogEntry,
 } from '../types';
 import { currentUser } from '../services/authService';
 
 const DEFAULT_GRID = 30;
 const DEFAULT_METERS_PER_SQUARE = 1.5;
+const LOG_CAP = 200;
 export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
 
 function normalizeSceneType(type?: string): 'battlemap' | 'image' {
@@ -167,6 +170,8 @@ export const useTableStore = defineStore('table', () => {
             affectedSquares?: string[];
             sceneId: string;
         }>> = ref([]);
+    const logs: Ref<LogEntry[]> = ref([]);
+    const diceAnimationHook: Ref<((payload: DiceRolledPayload) => void) | null> = ref(null);
 
     function setScenesFromDTO(sceneDtos: SceneDTO[]) {
         scenes.value = sceneDtos.map(mapSceneDTO);
@@ -271,12 +276,62 @@ export const useTableStore = defineStore('table', () => {
         connectionStatus.value = status;
     }
 
+    function createLogId() {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+            return crypto.randomUUID();
+        }
+        return `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function addLogEntry(entry: LogEntry) {
+        const trimmed = logs.value.slice(- (LOG_CAP - 1));
+        logs.value = [...trimmed, entry];
+    }
+
+    function clearLogs() {
+        logs.value = [];
+    }
+
+    function buildRollLogEntry(payload: DiceRolledPayload): LogEntry {
+        const label = payload.metadata || payload.tags?.[0] || 'Rolagem';
+        const rollsDisplay = payload.rolls.length
+            ? payload.rolls.map(r => r.kept === 'kept' ? `${r.value}` : `(${r.value})`).join(', ')
+            : '—';
+        const modifierText = payload.modifier === 0
+            ? ''
+            : payload.modifier > 0
+                ? ` + ${payload.modifier}`
+                : ` - ${Math.abs(payload.modifier)}`;
+        const detail = `${payload.expression} → [${rollsDisplay}]${modifierText} = ${payload.total}`;
+        return {
+            id: createLogId(),
+            type: 'roll',
+            authorId: payload.userId,
+            authorName: payload.username,
+            createdAt: payload.createdAt,
+            content: `${label}: ${detail}`,
+            raw: payload,
+        };
+    }
+
+    function handleDiceRoll(payload: DiceRolledPayload) {
+        addLogEntry(buildRollLogEntry(payload));
+        if (payload.userId === currentUser.value?.id) {
+            diceAnimationHook.value?.(payload);
+        }
+    }
+
+    function registerDiceAnimationHook(handler: ((payload: DiceRolledPayload) => void) | null) {
+        diceAnimationHook.value = handler;
+    }
+
     function updateSessionState(snapshot: SessionStateDTO) {
         const previousSceneId = activeSceneId.value;
         const newSceneId = applySessionSnapshot(snapshot);
         if (previousSceneId !== newSceneId) {
             sharedMeasurements.value = {};
             pings.value = [];
+            logs.value = [];
         }
     }
 
@@ -442,6 +497,12 @@ export const useTableStore = defineStore('table', () => {
         upsertSharedMeasurement,
         removeSharedMeasurement,
     clearSharedMeasurements,
+    logs,
+    addLogEntry,
+    clearLogs,
+    buildRollLogEntry,
+    handleDiceRoll,
+    registerDiceAnimationHook,
     setUserMeasurementColor,
     getUserMeasurementColor,
     updateSceneScale,

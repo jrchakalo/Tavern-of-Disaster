@@ -17,6 +17,7 @@ import Icon from '../components/Icon.vue';
 import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
+import ActionLog from '../components/ActionLog.vue';
 
 import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character } from '../types';
 
@@ -131,13 +132,15 @@ const {
   activeScene, 
   tokensOnMap, 
   currentTurnTokenId, 
-  myActiveToken 
+  myActiveToken,
+  logs,
 } = storeToRefs(tableStore);
 
 const characterStore = useCharacterStore();
 const { loadingByTable: characterLoadingMap, errorByTable: characterErrorMap, selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
 
 const showCharacterSheet = ref(false);
+const showLogPanel = ref(false);
 const activeCharacterId = ref<string | null>(null);
 const charactersForTable = computed(() => characterStore.charactersForTable(tableId));
 const activeCharacter = computed<Character | null>(() => {
@@ -285,6 +288,14 @@ function closeCharacterSheet() {
   showCharacterSheet.value = false;
   activeCharacterId.value = null;
   characterStore.setSelectedCharacter(null);
+}
+
+function toggleLogPanel(force?: boolean) {
+  if (typeof force === 'boolean') {
+    showLogPanel.value = force;
+    return;
+  }
+  showLogPanel.value = !showLogPanel.value;
 }
 
 async function handleQuickCreateCharacter() {
@@ -1557,6 +1568,11 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       <span>{{ connectionLabel }}</span>
     </div>
 
+      <button class="log-toggle-btn surface" @click="toggleLogPanel()">
+        <Icon :name="showLogPanel ? 'x' : 'list'" size="16" />
+        <span>{{ showLogPanel ? 'Fechar log' : 'Log' }}</span>
+      </button>
+
   <div v-if="!isDM && sessionStatus === 'LIVE' && activeScene?.type === 'battlemap'" class="player-initiative-wrapper">
       <InitiativePanel
         :initiativeList="initiativeList"
@@ -1793,6 +1809,15 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @save="handleCharacterSave"
       @delete="handleCharacterDelete"
     />
+
+    <transition name="slide-up">
+      <section v-if="showLogPanel" class="log-panel surface">
+        <button class="log-panel__close" @click="toggleLogPanel(false)" aria-label="Fechar log">
+          <Icon name="x" size="16" />
+        </button>
+        <ActionLog :logs="logs" />
+      </section>
+    </transition>
   </div>
 </template>
 
@@ -1860,6 +1885,56 @@ main{
 }
 .battlemap-main h1 {
   margin-top: 0;
+}
+.log-toggle-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  z-index: 55;
+  box-shadow: var(--elev-2);
+}
+
+.log-panel {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: min(360px, 90vw);
+  max-height: 60vh;
+  z-index: 54;
+  padding: 0.5rem;
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-3);
+  display: flex;
+  flex-direction: column;
+}
+
+.log-panel__close {
+  align-self: flex-end;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  margin-bottom: 0.25rem;
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(12px);
 }
 .dm-panel {
   transition: width 0.3s ease, padding 0.3s ease;

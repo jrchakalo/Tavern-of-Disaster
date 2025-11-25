@@ -253,12 +253,7 @@ class SocketService {
   }
 
   private handleDiceRolled = (payload: DiceRolledPayload) => {
-    const storeAny = this.store as any;
-    if (storeAny && typeof storeAny.handleDiceRoll === 'function') {
-      storeAny.handleDiceRoll(payload);
-    } else {
-      console.log('Dice roll received:', payload);
-    }
+    this.store.handleDiceRoll(payload);
   };
 
   private handleDiceRollError = (error: { message?: string }) => {
