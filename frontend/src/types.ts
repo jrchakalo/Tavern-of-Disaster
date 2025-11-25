@@ -14,6 +14,7 @@ export interface TokenInfo {
   remainingMovement: number;
   size: TokenSize;
   canOverlap?: boolean;
+  characterId?: string | null;
 }
 
 export interface TokenOwner {
@@ -46,6 +47,7 @@ export interface IInitiativeEntry {
   _id: string;
   characterName: string;
   tokenId?: string;
+  characterId?: string;
   isCurrentTurn: boolean;
 }
 
@@ -74,6 +76,29 @@ export interface AuraInfo {
   difficultTerrain?: boolean;
 }
 
+export interface CharacterStats {
+  currentHP?: number;
+  maxHP?: number;
+  defense?: number;
+  baseInitiative?: number;
+}
+
+export interface CharacterDTO {
+  _id: string;
+  ownerId: string;
+  tableId: string;
+  name: string;
+  avatarUrl?: string;
+  attributes?: Record<string, number>;
+  stats?: CharacterStats;
+  skills?: Record<string, number | string>;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type Character = CharacterDTO;
+
 // Session DTOs espelhados do backend
 export interface UserSummaryDTO {
   _id: string;
@@ -95,6 +120,7 @@ export interface InitiativeEntryDTO {
   _id: string;
   characterName: string;
   tokenId?: string;
+  characterId?: string;
   isCurrentTurn: boolean;
 }
 
@@ -122,6 +148,7 @@ export interface TokenDTO {
   remainingMovement: number;
   size: TokenSize;
   canOverlap: boolean;
+  characterId?: string;
 }
 
 export interface MeasurementDTO {
