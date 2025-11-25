@@ -1,15 +1,12 @@
 import { Server, Socket } from 'socket.io';
-import Token from '../models/Token.model';
-import Scene from '../models/Scene.model';
 import {
-  createToken,
-  moveToken as moveTokenService,
-  undoLastMove as undoLastMoveService,
-  updateToken as updateTokenService,
-  TokenUpdatePayload,
-} from '../services/tokenService';
-import { addTokenToInitiative, syncInitiativeNameWithToken } from '../services/initiativeService';
-import { getTableById, assertUserIsDM, isUserDM } from '../services/tableService';
+  placeTokenForTable,
+  PlaceTokenPayload,
+  moveTokenForUser,
+  assignTokenOwnerForTable,
+  editTokenForTable,
+  undoTokenMoveForUser,
+} from '../services/tokenSocketService';
 import { ServiceError } from '../services/serviceErrors';
 
 export function registerTokenHandlers(io: Server, socket: Socket) {
@@ -25,26 +22,13 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         const userId = socket.data.user?.id; 
         if (!userId) return;
 
-        const { tableId, sceneId, squareId, name, imageUrl, movement, remainingMovement, ownerId, size, canOverlap } = data;
-        if (!sceneId) return socket.emit('tokenPlacementError', { message: 'ID da cena não fornecido.' });
+        const { tableId } = data;
+        if (!data.sceneId) return socket.emit('tokenPlacementError', { message: 'ID da cena não fornecido.' });
 
-        const createdToken = await createToken({
-            tableId,
-            sceneId,
-            squareId,
-            name,
-            imageUrl,
-            movement,
-            remainingMovement,
-            ownerId: ownerId || userId,
-            size: size || 'Pequeno/Médio',
-            canOverlap: !!canOverlap,
-        });
-
-        const updatedInitiative = await addTokenToInitiative(sceneId, createdToken as any);
-        io.to(tableId).emit('tokenPlaced', createdToken);
-        if (updatedInitiative) {
-            io.to(tableId).emit('initiativeUpdated', updatedInitiative);
+        const result = await placeTokenForTable(userId, data as PlaceTokenPayload);
+        io.to(tableId).emit('tokenPlaced', result.token);
+        if (result.initiative) {
+            io.to(tableId).emit('initiativeUpdated', result.initiative);
         }
     } catch (error: any) {
         console.error('Erro ao processar requestPlaceToken:', error.message);
@@ -57,56 +41,21 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
     try {
         const userId = socket.data.user?.id;
         if (!userId) return;
-
-        const { tableId, tokenId, targetSquareId } = data;
-
-        if (!tokenId || !targetSquareId) {
-          return socket.emit('tokenMoveError', { message: 'Dados inválidos para mover token.' });
-        }
-
-        // Encontra o token a ser movido
-        const tokenToMove = await Token.findById(tokenId);
-        if (!tokenToMove) {
-          return socket.emit('tokenMoveError', { message: 'Token não encontrado.' });
-        }
-
-        const table = await getTableById(tableId);
-        if (!table) return;
-
-        const isDM = isUserDM(userId, table);
-        const isOwner = tokenToMove.ownerId?.toString() === userId;
-        if (!isDM && !isOwner) {
-          return socket.emit('tokenMoveError', { message: 'Você não tem permissão para mover este token.' });
-        }
-
-        const scene = await Scene.findById(tokenToMove.sceneId);
-        if (!scene) {
-          return socket.emit('tokenMoveError', { message: 'Cena não encontrada.' });
-        }
-
-        if (!isDM) {
-          const currentTurnEntry = scene.initiative.find(entry => entry.isCurrentTurn);
-          if (!currentTurnEntry || currentTurnEntry.tokenId?.toString() !== tokenToMove._id.toString()) {
-            return socket.emit('tokenMoveError', { message: 'Você só pode mover no seu turno.' });
-          }
-        }
-
-        const oldSquareId = tokenToMove.squareId;
-        if (oldSquareId === targetSquareId) return;
-
-        const populatedToken = await moveTokenService(tokenToMove as any, targetSquareId, scene, tokenToMove.canOverlap);
+        const { tableId } = data;
+        const { updated, oldSquareId } = await moveTokenForUser(userId, data);
+        if (!oldSquareId) return;
         io.to(tableId).emit('tokenMoved', {
-          _id: populatedToken._id.toString(),
+          _id: updated._id.toString(),
           oldSquareId,
-          squareId: populatedToken.squareId,
-          color: populatedToken.color,
-          ownerId: populatedToken.ownerId,
-          name: populatedToken.name,
-          imageUrl: populatedToken.imageUrl,
-          sceneId: populatedToken.sceneId ? populatedToken.sceneId.toString() : '',
-          movement: populatedToken.movement,
-          remainingMovement: populatedToken.remainingMovement,
-          size: populatedToken.size,
+          squareId: updated.squareId,
+          color: updated.color,
+          ownerId: updated.ownerId,
+          name: updated.name,
+          imageUrl: updated.imageUrl,
+          sceneId: updated.sceneId ? updated.sceneId.toString() : '',
+          movement: updated.movement,
+          remainingMovement: updated.remainingMovement,
+          size: updated.size,
         });
     } catch (error: any) {
         console.error('Erro ao processar requestMoveToken:', error.message);
@@ -117,17 +66,10 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   // Atribui novo dono a um token (apenas Mestre) para permitir controle ao jogador.
   const requestAssignToken = async (data: { tableId: string; tokenId: string; newOwnerId: string }) => {
     try {
-        const { tableId, tokenId, newOwnerId } = data;
-
         const userId = socket.data.user?.id;
-        const table = await getTableById(tableId);
-        if (!table) return;
-      assertUserIsDM(userId, table);
-
-        const updatedToken = await updateTokenService(
-          tokenId,
-          { ownerId: newOwnerId } as TokenUpdatePayload
-        );
+        if (!userId) return;
+        const { tableId } = data;
+        const updatedToken = await assignTokenOwnerForTable(userId, data);
 
         if (updatedToken) {
           io.to(tableId).emit('tokenOwnerUpdated', { 
@@ -143,43 +85,27 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   // Edita atributos do token (apenas Mestre). Se nome muda, reflete na iniciativa.
   const requestEditToken = async (data: { tableId: string; tokenId: string; name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean; canOverlap?: boolean }) => {
     try {
-      const { tableId, tokenId } = data;
       const userId = socket.data.user?.id;
       if (!userId) return;
-      const table = await getTableById(tableId);
-      if (!table) return;
-      assertUserIsDM(userId, table);
-      const token = await Token.findById(tokenId);
-      if (!token) return;
-      const updates: TokenUpdatePayload = {};
-      if (typeof data.name === 'string' && data.name.trim()) updates.name = data.name.trim();
-      if (typeof data.movement === 'number' && data.movement > 0) updates.movement = data.movement;
-      if (typeof data.imageUrl === 'string') updates.imageUrl = data.imageUrl.trim();
-      if (typeof data.ownerId === 'string' && data.ownerId) updates.ownerId = data.ownerId;
-      if (typeof data.size === 'string' && data.size) updates.size = data.size;
-      if (typeof data.canOverlap === 'boolean') updates.canOverlap = data.canOverlap;
-
-      const updated = await updateTokenService(tokenId, updates, { resetRemainingMovement: !!data.resetRemainingMovement });
-
-      if (updates.name && updated?.sceneId) {
-        const initiative = await syncInitiativeNameWithToken(updated.sceneId.toString(), updated._id.toString(), updated.name);
-        if (initiative) {
-          io.to(tableId).emit('initiativeUpdated', initiative);
-        }
+      const { tableId } = data;
+      const result = await editTokenForTable(userId, data);
+      if (!result?.updated) return;
+      const { updated, initiative } = result;
+      if (initiative) {
+        io.to(tableId).emit('initiativeUpdated', initiative);
       }
-
       io.to(tableId).emit('tokenUpdated', {
-        _id: updated?._id.toString(),
-        squareId: updated?.squareId,
-        color: updated?.color,
-        ownerId: updated?.ownerId,
-        name: updated?.name,
-        imageUrl: updated?.imageUrl,
-        tableId: updated?.tableId?.toString(),
-        sceneId: updated?.sceneId?.toString(),
-        movement: updated?.movement,
-        remainingMovement: updated?.remainingMovement,
-        size: updated?.size,
+        _id: updated._id.toString(),
+        squareId: updated.squareId,
+        color: updated.color,
+        ownerId: updated.ownerId,
+        name: updated.name,
+        imageUrl: updated.imageUrl,
+        tableId: updated.tableId?.toString(),
+        sceneId: updated.sceneId?.toString(),
+        movement: updated.movement,
+        remainingMovement: updated.remainingMovement,
+        size: updated.size,
       });
     } catch (error) {
       console.error('Erro ao editar token:', error);
@@ -189,38 +115,25 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   // Desfaz último movimento restaurando custo de deslocamento. Permite apenas Mestre ou dono.
   const requestUndoMove = async (data: { tableId: string, tokenId: string }) => {
     try {
-      const { tableId, tokenId } = data;
       const userId = socket.data.user?.id;
-      
-      const table = await getTableById(tableId);
-      if (!table) return;
-
-      const tokenToUndo = await Token.findById(tokenId);
-      if (!tokenToUndo) return;
-
-      // Validação de permissão
-      const isDM = table.dm.toString() === userId;
-      const isOwner = tokenToUndo.ownerId?.toString() === userId;
-      if (!isDM && !isOwner) return; // Silencioso: sem permissão
-
-      // Recalcula o custo para restaurar o movimento
-      const scene = await Scene.findById(tokenToUndo.sceneId);
-      if (!scene) return;
-      const previousSquare = tokenToUndo.squareId;
-      const populatedTokenToUndo = await undoLastMoveService(tokenToUndo as any, scene);
+      if (!userId) return;
+      const { tableId } = data;
+      const result = await undoTokenMoveForUser(userId, data);
+      if (!result) return;
+      const { updated, previousSquare } = result;
       io.to(tableId).emit('tokenMoved', {
-        _id: populatedTokenToUndo._id.toString(),
+        _id: updated._id.toString(),
         oldSquareId: previousSquare,
-        squareId: populatedTokenToUndo.squareId,
-        color: populatedTokenToUndo.color,
-        ownerId: populatedTokenToUndo.ownerId,
-        name: populatedTokenToUndo.name,
-        imageUrl: populatedTokenToUndo.imageUrl,
-        sceneId: populatedTokenToUndo.sceneId ? populatedTokenToUndo.sceneId.toString() : "",
-        movement: populatedTokenToUndo.movement,
-        remainingMovement: populatedTokenToUndo.remainingMovement,
-        savedToken: populatedTokenToUndo,
-        size: populatedTokenToUndo.size,
+        squareId: updated.squareId,
+        color: updated.color,
+        ownerId: updated.ownerId,
+        name: updated.name,
+        imageUrl: updated.imageUrl,
+        sceneId: updated.sceneId ? updated.sceneId.toString() : "",
+        movement: updated.movement,
+        remainingMovement: updated.remainingMovement,
+        savedToken: updated,
+        size: updated.size,
       });
 
     } catch (error) { 
