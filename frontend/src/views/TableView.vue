@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import draggable from 'vuedraggable';
 
 import { storeToRefs } from 'pinia';
 import { authToken, currentUser } from '../services/authService';
@@ -18,6 +17,12 @@ import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
 
 import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize } from '../types';
+
+type MeasurementTool = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
+type ToolMode = MeasurementTool | 'select' | 'none';
+type GridDisplayExpose = { $el: HTMLElement };
+type MiddleClickHandler = ((event: MouseEvent) => void) & { lastTriggerTs?: number };
+const isMeasurementTool = (tool: ToolMode): tool is MeasurementTool => tool !== 'select' && tool !== 'none';
 
 const route = useRoute();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
@@ -42,7 +47,7 @@ const newSceneName = ref('');
 const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena
 const isDmPanelCollapsed = ref(false);
-const gridDisplayRef = ref<any>(null);
+const gridDisplayRef = ref<GridDisplayExpose | null>(null);
 const mapImgRef = ref<HTMLImageElement | null>(null);
 const imageRenderedWidth = ref<number | null>(null);
 const imageRenderedHeight = ref<number | null>(null);
@@ -70,7 +75,7 @@ function setMapImageEl(el: HTMLImageElement | null) {
   mapImgRef.value = el;
 }
 
-function setGridDisplayInstance(instance: unknown) {
+function setGridDisplayInstance(instance: GridDisplayExpose | null) {
   gridDisplayRef.value = instance;
 }
 
@@ -78,17 +83,16 @@ function closeAssignMenu() {
   showAssignMenu.value = false;
 }
 
-const activeTool = ref<'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam' | 'none'>('none');
+const activeTool = ref<ToolMode>('none');
 const rulerStartPoint = ref<{ x: number; y: number } | null>(null);
 const rulerEndPoint = ref<{ x: number; y: number } | null>(null);
 const rulerDistance = ref('0.0m');
-const isMeasuring = computed(() => activeTool.value !== 'none' && activeTool.value !== 'select');
+const isMeasuring = computed(() => isMeasurementTool(activeTool.value));
 const coneOriginSquareId = ref<string | null>(null); // Origem área
 const coneAffectedSquares = ref<string[]>([]); // Quadrados afetados
-const coneLength = ref(9); // Comprimento padrão do cone (m)
 const selectedPersistentId = ref<string | null>(null);
 const previewMeasurement = ref<{
-  type: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
+  type: MeasurementTool;
   start: { x: number; y: number; };
   end: { x: number; y: number; };
   distance?: string;
@@ -115,6 +119,11 @@ const {
   auras,
   pings,
   connectionStatus,
+  pauseUntil,
+  transitionAt,
+  transitionMs,
+  userMeasurementColors,
+  clockSkewMs,
   // Getters
   isDM, 
   activeScene, 
@@ -134,10 +143,10 @@ const canUseMap = computed(() => isDM.value || sessionStatus.value === 'LIVE');
 const pauseInput = ref<number>(5); // default 5min
 const nowTs = ref<number>(Date.now());
 const pauseRemaining = computed(() => {
-  if (sessionStatus.value !== 'PAUSED' || !tableStore.pauseUntil) return 0;
-  const until = tableStore.pauseUntil?.getTime?.() || (tableStore.pauseUntil as any)?.valueOf?.() || 0;
+  if (sessionStatus.value !== 'PAUSED' || !pauseUntil.value) return 0;
+  const until = pauseUntil.value.getTime();
   // Corrige defasagem de relógio entre cliente e servidor
-  const skew = (tableStore as any).clockSkewMs || 0;
+  const skew = clockSkewMs.value || 0;
   const clientNowCorrected = nowTs.value + skew;
   const ms = Math.max(0, until - clientNowCorrected);
   return Math.ceil(ms / 1000);
@@ -170,12 +179,12 @@ onUnmounted(() => {
 });
 
 // Observa evento de transição vindo do servidor para todos os clientes
-watch(() => tableStore.transitionAt, (at) => {
+watch(transitionAt, (at) => {
   if (!at) return;
   showTransition.value = true;
   // tenta iniciar reprodução
   setTimeout(() => { transitionVideoRef.value?.play?.(); }, 0);
-  const duration = tableStore.transitionMs || 3000;
+  const duration = transitionMs.value || 3000;
   setTimeout(() => { showTransition.value = false; }, duration);
 });
 
@@ -229,7 +238,7 @@ function handleSetActiveScene(sceneId: string) {
 }
 
 function handleUpdateSessionStatus(newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED') {
-  const options: any = {};
+  const options: { pauseSeconds?: number } = {};
   if (newStatus === 'PAUSED') options.pauseSeconds = Math.max(0, Math.floor((pauseInput.value * 60) || 0));
   socketService.updateSessionStatus(tableId, newStatus, options);
 }
@@ -359,13 +368,6 @@ function handleRemoveFromInitiative(initiativeEntryId: string) {
 }
 
 
-function openEditTokenByEntry(entry: IInitiativeEntry) {
-  if (!entry.tokenId) return;
-  const tok = tokensOnMap.value.find(t => t._id === entry.tokenId) || null;
-  tokenBeingEdited.value = tok;
-  showTokenEditForm.value = !!tok;
-}
-
 function handleSaveTokenEdit(payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean }) {
   if (!tokenBeingEdited.value) return;
   socketService.editToken({ tableId, tokenId: tokenBeingEdited.value._id, ...payload });
@@ -383,7 +385,12 @@ function onInitiativeDragEnd() {
   }
 }
 
-function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
+function handleInitiativeReorder(newOrder: IInitiativeEntry[]) {
+  initiativeList.value = [...newOrder];
+  onInitiativeDragEnd();
+}
+
+function handleLeftClickOnSquare(square: GridSquare) {
   if (activeTool.value === 'ruler' || activeTool.value === 'cone') return;
   if (square.token) {
     selectedTokenId.value = (selectedTokenId.value === square.token._id) ? null : square.token._id;
@@ -393,11 +400,11 @@ function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
 }
 
 
-function handleMiddleClickFree(event: MouseEvent) {
+const handleMiddleClickFree: MiddleClickHandler = (event) => {
   if (event.button !== 1 || !activeSceneId.value) return;
   // Rate limit ping
-  if ((handleMiddleClickFree as any)._last && Date.now() - (handleMiddleClickFree as any)._last < 300) return;
-  (handleMiddleClickFree as any)._last = Date.now();
+  if (handleMiddleClickFree.lastTriggerTs && Date.now() - handleMiddleClickFree.lastTriggerTs < 300) return;
+  handleMiddleClickFree.lastTriggerTs = Date.now();
   // Coordenadas relativas ao grid interno
   const mapStage = event.currentTarget as HTMLElement;
   let viewportEl: HTMLElement | null = mapStage.querySelector('.grid-overlay .grid-viewport');
@@ -407,7 +414,7 @@ function handleMiddleClickFree(event: MouseEvent) {
   const x = (event.clientX - rect.left) / scale;
   const y = (event.clientY - rect.top) / scale;
   socketService.sendPing({ tableId, sceneId: activeSceneId.value, x, y, color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00') });
-}
+};
 
 // Mestre altera escala; jogadores recebem
 watch(metersPerSquare, (val, oldVal) => {
@@ -498,11 +505,6 @@ const auraForSelected = computed(() => selectedTokenId.value ? auras.value.find(
 const canRemoveAura = computed(() => Boolean(isDM.value && selectedToken.value && auraForSelected.value));
 // Editar aura: DM sempre; jogador só no seu turno
 const canAddAura = computed(() => Boolean((isDM.value || myActiveToken.value) && selectedTokenId.value && !isMeasuring.value));
-
-function openAuraDialogForToken(token: TokenInfo) {
-  auraDialogTokenId.value = token._id;
-  showAuraDialog.value = true;
-}
 
 function handleAuraSave(payload: { name: string; color: string; radiusMeters: number }) {
   if (!auraDialogTokenId.value || !activeSceneId.value) return;
@@ -619,7 +621,7 @@ async function handleDeleteScene(sceneId: string) {
         } else {
           // Sem cenas restantes
           // Zera mapa e ativos locais
-          (tableStore as any).currentMapUrl = null;
+          currentMapUrl.value = null;
         }
       }
       toast.success(data.message || 'Cena excluída.');
@@ -659,10 +661,11 @@ function handlePointerDown(event: PointerEvent) {
         y: (event.clientY - gridRect.top) / scale
       };
       // Determina o quadrado de origem baseado na posição local e usa o CENTRO dessa célula como ápice
-      const originSquare = getSquareIdFromLocalPoint(local.x, local.y);
-      coneOriginSquareId.value = originSquare;
-      const originCenter = originSquare ? getSquareCenterLocalPointFromId(originSquare) : local;
-  previewMeasurement.value = { type: activeTool.value as any, start: originCenter, end: originCenter };
+        const originSquare = getSquareIdFromLocalPoint(local.x, local.y);
+        coneOriginSquareId.value = originSquare;
+        const originCenter = originSquare ? getSquareCenterLocalPointFromId(originSquare) : local;
+        const measurementType = activeTool.value as MeasurementTool;
+        previewMeasurement.value = { type: measurementType, start: originCenter, end: originCenter };
       // Inicializa sem afetar nada (comprimento 0)
       coneAffectedSquares.value = [];
     }
@@ -1045,7 +1048,6 @@ function handlePointerUp(event: PointerEvent) {
     previewMeasurement.value = null; 
     // Limpeza dos quadrados pintados
     const canShareNow = isDM.value || !!myActiveToken.value;
-    const isAreaTool = (activeTool.value === 'cone' || activeTool.value === 'circle' || activeTool.value === 'square');
     if (!canShareNow) {
   // Não é turno do jogador: limpa prévia
       coneAffectedSquares.value = [];
@@ -1258,32 +1260,6 @@ function getSquareCenterLocalPointFromId(squareId: string): { x: number; y: numb
   return { x: col * cellW + cellW / 2, y: row * cellH + cellH / 2 };
 }
 
-function getMousePositionOnMap(event: PointerEvent): { x: number; y: number } | null {
-  if (!viewportRef.value) return null;
-
-  const viewportRect = viewportRef.value.getBoundingClientRect();
-  const viewportWidth = viewportRef.value.clientWidth;
-  const viewportHeight = viewportRef.value.clientHeight;
-
-  // Centro do viewport, que é a origem da transformação de escala
-  const centerX = viewportWidth / 2;
-  const centerY = viewportHeight / 2;
-
-  // Posição do mouse relativa ao viewport (a "mesa")
-  const mouseX = event.clientX - viewportRect.left;
-  const mouseY = event.clientY - viewportRect.top;
-
-  // Extrai os valores de pan e zoom do estado
-  const panX = viewTransform.value.x;
-  const scale = viewTransform.value.scale;
-  const panY = viewTransform.value.y;
-  
-  const worldX = (mouseX - centerX) / scale + centerX - (panX / scale);
-  const worldY = (mouseY - centerY) / scale + centerY - (panY / scale);
-
-  return { x: worldX, y: worldY };
-}
-
 // Arredonda metros para múltiplos de step
 function quantizeMeters(meters: number, step = 0.5): number {
   if (!isFinite(meters) || meters < 0) return 0;
@@ -1377,21 +1353,21 @@ function calculateCircleArea(originId: string, radiusMeters: number): string[] {
   const cols = gridWidth.value, rows = gridHeight.value;
   const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
   const getId = (x: number, y: number) => `sq-${y * cols + x}`;
-  let o = getCoords(originId);
+  const originCoords = getCoords(originId);
+  let centerX = originCoords.x + 0.5;
+  let centerY = originCoords.y + 0.5;
   // Multi-footprint: centro geométrico
   const square = squares.value.find(s => s.id === originId);
   if (square?.token) {
     const sizeMap: Record<TokenSize, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 } as const;
     const span = sizeMap[square.token.size as TokenSize] || 1;
     if (span > 1) {
-  // Anchor -> centro
-      o = getCoords(originId);
-      const ocx = o.x + (span / 2); // (0 + span)/2 => deslocamento do canto
-      const ocy = o.y + (span / 2);
-      return computeCircle(ocx, ocy);
+      // Anchor -> centro real do token
+      centerX = originCoords.x + (span / 2);
+      centerY = originCoords.y + (span / 2);
     }
   }
-  return computeCircle(o.x + 0.5, o.y + 0.5);
+  return computeCircle(centerX, centerY);
 
   function computeCircle(ocx: number, ocy: number): string[] {
     const maxDist = radiusSq + 0.5; // tolerância
@@ -1416,16 +1392,16 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   const cols = gridWidth.value, rows = gridHeight.value;
   const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
   const getId = (x: number, y: number) => `sq-${y * cols + x}`;
-  let o = getCoords(originId);
-  let centerX = o.x + 0.5;
-  let centerY = o.y + 0.5;
+  const originCoords = getCoords(originId);
+  let centerX = originCoords.x + 0.5;
+  let centerY = originCoords.y + 0.5;
   const square = squares.value.find(s => s.id === originId);
   if (square?.token) {
     const sizeMap: Record<TokenSize, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 } as const;
     const span = sizeMap[square.token.size as TokenSize] || 1;
     if (span > 1) {
-      centerX = o.x + (span / 2);
-      centerY = o.y + (span / 2);
+      centerX = originCoords.x + (span / 2);
+      centerY = originCoords.y + (span / 2);
     }
   }
   const minX = centerX - half - 0.001, maxX = centerX + half + 0.001; // tolerância
@@ -1515,7 +1491,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             :myActiveToken="myActiveToken"
             @edit-token="(id:string)=>{ const tok=tokensOnMap.find(t=>t._id===id)||null; tokenBeingEdited=tok; showTokenEditForm=!!tok; }"
             @remove-entry="(entryId:string)=>handleRemoveFromInitiative(entryId)"
-            @reorder="(list)=>{ initiativeList = list as any; onInitiativeDragEnd(); }"
+            @reorder="handleInitiativeReorder"
             @undo-move="handleUndoMove"
             @next-turn="handleNextTurn"
           />
@@ -1561,7 +1537,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :shared-measurements="sharedMeasurementList"
         :persistent-measurements="persistentsForActiveScene"
         :auras="auras"
-        :user-measurement-colors="tableStore.userMeasurementColors"
+        :user-measurement-colors="userMeasurementColors"
         :cone-affected-squares="coneAffectedSquares"
         :measurement-color="measurementColor"
         :current-turn-token-id="currentTurnTokenId"
