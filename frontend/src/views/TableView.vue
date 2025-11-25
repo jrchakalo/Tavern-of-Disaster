@@ -404,7 +404,7 @@ function onSceneReorder(updatedScenes: IScene[]) {
   onSceneDragEnd();
 }
 
-function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string, size: TokenSize }) {
+function createToken(payload: { name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null }) {
   if (targetSquareIdForToken.value && activeSceneId.value) {
   // Validação footprint local
     const sizeMap: Record<string, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 };
@@ -495,7 +495,7 @@ function handleRemoveFromInitiative(initiativeEntryId: string) {
 }
 
 
-function handleSaveTokenEdit(payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean }) {
+function handleSaveTokenEdit(payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: TokenSize; resetRemainingMovement?: boolean; canOverlap?: boolean; characterId?: string | null }) {
   if (!tokenBeingEdited.value) return;
   socketService.editToken({ tableId, tokenId: tokenBeingEdited.value._id, ...payload });
   showTokenEditForm.value = false;
@@ -1751,13 +1751,16 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     
     <TokenCreationForm
       v-if="showTokenForm && isDM"
-      :players="currentTable?.players || []" @create-token="createToken"
+      :players="currentTable?.players || []"
+      :characters="charactersForTable"
+      @create-token="createToken"
       @cancel="showTokenForm = false"
     />
     <TokenEditForm
       :open="showTokenEditForm"
       :token="tokenBeingEdited"
       :players="currentTable?.players || []"
+      :characters="charactersForTable"
       @close="showTokenEditForm = false; tokenBeingEdited = null;"
       @save="handleSaveTokenEdit"
     />

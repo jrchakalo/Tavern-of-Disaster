@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
-import { PlayerInfo, TokenInfo, tokenSizes, TokenSize } from '../types';
+import { ref, watch } from 'vue';
+import { PlayerInfo, TokenInfo, tokenSizes, TokenSize, Character } from '../types';
 
 interface Props {
   token: TokenInfo | null;
   players: PlayerInfo[];
   open: boolean;
+  characters: Character[];
 }
 const props = defineProps<Props>();
 
-const emit = defineEmits<{ (e:'close'):void; (e:'save', payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: TokenSize; resetRemainingMovement?: boolean; canOverlap?: boolean }): void; }>();
+const emit = defineEmits<{ (e:'close'):void; (e:'save', payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: TokenSize; resetRemainingMovement?: boolean; canOverlap?: boolean; characterId?: string | null }): void; }>();
 
 const name = ref('');
 const movement = ref<number>(9);
@@ -18,6 +19,7 @@ const ownerId = ref('');
 const size = ref<TokenSize>('Pequeno/Médio');
 const resetRemainingMovement = ref(false);
 const canOverlap = ref(false);
+const selectedCharacterId = ref<string | null>(null);
 
 watch(() => props.token, (t) => {
   if (t) {
@@ -29,11 +31,24 @@ watch(() => props.token, (t) => {
     resetRemainingMovement.value = false;
   // @ts-ignore
   canOverlap.value = (t as any).canOverlap || false;
+    selectedCharacterId.value = t.characterId || null;
+  } else {
+    selectedCharacterId.value = null;
   }
 }, { immediate: true });
 
+watch(
+  () => props.characters.map(character => character._id),
+  (ids) => {
+    if (selectedCharacterId.value && !ids.includes(selectedCharacterId.value)) {
+      selectedCharacterId.value = null;
+    }
+  },
+  { immediate: true }
+);
+
 function submit() {
-  emit('save', { name: name.value, movement: movement.value, imageUrl: imageUrl.value, ownerId: ownerId.value, size: size.value, resetRemainingMovement: resetRemainingMovement.value, canOverlap: canOverlap.value });
+  emit('save', { name: name.value, movement: movement.value, imageUrl: imageUrl.value, ownerId: ownerId.value, size: size.value, resetRemainingMovement: resetRemainingMovement.value, canOverlap: canOverlap.value, characterId: selectedCharacterId.value });
 }
 </script>
 
@@ -58,6 +73,12 @@ function submit() {
       <label>Tamanho</label>
       <select v-model="size">
         <option v-for="s in tokenSizes" :key="s" :value="s">{{ s }}</option>
+      </select>
+
+      <label>Ficha vinculada</label>
+      <select v-model="selectedCharacterId">
+        <option :value="null">Nenhuma</option>
+        <option v-for="character in characters" :key="character._id" :value="character._id">{{ character.name }}</option>
       </select>
 
       <label class="reset-row">
