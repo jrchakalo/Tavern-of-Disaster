@@ -16,6 +16,7 @@ import InitiativePanel from '../components/InitiativePanel.vue';
 import Icon from '../components/Icon.vue';
 import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
+import CharacterSheet from '../components/CharacterSheet.vue';
 
 import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character } from '../types';
 
@@ -142,6 +143,10 @@ const charactersForTable = computed(() => characterStore.charactersForTable(tabl
 const activeCharacter = computed<Character | null>(() => {
   if (!activeCharacterId.value) return null;
   return charactersForTable.value.find((char) => char._id === activeCharacterId.value) || null;
+});
+const isActiveCharacterOwner = computed(() => {
+  if (!activeCharacter.value || !currentUser.value) return false;
+  return activeCharacter.value.ownerId === currentUser.value.id;
 });
 const characterFetchScope = computed(() => (isDM.value ? 'dm' : 'player'));
 const isCharacterListLoading = computed(() => Boolean(characterLoadingMap.value[tableId]));
@@ -293,6 +298,33 @@ async function handleQuickCreateCharacter() {
   } catch (error) {
     console.error('[characters] erro ao criar', error);
     const message = error instanceof Error ? error.message : 'Não foi possível criar a ficha.';
+    toast.error(message);
+  }
+}
+
+async function handleCharacterSave(payload: Partial<Character>) {
+  if (!tableId || !activeCharacterId.value) return;
+  try {
+    await characterStore.updateCharacter(tableId, activeCharacterId.value, payload);
+    toast.success('Ficha atualizada.');
+  } catch (error) {
+    console.error('[characters] erro ao salvar', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível salvar a ficha.';
+    toast.error(message);
+  }
+}
+
+async function handleCharacterDelete() {
+  if (!tableId || !activeCharacterId.value) return;
+  const confirmed = window.confirm('Remover esta ficha? Esta ação não pode ser desfeita.');
+  if (!confirmed) return;
+  try {
+    await characterStore.deleteCharacter(tableId, activeCharacterId.value);
+    toast.success('Ficha removida.');
+    closeCharacterSheet();
+  } catch (error) {
+    console.error('[characters] erro ao excluir', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível remover a ficha.';
     toast.error(message);
   }
 }
@@ -1740,6 +1772,15 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @save="handleAuraSave"
       @remove="handleAuraRemove"
       @close="showAuraDialog = false; auraDialogTokenId = null;"
+    />
+    <CharacterSheet
+      :open="showCharacterSheet"
+      :character="activeCharacter"
+      :isDM="isDM"
+      :isOwner="isActiveCharacterOwner"
+      @close="closeCharacterSheet"
+      @save="handleCharacterSave"
+      @delete="handleCharacterDelete"
     />
   </div>
 </template>
