@@ -9,7 +9,7 @@ import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
 import { useTableStore } from '../stores/tableStore';
 
-import GridDisplay from '../components/GridDisplay.vue';
+import MapViewport from '../components/MapViewport.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import TokenEditForm from '../components/TokenEditForm.vue';
 import InitiativePanel from '../components/InitiativePanel.vue';
@@ -62,6 +62,22 @@ function updateImageDimensions() {
   }
 }
 
+function setViewportEl(el: HTMLDivElement | null) {
+  viewportRef.value = el;
+}
+
+function setMapImageEl(el: HTMLImageElement | null) {
+  mapImgRef.value = el;
+}
+
+function setGridDisplayInstance(instance: unknown) {
+  gridDisplayRef.value = instance;
+}
+
+function closeAssignMenu() {
+  showAssignMenu.value = false;
+}
+
 const activeTool = ref<'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam' | 'none'>('none');
 const rulerStartPoint = ref<{ x: number; y: number } | null>(null);
 const rulerEndPoint = ref<{ x: number; y: number } | null>(null);
@@ -106,6 +122,8 @@ const {
   currentTurnTokenId, 
   myActiveToken 
 } = storeToRefs(tableStore);
+
+const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
 
 // Transição curta antes do LIVE
 const showTransition = ref(false);
@@ -1527,97 +1545,57 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </aside>
 
     <main class="battlemap-main">
-      <div 
+      <MapViewport
         v-if="canUseMap"
-        class="viewport" :class="{ measuring: isMeasuring }"
-        ref="viewportRef"
-        @wheel.prevent="handleWheel"
-        @pointerdown="handlePointerDown"
-        @pointermove="handlePointerMove"
-        @pointerup="handlePointerUp"
-        @mouseleave="handlePointerUp" style="touch-action: none;" >
-
-        
-        <template v-if="sessionStatus === 'LIVE' || isDM">
-          <div 
-            class="map-stage"
-            @mousedown.middle.prevent="handleMiddleClickFree"
-            :style="{ transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale})` }"
-          >
-            <img 
-              v-if="currentMapUrl" 
-              :src="currentMapUrl" 
-              alt="Mapa de Batalha" 
-              class="map-image" 
-              draggable="false" 
-              @dragstart.prevent 
-              ref="mapImgRef" 
-              @load="updateImageDimensions" />
-            <div
-              v-else
-              class="map-placeholder"
-              style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center; max-width:80%; pointer-events:none;"
-            >
-              <p>Nenhum mapa definido para esta cena.</p>
-              <p v-if="isDM">Use o Painel do Mestre para definir uma imagem.</p>
-            </div>
-
-            <GridDisplay
-              v-if="currentMapUrl && activeScene?.type === 'battlemap'"
-              ref="gridDisplayRef"
-              class="grid-overlay"
-              :isMeasuring="isMeasuring"
-              :viewScale="viewTransform.scale"
-              :metersPerSquare="metersPerSquare"
-              :measureStartPoint="rulerStartPoint"
-              :measureEndPoint="rulerEndPoint"
-              :measuredDistance="rulerDistance"
-              :previewMeasurement="previewMeasurement"
-              :sharedMeasurements="Object.values(sharedMeasurements)"
-              :persistentMeasurements="persistentsForActiveScene"
-              :auras="auras"
-              :userColorMap="tableStore.userMeasurementColors"
-              :areaAffectedSquares="coneAffectedSquares"
-              :measurementColor="measurementColor"
-              :currentTurnTokenId="currentTurnTokenId"
-              :squares="squares"
-              :gridWidth="gridWidth" 
-              :gridHeight="gridHeight"
-              :imageWidth="imageRenderedWidth || undefined"
-              :imageHeight="imageRenderedHeight || undefined"
-              :selectedTokenId="selectedTokenId"
-              :isDM="isDM"
-              :currentUserId="currentUser?.id || null"
-              :selectedPersistentId="selectedPersistentId"
-              :pings="pings"
-              @square-right-click="handleRightClick"
-              @square-left-click="handleLeftClickOnSquare"
-              @token-move-requested="handleTokenMoveRequest"
-              @remove-persistent="handleRemovePersistent"
-              @select-persistent="handleSelectPersistent"
-              @viewport-contextmenu="handleViewportContextMenu"
-              @shape-contextmenu="handleShapeContextMenu"
-            />
-          </div>
-        </template>
-
-        <div 
-          v-if="showAssignMenu" 
-          class="context-menu" 
-          :style="{ top: `${assignMenuPosition.y}px`, left: `${assignMenuPosition.x}px` }"
-          @click.stop 
-          @contextmenu.prevent
-          @pointerdown.stop
-        >
-          <h4>Atribuir "{{ assignMenuTargetToken?.name }}"</h4>
-          <ul>
-            <li v-for="player in currentTable?.players" :key="player._id" @click="handleAssignToken(player._id)">
-              {{ player.username }}
-            </li>
-          </ul>
-          <button @click="showAssignMenu = false">Fechar</button>
-        </div>
-      </div>
+        :is-measuring="isMeasuring"
+        :view-transform="viewTransform"
+        :current-map-url="currentMapUrl"
+        :active-scene-type="activeScene?.type"
+        :grid-width="gridWidth"
+        :grid-height="gridHeight"
+        :meters-per-square="metersPerSquare"
+        :ruler-start-point="rulerStartPoint"
+        :ruler-end-point="rulerEndPoint"
+        :ruler-distance="rulerDistance"
+        :preview-measurement="previewMeasurement"
+        :shared-measurements="sharedMeasurementList"
+        :persistent-measurements="persistentsForActiveScene"
+        :auras="auras"
+        :user-measurement-colors="tableStore.userMeasurementColors"
+        :cone-affected-squares="coneAffectedSquares"
+        :measurement-color="measurementColor"
+        :current-turn-token-id="currentTurnTokenId"
+        :squares="squares"
+        :image-rendered-width="imageRenderedWidth"
+        :image-rendered-height="imageRenderedHeight"
+        :selected-token-id="selectedTokenId"
+        :is-dm="isDM"
+        :current-user-id="currentUser?.id || null"
+        :selected-persistent-id="selectedPersistentId"
+        :pings="pings"
+        :show-assign-menu="showAssignMenu"
+        :assign-menu-position="assignMenuPosition"
+        :assign-menu-target-token="assignMenuTargetToken"
+        :players="currentTable?.players || []"
+        :map-image-ref-setter="setMapImageEl"
+        :viewport-ref-setter="setViewportEl"
+        :grid-display-ref-setter="setGridDisplayInstance"
+        :on-wheel="handleWheel"
+        :on-pointer-down="handlePointerDown"
+        :on-pointer-move="handlePointerMove"
+        :on-pointer-up="handlePointerUp"
+        :on-middle-click="handleMiddleClickFree"
+        :on-square-right-click="handleRightClick"
+        :on-square-left-click="handleLeftClickOnSquare"
+        :on-token-move-request="handleTokenMoveRequest"
+        :on-remove-persistent="handleRemovePersistent"
+        :on-select-persistent="handleSelectPersistent"
+        :on-viewport-contextmenu="handleViewportContextMenu"
+        :on-shape-contextmenu="handleShapeContextMenu"
+        :on-image-load="updateImageDimensions"
+        :on-assign-token="handleAssignToken"
+        :on-close-assign-menu="closeAssignMenu"
+      />
       <div v-else-if="!isDM && (sessionStatus === 'PREPARING' || sessionStatus === 'PAUSED' || sessionStatus === 'ENDED')" class="session-overlay" :class="`mode-${sessionStatus.toLowerCase()}`">
         <div class="overlay-card surface">
           <template v-if="sessionStatus === 'PREPARING'">
@@ -1857,22 +1835,6 @@ panel h2 {
 .scale-control input {
   width: 120px;
 }
-.viewport {
-  width: 100%;
-  height: calc(100dvh - 140px);
-  max-width: 1600px;
-  background: var(--color-surface);
-  border: 10px solid rgba(0 0 0 / 0.5);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  position: relative; 
-  cursor: grab;
-  box-shadow: var(--elev-2);
-}
-@media (max-width: 900px) {
-  /* Fix mobile: use large viewport height so the map doesn't stretch/shrink on scroll */
-  .viewport { height: calc(100lvh - 240px); }
-}
 .session-overlay {
   display:flex; align-items:center; justify-content:center; height:70vh; width:100%;
 }
@@ -1893,34 +1855,6 @@ panel h2 {
 .session-btn.session-end { margin-top: 15px; background: var(--color-danger); color: var(--color-text); }
 
 .transition-overlay { position: fixed; inset:0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,.6); z-index: 100; }
-.viewport:active {
-  cursor: grabbing;
-}
-.viewport.measuring { cursor: crosshair; }
-.map-stage {
-  width: 100%;
-  height: 100%;
-  position: relative; /* Para que a imagem e o grid se alinhem a ele */
-  transition: transform 0.1s ease-out; /* Transição suave para o zoom */
-  overflow: hidden; /* Clipa tanto vertical quanto horizontal */
-  transform-origin: center center;
-}
-.map-image,
-.grid-overlay {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  max-width: 100%;
-  max-height: 100%;
-  user-select: none;
-}
-.map-image {
-  object-fit: contain;
-  user-select: none;
-  pointer-events: none;
-  display: block;
-}
 .reset-view-btn { padding: 8px 12px; background: var(--color-surface-alt); color: var(--color-text); border:1px solid var(--color-border); border-radius: var(--radius-sm); cursor:pointer; font: inherit; display:block; margin: 10px auto 0; }
 .reset-view-btn.below { margin-top: 10px; }
 .reset-view-btn:hover { background: var(--color-surface); }
@@ -2020,12 +1954,6 @@ panel h2 {
   cursor: pointer;
   font-size: 1.1em;
 }
-.context-menu { position:absolute; background: var(--color-surface-alt); border:1px solid var(--color-border); border-radius: var(--radius-sm); padding:5px 0; z-index:1000; min-width:150px; box-shadow: var(--elev-2); }
-.context-menu ul { list-style: none; padding: 0; margin: 0; }
-.context-menu li { padding:8px 12px; cursor:pointer; color: var(--color-text); font-size: var(--text-sm); }
-.context-menu li:hover { background: var(--color-accent); color: var(--color-text); }
-.context-menu button { background:none; border:none; color: var(--color-text-muted); width:100%; padding:8px; margin-top:5px; border-top:1px solid var(--color-border); cursor:pointer; font:inherit; }
-.context-menu button:hover { color: var(--color-text); background: var(--color-surface); }
 .turn-status-panel { margin-top:20px; background: var(--color-surface); padding:15px; border-radius: var(--radius-md); border:1px solid var(--color-border); text-align:center; width:100%; max-width:400px; box-shadow: var(--elev-1); }
 .turn-status-panel h3 { margin-top:0; color: var(--color-accent); font-family: var(--font-display); letter-spacing:.5px; }
 .initiative-list li {
@@ -2058,7 +1986,6 @@ panel h2 {
 
 @media (max-width: 900px) {
   .dm-panel { position: fixed; left: 10px; right: 10px; top: 10px; width: auto; max-height: calc(100dvh - 20px); }
-  .viewport { border-width: 6px; }
   .battlemap-main { padding-bottom: 80px; } /* breathing room for docked toolbar */
 }
 </style>
