@@ -19,6 +19,8 @@ import {
   PersistentMeasurement,
   Aura,
   clearAurasForScene,
+  clearMeasurementsForScene,
+  clearAllForTable,
 } from '../socketHandlers/measurementStore';
 import { assertCondition } from './serviceErrors';
 
@@ -98,7 +100,12 @@ export function clearEphemeralMeasurements(tableId: string) {
   clearMeasurementsForTable(tableId);
 }
 
-export async function addPersistentMeasurement(user: AuthUser, tableId: string, sceneId: string, payload: Measurement & { id?: string }) {
+export async function addPersistentMeasurement(
+  user: AuthUser,
+  tableId: string,
+  sceneId: string,
+  payload: Omit<Measurement, 'userId' | 'username'> & { id?: string }
+) {
   const table = await loadTable(tableId);
   const isDM = table.dm._id.toString() === user.id;
   const allowed = isDM || (await isUserTurnOwner(user.id, sceneId));
@@ -128,11 +135,17 @@ export async function removePersistentMeasurement(user: AuthUser, tableId: strin
 }
 
 export async function clearAllMeasurements(tableId: string, sceneId?: string) {
-  clearMeasurementsForTable(tableId);
   if (sceneId) {
+    clearMeasurementsForScene(tableId, sceneId);
     clearPersistentsForScene(tableId, sceneId);
     clearAurasForScene(tableId, sceneId);
+  } else {
+    clearMeasurementsForTable(tableId);
   }
+}
+
+export function clearTableMeasurementState(tableId: string) {
+  clearAllForTable(tableId);
 }
 
 export async function upsertTokenAura(user: AuthUser, tableId: string, sceneId: string, tokenId: string, data: { name: string; color: string; radiusMeters: number; difficultTerrain?: boolean }) {

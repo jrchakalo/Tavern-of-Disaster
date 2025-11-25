@@ -26,7 +26,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
         distance,
         type,
         affectedSquares,
-        color,
+        color: color || '#ff8c00',
         sceneId,
       });
       if (!measurement) return;
@@ -65,6 +65,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       const { tableId, sceneId, payload } = data;
       const persistent = await addPersistentMeasurement(user, tableId, sceneId, {
         ...payload,
+        color: payload.color || '#ff8c00',
         sceneId,
       });
   io.to(tableId).emit('persistentMeasurementAdded', {

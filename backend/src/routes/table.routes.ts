@@ -5,7 +5,7 @@ import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
 import Table from '../models/Table.model';
 import { createScene as createSceneService, renameScene, deleteScene as deleteSceneService, createDefaultScene } from '../services/sceneService';
 import { addPlayerToTable, removePlayerFromTable, getTableById, assertUserIsDM, deleteTableAndDependents } from '../services/tableService';
-import { clearAllForTable as clearMeasurementStateForTable } from '../socketHandlers/measurementStore';
+import { clearAllMeasurements, clearTableMeasurementState } from '../services/measurementService';
 
 const router = Router();
 
@@ -158,7 +158,8 @@ router.delete('/:tableId/scenes/:sceneId', authMiddleware, (async (req: AuthRequ
         if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
         assertUserIsDM(userId, table);
 
-    const result = await deleteSceneService(table as any, sceneId);
+  const result = await deleteSceneService(table as any, sceneId);
+  await clearAllMeasurements(tableId, sceneId);
 
     res.status(200).json({ 
       message: 'Cena excluída com sucesso.', 
@@ -241,7 +242,7 @@ router.delete('/:tableId', authMiddleware, (async (req: AuthRequest, res) => {
     if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
     if (table.dm.toString() !== userId) return res.status(403).json({ message: 'Apenas o Mestre pode excluir a mesa.' });
     await deleteTableAndDependents(tableId);
-    clearMeasurementStateForTable(tableId);
+    clearTableMeasurementState(tableId);
     res.json({ message: 'Mesa excluída.' });
   } catch (error) {
     console.error('Erro ao excluir mesa:', error);

@@ -39,6 +39,7 @@ export function removeMeasurement(tableId: string, userId: string) {
 export function clearMeasurementsForTable(tableId: string) {
   if (tableMeasurements[tableId]) {
     delete tableMeasurements[tableId];
+    markActivity(tableId);
   }
 }
 
@@ -46,8 +47,28 @@ export function clearAllForUser(userId: string) {
   Object.keys(tableMeasurements).forEach(tid => {
     if (tableMeasurements[tid] && tableMeasurements[tid][userId]) {
       delete tableMeasurements[tid][userId];
+      if (Object.keys(tableMeasurements[tid]).length === 0) {
+        delete tableMeasurements[tid];
+      }
+      markActivity(tid);
     }
   });
+}
+
+export function clearMeasurementsForScene(tableId: string, sceneId: string) {
+  const tableEntries = tableMeasurements[tableId];
+  if (!tableEntries) return;
+  let modified = false;
+  Object.entries(tableEntries).forEach(([userId, measurement]) => {
+    if (measurement.sceneId === sceneId) {
+      delete tableEntries[userId];
+      modified = true;
+    }
+  });
+  if (modified) {
+    if (Object.keys(tableEntries).length === 0) delete tableMeasurements[tableId];
+    markActivity(tableId);
+  }
 }
 
 export function getTablesForUser(userId: string): string[] {

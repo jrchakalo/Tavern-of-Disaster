@@ -38,9 +38,13 @@ server.listen(port, () => {
   console.log(`Server rodando em http://localhost:${port}`);
 });
 
-setInterval(() => {
-  cleanupInactiveTables(measurementIdleTtlMs);
-}, measurementCleanupIntervalMs);
+if (measurementIdleTtlMs > 0 && measurementCleanupIntervalMs > 0) {
+  setInterval(() => {
+    cleanupInactiveTables(measurementIdleTtlMs);
+  }, measurementCleanupIntervalMs);
+} else {
+  console.warn('[measurement] Cleanup desabilitado; verifique as variáveis MEASUREMENT_IDLE_TTL_MS e MEASUREMENT_CLEANUP_INTERVAL_MS');
+}
 
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
