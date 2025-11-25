@@ -38,7 +38,7 @@ export function registerTableHandlers(io: Server, socket: Socket) {
         const sessionState = await buildSessionState(tableId);
         if (!sessionState) return;
         socket.emit('initialSessionState', sessionState);
-        const activeSceneId = sessionState.activeScene?._id?.toString();
+        const activeSceneId = sessionState.activeScene?._id ?? sessionState.table.activeSceneId ?? null;
         if (activeSceneId) {
             const persistents = listScenePersistents(tableId, activeSceneId);
             socket.emit('persistentsListed', { sceneId: activeSceneId, items: persistents });

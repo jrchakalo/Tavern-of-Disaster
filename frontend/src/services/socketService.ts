@@ -2,7 +2,7 @@ import { toast } from './toast';
 import { io, Socket } from 'socket.io-client';
 import { useTableStore } from '../stores/tableStore';
 import { authToken } from './authService';
-import type { TokenInfo, IScene, IInitiativeEntry, PlayerInfo, TokenSize } from '../types';
+import type { TokenInfo, IInitiativeEntry, PlayerInfo, TokenSize, SessionStateDTO, SceneDTO, InitiativeEntryDTO } from '../types';
 
 class SocketService {
   private socket: Socket | null = null;
@@ -24,8 +24,8 @@ class SocketService {
     });
 
   // ---- Recepção de eventos do servidor ----
-    this.socket.on('initialSessionState', (data) => this.store.setInitialState(data));
-    this.socket.on('sessionStateUpdated', (data) => this.store.updateSessionState(data));
+    this.socket.on('initialSessionState', (data: SessionStateDTO) => this.store.setInitialState(data));
+    this.socket.on('sessionStateUpdated', (data: SessionStateDTO) => this.store.updateSessionState(data));
     this.socket.on('tokenPlaced', (data: TokenInfo) => this.store.placeToken(data));
     this.socket.on('tokenMoved', (data: TokenInfo & { oldSquareId: string }) => this.store.moveToken(data));
     this.socket.on('tokenRemoved', (data: { tokenId: string }) => { 
@@ -35,8 +35,8 @@ class SocketService {
     this.socket.on('tokenOwnerUpdated', (data: { tokenId: string, newOwner: PlayerInfo }) => this.store.updateTokenOwner(data.tokenId, data.newOwner));
   this.socket.on('tokenUpdated', (data: TokenInfo) => this.store.applyTokenUpdate(data));
     this.socket.on('tokensUpdated', (data: TokenInfo[]) => this.store.updateAllTokens(data));
-  this.socket.on('initiativeUpdated', (data: IInitiativeEntry[]) => { this.store.initiativeList = data; });
-    this.socket.on('sceneListUpdated', (data: IScene[]) => { this.store.scenes = data; });
+  this.socket.on('initiativeUpdated', (data: InitiativeEntryDTO[]) => { this.store.setInitiativeFromDTO(data); });
+    this.socket.on('sceneListUpdated', (data: SceneDTO[]) => { this.store.setScenesFromDTO(data); });
     this.socket.on('sessionStatusUpdated', (data: { status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'; pauseUntil?: string | null; serverNowMs?: number }) => {
       this.store.sessionStatus = data.status;
       this.store.pauseUntil = data.pauseUntil ? new Date(data.pauseUntil) : null;

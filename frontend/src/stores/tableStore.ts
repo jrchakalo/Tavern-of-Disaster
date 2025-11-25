@@ -1,8 +1,117 @@
 import { defineStore } from 'pinia';
 import type { Ref, ComputedRef } from 'vue';
 import { ref, computed } from 'vue';
-import type { IScene, ITable, IInitiativeEntry, GridSquare, TokenInfo, PlayerInfo, AuraInfo } from '../types';
+import { tokenSizes } from '../types';
+import type {
+    IScene,
+    ITable,
+    IInitiativeEntry,
+    GridSquare,
+    TokenInfo,
+    PlayerInfo,
+    AuraInfo,
+    SessionStateDTO,
+    SceneDTO,
+    TokenDTO,
+    InitiativeEntryDTO,
+    TableInfoDTO,
+    MeasurementDTO,
+    AuraDTO,
+} from '../types';
 import { currentUser } from '../services/authService';
+
+const DEFAULT_GRID = 30;
+const DEFAULT_METERS_PER_SQUARE = 1.5;
+
+function normalizeSceneType(type?: string): 'battlemap' | 'image' {
+    return type === 'image' ? 'image' : 'battlemap';
+}
+
+function mapTableDTO(dto: TableInfoDTO): ITable {
+    return {
+        _id: dto._id,
+        name: dto.name,
+        dm: dto.dm,
+        players: dto.players,
+        inviteCode: dto.inviteCode,
+        status: dto.status,
+        activeSceneId: dto.activeSceneId ?? null,
+        pauseUntil: dto.pauseUntil,
+    };
+}
+
+function mapSceneDTO(dto: SceneDTO): IScene {
+    return {
+        _id: dto._id,
+        tableId: dto.tableId,
+        name: dto.name,
+        imageUrl: dto.imageUrl,
+        gridWidth: dto.gridWidth ?? DEFAULT_GRID,
+        gridHeight: dto.gridHeight ?? DEFAULT_GRID,
+        type: normalizeSceneType(dto.type),
+        initiative: [],
+        metersPerSquare: dto.metersPerSquare ?? DEFAULT_METERS_PER_SQUARE,
+    };
+}
+
+function toTokenSize(value: string): TokenInfo['size'] {
+    return tokenSizes.includes(value as any) ? (value as TokenInfo['size']) : 'Pequeno/Médio';
+}
+
+function mapTokenDTO(dto: TokenDTO): TokenInfo {
+    return {
+        _id: dto._id,
+        tableId: dto.tableId,
+        squareId: dto.squareId,
+        color: dto.color,
+        ownerId: dto.owner,
+        name: dto.name,
+        imageUrl: dto.imageUrl,
+        sceneId: dto.sceneId || '',
+        movement: dto.movement,
+        remainingMovement: dto.remainingMovement,
+        size: toTokenSize(dto.size),
+        canOverlap: dto.canOverlap,
+    };
+}
+
+function mapInitiativeDTO(dto: InitiativeEntryDTO): IInitiativeEntry {
+    return {
+        _id: dto._id,
+        characterName: dto.characterName,
+        tokenId: dto.tokenId,
+        isCurrentTurn: dto.isCurrentTurn,
+    };
+}
+
+function mapMeasurementDTO(dto: MeasurementDTO) {
+    return {
+        id: dto.id ?? `${dto.userId}-${dto.sceneId}`,
+        userId: dto.userId,
+        username: dto.username,
+        start: dto.start,
+        end: dto.end,
+        distance: dto.distance,
+        color: dto.color,
+        type: dto.type,
+        affectedSquares: dto.affectedSquares,
+        sceneId: dto.sceneId,
+    };
+}
+
+function mapAuraDTO(dto: AuraDTO): AuraInfo {
+    return {
+        id: dto.id,
+        tokenId: dto.tokenId,
+        tableId: dto.tableId,
+        sceneId: dto.sceneId,
+        name: dto.name,
+        color: dto.color,
+        radiusMeters: dto.radiusMeters,
+        ownerId: dto.ownerId,
+        difficultTerrain: dto.difficultTerrain,
+    };
+}
 
 export const useTableStore = defineStore('table', () => {
     // STATE
@@ -55,6 +164,14 @@ export const useTableStore = defineStore('table', () => {
             sceneId: string;
         }>> = ref([]);
 
+    function setScenesFromDTO(sceneDtos: SceneDTO[]) {
+        scenes.value = sceneDtos.map(mapSceneDTO);
+    }
+
+    function setInitiativeFromDTO(entries: InitiativeEntryDTO[]) {
+        initiativeList.value = entries.map(mapInitiativeDTO);
+    }
+
     // GETTERS
     const isDM: ComputedRef<boolean> = computed(() => {
       return currentUser.value?.id === currentTable.value?.dm._id;
@@ -99,33 +216,60 @@ export const useTableStore = defineStore('table', () => {
         squares.value = newSquares;
     }
 
-    function setInitialState(data: { tableInfo: ITable; activeScene: IScene | null; tokens: TokenInfo[]; allScenes: IScene[] }) {
-        currentTable.value = data.tableInfo;
-        scenes.value = data.allScenes;
-        activeSceneId.value = data.activeScene?._id || null;
-        currentMapUrl.value = data.activeScene?.imageUrl || null;
-        initiativeList.value = data.activeScene?.initiative || [];
-    sessionStatus.value = data.tableInfo.status as 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED';
-    pauseUntil.value = (data.tableInfo as any).pauseUntil ? new Date((data.tableInfo as any).pauseUntil) : null;
-    gridWidth.value = data.activeScene?.gridWidth ?? 30;
-    gridHeight.value = data.activeScene?.gridHeight ?? 30;
-    metersPerSquare.value = data.activeScene?.metersPerSquare ?? 1.5;
-    _rebuildGridRectangular(gridWidth.value, gridHeight.value, data.tokens);
-    auras.value = [];
+    function setPersistentsFromDTO(items: MeasurementDTO[], sceneId: string | null) {
+        if (!sceneId) {
+            persistentMeasurements.value = [];
+            return;
+        }
+        persistentMeasurements.value = items
+            .filter(item => item.sceneId === sceneId)
+            .map(mapMeasurementDTO) as any;
     }
 
-    function updateSessionState(newState: { activeScene: IScene | null, tokens: TokenInfo[] }) {
-        activeSceneId.value = newState.activeScene?._id || null;
-        currentMapUrl.value = newState.activeScene?.imageUrl || null;
-        initiativeList.value = newState.activeScene?.initiative || [];
-    gridWidth.value = newState.activeScene?.gridWidth ?? 30;
-    gridHeight.value = newState.activeScene?.gridHeight ?? 30;
-    metersPerSquare.value = newState.activeScene?.metersPerSquare ?? metersPerSquare.value;
-        _rebuildGridRectangular(gridWidth.value, gridHeight.value, newState.tokens);
-    // Ao mudar de cena limpamos medições efêmeras (escopo por cena)
-    sharedMeasurements.value = {};
-    auras.value = [];
-    // Persistentes são substituídas via evento específico (evita condição de corrida)
+    function setAurasFromDTO(items: AuraDTO[], sceneId: string | null) {
+        if (!sceneId) {
+            auras.value = [];
+            return;
+        }
+        auras.value = items
+            .filter(item => item.sceneId === sceneId)
+            .map(mapAuraDTO);
+    }
+
+    function applySessionSnapshot(snapshot: SessionStateDTO) {
+        currentTable.value = mapTableDTO(snapshot.table);
+        scenes.value = snapshot.scenes.map(mapSceneDTO);
+        const nextActiveSceneId = snapshot.activeScene?._id || snapshot.table.activeSceneId || null;
+        activeSceneId.value = nextActiveSceneId;
+        currentMapUrl.value = snapshot.activeScene?.imageUrl || null;
+        const derivedGridWidth = snapshot.activeScene?.gridWidth ?? DEFAULT_GRID;
+        const derivedGridHeight = snapshot.activeScene?.gridHeight ?? DEFAULT_GRID;
+        gridWidth.value = derivedGridWidth;
+        gridHeight.value = derivedGridHeight;
+        metersPerSquare.value = snapshot.activeScene?.metersPerSquare ?? DEFAULT_METERS_PER_SQUARE;
+        sessionStatus.value = snapshot.table.status;
+        pauseUntil.value = snapshot.table.pauseUntil ? new Date(snapshot.table.pauseUntil) : null;
+        const mappedTokens = snapshot.tokens.map(mapTokenDTO);
+        _rebuildGridRectangular(derivedGridWidth, derivedGridHeight, mappedTokens);
+        initiativeList.value = snapshot.initiative.map(mapInitiativeDTO);
+        setPersistentsFromDTO(snapshot.measurements, nextActiveSceneId);
+        setAurasFromDTO(snapshot.auras, nextActiveSceneId);
+        return nextActiveSceneId;
+    }
+
+    function setInitialState(snapshot: SessionStateDTO) {
+        applySessionSnapshot(snapshot);
+        sharedMeasurements.value = {};
+        pings.value = [];
+    }
+
+    function updateSessionState(snapshot: SessionStateDTO) {
+        const previousSceneId = activeSceneId.value;
+        const newSceneId = applySessionSnapshot(snapshot);
+        if (previousSceneId !== newSceneId) {
+            sharedMeasurements.value = {};
+            pings.value = [];
+        }
     }
 
     function placeToken(newToken: TokenInfo) {
@@ -300,7 +444,10 @@ export const useTableStore = defineStore('table', () => {
     addPersistentMeasurement,
     removePersistentMeasurement,
     clearPersistentMeasurementsForScene,
-    setPersistentMeasurementsForScene
-    ,addPing, clearPings
+    setPersistentMeasurementsForScene,
+    addPing,
+    clearPings,
+    setScenesFromDTO,
+    setInitiativeFromDTO,
     };
 });
