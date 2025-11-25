@@ -127,20 +127,19 @@ const {
   transitionMs,
   userMeasurementColors,
   clockSkewMs,
+  logs,
   // Getters
   isDM, 
   activeScene, 
   tokensOnMap, 
   currentTurnTokenId, 
-  myActiveToken,
-  logs,
+  myActiveToken 
 } = storeToRefs(tableStore);
 
 const characterStore = useCharacterStore();
 const { loadingByTable: characterLoadingMap, errorByTable: characterErrorMap, selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
 
 const showCharacterSheet = ref(false);
-const showLogPanel = ref(false);
 const activeCharacterId = ref<string | null>(null);
 const charactersForTable = computed(() => characterStore.charactersForTable(tableId));
 const activeCharacter = computed<Character | null>(() => {
@@ -168,6 +167,8 @@ const characterOwnerDirectory = computed<Record<string, string>>(() => {
 });
 
 const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
+const showActionLog = ref(false);
+const logCount = computed(() => logs.value.length);
 
 // Transição curta antes do LIVE
 const showTransition = ref(false);
@@ -290,14 +291,6 @@ function closeCharacterSheet() {
   characterStore.setSelectedCharacter(null);
 }
 
-function toggleLogPanel(force?: boolean) {
-  if (typeof force === 'boolean') {
-    showLogPanel.value = force;
-    return;
-  }
-  showLogPanel.value = !showLogPanel.value;
-}
-
 async function handleQuickCreateCharacter() {
   if (!tableId) return;
   const baseName = 'Novo Personagem';
@@ -397,6 +390,10 @@ function handleTogglePersistent(on: boolean) { persistentMode.value = on; }
 
 function handleColorSelected(color: string) {
   measurementColor.value = color;
+}
+
+function toggleActionLog() {
+  showActionLog.value = !showActionLog.value;
 }
 
 function setMap() {
@@ -1568,11 +1565,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       <span>{{ connectionLabel }}</span>
     </div>
 
-      <button class="log-toggle-btn surface" @click="toggleLogPanel()">
-        <Icon :name="showLogPanel ? 'x' : 'list'" size="16" />
-        <span>{{ showLogPanel ? 'Fechar log' : 'Log' }}</span>
-      </button>
-
   <div v-if="!isDM && sessionStatus === 'LIVE' && activeScene?.type === 'battlemap'" class="player-initiative-wrapper">
       <InitiativePanel
         :initiativeList="initiativeList"
@@ -1755,6 +1747,29 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 
     <button v-if="canUseMap" @click="resetView" class="reset-view-btn below">Recentralizar</button>
 
+    <button
+      class="log-toggle-btn surface"
+      :class="{ open: showActionLog }"
+      type="button"
+      @click="toggleActionLog"
+    >
+      {{ showActionLog ? 'Fechar log' : 'Log' }}
+      <span v-if="logCount" class="log-badge">{{ logCount }}</span>
+    </button>
+
+    <transition name="log-panel">
+      <aside v-if="showActionLog" class="action-log-panel surface">
+        <header class="log-panel__header">
+          <div>
+            <p class="log-panel__eyebrow">Timeline</p>
+            <h3>Registro de ações</h3>
+          </div>
+          <button type="button" class="log-panel__close" @click="toggleActionLog">×</button>
+        </header>
+        <ActionLog :logs="logs" />
+      </aside>
+    </transition>
+
     <Toolbar 
       v-if="(sessionStatus === 'LIVE' || isDM) && activeScene?.type === 'battlemap'"
       :activeTool="activeTool"
@@ -1809,15 +1824,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @save="handleCharacterSave"
       @delete="handleCharacterDelete"
     />
-
-    <transition name="slide-up">
-      <section v-if="showLogPanel" class="log-panel surface">
-        <button class="log-panel__close" @click="toggleLogPanel(false)" aria-label="Fechar log">
-          <Icon name="x" size="16" />
-        </button>
-        <ActionLog :logs="logs" />
-      </section>
-    </transition>
   </div>
 </template>
 
@@ -1841,6 +1847,100 @@ main{
   padding: 20px;
   box-sizing: border-box; /* Garante que o padding não aumente a largura total */
   position: relative;
+}
+.log-toggle-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt));
+  box-shadow: var(--elev-2);
+  z-index: 70;
+}
+.log-toggle-btn.open {
+  background: var(--color-accent);
+  color: #0f0f15;
+}
+.log-badge {
+  min-width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--color-danger, #e53935);
+  color: #fff;
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.action-log-panel {
+  position: fixed;
+  bottom: 84px;
+  right: 20px;
+  width: min(420px, calc(100vw - 40px));
+  max-height: min(70vh, 540px);
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--elev-3);
+  background: linear-gradient(180deg, rgba(16, 12, 18, 0.95), rgba(11, 9, 14, 0.95));
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.log-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.log-panel__eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.68rem;
+  color: var(--color-text-muted, #c9c5d4);
+}
+.log-panel__header h3 {
+  margin: 4px 0 0;
+  font-size: 1.1rem;
+}
+.log-panel__close {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  width: 32px;
+  height: 32px;
+  font-size: 1.2rem;
+  background: var(--color-surface-alt);
+  cursor: pointer;
+}
+.log-panel-enter-active,
+.log-panel-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.log-panel-enter-from,
+.log-panel-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}
+@media (max-width: 768px) {
+  .action-log-panel {
+    right: 10px;
+    left: 10px;
+    width: auto;
+  }
+  .log-toggle-btn {
+    right: 10px;
+    left: auto;
+  }
 }
 .connection-indicator {
   position: absolute;
@@ -1885,56 +1985,6 @@ main{
 }
 .battlemap-main h1 {
   margin-top: 0;
-}
-.log-toggle-btn {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.5rem 0.9rem;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  z-index: 55;
-  box-shadow: var(--elev-2);
-}
-
-.log-panel {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  width: min(360px, 90vw);
-  max-height: 60vh;
-  z-index: 54;
-  padding: 0.5rem;
-  border-radius: var(--radius-md);
-  box-shadow: var(--elev-3);
-  display: flex;
-  flex-direction: column;
-}
-
-.log-panel__close {
-  align-self: flex-end;
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  margin-bottom: 0.25rem;
-}
-
-.slide-up-enter-active,
-.slide-up-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.slide-up-enter-from,
-.slide-up-leave-to {
-  opacity: 0;
-  transform: translateY(12px);
 }
 .dm-panel {
   transition: width 0.3s ease, padding 0.3s ease;
