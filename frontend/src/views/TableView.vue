@@ -1567,6 +1567,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :myActiveToken="myActiveToken"
         @undo-move="handleUndoMove"
         @next-turn="handleNextTurn"
+        @open-character-sheet="(id: string) => id && openCharacterSheet(id)"
       />
     </div>
 
@@ -1626,6 +1627,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             @reorder="handleInitiativeReorder"
             @undo-move="handleUndoMove"
             @next-turn="handleNextTurn"
+            @open-character-sheet="(id: string) => id && openCharacterSheet(id)"
           />
         </div>
 

@@ -27,6 +27,7 @@ const emit = defineEmits<{
   (e: 'edit-token', tokenId: string): void;
   (e: 'remove-entry', entryId: string): void;
   (e: 'reorder', newOrder: IInitiativeEntry[]): void;
+  (e: 'open-character-sheet', characterId: string): void;
 }>();
 
 function tokenFor(entry: IInitiativeEntry): TokenInfo | null {
@@ -93,7 +94,15 @@ function handleDragEnd() {
             <div class="left">
               <span class="drag-handle" title="Arrastar"><Icon name="drag" size="14" /></span>
               <span class="dot" :style="{ background: tokenFor(entry)?.color || 'var(--color-text-muted)' }" />
-              <strong>{{ entry.characterName }}</strong>
+              <button
+                v-if="entry.characterId"
+                type="button"
+                class="character-link"
+                @click.stop="emit('open-character-sheet', entry.characterId)"
+              >
+                {{ entry.characterName }}
+              </button>
+              <strong v-else class="character-name">{{ entry.characterName }}</strong>
               <span v-if="tokenFor(entry)" class="size">{{ tokenFor(entry)?.size }}</span>
             </div>
             <div class="row-actions" v-if="tokenFor(entry)">
@@ -121,7 +130,15 @@ function handleDragEnd() {
         <div class="top-row">
           <div class="left">
             <span class="dot" :style="{ background: item.token?.color || 'var(--color-text-muted)' }" />
-            <strong>{{ item.entry.characterName }}</strong>
+            <button
+              v-if="item.entry.characterId"
+              type="button"
+              class="character-link"
+              @click.stop="emit('open-character-sheet', item.entry.characterId)"
+            >
+              {{ item.entry.characterName }}
+            </button>
+            <strong v-else class="character-name">{{ item.entry.characterName }}</strong>
             <span v-if="item.token" class="size">{{ item.token.size }}</span>
             <span v-if="item.entry.isCurrentTurn && item.isOwner" class="my-turn-badge">É o seu turno!</span>
           </div>
@@ -176,6 +193,24 @@ function handleDragEnd() {
 .top-row { display:flex; justify-content:space-between; align-items:center; }
 .left { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .dot { width:14px; height:14px; border-radius:50%; box-shadow:0 0 4px rgba(0 0 0 / 0.5); }
+.character-link {
+  background: none;
+  border: none;
+  color: var(--color-accent-alt);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.character-link:hover,
+.character-link:focus-visible {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+.character-name {
+  font-weight: 700;
+}
 .size { font-size:0.55rem; background: var(--color-surface-alt); padding:2px 6px; border-radius:12px; letter-spacing:0.5px; border:1px solid var(--color-border); text-transform:uppercase; }
 .movement { display:flex; flex-direction:column; gap:4px; }
 .bar-bg { width:100%; height:6px; background: #1f171b; border-radius:4px; overflow:hidden; box-shadow:inset 0 0 4px rgba(0 0 0 / 0.65); }
