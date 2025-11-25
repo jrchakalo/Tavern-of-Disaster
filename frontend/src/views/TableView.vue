@@ -98,6 +98,7 @@ const {
   persistentMeasurements,
   auras,
   pings,
+  connectionStatus,
   // Getters
   isDM, 
   activeScene, 
@@ -123,6 +124,23 @@ const pauseRemaining = computed(() => {
   const ms = Math.max(0, until - clientNowCorrected);
   return Math.ceil(ms / 1000);
 });
+
+const connectionLabel = computed(() => {
+  switch (connectionStatus.value) {
+    case 'connecting':
+      return 'Conectando…';
+    case 'reconnecting':
+      return 'Reconectando…';
+    case 'disconnected':
+      return 'Desconectado';
+    case 'error':
+      return 'Erro de conexão';
+    default:
+      return 'Conectado';
+  }
+});
+
+const isConnectionDegraded = computed(() => ['reconnecting', 'disconnected', 'error'].includes(connectionStatus.value));
 
 let intervalId: number | null = null;
 onMounted(() => {
@@ -225,6 +243,11 @@ function setMap() {
 function onSceneDragEnd() {
   const orderedSceneIds = scenes.value.map(scene => scene._id);
   socketService.reorderScenes(tableId, orderedSceneIds);
+}
+
+function onSceneReorder(updatedScenes: IScene[]) {
+  scenes.value = [...updatedScenes];
+  onSceneDragEnd();
 }
 
 function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string, size: TokenSize }) {
@@ -1403,6 +1426,10 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 
 <template>
   <div class="table-view-layout">
+    <div class="connection-indicator" :class="['status-' + connectionStatus, { degraded: isConnectionDegraded }]">
+      <span class="dot"></span>
+      <span>{{ connectionLabel }}</span>
+    </div>
 
   <div v-if="!isDM && sessionStatus === 'LIVE' && activeScene?.type === 'battlemap'" class="player-initiative-wrapper">
       <InitiativePanel
@@ -1427,97 +1454,37 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       </button>
       
       <div v-show="!isDmPanelCollapsed" class="panel-content">        
-        <div class="panel-section">
-          <button class="subsection-toggle" @click="isSessionCollapsed = !isSessionCollapsed">
-            <h4>Sessão</h4>
-            <span class="chevron"><Icon :name="isSessionCollapsed ? 'plus' : 'minus'" size="16" /></span>
-          </button>
-          <div class="session-controls" v-show="!isSessionCollapsed">
-            <button
-              v-if="sessionStatus === 'ENDED'"
-              @click="handleUpdateSessionStatus('PREPARING')"
-              class="btn btn-sm session-btn session-prepare"
-            >Preparar Sessão</button>
-            <div v-if="sessionStatus === 'PREPARING'" class="row gap-2">
-              <button 
-                @click="startSessionWithTransition"
-                class="btn btn-sm session-btn session-start"
-              >Iniciar Sessão</button>
-            </div>
-            <button 
-              v-if="sessionStatus === 'LIVE'" 
-              @click="handleUpdateSessionStatus('PAUSED')"
-              class="btn btn-sm session-btn session-pause"
-            >Pausar</button>
-            <div v-if="sessionStatus === 'LIVE' || sessionStatus === 'PAUSED'" class="row gap-2" style="margin-top:15px; align-items:center;">
-              <label style="font-size:.85rem">Duração da pausa (min):</label>
-              <input class="input-xs" type="number" min="0" step="0.5" v-model.number="pauseInput" style="width:110px" />
-            </div>
-            <button 
-              v-if="sessionStatus === 'PAUSED'" 
-              @click="handleUpdateSessionStatus('LIVE')"
-              class="btn btn-sm session-btn session-resume"
-            >Retomar</button>
-            <button 
-              v-if="sessionStatus === 'LIVE' || sessionStatus === 'PAUSED'" 
-              @click="handleUpdateSessionStatus('ENDED')"
-              class="btn btn-sm session-btn session-end"
-            >Encerrar Sessão</button>
-          </div>
-        </div>
+        <DMSessionControls
+          :session-status="sessionStatus"
+          :pause-input="pauseInput"
+          :pause-remaining="pauseRemaining"
+          :is-collapsed="isSessionCollapsed"
+          @toggle="isSessionCollapsed = !isSessionCollapsed"
+          @update:pauseInput="pauseInput = $event"
+          @update-status="handleUpdateSessionStatus"
+          @start-session="startSessionWithTransition"
+        />
         
-        <div class="panel-section scene-manager">
-          <button class="subsection-toggle" @click="isScenesCollapsed = !isScenesCollapsed">
-            <h4>Cenas</h4>
-            <span class="chevron"><Icon :name="isScenesCollapsed ? 'plus' : 'minus'" size="16" /></span>
-          </button>
-          <div class="scenes-list-block" v-show="!isScenesCollapsed">
-            <draggable
-              v-model="scenes"
-              tag="ul"
-              class="scene-list"
-              item-key="_id"
-              @end="onSceneDragEnd"
-              handle=".drag-handle"
-            >
-              <template #item="{ element: scene }">
-                <li :class="{ 'active-scene': scene._id === activeSceneId }">
-                  <span class="drag-handle" title="Arrastar"><Icon name="drag" size="16" /></span> <span>{{ scene.name }}</span>
-                  <div class="scene-buttons">
-                    <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">Ativar</button>
-                    <button @click="handleEditScene(scene)" class="icon-btn" title="Editar"><Icon name="edit" size="16" /></button>
-                    <button @click="handleDeleteScene(scene._id)" class="icon-btn delete-btn-small" title="Excluir"><Icon name="delete" size="16" /></button>
-                  </div>
-                </li>
-              </template>
-            </draggable>
-          </div>
-
-          <div class="panel-section" v-show="!isScenesCollapsed">
-            <h4>Imagem da Cena Ativa</h4>
-            <div class="map-controls">
-              <div class="inline-fields" style="width:100%">
-                <input id="map-url" class="input-sm" type="url" v-model="mapUrlInput" placeholder="URL da imagem da cena" />
-                <button @click="setMap" type="button" class="btn btn-xs btn-ghost">Definir</button>
-              </div>
-            </div>
-          </div>
-
-          <form @submit.prevent="handleCreateScene" class="create-scene-form" v-show="!isScenesCollapsed">
-            <h4>Criar Nova Cena</h4>
-            <div class="field-group">
-              <input class="input-sm" v-model="newSceneName" placeholder="Nome da Cena" required />
-              <input class="input-sm" v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
-              <div class="inline-fields">
-                <select class="input-sm" v-model="newSceneType">
-                  <option value="battlemap">Battlemap</option>
-                  <option value="image">Imagem</option>
-                </select>
-                <button type="submit" class="btn btn-xs alt">Adicionar Cena</button>
-              </div>
-            </div>
-          </form>
-        </div>
+        <SceneManager
+          :scenes="scenes"
+          :active-scene-id="activeSceneId"
+          :is-collapsed="isScenesCollapsed"
+          :map-url-input="mapUrlInput"
+          :new-scene-name="newSceneName"
+          :new-scene-image-url="newSceneImageUrl"
+          :new-scene-type="newSceneType"
+          @toggle="isScenesCollapsed = !isScenesCollapsed"
+          @set-active-scene="handleSetActiveScene"
+          @edit-scene="handleEditScene"
+          @delete-scene="handleDeleteScene"
+          @reorder="onSceneReorder"
+          @set-map="setMap"
+          @create-scene="handleCreateScene"
+          @update:mapUrlInput="mapUrlInput = $event"
+          @update:newSceneName="newSceneName = $event"
+          @update:newSceneImageUrl="newSceneImageUrl = $event"
+          @update:newSceneType="newSceneType = $event"
+        />
 
         <!-- Initiative table now after Scenes and before Grid controls -->
         <div class="panel-section" v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
@@ -1748,6 +1715,40 @@ main{
   padding: 20px;
   box-sizing: border-box; /* Garante que o padding não aumente a largura total */
   position: relative;
+}
+.connection-indicator {
+  position: absolute;
+  top: 8px;
+  left: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 0.85rem;
+  color: var(--color-text);
+  box-shadow: var(--elev-1);
+}
+.connection-indicator .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success, #2ecc71);
+  display: inline-block;
+}
+.connection-indicator.status-reconnecting .dot,
+.connection-indicator.status-connecting .dot {
+  background: var(--color-warning, #f5a524);
+}
+.connection-indicator.status-disconnected .dot,
+.connection-indicator.status-error .dot {
+  background: var(--color-danger, #e53935);
+}
+.connection-indicator.degraded {
+  border-color: var(--color-danger, #e53935);
+  color: var(--color-danger, #e53935);
 }
 .battlemap-main {
   flex-grow: 1; /* Faz o battlemap ocupar o espaço principal */

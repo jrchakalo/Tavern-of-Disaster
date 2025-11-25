@@ -1,5 +1,7 @@
 import { Types, PopulateOptions } from 'mongoose';
 import Table, { ITable, tableStatuses } from '../models/Table.model';
+import Scene from '../models/Scene.model';
+import Token from '../models/Token.model';
 import { ServiceError, assertCondition } from './serviceErrors';
 
 type HydratedTable = ITable & { save: () => Promise<ITable> };
@@ -12,7 +14,8 @@ export async function getTableById(tableId: string, populate: TablePopulate[] = 
   }
   let query = Table.findById(tableId);
   populate.forEach((field) => {
-    query = query.populate(field);
+    // cast to any to satisfy mongoose overloads that don't accept plain string in these typings
+    query = query.populate(field as any);
   });
   return query.exec();
 }
@@ -76,4 +79,15 @@ export async function updateTableStatus(
   }
   await table.save();
   return table;
+}
+
+export async function deleteTableAndDependents(tableId: string) {
+  const table = await Table.findById(tableId);
+  assertCondition(!!table, 'Mesa não encontrada.', 404);
+  const scenes = await Scene.find({ tableId: table!._id });
+  for (const sc of scenes) {
+    await Token.deleteMany({ sceneId: sc._id });
+  }
+  await Scene.deleteMany({ tableId: table!._id });
+  await Table.findByIdAndDelete(tableId);
 }

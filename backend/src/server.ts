@@ -11,6 +11,7 @@ import { registerTableHandlers } from './socketHandlers/tableHandlers';
 import { registerTokenHandlers } from './socketHandlers/tokenHandlers';
 import { registerInitiativeHandlers } from './socketHandlers/initiativeHandlers';
 import { registerMeasurementHandlers } from './socketHandlers/measurementHandlers';
+import { cleanupInactiveTables } from './socketHandlers/measurementStore';
 
 dotenv.config();
 connectDB();
@@ -24,6 +25,8 @@ const io = new Server(server, {
   },
 });
 const port = process.env.PORT || 3001;
+const measurementIdleTtlMs = Number(process.env.MEASUREMENT_IDLE_TTL_MS ?? 30 * 60 * 1000);
+const measurementCleanupIntervalMs = Number(process.env.MEASUREMENT_CLEANUP_INTERVAL_MS ?? 5 * 60 * 1000);
 
 app.use(cors());
 app.use(express.json());
@@ -34,6 +37,10 @@ app.use('/api/tables', tableRouter);
 server.listen(port, () => {
   console.log(`Server rodando em http://localhost:${port}`);
 });
+
+setInterval(() => {
+  cleanupInactiveTables(measurementIdleTtlMs);
+}, measurementCleanupIntervalMs);
 
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;

@@ -22,6 +22,7 @@ import { currentUser } from '../services/authService';
 
 const DEFAULT_GRID = 30;
 const DEFAULT_METERS_PER_SQUARE = 1.5;
+export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
 
 function normalizeSceneType(type?: string): 'battlemap' | 'image' {
     return type === 'image' ? 'image' : 'battlemap';
@@ -124,6 +125,7 @@ export const useTableStore = defineStore('table', () => {
     const gridHeight: Ref<number> = ref(30); // Altura (linhas)
     const sessionStatus: Ref<'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'> = ref('PREPARING');
     const pauseUntil: Ref<Date | null> = ref(null);
+    const connectionStatus: Ref<ConnectionStatus> = ref('disconnected');
     // Transição curta antes do LIVE
     const transitionMs: Ref<number> = ref(0);
     const transitionAt: Ref<number> = ref(0);
@@ -261,6 +263,10 @@ export const useTableStore = defineStore('table', () => {
         applySessionSnapshot(snapshot);
         sharedMeasurements.value = {};
         pings.value = [];
+    }
+
+    function setConnectionStatus(status: ConnectionStatus) {
+        connectionStatus.value = status;
     }
 
     function updateSessionState(snapshot: SessionStateDTO) {
@@ -449,5 +455,7 @@ export const useTableStore = defineStore('table', () => {
     clearPings,
     setScenesFromDTO,
     setInitiativeFromDTO,
+        connectionStatus,
+        setConnectionStatus,
     };
 });

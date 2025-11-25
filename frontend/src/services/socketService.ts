@@ -7,9 +7,12 @@ import type { TokenInfo, IInitiativeEntry, PlayerInfo, TokenSize, SessionStateDT
 class SocketService {
   private socket: Socket | null = null;
   private store = useTableStore();
+  private currentTableId: string | null = null;
 
   connect(tableId: string) {
     if (this.socket) return; // Evita duplicar conexão
+    this.currentTableId = tableId;
+    this.store.setConnectionStatus('connecting');
 
     const socketURL = import.meta.env.VITE_API_URL || 'ws://localhost:3001';
 
@@ -20,7 +23,25 @@ class SocketService {
 
     this.socket.on('connect', () => {
       console.log('CONECTADO via SocketService! ID:', this.socket?.id);
-      this.socket?.emit('joinTable', tableId);
+      this.store.setConnectionStatus('connected');
+      if (this.currentTableId) {
+        this.socket?.emit('joinTable', this.currentTableId);
+      }
+    });
+
+    this.socket.io.on('reconnect_attempt', () => {
+      this.store.setConnectionStatus('reconnecting');
+    });
+
+    this.socket.on('reconnect', () => {
+      this.store.setConnectionStatus('connected');
+      if (this.currentTableId) {
+        this.socket?.emit('joinTable', this.currentTableId);
+      }
+    });
+
+    this.socket.on('disconnect', () => {
+      this.store.setConnectionStatus('disconnected');
     });
 
   // ---- Recepção de eventos do servidor ----
@@ -91,7 +112,13 @@ class SocketService {
     });
 
   // Erros de conexão / feedback simples
-    this.socket.on('connect_error', (error) => console.error('SocketService - Erro de conexão:', error.message));
+    this.socket.on('connect_error', (error) => {
+      console.error('SocketService - Erro de conexão:', error.message);
+      this.store.setConnectionStatus('error');
+      try {
+        toast.error('Erro de conexão. Tentando novamente...');
+      } catch {}
+    });
       this.socket.on('tokenPlacementError', (error) => toast.error(`Erro ao colocar token: ${error.message}`));
   }
   // ---- Emissores de requisições ----
@@ -107,6 +134,8 @@ class SocketService {
   disconnect() {
     this.socket?.disconnect();
     this.socket = null;
+    this.currentTableId = null;
+    this.store.setConnectionStatus('disconnected');
     console.log('SocketService - Desconectado.');
   }
 

@@ -3,10 +3,9 @@ import { nanoid } from 'nanoid';
 import mongoose, { Types } from 'mongoose'
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
 import Table from '../models/Table.model';
-import Scene from '../models/Scene.model';
-import Token from '../models/Token.model';
 import { createScene as createSceneService, renameScene, deleteScene as deleteSceneService, createDefaultScene } from '../services/sceneService';
-import { addPlayerToTable, removePlayerFromTable, getTableById, assertUserIsDM } from '../services/tableService';
+import { addPlayerToTable, removePlayerFromTable, getTableById, assertUserIsDM, deleteTableAndDependents } from '../services/tableService';
+import { clearAllForTable as clearMeasurementStateForTable } from '../socketHandlers/measurementStore';
 
 const router = Router();
 
@@ -241,13 +240,8 @@ router.delete('/:tableId', authMiddleware, (async (req: AuthRequest, res) => {
     const table = await Table.findById(tableId);
     if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
     if (table.dm.toString() !== userId) return res.status(403).json({ message: 'Apenas o Mestre pode excluir a mesa.' });
-    // Remove cenas e tokens
-    const scenes = await Scene.find({ tableId: table._id });
-    for (const sc of scenes) {
-      await Token.deleteMany({ sceneId: sc._id });
-    }
-    await Scene.deleteMany({ tableId: table._id });
-    await Table.findByIdAndDelete(tableId);
+    await deleteTableAndDependents(tableId);
+    clearMeasurementStateForTable(tableId);
     res.json({ message: 'Mesa excluída.' });
   } catch (error) {
     console.error('Erro ao excluir mesa:', error);
