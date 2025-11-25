@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { toast } from '../services/toast';
-import { PlayerInfo, TokenSize } from '../types'; 
+import { PlayerInfo, TokenSize, Character } from '../types'; 
 import { tokenSizes } from '../types';
 
 const tokenName = ref('');
@@ -10,14 +10,16 @@ const tokenMovement = ref(9);
 const assignedOwnerId = ref('');
 const tokenSize = ref<TokenSize>('Pequeno/Médio');
 const canOverlap = ref(false);
+const selectedCharacterId = ref<string | null>(null);
 
 interface Props {
   players: PlayerInfo[]; 
+  characters: Character[];
 }
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
-  (e: 'create-token', payload: { name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; canOverlap?: boolean }): void; // includes canOverlap
+  (e: 'create-token', payload: { name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null }): void; // includes canOverlap
   (e: 'cancel'): void;
 }>();
 
@@ -33,10 +35,12 @@ function handleSubmit() {
     ownerId: assignedOwnerId.value,
   size: tokenSize.value,
   canOverlap: canOverlap.value,
+  characterId: selectedCharacterId.value,
   });
   // Limpa os campos após emitir
   tokenName.value = '';
   tokenImageUrl.value = '';
+  selectedCharacterId.value = null;
 }
 
 function handleCancel() {
@@ -48,6 +52,16 @@ onMounted(() => {
     assignedOwnerId.value = props.players[0]._id; 
   }
 });
+
+watch(
+  () => props.characters.map(character => character._id),
+  (ids) => {
+    if (selectedCharacterId.value && !ids.includes(selectedCharacterId.value)) {
+      selectedCharacterId.value = null;
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 
@@ -75,6 +89,14 @@ onMounted(() => {
       <select id="token-size" v-model="tokenSize">
         <option v-for="sizeOption in tokenSizes" :key="sizeOption" :value="sizeOption">
           {{ sizeOption }}
+        </option>
+      </select>
+
+      <label for="token-character">Associar ficha:</label>
+      <select id="token-character" v-model="selectedCharacterId">
+        <option :value="null">Nenhuma</option>
+        <option v-for="character in characters" :key="character._id" :value="character._id">
+          {{ character.name }}
         </option>
       </select>
 

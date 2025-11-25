@@ -17,7 +17,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   };
 
   // Coloca um novo token no grid + adiciona entrada na iniciativa. Valida footprint e ocupação.
-  const requestPlaceToken = async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement: number; remainingMovement?: number; ownerId?: string; size: string; canOverlap?: boolean }) => {
+  const requestPlaceToken = async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement: number; remainingMovement?: number; ownerId?: string; size: string; canOverlap?: boolean; characterId?: string | null }) => {
     try {
         const userId = socket.data.user?.id; 
         if (!userId) return;
@@ -56,6 +56,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
           movement: updated.movement,
           remainingMovement: updated.remainingMovement,
           size: updated.size,
+          characterId: updated.characterId?.toString() || null,
         });
     } catch (error: any) {
         console.error('Erro ao processar requestMoveToken:', error.message);
@@ -83,7 +84,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   };
 
   // Edita atributos do token (apenas Mestre). Se nome muda, reflete na iniciativa.
-  const requestEditToken = async (data: { tableId: string; tokenId: string; name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean; canOverlap?: boolean }) => {
+  const requestEditToken = async (data: { tableId: string; tokenId: string; name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean; canOverlap?: boolean; characterId?: string | null }) => {
     try {
       const userId = socket.data.user?.id;
       if (!userId) return;
@@ -106,6 +107,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         movement: updated.movement,
         remainingMovement: updated.remainingMovement,
         size: updated.size,
+        characterId: updated.characterId?.toString() || null,
       });
     } catch (error) {
       console.error('Erro ao editar token:', error);
@@ -134,6 +136,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         remainingMovement: updated.remainingMovement,
         savedToken: updated,
         size: updated.size,
+        characterId: updated.characterId?.toString() || null,
       });
 
     } catch (error) { 

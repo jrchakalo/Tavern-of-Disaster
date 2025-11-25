@@ -73,6 +73,7 @@ function mapTokenDTO(dto: TokenDTO): TokenInfo {
         remainingMovement: dto.remainingMovement,
         size: toTokenSize(dto.size),
         canOverlap: dto.canOverlap,
+        characterId: dto.characterId ?? null,
     };
 }
 
@@ -81,6 +82,7 @@ function mapInitiativeDTO(dto: InitiativeEntryDTO): IInitiativeEntry {
         _id: dto._id,
         characterName: dto.characterName,
         tokenId: dto.tokenId,
+        characterId: dto.characterId,
         isCurrentTurn: dto.isCurrentTurn,
     };
 }

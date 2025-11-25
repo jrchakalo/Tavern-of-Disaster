@@ -4,6 +4,7 @@ export interface IInitiativeEntry {
   _id: Types.ObjectId; // Cada entrada terá um ID único para facilitar a reordenação e exclusão
   characterName: string;
   tokenId?: Types.ObjectId;
+  characterId?: Types.ObjectId;
   isCurrentTurn: boolean;
 }
 
@@ -22,6 +23,7 @@ export interface IScene extends Document {
 const InitiativeEntrySchema: Schema<IInitiativeEntry> = new Schema({
   characterName: { type: String, required: true },
   tokenId: { type: Schema.Types.ObjectId, ref: 'Token', required: false },
+  characterId: { type: Schema.Types.ObjectId, ref: 'Character', required: false },
   isCurrentTurn: { type: Boolean, default: false },
 });
 

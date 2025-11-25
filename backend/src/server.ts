@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import connectDB from './config/db';
 import authRouter from './routes/auth.routes';
 import tableRouter from './routes/table.routes';
+import characterRouter from './routes/character.routes';
 import { registerTableHandlers } from './socketHandlers/tableHandlers';
 import { registerTokenHandlers } from './socketHandlers/tokenHandlers';
 import { registerInitiativeHandlers } from './socketHandlers/initiativeHandlers';
@@ -32,6 +33,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/api/auth', authRouter);
 app.use('/api/tables', tableRouter);
+app.use('/api', characterRouter);
 
 
 server.listen(port, () => {

@@ -7,6 +7,7 @@ import { authToken, currentUser } from '../services/authService';
 import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
 import { useTableStore } from '../stores/tableStore';
+import { useCharacterStore } from '../stores/characterStore';
 
 import MapViewport from '../components/MapViewport.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
@@ -15,8 +16,9 @@ import InitiativePanel from '../components/InitiativePanel.vue';
 import Icon from '../components/Icon.vue';
 import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
+import CharacterSheet from '../components/CharacterSheet.vue';
 
-import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize } from '../types';
+import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character } from '../types';
 
 type MeasurementTool = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
 type ToolMode = MeasurementTool | 'select' | 'none';
@@ -132,6 +134,36 @@ const {
   myActiveToken 
 } = storeToRefs(tableStore);
 
+const characterStore = useCharacterStore();
+const { loadingByTable: characterLoadingMap, errorByTable: characterErrorMap, selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
+
+const showCharacterSheet = ref(false);
+const activeCharacterId = ref<string | null>(null);
+const charactersForTable = computed(() => characterStore.charactersForTable(tableId));
+const activeCharacter = computed<Character | null>(() => {
+  if (!activeCharacterId.value) return null;
+  return charactersForTable.value.find((char) => char._id === activeCharacterId.value) || null;
+});
+const isActiveCharacterOwner = computed(() => {
+  if (!activeCharacter.value || !currentUser.value) return false;
+  return activeCharacter.value.ownerId === currentUser.value.id;
+});
+const characterFetchScope = computed(() => (isDM.value ? 'dm' : 'player'));
+const isCharacterListLoading = computed(() => Boolean(characterLoadingMap.value[tableId]));
+const characterError = computed(() => characterErrorMap.value[tableId] ?? null);
+const hasCharacters = computed(() => charactersForTable.value.length > 0);
+
+const characterOwnerDirectory = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {};
+  const table = currentTable.value;
+  if (!table) return map;
+  map[table.dm._id] = table.dm.username;
+  table.players.forEach((player) => {
+    map[player._id] = player.username;
+  });
+  return map;
+});
+
 const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
 
 // Transição curta antes do LIVE
@@ -228,6 +260,101 @@ watch(measurementColor, (c) => {
   localStorage.setItem(key, c);
 });
 
+async function fetchCharactersForTable() {
+  if (!tableId) return;
+  try {
+    await characterStore.fetchForTable(tableId, { scope: characterFetchScope.value });
+  } catch (error) {
+    console.error('[characters] falha ao carregar', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível carregar as fichas.';
+    toast.error(message);
+  }
+}
+
+function refreshCharacters() {
+  fetchCharactersForTable();
+}
+
+function openCharacterSheet(characterId: string) {
+  activeCharacterId.value = characterId;
+  showCharacterSheet.value = true;
+  characterStore.setSelectedCharacter(characterId);
+}
+
+function closeCharacterSheet() {
+  showCharacterSheet.value = false;
+  activeCharacterId.value = null;
+  characterStore.setSelectedCharacter(null);
+}
+
+async function handleQuickCreateCharacter() {
+  if (!tableId) return;
+  const baseName = 'Novo Personagem';
+  const nextNumber = charactersForTable.value.length + 1;
+  try {
+    const created = await characterStore.createCharacter(tableId, { name: `${baseName} ${nextNumber}` });
+    toast.success('Ficha criada.');
+    openCharacterSheet(created._id);
+  } catch (error) {
+    console.error('[characters] erro ao criar', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível criar a ficha.';
+    toast.error(message);
+  }
+}
+
+async function handleCharacterSave(payload: Partial<Character>) {
+  if (!tableId || !activeCharacterId.value) return;
+  try {
+    await characterStore.updateCharacter(tableId, activeCharacterId.value, payload);
+    toast.success('Ficha atualizada.');
+  } catch (error) {
+    console.error('[characters] erro ao salvar', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível salvar a ficha.';
+    toast.error(message);
+  }
+}
+
+async function handleCharacterDelete() {
+  if (!tableId || !activeCharacterId.value) return;
+  const confirmed = window.confirm('Remover esta ficha? Esta ação não pode ser desfeita.');
+  if (!confirmed) return;
+  try {
+    await characterStore.deleteCharacter(tableId, activeCharacterId.value);
+    toast.success('Ficha removida.');
+    closeCharacterSheet();
+  } catch (error) {
+    console.error('[characters] erro ao excluir', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível remover a ficha.';
+    toast.error(message);
+  }
+}
+
+function resolveCharacterOwnerName(ownerId?: string | null) {
+  if (!ownerId) return 'Sem dono';
+  const table = currentTable.value;
+  if (table?.dm._id === ownerId) return `${table.dm.username} (Mestre)`;
+  return characterOwnerDirectory.value[ownerId] || 'Jogador';
+}
+
+watch(characterFetchScope, () => {
+  fetchCharactersForTable();
+}, { immediate: true });
+
+watch(charactersForTable, (list) => {
+  if (activeCharacterId.value && !list.some((char) => char._id === activeCharacterId.value)) {
+    closeCharacterSheet();
+  }
+});
+
+watch(selectedCharacterStoreId, (newId) => {
+  if (newId === activeCharacterId.value) {
+    showCharacterSheet.value = Boolean(newId);
+    return;
+  }
+  activeCharacterId.value = newId;
+  showCharacterSheet.value = Boolean(newId);
+});
+
 // Medições persistentes da cena ativa
 const persistentsForActiveScene = computed(() =>
   persistentMeasurements.value.filter(pm => pm.sceneId === activeSceneId.value)
@@ -277,7 +404,7 @@ function onSceneReorder(updatedScenes: IScene[]) {
   onSceneDragEnd();
 }
 
-function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string, size: TokenSize }) {
+function createToken(payload: { name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null }) {
   if (targetSquareIdForToken.value && activeSceneId.value) {
   // Validação footprint local
     const sizeMap: Record<string, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 };
@@ -318,6 +445,11 @@ function handleAssignToken(newOwnerId: string) {
     });
   }
   showAssignMenu.value = false;
+}
+
+function handleOpenCharacterFromToken(characterId?: string | null) {
+  if (!characterId) return;
+  openCharacterSheet(characterId);
 }
 
 function handleSelectPersistent(payload: { id: string | null }) {
@@ -368,7 +500,7 @@ function handleRemoveFromInitiative(initiativeEntryId: string) {
 }
 
 
-function handleSaveTokenEdit(payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean }) {
+function handleSaveTokenEdit(payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: TokenSize; resetRemainingMovement?: boolean; canOverlap?: boolean; characterId?: string | null }) {
   if (!tokenBeingEdited.value) return;
   socketService.editToken({ tableId, tokenId: tokenBeingEdited.value._id, ...payload });
   showTokenEditForm.value = false;
@@ -1435,6 +1567,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :myActiveToken="myActiveToken"
         @undo-move="handleUndoMove"
         @next-turn="handleNextTurn"
+        @open-character-sheet="(id: string) => id && openCharacterSheet(id)"
       />
     </div>
 
@@ -1494,6 +1627,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             @reorder="handleInitiativeReorder"
             @undo-move="handleUndoMove"
             @next-turn="handleNextTurn"
+            @open-character-sheet="(id: string) => id && openCharacterSheet(id)"
           />
         </div>
 
@@ -1571,6 +1705,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :on-image-load="updateImageDimensions"
         :on-assign-token="handleAssignToken"
         :on-close-assign-menu="closeAssignMenu"
+        :on-open-character-from-token="handleOpenCharacterFromToken"
       />
       <div v-else-if="!isDM && (sessionStatus === 'PREPARING' || sessionStatus === 'PAUSED' || sessionStatus === 'ENDED')" class="session-overlay" :class="`mode-${sessionStatus.toLowerCase()}`">
         <div class="overlay-card surface">
@@ -1624,13 +1759,16 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     
     <TokenCreationForm
       v-if="showTokenForm && isDM"
-      :players="currentTable?.players || []" @create-token="createToken"
+      :players="currentTable?.players || []"
+      :characters="charactersForTable"
+      @create-token="createToken"
       @cancel="showTokenForm = false"
     />
     <TokenEditForm
       :open="showTokenEditForm"
       :token="tokenBeingEdited"
       :players="currentTable?.players || []"
+      :characters="charactersForTable"
       @close="showTokenEditForm = false; tokenBeingEdited = null;"
       @save="handleSaveTokenEdit"
     />
@@ -1645,6 +1783,15 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @save="handleAuraSave"
       @remove="handleAuraRemove"
       @close="showAuraDialog = false; auraDialogTokenId = null;"
+    />
+    <CharacterSheet
+      :open="showCharacterSheet"
+      :character="activeCharacter"
+      :isDM="isDM"
+      :isOwner="isActiveCharacterOwner"
+      @close="closeCharacterSheet"
+      @save="handleCharacterSave"
+      @delete="handleCharacterDelete"
     />
   </div>
 </template>

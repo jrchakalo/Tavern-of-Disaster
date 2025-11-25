@@ -18,6 +18,7 @@ export interface InitiativeEntryDTO {
   _id: string;
   characterName: string;
   tokenId?: string;
+  characterId?: string;
   isCurrentTurn: boolean;
 }
 
@@ -45,6 +46,7 @@ export interface TokenDTO {
   remainingMovement: number;
   size: string;
   canOverlap: boolean;
+  characterId?: string;
 }
 
 export interface MeasurementDTO {

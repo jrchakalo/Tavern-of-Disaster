@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import Token, { IToken } from '../models/Token.model';
 import Scene, { IScene } from '../models/Scene.model';
+import Character from '../models/Character.model';
 import { assertCondition, ServiceError } from './serviceErrors';
 
 type HydratedToken = IToken & {
@@ -85,6 +86,19 @@ export function calculateMovementCost(
   return chebyshevDistance * metersPerSquare;
 }
 
+async function resolveCharacterForTable(
+  characterId: string | null | undefined,
+  tableId: Types.ObjectId | string
+): Promise<Types.ObjectId | null> {
+  if (!characterId) return null;
+  assertCondition(Types.ObjectId.isValid(characterId), 'Personagem inválido.', 400);
+  const character = await Character.findById(characterId);
+  assertCondition(!!character, 'Personagem não encontrado.', 404);
+  const normalizedTableId = typeof tableId === 'string' ? tableId : tableId.toString();
+  assertCondition(character!.tableId.toString() === normalizedTableId, 'Personagem não pertence à mesa informada.', 400);
+  return character!._id as Types.ObjectId;
+}
+
 export async function createToken(payload: {
   tableId: string;
   sceneId: string;
@@ -97,6 +111,7 @@ export async function createToken(payload: {
   size: string;
   canOverlap?: boolean;
   color?: string;
+  characterId?: string | null;
 }) {
   const scene = await Scene.findById(payload.sceneId);
   assertCondition(!!scene, 'Cena não encontrada.', 404);
@@ -106,6 +121,8 @@ export async function createToken(payload: {
   const footprintSquares = buildFootprintSquares(payload.squareId, payload.size, gridWidth, gridHeight);
   const colliding = await isFootprintColliding(payload.sceneId, footprintSquares);
   assertCondition(!colliding || !!payload.canOverlap, 'Área ocupada por outro token.', 400);
+  const characterRef = await resolveCharacterForTable(payload.characterId, payload.tableId);
+
   const token = new Token({
     tableId: payload.tableId,
     sceneId: payload.sceneId,
@@ -118,6 +135,7 @@ export async function createToken(payload: {
     remainingMovement: payload.remainingMovement ?? payload.movement,
     size: payload.size,
     canOverlap: !!payload.canOverlap,
+    characterId: characterRef,
   });
   await token.save();
   return token.populate('ownerId', '_id username');
@@ -167,6 +185,7 @@ export async function undoLastMove(token: HydratedToken, scene: IScene) {
 
 export type TokenUpdatePayload = Partial<Pick<IToken, 'name' | 'movement' | 'imageUrl' | 'size' | 'canOverlap'>> & {
   ownerId?: string;
+  characterId?: string | null;
 };
 
 export async function updateToken(tokenId: string, payload: TokenUpdatePayload, options: { resetRemainingMovement?: boolean } = {}) {
@@ -186,6 +205,10 @@ export async function updateToken(tokenId: string, payload: TokenUpdatePayload, 
   if (payload.ownerId !== undefined) token!.ownerId = new Types.ObjectId(payload.ownerId) as any;
   if (payload.size !== undefined) token!.size = payload.size;
   if (payload.canOverlap !== undefined) token!.canOverlap = payload.canOverlap;
+  if (payload.characterId !== undefined) {
+    const resolvedCharacter = await resolveCharacterForTable(payload.characterId, token!.tableId);
+    token!.characterId = resolvedCharacter;
+  }
 
   await token!.save();
   return token!.populate('ownerId', '_id username');
