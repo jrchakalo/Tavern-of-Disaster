@@ -18,6 +18,7 @@ import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
 import ActionLog from '../components/ActionLog.vue';
+import DiceRoller from '../components/DiceRoller.vue';
 
 import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character } from '../types';
 
@@ -128,11 +129,11 @@ const {
   userMeasurementColors,
   clockSkewMs,
   logs,
+  currentTurnTokenId,
   // Getters
   isDM, 
   activeScene, 
   tokensOnMap, 
-  currentTurnTokenId, 
   myActiveToken 
 } = storeToRefs(tableStore);
 
@@ -169,6 +170,7 @@ const characterOwnerDirectory = computed<Record<string, string>>(() => {
 const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
 const showActionLog = ref(false);
 const logCount = computed(() => logs.value.length);
+const showDicePopup = ref(false);
 
 // Transição curta antes do LIVE
 const showTransition = ref(false);
@@ -204,6 +206,7 @@ const connectionLabel = computed(() => {
 });
 
 const isConnectionDegraded = computed(() => ['reconnecting', 'disconnected', 'error'].includes(connectionStatus.value));
+const dmRollerExpanded = ref(true);
 
 let intervalId: number | null = null;
 onMounted(() => {
@@ -394,6 +397,14 @@ function handleColorSelected(color: string) {
 
 function toggleActionLog() {
   showActionLog.value = !showActionLog.value;
+}
+
+function toggleDicePopup() {
+  showDicePopup.value = !showDicePopup.value;
+}
+
+function toggleDmRoller() {
+  dmRollerExpanded.value = !dmRollerExpanded.value;
 }
 
 function setMap() {
@@ -1639,6 +1650,22 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           />
         </div>
 
+        <div class="panel-section" v-if="activeScene?.type === 'battlemap'">
+          <div class="subsection-toggle" @click="toggleDmRoller">
+            <h4>Rolagens</h4>
+            <span class="chevron"><Icon :name="dmRollerExpanded ? 'minus' : 'plus'" size="16" /></span>
+          </div>
+          <div v-show="dmRollerExpanded">
+            <DiceRoller
+              :tableId="tableId"
+              :availableCharacters="charactersForTable"
+              :currentTokenId="currentTurnTokenId"
+              :activeCharacterId="activeCharacterId"
+              mode="embedded"
+            />
+          </div>
+        </div>
+
         <div v-if="activeScene?.type === 'battlemap'" class="panel-section">
           <button class="subsection-toggle" @click="isGridCollapsed = !isGridCollapsed">
             <h4>Controles do Grid</h4>
@@ -1786,6 +1813,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @delete-selected="handleDeleteSelectedPersistent"
       @remove-aura="handleToolbarRemoveAura"
       @edit-aura="handleToolbarEditAura"
+      @toggle-dice-roller="toggleDicePopup"
     />
     
     <TokenCreationForm
@@ -1824,6 +1852,19 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @save="handleCharacterSave"
       @delete="handleCharacterDelete"
     />
+
+    <transition name="dice-roller">
+      <div v-if="showDicePopup" class="dice-popup-overlay" @click.self="toggleDicePopup">
+        <DiceRoller
+          :tableId="tableId"
+          :availableCharacters="charactersForTable"
+          :currentTokenId="currentTurnTokenId"
+          :activeCharacterId="activeCharacterId"
+          mode="popup"
+          @close="toggleDicePopup"
+        />
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -1930,6 +1971,24 @@ main{
 .log-panel-leave-to {
   opacity: 0;
   transform: translateY(20px);
+}
+.dice-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 8, 12, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+}
+.dice-roller-enter-active,
+.dice-roller-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.dice-roller-enter-from,
+.dice-roller-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
 }
 @media (max-width: 768px) {
   .action-log-panel {

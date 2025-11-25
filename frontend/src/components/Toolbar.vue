@@ -25,6 +25,7 @@ const emit = defineEmits<{
   (e: 'clear-all'): void;
   (e: 'remove-aura'): void;
   (e: 'edit-aura'): void;
+  (e: 'toggle-dice-roller'): void;
 }>();
 
 function selectTool(tool: Tool) {
@@ -133,6 +134,11 @@ function toggleCollapse() {
 
   <button v-if="isDM" class="tool-button danger" :class="{ confirming: clearConfirming }" :title="clearConfirming ? 'Toque novamente para confirmar' : 'Limpar tudo'" @click="requestClearAll">
     <Icon name="clear" />
+  </button>
+
+  <hr class="divider" />
+  <button class="tool-button" title="Rolagens" @click="$emit('toggle-dice-roller')">
+    <Icon name="dice" />
   </button>
 
     <hr class="divider" />
