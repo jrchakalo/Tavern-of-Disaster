@@ -17,7 +17,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   };
 
   // Coloca um novo token no grid + adiciona entrada na iniciativa. Valida footprint e ocupação.
-  const requestPlaceToken = async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement: number; remainingMovement?: number; ownerId?: string; size: string; canOverlap?: boolean; characterId?: string | null }) => {
+  const requestPlaceToken = async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement?: number; remainingMovement?: number; ownerId?: string; size: string; canOverlap?: boolean; characterId?: string | null }) => {
     try {
         const userId = socket.data.user?.id; 
         if (!userId) return;
