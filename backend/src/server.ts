@@ -15,6 +15,8 @@ import { registerInitiativeHandlers } from './socketHandlers/initiativeHandlers'
 import { registerMeasurementHandlers } from './socketHandlers/measurementHandlers';
 import { registerDiceHandlers } from './socketHandlers/diceHandlers';
 import { cleanupInactiveTables } from './socketHandlers/measurementStore';
+import tokenTemplateRouter from './routes/tokenTemplate.routes';
+import sceneTemplateRouter from './routes/sceneTemplate.routes';
 
 dotenv.config();
 connectDB();
@@ -37,6 +39,8 @@ app.use('/api/auth', authRouter);
 app.use('/api/tables', tableRouter);
 app.use('/api', characterRouter);
 app.use('/api', systemRouter);
+app.use('/api/token-templates', tokenTemplateRouter);
+app.use('/api/scene-templates', sceneTemplateRouter);
 
 
 server.listen(port, () => {
