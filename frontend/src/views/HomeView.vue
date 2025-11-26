@@ -223,6 +223,7 @@ onBeforeUnmount(() => {
           <div class="quick-actions">
             <RouterLink to="/tables" class="btn">Minhas Mesas</RouterLink>
             <RouterLink to="/tables" class="btn outline">Criar / Entrar</RouterLink>
+            <RouterLink to="/profile" class="btn ghost">Perfil</RouterLink>
           </div>
         </div>
       </section>
@@ -233,6 +234,7 @@ onBeforeUnmount(() => {
             <li><RouterLink to="/tables">Ver todas as mesas</RouterLink></li>
             <li><RouterLink to="/tables">Criar nova mesa</RouterLink></li>
             <li><RouterLink to="/tables">Entrar com código</RouterLink></li>
+            <li><RouterLink to="/profile">Editar perfil</RouterLink></li>
           </ul>
         </div>
         <div class="panel surface">

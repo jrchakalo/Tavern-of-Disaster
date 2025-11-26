@@ -143,6 +143,19 @@ export interface UserSummaryDTO {
   username: string;
 }
 
+export interface UserProfileDTO {
+  _id: string;
+  username: string;
+  email: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  bio?: string | null;
+  preferredSystemId?: string | null;
+  measurementColor?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface TableInfoDTO {
   _id: string;
   name: string;

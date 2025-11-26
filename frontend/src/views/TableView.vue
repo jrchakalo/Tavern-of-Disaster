@@ -9,6 +9,7 @@ import { socketService } from '../services/socketService';
 import { useTableStore } from '../stores/tableStore';
 import { useCharacterStore } from '../stores/characterStore';
 import { useSystemStore } from '../stores/systemStore';
+import { useUserStore } from '../stores/userStore';
 
 import MapViewport from '../components/MapViewport.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
@@ -109,6 +110,8 @@ const previewMeasurement = ref<{
 
 const tableStore = useTableStore();
 const systemStore = useSystemStore();
+const userStore = useUserStore();
+const { profile } = storeToRefs(userStore);
 const {
   //State
   currentTable, 
@@ -221,6 +224,11 @@ let diceAnimationTimer: number | null = null;
 onMounted(() => {
   intervalId = window.setInterval(() => { nowTs.value = Date.now(); }, 500);
   tableStore.registerDiceAnimationHook(triggerDiceAnimation);
+  if (!profile.value) {
+    userStore.fetchProfile().catch((error) => {
+      console.warn('[table] não foi possível carregar perfil', error);
+    });
+  }
 });
 onUnmounted(() => {
   if (intervalId) clearInterval(intervalId);
@@ -243,6 +251,11 @@ watch(transitionAt, (at) => {
 const measurementColor = ref<string>('');
 const PLAYER_COLORS = ['#ff8c00', '#12c2e9', '#ff4d4d', '#43a047', '#ffd166', '#ff66cc', '#00bcd4', '#8bc34a', '#e91e63', '#9c27b0', '#795548', '#cddc39'];
 
+function normalizeHexColor(value?: string | null) {
+  if (!value) return '';
+  return value.startsWith('#') ? value : `#${value}`;
+}
+
 function loadOrInitUserColor() {
   // Mestre é sempre roxo
   if (isDM.value) {
@@ -258,6 +271,13 @@ function loadOrInitUserColor() {
     measurementColor.value = saved.startsWith('#') ? saved : `#${saved}`;
     return;
   }
+  const profileColor = profile.value?.measurementColor;
+  if (profileColor) {
+    const normalizedProfileColor = normalizeHexColor(profileColor);
+    measurementColor.value = normalizedProfileColor;
+    localStorage.setItem(key, normalizedProfileColor);
+    return;
+  }
   // Escolhe cor aleatória não-roxa
   const random = PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)] || '#ff8c00';
   measurementColor.value = random;
@@ -265,7 +285,7 @@ function loadOrInitUserColor() {
 }
 
 // Inicializa e atualiza quando papel/cena muda
-watch([isDM, activeSceneId], () => {
+watch([isDM, activeSceneId, () => profile.value?.measurementColor], () => {
   loadOrInitUserColor();
 }, { immediate: true });
 
