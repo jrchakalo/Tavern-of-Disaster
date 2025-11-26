@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import type { Character } from '../types';
+import type { Character, SystemDTO } from '../types';
 
 type KeyValueEntry = { key: string; value: string };
 
@@ -9,6 +9,7 @@ const props = defineProps<{
   character: Character | null;
   isDM: boolean;
   isOwner: boolean;
+  system?: SystemDTO | null;
 }>();
 
 const emit = defineEmits<{
@@ -28,9 +29,12 @@ const stats = ref({
 });
 const attributeEntries = ref<KeyValueEntry[]>([{ key: '', value: '' }]);
 const skillEntries = ref<KeyValueEntry[]>([{ key: '', value: '' }]);
+const systemAttributeValues = ref<Record<string, string>>({});
 
 const canEdit = computed(() => props.isDM || props.isOwner);
 const hasCharacterLoaded = computed(() => Boolean(props.character));
+const systemAttributes = computed(() => props.system?.defaultAttributes ?? null);
+const hasSystemAttributes = computed(() => Boolean(systemAttributes.value?.length));
 
 function buildEntries(record?: Record<string, unknown> | null) {
   if (!record) return [{ key: '', value: '' }];
@@ -54,6 +58,24 @@ function syncFromCharacter() {
   };
   attributeEntries.value = buildEntries(character?.attributes || null);
   skillEntries.value = buildEntries(character?.skills || null);
+  syncSystemAttributeValues();
+}
+
+function syncSystemAttributeValues() {
+  const defaults = systemAttributes.value;
+  if (!defaults?.length) {
+    systemAttributeValues.value = {};
+    return;
+  }
+  const characterAttributes = props.character?.attributes ?? {};
+  const next: Record<string, string> = {};
+  defaults.forEach((attr) => {
+    const key = attr.key?.trim();
+    if (!key) return;
+    const value = characterAttributes[key];
+    next[key] = value === undefined || value === null ? '' : String(value);
+  });
+  systemAttributeValues.value = next;
 }
 
 watch(
@@ -64,6 +86,11 @@ watch(
   },
   { immediate: true }
 );
+
+watch(systemAttributes, () => {
+  if (!props.open) return;
+  syncSystemAttributeValues();
+});
 
 function addAttributeRow() {
   attributeEntries.value.push({ key: '', value: '' });
@@ -89,6 +116,17 @@ function removeSkillRow(index: number) {
 
 function buildAttributesPayload() {
   const attributes: Record<string, number> = {};
+  if (systemAttributes.value?.length) {
+    systemAttributes.value.forEach(({ key }) => {
+      const normalizedKey = key.trim();
+      if (!normalizedKey) return;
+      const raw = systemAttributeValues.value[normalizedKey];
+      if (raw === undefined || raw === '') return;
+      const numeric = Number(raw);
+      if (Number.isNaN(numeric)) return;
+      attributes[normalizedKey] = numeric;
+    });
+  }
   attributeEntries.value.forEach(({ key, value }) => {
     const trimmedKey = key.trim();
     if (!trimmedKey) return;
@@ -110,6 +148,18 @@ function buildSkillsPayload() {
     skills[trimmedKey] = Number.isNaN(numeric) ? trimmedValue : numeric;
   });
   return Object.keys(skills).length ? skills : undefined;
+}
+
+function handleSystemAttributeInput(key: string, value: string) {
+  systemAttributeValues.value = {
+    ...systemAttributeValues.value,
+    [key]: value,
+  };
+}
+
+function handleSystemAttributeEvent(key: string, event: Event) {
+  const target = event.target as HTMLInputElement | null;
+  handleSystemAttributeInput(key, target?.value ?? '');
 }
 
 function buildStatsPayload() {
@@ -192,7 +242,43 @@ function handleDelete() {
             </label>
           </div>
 
-          <div class="kv-section">
+          <div v-if="hasSystemAttributes" class="kv-section">
+            <div class="section-header">
+              <h3>Atributos do sistema</h3>
+              <small class="system-attr-hint">{{ props.system?.name }}</small>
+            </div>
+            <div class="system-attributes">
+              <div v-for="attr in systemAttributes" :key="attr.key" class="system-attr-row">
+                <div class="system-attr-info">
+                  <span class="system-attr-label">{{ attr.label }}</span>
+                  <small class="system-attr-type">{{ attr.type }}</small>
+                </div>
+                <input
+                  type="number"
+                  :readonly="!canEdit"
+                  :value="systemAttributeValues[attr.key] ?? ''"
+                  placeholder="0"
+                  @input="handleSystemAttributeEvent(attr.key, $event)"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="kv-section" v-if="hasSystemAttributes">
+            <div class="section-header">
+              <h3>Atributos adicionais</h3>
+              <button v-if="canEdit" class="btn btn-xs" type="button" @click="addAttributeRow">Adicionar atributo</button>
+            </div>
+            <div class="kv-list">
+              <div v-for="(attr, index) in attributeEntries" :key="`attr-extra-${index}`" class="kv-row">
+                <input v-model="attr.key" :readonly="!canEdit" placeholder="Ex: Resistência" />
+                <input type="number" v-model="attr.value" :readonly="!canEdit" placeholder="0" />
+                <button v-if="canEdit" class="remove-btn" type="button" @click="removeAttributeRow(index)" aria-label="Remover atributo">×</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="kv-section" v-else>
             <div class="section-header">
               <h3>Atributos</h3>
               <button v-if="canEdit" class="btn btn-xs" type="button" @click="addAttributeRow">Adicionar atributo</button>
@@ -337,6 +423,42 @@ function handleDelete() {
   border-radius: var(--radius-md);
   padding: 12px;
   background: rgba(0, 0, 0, 0.08);
+}
+.system-attributes {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.system-attr-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.system-attr-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.system-attr-label {
+  font-weight: 600;
+}
+.system-attr-type {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.system-attr-row input {
+  flex: 1;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  padding: 8px;
+}
+.system-attr-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 .section-header {
   display: flex;

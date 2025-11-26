@@ -8,6 +8,7 @@ import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
 import { useTableStore } from '../stores/tableStore';
 import { useCharacterStore } from '../stores/characterStore';
+import { useSystemStore } from '../stores/systemStore';
 
 import MapViewport from '../components/MapViewport.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
@@ -107,6 +108,7 @@ const previewMeasurement = ref<{
 // Mobile drag for player initiative wrapper removed per latest request
 
 const tableStore = useTableStore();
+const systemStore = useSystemStore();
 const {
   //State
   currentTable, 
@@ -140,6 +142,21 @@ const {
 
 const characterStore = useCharacterStore();
 const { selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
+
+watch(currentTable, (table) => {
+  if (!table) return;
+  if (!systemStore.isLoaded) {
+    systemStore.fetchAll().catch((error) => console.error('[systems] falha ao carregar', error));
+  }
+}, { immediate: true });
+
+const currentSystem = computed(() => {
+  const table = currentTable.value;
+  return (
+    systemStore.getById(table?.systemId ?? null) ||
+    systemStore.getByKey(table?.systemKey ?? 'generic')
+  );
+});
 
 const showCharacterSheet = ref(false);
 const activeCharacterId = ref<string | null>(null);
@@ -1653,6 +1670,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               :availableCharacters="charactersForTable"
               :currentTokenId="currentTurnTokenId"
               :activeCharacterId="activeCharacterId"
+              :system="currentSystem"
               mode="embedded"
             />
           </div>
@@ -1840,6 +1858,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       :character="activeCharacter"
       :isDM="isDM"
       :isOwner="isActiveCharacterOwner"
+      :system="currentSystem"
       @close="closeCharacterSheet"
       @save="handleCharacterSave"
       @delete="handleCharacterDelete"
@@ -1852,6 +1871,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           :availableCharacters="charactersForTable"
           :currentTokenId="currentTurnTokenId"
           :activeCharacterId="activeCharacterId"
+          :system="currentSystem"
           mode="popup"
           @close="toggleDicePopup"
         />

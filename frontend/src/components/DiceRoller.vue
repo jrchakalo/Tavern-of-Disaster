@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import type { Character, DiceRolledPayload } from '../types';
+import type { Character, DiceRolledPayload, SystemDTO } from '../types';
 import { socketService } from '../services/socketService';
 import { toast } from '../services/toast';
 import { currentUser } from '../services/authService';
@@ -14,6 +14,7 @@ const props = withDefaults(defineProps<{
   mode?: 'embedded' | 'popup';
   activeCharacterId?: string | null;
   transport?: 'socket' | 'local';
+  system?: SystemDTO | null;
 }>(), {
   availableCharacters: () => [],
   currentTokenId: null,
@@ -21,6 +22,7 @@ const props = withDefaults(defineProps<{
   mode: 'embedded',
   activeCharacterId: null,
   transport: 'socket',
+  system: null,
 });
 
 const emit = defineEmits<{
@@ -38,6 +40,7 @@ const selectedPresetId = ref<string | null>(null);
 const selectedBindingKey = ref('none');
 
 const QUICK_DICE = [4, 6, 8, 10, 12, 20, 100];
+const systemDicePresets = computed(() => props.system?.dicePresets ?? []);
 
 watch(
   () => props.defaultExpression,
@@ -143,6 +146,11 @@ function applyShortcut(sides: number) {
 function applyPreset(preset: DicePreset) {
   expression.value = preset.expression;
   selectedPresetId.value = preset.id;
+}
+
+function applySystemPreset(preset: { key: string; label: string; expression: string }) {
+  expression.value = preset.expression;
+  selectedPresetId.value = null;
 }
 
 function removePreset(id: string) {
@@ -273,6 +281,22 @@ function roll() {
       <button type="button" class="ghost" @click="savePreset">+ Salvar</button>
     </div>
 
+    <div v-if="systemDicePresets.length" class="system-presets">
+      <p class="field-label">Presets do sistema</p>
+      <div class="system-presets__grid">
+        <button
+          v-for="preset in systemDicePresets"
+          :key="preset.key"
+          type="button"
+          class="system-preset-btn"
+          @click="applySystemPreset(preset)"
+        >
+          <span>{{ preset.label }}</span>
+          <small>{{ preset.expression }}</small>
+        </button>
+      </div>
+    </div>
+
     <div v-if="savedPresets.length" class="presets">
       <p class="field-label">Presets salvos</p>
       <ul>
@@ -391,6 +415,32 @@ function roll() {
 .actions .ghost {
   background: rgba(255, 255, 255, 0.05);
   color: inherit;
+}
+.system-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.system-presets__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+.system-preset-btn {
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.system-preset-btn small {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 .presets ul {
   list-style: none;

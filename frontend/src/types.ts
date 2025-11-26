@@ -3,6 +3,33 @@ export type TokenSize = typeof tokenSizes[number];
 
 export type KeptFlag = 'kept' | 'dropped';
 
+export type AttributeType = 'number' | 'text' | 'boolean';
+export type DiagonalRule = '5-10-5' | '5' | 'euclidean';
+
+export interface SystemDTO {
+  _id: string;
+  key: string;
+  name: string;
+  description?: string;
+  defaultAttributes?: Array<{
+    key: string;
+    label: string;
+    type: AttributeType;
+  }>;
+  movementRules?: {
+    baseSpeedFeet?: number;
+    diagonalRule?: DiagonalRule;
+    gridSizeFeet?: number;
+  };
+  dicePresets?: Array<{
+    key: string;
+    label: string;
+    expression: string;
+    category?: string;
+  }>;
+  docsUrl?: string | null;
+}
+
 export interface SingleDieRoll {
   die: number;
   value: number;
@@ -44,6 +71,9 @@ export interface ITable {
   activeSceneId?: string | null | undefined;
   status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED';
   pauseUntil?: string | null;
+  systemId?: string | null;
+  systemKey?: string | null;
+  systemName?: string | null;
 }
 
 export interface PlayerInfo {
@@ -122,6 +152,9 @@ export interface TableInfoDTO {
   status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED';
   pauseUntil: string | null;
   activeSceneId?: string | null;
+  systemId?: string | null;
+  systemKey?: string | null;
+  systemName?: string | null;
 }
 
 export interface InitiativeEntryDTO {

@@ -59,6 +59,9 @@ function mapTableDTO(dto: TableInfoDTO): ITable {
         status: dto.status,
         activeSceneId: dto.activeSceneId ?? null,
         pauseUntil: dto.pauseUntil,
+        systemId: dto.systemId ?? null,
+        systemKey: dto.systemKey ?? null,
+        systemName: dto.systemName ?? null,
     };
 }
 
