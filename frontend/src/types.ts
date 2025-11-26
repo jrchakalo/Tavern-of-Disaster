@@ -192,6 +192,34 @@ export interface TokenDTO {
   characterId?: string;
 }
 
+export interface TokenTemplateDTO {
+  _id: string;
+  ownerId: string;
+  systemId?: string | null;
+  name: string;
+  imageUrl?: string;
+  size?: TokenSize;
+  color?: string;
+  tags?: string[];
+  baseMovement?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SceneTemplateDTO {
+  _id: string;
+  ownerId: string;
+  systemId?: string | null;
+  name: string;
+  mapUrl: string;
+  gridWidth?: number;
+  gridHeight?: number;
+  type?: 'battlemap' | 'image';
+  defaultMetersPerSquare?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface MeasurementDTO {
   id?: string;
   userId: string;
