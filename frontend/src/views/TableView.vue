@@ -19,8 +19,9 @@ import AuraDialog from '../components/AuraDialog.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
 import ActionLog from '../components/ActionLog.vue';
 import DiceRoller from '../components/DiceRoller.vue';
+import DiceAnimation from '../components/DiceAnimation.vue';
 
-import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character } from '../types';
+import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character, DiceRolledPayload } from '../types';
 
 type MeasurementTool = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
 type ToolMode = MeasurementTool | 'select' | 'none';
@@ -171,6 +172,10 @@ const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.va
 const showActionLog = ref(false);
 const logCount = computed(() => logs.value.length);
 const showDicePopup = ref(false);
+const diceAnimationPayload = ref<DiceRolledPayload | null>(null);
+const diceAnimationVisible = ref(false);
+const diceAnimationId = ref(0);
+const DICE_ANIMATION_DURATION = 3600;
 
 // Transição curta antes do LIVE
 const showTransition = ref(false);
@@ -209,12 +214,16 @@ const isConnectionDegraded = computed(() => ['reconnecting', 'disconnected', 'er
 const dmRollerExpanded = ref(true);
 
 let intervalId: number | null = null;
+let diceAnimationTimer: number | null = null;
 onMounted(() => {
   intervalId = window.setInterval(() => { nowTs.value = Date.now(); }, 500);
+  tableStore.registerDiceAnimationHook(triggerDiceAnimation);
 });
 onUnmounted(() => {
   if (intervalId) clearInterval(intervalId);
   intervalId = null;
+  tableStore.registerDiceAnimationHook(null);
+  dismissDiceAnimation();
 });
 
 // Observa evento de transição vindo do servidor para todos os clientes
@@ -401,6 +410,29 @@ function toggleActionLog() {
 
 function toggleDicePopup() {
   showDicePopup.value = !showDicePopup.value;
+}
+
+function dismissDiceAnimation(options: { clearPayload?: boolean } = {}) {
+  if (diceAnimationTimer) {
+    window.clearTimeout(diceAnimationTimer);
+    diceAnimationTimer = null;
+  }
+  diceAnimationVisible.value = false;
+  if (options.clearPayload !== false) {
+    diceAnimationPayload.value = null;
+  }
+}
+
+function triggerDiceAnimation(payload: DiceRolledPayload) {
+  dismissDiceAnimation({ clearPayload: false });
+  diceAnimationPayload.value = payload;
+  diceAnimationId.value += 1;
+  requestAnimationFrame(() => {
+    diceAnimationVisible.value = true;
+  });
+  diceAnimationTimer = window.setTimeout(() => {
+    dismissDiceAnimation();
+  }, DICE_ANIMATION_DURATION);
 }
 
 function toggleDmRoller() {
@@ -1865,6 +1897,13 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         />
       </div>
     </transition>
+
+    <DiceAnimation
+      v-if="diceAnimationVisible && diceAnimationPayload"
+      :key="diceAnimationId"
+      :payload="diceAnimationPayload"
+      @dismiss="dismissDiceAnimation()"
+    />
   </div>
 </template>
 
