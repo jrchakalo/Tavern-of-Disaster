@@ -12,6 +12,7 @@ export type ScenePayload = {
   gridWidth?: number;
   gridHeight?: number;
   type?: 'battlemap' | 'image';
+  metersPerSquare?: number;
 };
 
 export async function createDefaultScene(tableId: Types.ObjectId): Promise<IScene> {
@@ -33,6 +34,7 @@ export async function createScene(table: HydratedTable, payload: ScenePayload): 
     gridWidth: payload.gridWidth || 30,
     gridHeight: payload.gridHeight || 30,
     type: payload.type || 'battlemap',
+    metersPerSquare: payload.metersPerSquare || 1.5,
   });
   await scene.save();
   table.scenes.push(scene._id as Types.ObjectId);

@@ -4,9 +4,13 @@ import mongoose, { Types } from 'mongoose'
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
 import Table from '../models/Table.model';
 import System from '../models/System.model';
+import SceneTemplate from '../models/SceneTemplate.model';
+import TokenTemplate from '../models/TokenTemplate.model';
 import { createScene as createSceneService, renameScene, deleteScene as deleteSceneService, createDefaultScene } from '../services/sceneService';
 import { addPlayerToTable, removePlayerFromTable, getTableById, assertUserIsDM, deleteTableAndDependents } from '../services/tableService';
 import { clearAllMeasurements, clearTableMeasurementState } from '../services/measurementService';
+import { addTokenToInitiative } from '../services/initiativeService';
+import { createToken } from '../services/tokenService';
 
 const router = Router();
 
@@ -128,6 +132,47 @@ router.post('/:tableId/scenes', authMiddleware, (async (req: AuthRequest, res) =
   }
 }) as RequestHandler);
 
+router.post('/:tableId/scenes/from-template/:templateId', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId, templateId } = req.params;
+    const overrides = req.body || {};
+    const userId = req.user?.id;
+
+    const table = await getTableById(tableId);
+    if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
+    assertUserIsDM(userId, table);
+
+    if (!Types.ObjectId.isValid(templateId)) {
+      return res.status(400).json({ message: 'Template inválido.' });
+    }
+
+    const template = await SceneTemplate.findById(templateId);
+    if (!template) {
+      return res.status(404).json({ message: 'Template de cena não encontrado.' });
+    }
+    if (template.ownerId.toString() !== userId) {
+      return res.status(403).json({ message: 'Sem permissão para usar este template.' });
+    }
+
+    const sanitizeNumber = (value: unknown) => typeof value === 'number' && value > 0 ? value : undefined;
+    const sanitizeText = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined;
+
+    const scene = await createSceneService(table as any, {
+      name: sanitizeText(overrides.name) || template.name,
+      imageUrl: sanitizeText(overrides.mapUrl) || sanitizeText(overrides.imageUrl) || template.mapUrl,
+      gridWidth: sanitizeNumber(overrides.gridWidth) || template.gridWidth,
+      gridHeight: sanitizeNumber(overrides.gridHeight) || template.gridHeight,
+      type: sanitizeText(overrides.type) as any || template.type,
+      metersPerSquare: sanitizeNumber(overrides.metersPerSquare) || template.defaultMetersPerSquare,
+    });
+
+    res.status(201).json(scene);
+  } catch (error) {
+    console.error('Erro ao criar cena via template:', error);
+    res.status(500).json({ message: 'Erro interno ao criar cena via template.' });
+  }
+}) as RequestHandler);
+
 router.put('/:tableId/scenes/:sceneId', authMiddleware, (async (req: AuthRequest, res) => {
   try {
     const { tableId, sceneId } = req.params;
@@ -146,6 +191,81 @@ router.put('/:tableId/scenes/:sceneId', authMiddleware, (async (req: AuthRequest
 
   } catch (error) {
     res.status(500).json({ message: 'Erro ao editar a cena.' });
+  }
+}) as RequestHandler);
+
+router.post('/:tableId/scenes/:sceneId/tokens/from-template/:templateId', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId, sceneId, templateId } = req.params;
+    const {
+      squareId,
+      ownerId,
+      name,
+      size,
+      imageUrl,
+      color,
+      movement,
+      canOverlap,
+      characterId,
+    } = req.body || {};
+    const userId = req.user?.id;
+
+    if (!squareId || typeof squareId !== 'string' || !squareId.trim()) {
+      return res.status(400).json({ message: 'squareId é obrigatório.' });
+    }
+
+    const table = await getTableById(tableId);
+    if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
+    assertUserIsDM(userId, table);
+
+    const sceneBelongs = table.scenes.some((scene) => scene.toString() === sceneId);
+    if (!sceneBelongs) {
+      return res.status(404).json({ message: 'Cena não pertence à mesa.' });
+    }
+
+    if (!Types.ObjectId.isValid(templateId)) {
+      return res.status(400).json({ message: 'Template inválido.' });
+    }
+
+    const template = await TokenTemplate.findById(templateId);
+    if (!template) {
+      return res.status(404).json({ message: 'Template de token não encontrado.' });
+    }
+    if (template.ownerId.toString() !== userId) {
+      return res.status(403).json({ message: 'Sem permissão para usar este template.' });
+    }
+
+    const finalName = typeof name === 'string' && name.trim() ? name.trim() : template.name;
+    if (!finalName) {
+      return res.status(400).json({ message: 'Nome do token não pode ser vazio.' });
+    }
+
+    const finalSize = typeof size === 'string' && size.trim() ? size.trim() : (template.size || 'Pequeno/Médio');
+    const finalImageUrl = typeof imageUrl === 'string' ? imageUrl : (template.imageUrl || undefined);
+    const movementOverride = typeof movement === 'number' && movement > 0 ? movement : template.baseMovement;
+    const finalColor = typeof color === 'string' && color.trim() ? color.trim() : template.color;
+    const tokenOwnerId = typeof ownerId === 'string' && ownerId.trim() ? ownerId.trim() : userId!;
+    const normalizedCharacterId = typeof characterId === 'string' && characterId.trim() ? characterId.trim() : null;
+
+    const token = await createToken({
+      tableId,
+      sceneId,
+      squareId: squareId.trim(),
+      ownerId: tokenOwnerId,
+      name: finalName,
+      imageUrl: finalImageUrl,
+      movement: movementOverride,
+      size: finalSize,
+      canOverlap: typeof canOverlap === 'boolean' ? canOverlap : false,
+      color: finalColor,
+      characterId: normalizedCharacterId,
+    });
+
+    const initiative = await addTokenToInitiative(sceneId, token as any);
+    res.status(201).json({ token, initiative });
+  } catch (error) {
+    console.error('Erro ao criar token via template:', error);
+    res.status(500).json({ message: 'Erro interno ao criar token via template.' });
   }
 }) as RequestHandler);
 
