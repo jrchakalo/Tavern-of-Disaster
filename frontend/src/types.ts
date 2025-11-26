@@ -1,6 +1,14 @@
 export const tokenSizes = ['Pequeno/Médio', 'Grande', 'Enorme', 'Descomunal', 'Colossal'] as const;
 export type TokenSize = typeof tokenSizes[number];
 
+export type KeptFlag = 'kept' | 'dropped';
+
+export interface SingleDieRoll {
+  die: number;
+  value: number;
+  kept: KeptFlag;
+}
+
 export interface TokenInfo {
   _id: string;
   tableId?: string;
@@ -184,4 +192,40 @@ export interface SessionStateDTO {
   initiative: InitiativeEntryDTO[];
   measurements: MeasurementDTO[];
   auras: AuraDTO[];
+}
+
+export interface RollDiceParams {
+  tableId: string;
+  expression: string;
+  tokenId?: string;
+  characterId?: string;
+  tags?: string[];
+  metadata?: string;
+}
+
+export interface DiceRolledPayload {
+  tableId: string;
+  expression: string;
+  rolls: SingleDieRoll[];
+  modifier: number;
+  total: number;
+  metadata?: string;
+  userId: string;
+  username: string;
+  tokenId?: string;
+  characterId?: string;
+  tags?: string[];
+  createdAt: string;
+}
+
+export type LogEntryType = 'roll' | 'system' | 'movement' | 'chat';
+
+export interface LogEntry {
+  id: string;
+  type: LogEntryType;
+  authorId?: string;
+  authorName?: string;
+  createdAt: string;
+  content: string;
+  raw?: unknown;
 }

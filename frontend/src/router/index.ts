@@ -29,6 +29,11 @@ const router = createRouter({
     meta: { requiresAuth: true }
     },
     {
+      path: '/dice',
+      name: 'dice-sandbox',
+      component: () => import('../views/DiceSandboxView.vue')
+    },
+    {
       path: '/tables',
       name: 'tables',
       component: () => import('../views/TablesView.vue'),

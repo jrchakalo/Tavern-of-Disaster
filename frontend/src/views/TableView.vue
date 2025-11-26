@@ -17,8 +17,11 @@ import Icon from '../components/Icon.vue';
 import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
+import ActionLog from '../components/ActionLog.vue';
+import DiceRoller from '../components/DiceRoller.vue';
+import DiceAnimation from '../components/DiceAnimation.vue';
 
-import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character } from '../types';
+import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character, DiceRolledPayload } from '../types';
 
 type MeasurementTool = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
 type ToolMode = MeasurementTool | 'select' | 'none';
@@ -126,16 +129,17 @@ const {
   transitionMs,
   userMeasurementColors,
   clockSkewMs,
+  logs,
+  currentTurnTokenId,
   // Getters
   isDM, 
   activeScene, 
   tokensOnMap, 
-  currentTurnTokenId, 
   myActiveToken 
 } = storeToRefs(tableStore);
 
 const characterStore = useCharacterStore();
-const { loadingByTable: characterLoadingMap, errorByTable: characterErrorMap, selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
+const { selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
 
 const showCharacterSheet = ref(false);
 const activeCharacterId = ref<string | null>(null);
@@ -149,22 +153,15 @@ const isActiveCharacterOwner = computed(() => {
   return activeCharacter.value.ownerId === currentUser.value.id;
 });
 const characterFetchScope = computed(() => (isDM.value ? 'dm' : 'player'));
-const isCharacterListLoading = computed(() => Boolean(characterLoadingMap.value[tableId]));
-const characterError = computed(() => characterErrorMap.value[tableId] ?? null);
-const hasCharacters = computed(() => charactersForTable.value.length > 0);
-
-const characterOwnerDirectory = computed<Record<string, string>>(() => {
-  const map: Record<string, string> = {};
-  const table = currentTable.value;
-  if (!table) return map;
-  map[table.dm._id] = table.dm.username;
-  table.players.forEach((player) => {
-    map[player._id] = player.username;
-  });
-  return map;
-});
 
 const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
+const showActionLog = ref(false);
+const logCount = computed(() => logs.value.length);
+const showDicePopup = ref(false);
+const diceAnimationPayload = ref<DiceRolledPayload | null>(null);
+const diceAnimationVisible = ref(false);
+const diceAnimationId = ref(0);
+const DICE_ANIMATION_DURATION = 3600;
 
 // Transição curta antes do LIVE
 const showTransition = ref(false);
@@ -200,14 +197,19 @@ const connectionLabel = computed(() => {
 });
 
 const isConnectionDegraded = computed(() => ['reconnecting', 'disconnected', 'error'].includes(connectionStatus.value));
+const dmRollerExpanded = ref(true);
 
 let intervalId: number | null = null;
+let diceAnimationTimer: number | null = null;
 onMounted(() => {
   intervalId = window.setInterval(() => { nowTs.value = Date.now(); }, 500);
+  tableStore.registerDiceAnimationHook(triggerDiceAnimation);
 });
 onUnmounted(() => {
   if (intervalId) clearInterval(intervalId);
   intervalId = null;
+  tableStore.registerDiceAnimationHook(null);
+  dismissDiceAnimation();
 });
 
 // Observa evento de transição vindo do servidor para todos os clientes
@@ -263,16 +265,12 @@ watch(measurementColor, (c) => {
 async function fetchCharactersForTable() {
   if (!tableId) return;
   try {
-    await characterStore.fetchForTable(tableId, { scope: characterFetchScope.value });
+    return await characterStore.fetchForTable(tableId, { scope: characterFetchScope.value });
   } catch (error) {
     console.error('[characters] falha ao carregar', error);
     const message = error instanceof Error ? error.message : 'Não foi possível carregar as fichas.';
     toast.error(message);
   }
-}
-
-function refreshCharacters() {
-  fetchCharactersForTable();
 }
 
 function openCharacterSheet(characterId: string) {
@@ -285,21 +283,6 @@ function closeCharacterSheet() {
   showCharacterSheet.value = false;
   activeCharacterId.value = null;
   characterStore.setSelectedCharacter(null);
-}
-
-async function handleQuickCreateCharacter() {
-  if (!tableId) return;
-  const baseName = 'Novo Personagem';
-  const nextNumber = charactersForTable.value.length + 1;
-  try {
-    const created = await characterStore.createCharacter(tableId, { name: `${baseName} ${nextNumber}` });
-    toast.success('Ficha criada.');
-    openCharacterSheet(created._id);
-  } catch (error) {
-    console.error('[characters] erro ao criar', error);
-    const message = error instanceof Error ? error.message : 'Não foi possível criar a ficha.';
-    toast.error(message);
-  }
 }
 
 async function handleCharacterSave(payload: Partial<Character>) {
@@ -327,13 +310,6 @@ async function handleCharacterDelete() {
     const message = error instanceof Error ? error.message : 'Não foi possível remover a ficha.';
     toast.error(message);
   }
-}
-
-function resolveCharacterOwnerName(ownerId?: string | null) {
-  if (!ownerId) return 'Sem dono';
-  const table = currentTable.value;
-  if (table?.dm._id === ownerId) return `${table.dm.username} (Mestre)`;
-  return characterOwnerDirectory.value[ownerId] || 'Jogador';
 }
 
 watch(characterFetchScope, () => {
@@ -386,6 +362,41 @@ function handleTogglePersistent(on: boolean) { persistentMode.value = on; }
 
 function handleColorSelected(color: string) {
   measurementColor.value = color;
+}
+
+function toggleActionLog() {
+  showActionLog.value = !showActionLog.value;
+}
+
+function toggleDicePopup() {
+  showDicePopup.value = !showDicePopup.value;
+}
+
+function dismissDiceAnimation(options: { clearPayload?: boolean } = {}) {
+  if (diceAnimationTimer) {
+    window.clearTimeout(diceAnimationTimer);
+    diceAnimationTimer = null;
+  }
+  diceAnimationVisible.value = false;
+  if (options.clearPayload !== false) {
+    diceAnimationPayload.value = null;
+  }
+}
+
+function triggerDiceAnimation(payload: DiceRolledPayload) {
+  dismissDiceAnimation({ clearPayload: false });
+  diceAnimationPayload.value = payload;
+  diceAnimationId.value += 1;
+  requestAnimationFrame(() => {
+    diceAnimationVisible.value = true;
+  });
+  diceAnimationTimer = window.setTimeout(() => {
+    dismissDiceAnimation();
+  }, DICE_ANIMATION_DURATION);
+}
+
+function toggleDmRoller() {
+  dmRollerExpanded.value = !dmRollerExpanded.value;
 }
 
 function setMap() {
@@ -1631,6 +1642,22 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           />
         </div>
 
+        <div class="panel-section" v-if="activeScene?.type === 'battlemap'">
+          <div class="subsection-toggle" @click="toggleDmRoller">
+            <h4>Rolagens</h4>
+            <span class="chevron"><Icon :name="dmRollerExpanded ? 'minus' : 'plus'" size="16" /></span>
+          </div>
+          <div v-show="dmRollerExpanded">
+            <DiceRoller
+              :tableId="tableId"
+              :availableCharacters="charactersForTable"
+              :currentTokenId="currentTurnTokenId"
+              :activeCharacterId="activeCharacterId"
+              mode="embedded"
+            />
+          </div>
+        </div>
+
         <div v-if="activeScene?.type === 'battlemap'" class="panel-section">
           <button class="subsection-toggle" @click="isGridCollapsed = !isGridCollapsed">
             <h4>Controles do Grid</h4>
@@ -1739,6 +1766,29 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 
     <button v-if="canUseMap" @click="resetView" class="reset-view-btn below">Recentralizar</button>
 
+    <button
+      class="log-toggle-btn surface"
+      :class="{ open: showActionLog }"
+      type="button"
+      @click="toggleActionLog"
+    >
+      {{ showActionLog ? 'Fechar log' : 'Log' }}
+      <span v-if="logCount" class="log-badge">{{ logCount }}</span>
+    </button>
+
+    <transition name="log-panel">
+      <aside v-if="showActionLog" class="action-log-panel surface">
+        <header class="log-panel__header">
+          <div>
+            <p class="log-panel__eyebrow">Timeline</p>
+            <h3>Registro de ações</h3>
+          </div>
+          <button type="button" class="log-panel__close" @click="toggleActionLog">×</button>
+        </header>
+        <ActionLog :logs="logs" />
+      </aside>
+    </transition>
+
     <Toolbar 
       v-if="(sessionStatus === 'LIVE' || isDM) && activeScene?.type === 'battlemap'"
       :activeTool="activeTool"
@@ -1755,6 +1805,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @delete-selected="handleDeleteSelectedPersistent"
       @remove-aura="handleToolbarRemoveAura"
       @edit-aura="handleToolbarEditAura"
+      @toggle-dice-roller="toggleDicePopup"
     />
     
     <TokenCreationForm
@@ -1793,6 +1844,26 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @save="handleCharacterSave"
       @delete="handleCharacterDelete"
     />
+
+    <transition name="dice-roller">
+      <div v-if="showDicePopup" class="dice-popup-overlay" @click.self="toggleDicePopup">
+        <DiceRoller
+          :tableId="tableId"
+          :availableCharacters="charactersForTable"
+          :currentTokenId="currentTurnTokenId"
+          :activeCharacterId="activeCharacterId"
+          mode="popup"
+          @close="toggleDicePopup"
+        />
+      </div>
+    </transition>
+
+    <DiceAnimation
+      v-if="diceAnimationVisible && diceAnimationPayload"
+      :key="diceAnimationId"
+      :payload="diceAnimationPayload"
+      @dismiss="dismissDiceAnimation()"
+    />
   </div>
 </template>
 
@@ -1816,6 +1887,118 @@ main{
   padding: 20px;
   box-sizing: border-box; /* Garante que o padding não aumente a largura total */
   position: relative;
+}
+.log-toggle-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt));
+  box-shadow: var(--elev-2);
+  z-index: 70;
+}
+.log-toggle-btn.open {
+  background: var(--color-accent);
+  color: #0f0f15;
+}
+.log-badge {
+  min-width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--color-danger, #e53935);
+  color: #fff;
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.action-log-panel {
+  position: fixed;
+  bottom: 84px;
+  right: 20px;
+  width: min(420px, calc(100vw - 40px));
+  max-height: min(70vh, 540px);
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--elev-3);
+  background: linear-gradient(180deg, rgba(16, 12, 18, 0.95), rgba(11, 9, 14, 0.95));
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.log-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.log-panel__eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.68rem;
+  color: var(--color-text-muted, #c9c5d4);
+}
+.log-panel__header h3 {
+  margin: 4px 0 0;
+  font-size: 1.1rem;
+}
+.log-panel__close {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  width: 32px;
+  height: 32px;
+  font-size: 1.2rem;
+  background: var(--color-surface-alt);
+  cursor: pointer;
+}
+.log-panel-enter-active,
+.log-panel-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.log-panel-enter-from,
+.log-panel-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}
+.dice-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 8, 12, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+}
+.dice-roller-enter-active,
+.dice-roller-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.dice-roller-enter-from,
+.dice-roller-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+@media (max-width: 768px) {
+  .action-log-panel {
+    right: 10px;
+    left: 10px;
+    width: auto;
+  }
+  .log-toggle-btn {
+    right: 10px;
+    left: auto;
+  }
 }
 .connection-indicator {
   position: absolute;

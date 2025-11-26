@@ -2,7 +2,17 @@ import { toast } from './toast';
 import { io, Socket } from 'socket.io-client';
 import { useTableStore } from '../stores/tableStore';
 import { authToken } from './authService';
-import type { TokenInfo, IInitiativeEntry, PlayerInfo, TokenSize, SessionStateDTO, SceneDTO, InitiativeEntryDTO } from '../types';
+import type {
+  TokenInfo,
+  IInitiativeEntry,
+  PlayerInfo,
+  TokenSize,
+  SessionStateDTO,
+  SceneDTO,
+  InitiativeEntryDTO,
+  RollDiceParams,
+  DiceRolledPayload,
+} from '../types';
 
 class SocketService {
   private socket: Socket | null = null;
@@ -68,6 +78,7 @@ class SocketService {
     });
     this.socket.on('sessionTransition', (data: { durationMs: number }) => { this.store.transitionMs = data.durationMs || 3000; this.store.transitionAt = Date.now(); });
     this.socket.on('mapUpdated', (data: { mapUrl: string }) => { this.store.currentMapUrl = data.mapUrl; });
+    this.socket.on('diceRolled', this.handleDiceRolled);
     // Medições efêmeras / compartilhadas
   this.socket.on('measurementShared', (m) => this.store.upsertSharedMeasurement(m));
   this.socket.on('measurementRemoved', (data: { userId: string }) => this.store.removeSharedMeasurement(data.userId));
@@ -119,7 +130,8 @@ class SocketService {
         toast.error('Erro de conexão. Tentando novamente...');
       } catch {}
     });
-      this.socket.on('tokenPlacementError', (error) => toast.error(`Erro ao colocar token: ${error.message}`));
+        this.socket.on('tokenPlacementError', (error) => toast.error(`Erro ao colocar token: ${error.message}`));
+        this.socket.on('diceRollError', this.handleDiceRollError);
   }
   // ---- Emissores de requisições ----
   // Medições persistentes
@@ -219,6 +231,10 @@ class SocketService {
     this.socket?.emit('requestRemoveMeasurement', payload);
   }
 
+  rollDice(params: RollDiceParams) {
+    this.socket?.emit('requestRollDice', params);
+  }
+
   clearAllMeasurements(tableId: string, sceneId: string) {
     this.socket?.emit('requestClearAllMeasurements', { tableId, sceneId });
   }
@@ -235,6 +251,15 @@ class SocketService {
   sendPing(payload: { tableId: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string }) {
     this.socket?.emit('requestPing', payload);
   }
+
+  private handleDiceRolled = (payload: DiceRolledPayload) => {
+    this.store.handleDiceRoll(payload);
+  };
+
+  private handleDiceRollError = (error: { message?: string }) => {
+    const message = error?.message || 'Erro ao executar rolagem.';
+    toast.error(message);
+  };
 }
 
 // Instância singleton

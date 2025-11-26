@@ -12,6 +12,7 @@ import { registerTableHandlers } from './socketHandlers/tableHandlers';
 import { registerTokenHandlers } from './socketHandlers/tokenHandlers';
 import { registerInitiativeHandlers } from './socketHandlers/initiativeHandlers';
 import { registerMeasurementHandlers } from './socketHandlers/measurementHandlers';
+import { registerDiceHandlers } from './socketHandlers/diceHandlers';
 import { cleanupInactiveTables } from './socketHandlers/measurementStore';
 
 dotenv.config();
@@ -77,6 +78,7 @@ io.on('connection', async (socket) => {
   registerTokenHandlers(io, socket);
   registerInitiativeHandlers(io, socket);
   registerMeasurementHandlers(io, socket);
+  registerDiceHandlers(io, socket);
 
   socket.on('disconnect', () => {
     console.log(`Usuário desconectado: ${socket.id}`);

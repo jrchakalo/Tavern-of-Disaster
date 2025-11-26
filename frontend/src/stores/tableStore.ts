@@ -17,12 +17,33 @@ import type {
     TableInfoDTO,
     MeasurementDTO,
     AuraDTO,
+    DiceRolledPayload,
+    LogEntry,
 } from '../types';
 import { currentUser } from '../services/authService';
 
 const DEFAULT_GRID = 30;
 const DEFAULT_METERS_PER_SQUARE = 1.5;
+const LOG_CAP = 200;
+type MeasurementShape = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
+type PersistentMeasurement = {
+    id: string;
+    userId: string;
+    username: string;
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+    distance: string;
+    color: string;
+    type?: MeasurementShape;
+    affectedSquares?: string[];
+    sceneId: string;
+};
+type IncomingPersistentMeasurement = Omit<PersistentMeasurement, 'sceneId'> & { sceneId?: string };
 export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
+
+function isTokenSizeValue(value: string): value is TokenInfo['size'] {
+    return (tokenSizes as readonly string[]).includes(value);
+}
 
 function normalizeSceneType(type?: string): 'battlemap' | 'image' {
     return type === 'image' ? 'image' : 'battlemap';
@@ -56,7 +77,7 @@ function mapSceneDTO(dto: SceneDTO): IScene {
 }
 
 function toTokenSize(value: string): TokenInfo['size'] {
-    return tokenSizes.includes(value as any) ? (value as TokenInfo['size']) : 'Pequeno/Médio';
+    return isTokenSizeValue(value) ? value : 'Pequeno/Médio';
 }
 
 function mapTokenDTO(dto: TokenDTO): TokenInfo {
@@ -87,7 +108,7 @@ function mapInitiativeDTO(dto: InitiativeEntryDTO): IInitiativeEntry {
     };
 }
 
-function mapMeasurementDTO(dto: MeasurementDTO) {
+function mapMeasurementDTO(dto: MeasurementDTO): PersistentMeasurement {
     return {
         id: dto.id ?? `${dto.userId}-${dto.sceneId}`,
         userId: dto.userId,
@@ -155,18 +176,9 @@ export const useTableStore = defineStore('table', () => {
     const userMeasurementColors: Ref<Record<string, string>> = ref({}); // Preferência local de cor
 
         // Medições persistentes (lista) – não são limpas ao mudar de turno
-    const persistentMeasurements: Ref<Array<{
-            id: string;
-            userId: string;
-            username: string;
-            start: { x: number; y: number };
-            end: { x: number; y: number };
-            distance: string;
-            color: string;
-            type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
-            affectedSquares?: string[];
-            sceneId: string;
-        }>> = ref([]);
+    const persistentMeasurements: Ref<PersistentMeasurement[]> = ref([]);
+    const logs: Ref<LogEntry[]> = ref([]);
+    const diceAnimationHook: Ref<((payload: DiceRolledPayload) => void) | null> = ref(null);
 
     function setScenesFromDTO(sceneDtos: SceneDTO[]) {
         scenes.value = sceneDtos.map(mapSceneDTO);
@@ -227,7 +239,7 @@ export const useTableStore = defineStore('table', () => {
         }
         persistentMeasurements.value = items
             .filter(item => item.sceneId === sceneId)
-            .map(mapMeasurementDTO) as any;
+            .map(mapMeasurementDTO);
     }
 
     function setAurasFromDTO(items: AuraDTO[], sceneId: string | null) {
@@ -271,12 +283,62 @@ export const useTableStore = defineStore('table', () => {
         connectionStatus.value = status;
     }
 
+    function createLogId() {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+            return crypto.randomUUID();
+        }
+        return `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function addLogEntry(entry: LogEntry) {
+        const trimmed = logs.value.slice(- (LOG_CAP - 1));
+        logs.value = [...trimmed, entry];
+    }
+
+    function clearLogs() {
+        logs.value = [];
+    }
+
+    function buildRollLogEntry(payload: DiceRolledPayload): LogEntry {
+        const label = payload.metadata || payload.tags?.[0] || 'Rolagem';
+        const rollsDisplay = payload.rolls.length
+            ? payload.rolls.map(r => r.kept === 'kept' ? `${r.value}` : `(${r.value})`).join(', ')
+            : '—';
+        const modifierText = payload.modifier === 0
+            ? ''
+            : payload.modifier > 0
+                ? ` + ${payload.modifier}`
+                : ` - ${Math.abs(payload.modifier)}`;
+        const detail = `${payload.expression} → [${rollsDisplay}]${modifierText} = ${payload.total}`;
+        return {
+            id: createLogId(),
+            type: 'roll',
+            authorId: payload.userId,
+            authorName: payload.username,
+            createdAt: payload.createdAt,
+            content: `${label}: ${detail}`,
+            raw: payload,
+        };
+    }
+
+    function handleDiceRoll(payload: DiceRolledPayload) {
+        addLogEntry(buildRollLogEntry(payload));
+        if (payload.userId === currentUser.value?.id) {
+            diceAnimationHook.value?.(payload);
+        }
+    }
+
+    function registerDiceAnimationHook(handler: ((payload: DiceRolledPayload) => void) | null) {
+        diceAnimationHook.value = handler;
+    }
+
     function updateSessionState(snapshot: SessionStateDTO) {
         const previousSceneId = activeSceneId.value;
         const newSceneId = applySessionSnapshot(snapshot);
         if (previousSceneId !== newSceneId) {
             sharedMeasurements.value = {};
             pings.value = [];
+            logs.value = [];
         }
     }
 
@@ -365,7 +427,7 @@ export const useTableStore = defineStore('table', () => {
     }
 
         // Persistentes
-    function addPersistentMeasurement(m: { id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; sceneId: string; }) {
+    function addPersistentMeasurement(m: PersistentMeasurement) {
             // Garante vínculo à cena ativa
             if (m.sceneId === activeSceneId.value) {
                 persistentMeasurements.value = [...persistentMeasurements.value, m];
@@ -377,20 +439,20 @@ export const useTableStore = defineStore('table', () => {
         function clearPersistentMeasurementsForScene(sceneId: string) {
             persistentMeasurements.value = persistentMeasurements.value.filter(pm => pm.sceneId !== sceneId);
         }
-    function setPersistentMeasurementsForScene(sceneId: string, items: Array<{ id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; sceneId?: string; }>) {
+    function setPersistentMeasurementsForScene(sceneId: string, items: IncomingPersistentMeasurement[]) {
             // Normaliza sceneId ausente (defesa contra payload incompleto do servidor)
-            const normalized = items.map(i => ({ ...i, sceneId: i.sceneId || sceneId }));
+            const normalized: PersistentMeasurement[] = items.map(i => ({ ...i, sceneId: i.sceneId || sceneId }));
             const others = persistentMeasurements.value.filter(pm => pm.sceneId !== sceneId);
             const currentForScene = persistentMeasurements.value.filter(pm => pm.sceneId === sceneId);
             // Se lista recebida é vazia e já temos itens, não sobrescreve (evita wipe indevido por corrida)
             const replacement = normalized.filter(i => i.sceneId === sceneId);
             const finalForScene = (replacement.length === 0 && currentForScene.length > 0) ? currentForScene : replacement;
-            persistentMeasurements.value = [...others, ...finalForScene as any];
+            persistentMeasurements.value = [...others, ...finalForScene];
         }
 
     function updateSceneScale(sceneId: string, newScale: number) {
         const scene = scenes.value.find(s => s._id === sceneId);
-        if (scene) (scene as any).metersPerSquare = newScale;
+        if (scene) scene.metersPerSquare = newScale;
         if (sceneId === activeSceneId.value) metersPerSquare.value = newScale;
     }
 
@@ -442,6 +504,12 @@ export const useTableStore = defineStore('table', () => {
         upsertSharedMeasurement,
         removeSharedMeasurement,
     clearSharedMeasurements,
+    logs,
+    addLogEntry,
+    clearLogs,
+    buildRollLogEntry,
+    handleDiceRoll,
+    registerDiceAnimationHook,
     setUserMeasurementColor,
     getUserMeasurementColor,
     updateSceneScale,
