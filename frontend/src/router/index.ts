@@ -34,6 +34,11 @@ const router = createRouter({
       component: () => import('../views/DiceSandboxView.vue')
     },
     {
+      path: '/systems',
+      name: 'systems-library',
+      component: () => import('../views/SystemsLibraryView.vue')
+    },
+    {
       path: '/tables',
       name: 'tables',
       component: () => import('../views/TablesView.vue'),

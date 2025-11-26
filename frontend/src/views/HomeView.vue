@@ -2,6 +2,8 @@
 import { RouterLink } from 'vue-router';
 import { currentUser } from '../services/authService';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
+import { storeToRefs } from 'pinia';
+import { useSystemStore } from '../stores/systemStore';
 
 import Icon from '../components/Icon.vue';
 const features = [
@@ -12,6 +14,11 @@ const features = [
 ];
 
 const isLoggedIn = computed(() => Boolean(currentUser?.value?.id || (currentUser as any)?.id));
+
+const systemStore = useSystemStore();
+const { systems } = storeToRefs(systemStore);
+const highlightedSystems = computed(() => systems.value.slice(0, 4));
+const hasHighlightedSystems = computed(() => highlightedSystems.value.length > 0);
 
 // Refs para animação da linha entre tokens
 const gridRef = ref<HTMLDivElement | null>(null);
@@ -78,6 +85,9 @@ function runCycle() {
 }
 
 onMounted(() => {
+  if (!systemStore.isLoaded) {
+    systemStore.fetchAll().catch((error) => console.error('[systems] falha ao carregar resumo', error));
+  }
   nextTick(() => {
     computeLine();
     runCycle();
@@ -150,6 +160,50 @@ onBeforeUnmount(() => {
               <p class="text-muted">{{ f.desc }}</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section class="how-band fade-in-up" style="animation-delay:.15s">
+        <div class="surface how-card">
+          <p class="eyebrow">Como funciona o VTT?</p>
+          <h2>Em três passos simples:</h2>
+          <ol>
+            <li>Crie uma mesa e envie o convite para o grupo.</li>
+            <li>Escolha um sistema para preencher atributos e movimentos automaticamente.</li>
+            <li>Compartilhe cenas, mova tokens e registre cada rolagem em tempo real.</li>
+          </ol>
+          <p class="text-muted">Tudo roda no navegador: sem plugins, sem configurações complicadas.</p>
+          <div class="link-row">
+            <RouterLink to="/dice" class="btn ghost">Rolagem pública</RouterLink>
+            <RouterLink to="/login" class="btn outline">Entrar</RouterLink>
+            <RouterLink to="/register" class="btn">Registrar</RouterLink>
+          </div>
+        </div>
+      </section>
+
+      <section class="systems-band fade-in-up" style="animation-delay:.2s">
+        <div class="systems-header">
+          <div>
+            <p class="eyebrow">Sistemas suportados</p>
+            <h2>Pronto para D&D, genéricos e mais.</h2>
+          </div>
+          <RouterLink to="/systems" class="btn outline">Ver todos</RouterLink>
+        </div>
+        <div v-if="hasHighlightedSystems" class="systems-cards">
+          <article v-for="system in highlightedSystems" :key="system._id" class="surface system-preview">
+            <h3>{{ system.name }}</h3>
+            <p class="system-key">{{ system.key }}</p>
+            <p class="text-muted">{{ system.description || 'Sistema genérico com presets básicos.' }}</p>
+            <ul v-if="system.defaultAttributes?.length" class="system-attrs">
+              <li v-for="attr in system.defaultAttributes.slice(0,3)" :key="attr.key">
+                <span>{{ attr.label }}</span>
+                <small>{{ attr.type }}</small>
+              </li>
+            </ul>
+          </article>
+        </div>
+        <div v-else class="systems-empty surface">
+          <p>Carregando sistemas...</p>
         </div>
       </section>
       
@@ -346,6 +400,84 @@ onBeforeUnmount(() => {
   .feature-wrap { display:block; overflow-x:auto; overflow-y:hidden; white-space:nowrap; padding: 8px 0.5rem 12px; }
   /* Let cards auto-size vertically so text never overflows; keep narrow width and allow horizontal scroll */
   .feature-card { display:inline-flex; vertical-align:top; margin-right:16px; width:220px; max-width:none; overflow:hidden; }
+}
+
+.how-band, .systems-band { padding: 0.5rem 0.5rem 0; }
+.how-card {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.how-card ol {
+  margin: 0;
+  padding-left: 1.25rem;
+  line-height: 1.6;
+}
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.systems-band {
+  max-width: 1180px;
+  margin: 0 auto 1.5rem;
+}
+.systems-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 0.5rem;
+}
+.systems-cards {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.system-preview {
+  padding: 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: linear-gradient(180deg,var(--color-surface),var(--color-surface-alt));
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.system-preview h3 {
+  margin: 0;
+}
+.system-key {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+.system-attrs {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.system-attrs li {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  min-width: 84px;
+}
+.systems-empty {
+  margin-top: 1rem;
+  padding: 1.5rem;
+  text-align: center;
 }
 
 /* Dashboard dentro do viewport, sem rolagem e com rodapé visível */
