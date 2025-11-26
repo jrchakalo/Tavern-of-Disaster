@@ -23,6 +23,7 @@ const tagsDisplay = computed(() => props.payload.tags?.filter(Boolean).join(' â€
 <template>
   <transition name="dice-fanfare">
     <div
+      v-if="payload"
       class="dice-animation-overlay"
       role="status"
       aria-live="polite"

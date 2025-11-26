@@ -139,7 +139,7 @@ const {
 } = storeToRefs(tableStore);
 
 const characterStore = useCharacterStore();
-const { loadingByTable: characterLoadingMap, errorByTable: characterErrorMap, selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
+const { selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
 
 const showCharacterSheet = ref(false);
 const activeCharacterId = ref<string | null>(null);
@@ -153,20 +153,6 @@ const isActiveCharacterOwner = computed(() => {
   return activeCharacter.value.ownerId === currentUser.value.id;
 });
 const characterFetchScope = computed(() => (isDM.value ? 'dm' : 'player'));
-const isCharacterListLoading = computed(() => Boolean(characterLoadingMap.value[tableId]));
-const characterError = computed(() => characterErrorMap.value[tableId] ?? null);
-const hasCharacters = computed(() => charactersForTable.value.length > 0);
-
-const characterOwnerDirectory = computed<Record<string, string>>(() => {
-  const map: Record<string, string> = {};
-  const table = currentTable.value;
-  if (!table) return map;
-  map[table.dm._id] = table.dm.username;
-  table.players.forEach((player) => {
-    map[player._id] = player.username;
-  });
-  return map;
-});
 
 const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
 const showActionLog = ref(false);
@@ -279,16 +265,12 @@ watch(measurementColor, (c) => {
 async function fetchCharactersForTable() {
   if (!tableId) return;
   try {
-    await characterStore.fetchForTable(tableId, { scope: characterFetchScope.value });
+    return await characterStore.fetchForTable(tableId, { scope: characterFetchScope.value });
   } catch (error) {
     console.error('[characters] falha ao carregar', error);
     const message = error instanceof Error ? error.message : 'Não foi possível carregar as fichas.';
     toast.error(message);
   }
-}
-
-function refreshCharacters() {
-  fetchCharactersForTable();
 }
 
 function openCharacterSheet(characterId: string) {
@@ -301,21 +283,6 @@ function closeCharacterSheet() {
   showCharacterSheet.value = false;
   activeCharacterId.value = null;
   characterStore.setSelectedCharacter(null);
-}
-
-async function handleQuickCreateCharacter() {
-  if (!tableId) return;
-  const baseName = 'Novo Personagem';
-  const nextNumber = charactersForTable.value.length + 1;
-  try {
-    const created = await characterStore.createCharacter(tableId, { name: `${baseName} ${nextNumber}` });
-    toast.success('Ficha criada.');
-    openCharacterSheet(created._id);
-  } catch (error) {
-    console.error('[characters] erro ao criar', error);
-    const message = error instanceof Error ? error.message : 'Não foi possível criar a ficha.';
-    toast.error(message);
-  }
 }
 
 async function handleCharacterSave(payload: Partial<Character>) {
@@ -343,13 +310,6 @@ async function handleCharacterDelete() {
     const message = error instanceof Error ? error.message : 'Não foi possível remover a ficha.';
     toast.error(message);
   }
-}
-
-function resolveCharacterOwnerName(ownerId?: string | null) {
-  if (!ownerId) return 'Sem dono';
-  const table = currentTable.value;
-  if (table?.dm._id === ownerId) return `${table.dm.username} (Mestre)`;
-  return characterOwnerDirectory.value[ownerId] || 'Jogador';
 }
 
 watch(characterFetchScope, () => {
