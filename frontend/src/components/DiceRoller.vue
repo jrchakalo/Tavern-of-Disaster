@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import type { Character } from '../types';
+import type { Character, DiceRolledPayload } from '../types';
 import { socketService } from '../services/socketService';
 import { toast } from '../services/toast';
 import { currentUser } from '../services/authService';
+import { rollLocalDice } from '../services/localDiceEngine';
 
 const props = withDefaults(defineProps<{
   tableId: string;
@@ -12,15 +13,21 @@ const props = withDefaults(defineProps<{
   defaultExpression?: string;
   mode?: 'embedded' | 'popup';
   activeCharacterId?: string | null;
+  transport?: 'socket' | 'local';
 }>(), {
   availableCharacters: () => [],
   currentTokenId: null,
   defaultExpression: '1d20',
   mode: 'embedded',
   activeCharacterId: null,
+  transport: 'socket',
 });
 
-const emit = defineEmits<{ (e: 'close'): void; (e: 'saved-profile', preset: DicePreset): void }>();
+const emit = defineEmits<{
+  (e: 'close'): void;
+  (e: 'saved-profile', preset: DicePreset): void;
+  (e: 'local-roll', payload: DiceRolledPayload): void;
+}>();
 
 type BindingState = { type: 'none' | 'token' | 'character'; id?: string };
 type DicePreset = { id: string; name: string; expression: string; tags?: string[]; metadata?: string };
@@ -182,6 +189,30 @@ function roll() {
   const binding = resolveBindingIds(selectedBinding.value);
   const preset = savedPresets.value.find((item) => item.id === selectedPresetId.value);
   const metadata = preset?.metadata || preset?.name;
+  if (props.transport === 'local') {
+    try {
+      const result = rollLocalDice(expr, { metadata });
+      const payload: DiceRolledPayload = {
+        tableId: props.tableId,
+        expression: result.expression,
+        rolls: result.rolls,
+        modifier: result.modifier,
+        total: result.total,
+        metadata: result.metadata,
+        userId: currentUser.value?.id || 'guest',
+        username: currentUser.value?.username || 'Visitante',
+        tags: preset?.tags,
+        createdAt: new Date().toISOString(),
+        ...binding,
+      };
+      emit('local-roll', payload);
+      toast.success('Rolagem concluída.');
+    } catch (error) {
+      console.error('[dice] erro ao rolar localmente', error);
+      toast.error(error instanceof Error ? error.message : 'Falha ao executar a rolagem.');
+    }
+    return;
+  }
   try {
     socketService.rollDice({
       tableId: props.tableId,
