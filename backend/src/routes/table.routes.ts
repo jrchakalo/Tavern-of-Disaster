@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import mongoose, { Types } from 'mongoose'
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
 import Table from '../models/Table.model';
+import System from '../models/System.model';
 import { createScene as createSceneService, renameScene, deleteScene as deleteSceneService, createDefaultScene } from '../services/sceneService';
 import { addPlayerToTable, removePlayerFromTable, getTableById, assertUserIsDM, deleteTableAndDependents } from '../services/tableService';
 import { clearAllMeasurements, clearTableMeasurementState } from '../services/measurementService';
@@ -187,6 +188,49 @@ router.put('/:tableId', authMiddleware, (async (req: AuthRequest, res) => {
   } catch (error) {
     console.error('Erro ao renomear mesa:', error);
     res.status(500).json({ message: 'Erro interno.' });
+  }
+}) as RequestHandler);
+
+router.put('/:tableId/system', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId } = req.params;
+    const { systemId, systemKey } = req.body || {};
+    const userId = req.user?.id;
+
+    const table = await getTableById(tableId);
+    if (!table) {
+      res.status(404).json({ message: 'Mesa não encontrada.' });
+      return;
+    }
+    assertUserIsDM(userId, table);
+
+    const wantsClear = systemId === null || systemKey === null;
+    if (wantsClear) {
+      (table as any).systemId = null;
+      await table.save();
+      res.json({ message: 'Sistema removido da mesa.', table });
+      return;
+    }
+
+    if (!systemId && !systemKey) {
+      res.status(400).json({ message: 'Informe systemId ou systemKey.' });
+      return;
+    }
+
+    const system = systemId
+      ? await System.findById(systemId)
+      : await System.findOne({ key: systemKey });
+    if (!system) {
+      res.status(404).json({ message: 'Sistema não encontrado.' });
+      return;
+    }
+
+    (table as any).systemId = system._id;
+    await table.save();
+    res.json({ message: 'Sistema atualizado.', table });
+  } catch (error) {
+    console.error('Erro ao atualizar sistema da mesa:', error);
+    res.status(500).json({ message: 'Erro interno ao atualizar sistema.' });
   }
 }) as RequestHandler);
 

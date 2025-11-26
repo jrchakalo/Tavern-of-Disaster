@@ -12,6 +12,9 @@ export interface TableInfoDTO {
   status: string;
   pauseUntil: string | null;
   activeSceneId?: string | null;
+  systemId?: string | null;
+  systemKey?: string | null;
+  systemName?: string | null;
 }
 
 export interface InitiativeEntryDTO {
