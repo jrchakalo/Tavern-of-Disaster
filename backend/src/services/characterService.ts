@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import Character, { ICharacter, CharacterStats } from '../models/Character.model';
 import Table, { ITable } from '../models/Table.model';
+import System, { ISystem } from '../models/System.model';
 import { ServiceError } from './serviceErrors';
 
 class NotFoundError extends ServiceError {
@@ -76,6 +77,38 @@ function sanitizeName(name?: string): string {
   return trimmed;
 }
 
+async function loadTableSystem(table: ITable): Promise<ISystem | null> {
+  if (!table.systemId) {
+    return null;
+  }
+  return System.findById(table.systemId).select('defaultAttributes');
+}
+
+function mergeWithSystemDefaultAttributes(system: ISystem | null, provided?: Record<string, number>) {
+  if (!system && !provided) {
+    return {};
+  }
+  const merged: Record<string, number> = {};
+  if (system?.defaultAttributes?.length) {
+    system.defaultAttributes.forEach((attr) => {
+      const key = (attr.key || '').trim();
+      if (!key) return;
+      if (attr.type && attr.type !== 'number') return;
+      if (!(key in merged)) {
+        merged[key] = 0;
+      }
+    });
+  }
+  if (provided) {
+    Object.entries(provided).forEach(([key, value]) => {
+      if (typeof value !== 'number' || Number.isNaN(value)) return;
+      const normalizedKey = key.trim();
+      merged[normalizedKey] = value;
+    });
+  }
+  return merged;
+}
+
 export type CharacterPayload = {
   name?: string;
   avatarUrl?: string;
@@ -104,13 +137,17 @@ export async function createCharacter(userId: string, tableId: string, payload: 
   assertUserInTableOrDm(userId, table);
   const name = sanitizeName(payload.name);
   validateStats(payload.stats);
+  const system = await loadTableSystem(table);
+  const attributes = system
+    ? mergeWithSystemDefaultAttributes(system, payload.attributes)
+    : payload.attributes ?? {};
 
   const character = new Character({
     name,
     ownerId: new Types.ObjectId(userId),
     tableId: table._id,
     avatarUrl: payload.avatarUrl,
-    attributes: payload.attributes ?? {},
+    attributes,
     stats: payload.stats ?? {},
     skills: payload.skills ?? {},
     notes: payload.notes,
