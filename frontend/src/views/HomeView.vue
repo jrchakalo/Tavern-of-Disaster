@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router';
 import { currentUser } from '../services/authService';
-import { ref, computed, onMounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
+import { storeToRefs } from 'pinia';
+import { useSystemStore } from '../stores/systemStore';
+import type { SystemDTO } from '../types';
 
 import Icon from '../components/Icon.vue';
 const features = [
@@ -11,7 +14,39 @@ const features = [
   { icon: 'users', title: 'Para o Grupo', desc: 'Interface minimalista focada na sessão.' },
 ];
 
+const howHighlights = [
+  'Rolagem em tempo real para todo o grupo.',
+  'Grid compartilhado com medições precisas.',
+  'Tokens coloridos com imagens e status.',
+  'Fichas conectadas aos sistemas suportados.',
+];
+
 const isLoggedIn = computed(() => Boolean(currentUser?.value?.id || (currentUser as any)?.id));
+
+const systemStore = useSystemStore();
+const { systems } = storeToRefs(systemStore);
+const featuredSystems = computed(() => systems.value.slice(0, 3));
+const hasFeaturedSystems = computed(() => featuredSystems.value.length > 0);
+
+function getSystemTags(system: SystemDTO): string[] {
+  const tags: string[] = [];
+  if (system.key) {
+    tags.push(system.key.toUpperCase());
+  }
+  if (system.movementRules?.diagonalRule) {
+    const label = system.movementRules.diagonalRule === 'euclidean'
+      ? 'Distância Euclidiana'
+      : `Regra ${system.movementRules.diagonalRule}`;
+    tags.push(label);
+  }
+  if (system.dicePresets?.length) {
+    tags.push(`${system.dicePresets.length} rolagens`);
+  }
+  if (!tags.length) {
+    tags.push('Genérico');
+  }
+  return tags.slice(0, 3);
+}
 
 // Refs para animação da linha entre tokens
 const gridRef = ref<HTMLDivElement | null>(null);
@@ -78,6 +113,9 @@ function runCycle() {
 }
 
 onMounted(() => {
+  if (!systemStore.isLoaded) {
+    systemStore.fetchAll().catch((error) => console.error('[systems] falha ao carregar resumo', error));
+  }
   nextTick(() => {
     computeLine();
     runCycle();
@@ -152,6 +190,88 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </section>
+
+      <section class="how-band fade-in-up" style="animation-delay:.15s">
+        <div class="surface how-card">
+          <div class="how-text">
+            <p class="eyebrow">Como funciona o VTT</p>
+            <h2>O ritmo de mesa presencial, com praticidade online.</h2>
+            <p class="text-muted">Abra o navegador, compartilhe a cena e mantenha toda a ação registrada: iniciativa, medições, rolagens e fichas andam juntos.</p>
+            <ul class="how-list">
+              <li v-for="item in howHighlights" :key="item">
+                <Icon name="check" size="16" />
+                <span>{{ item }}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="systems-band fade-in-up" style="animation-delay:.2s">
+        <div class="systems-header">
+          <div>
+            <p class="eyebrow">Sistemas suportados</p>
+            <h2>Escolha um conjunto pronto e jogue em minutos.</h2>
+            <p class="text-muted">Dados, atributos e movimentos se adaptam automaticamente ao sistema selecionado.</p>
+          </div>
+          <RouterLink to="/systems" class="btn outline">Ver mais</RouterLink>
+        </div>
+        <div v-if="hasFeaturedSystems" class="systems-cards">
+          <article v-for="system in featuredSystems" :key="system._id" class="surface system-preview">
+            <header>
+              <h3>{{ system.name }}</h3>
+              <p class="system-key">{{ system.key }}</p>
+            </header>
+            <p class="text-muted">{{ system.description || 'Presets básicos com atributos e rolagens.' }}</p>
+            <div class="system-tags">
+              <span v-for="tag in getSystemTags(system)" :key="tag">{{ tag }}</span>
+            </div>
+          </article>
+        </div>
+        <div v-else class="systems-empty surface">
+          <p>Carregando sistemas...</p>
+        </div>
+      </section>
+
+      <section class="quick-band fade-in-up" style="animation-delay:.25s">
+        <div class="surface quick-card">
+          <div>
+            <p class="eyebrow">Recursos rápidos</p>
+            <h2>Ferramentas prontas para testar agora.</h2>
+            <p class="text-muted">Experimente os utilitários gratuitos antes de criar uma mesa.</p>
+          </div>
+          <div class="quick-links">
+            <RouterLink to="/dice" class="quick-button">
+              <Icon name="dice" size="18" />
+              <div>
+                <strong>Rolagem pública</strong>
+                <small>Abra o lançador compartilhado</small>
+              </div>
+            </RouterLink>
+            <RouterLink to="/systems" class="quick-button">
+              <Icon name="square" size="18" />
+              <div>
+                <strong>Biblioteca de sistemas</strong>
+                <small>Consulte presets e tags</small>
+              </div>
+            </RouterLink>
+            <RouterLink to="/login" class="quick-button">
+              <Icon name="select" size="18" />
+              <div>
+                <strong>Entrar</strong>
+                <small>Acesse suas mesas</small>
+              </div>
+            </RouterLink>
+            <RouterLink to="/register" class="quick-button">
+              <Icon name="plus" size="18" />
+              <div>
+                <strong>Criar conta</strong>
+                <small>Convide seu grupo</small>
+              </div>
+            </RouterLink>
+          </div>
+        </div>
+      </section>
       
     </div>
 
@@ -169,6 +289,7 @@ onBeforeUnmount(() => {
           <div class="quick-actions">
             <RouterLink to="/tables" class="btn">Minhas Mesas</RouterLink>
             <RouterLink to="/tables" class="btn outline">Criar / Entrar</RouterLink>
+            <RouterLink to="/profile" class="btn ghost">Perfil</RouterLink>
           </div>
         </div>
       </section>
@@ -179,6 +300,7 @@ onBeforeUnmount(() => {
             <li><RouterLink to="/tables">Ver todas as mesas</RouterLink></li>
             <li><RouterLink to="/tables">Criar nova mesa</RouterLink></li>
             <li><RouterLink to="/tables">Entrar com código</RouterLink></li>
+            <li><RouterLink to="/profile">Editar perfil</RouterLink></li>
           </ul>
         </div>
         <div class="panel surface">
@@ -346,6 +468,140 @@ onBeforeUnmount(() => {
   .feature-wrap { display:block; overflow-x:auto; overflow-y:hidden; white-space:nowrap; padding: 8px 0.5rem 12px; }
   /* Let cards auto-size vertically so text never overflows; keep narrow width and allow horizontal scroll */
   .feature-card { display:inline-flex; vertical-align:top; margin-right:16px; width:220px; max-width:none; overflow:hidden; }
+  .quick-links { grid-template-columns: 1fr; }
+}
+
+.how-band, .systems-band, .quick-band { padding: 0.5rem 0.5rem 0; }
+.how-card {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.how-text {
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.how-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.how-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  color: var(--color-text);
+}
+.how-list span {
+  flex: 1;
+}
+.systems-band {
+  max-width: 1180px;
+  margin: 0 auto 1.5rem;
+}
+.systems-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 0.5rem;
+}
+.systems-cards {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.system-preview {
+  padding: 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: linear-gradient(180deg,var(--color-surface),var(--color-surface-alt));
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.system-preview header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.system-preview h3 {
+  margin: 0;
+}
+.system-key {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+.system-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.system-tags span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: 0.75rem;
+  text-transform: capitalize;
+}
+.systems-empty {
+  margin-top: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.quick-band {
+  max-width: 1180px;
+  margin: 0 auto 2rem;
+}
+.quick-card {
+  padding: clamp(1.25rem, 3vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.quick-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+.quick-button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.quick-button:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--elev-3);
+}
+.quick-button strong {
+  display: block;
+  font-size: 0.95rem;
+}
+.quick-button small {
+  color: var(--color-text-muted);
 }
 
 /* Dashboard dentro do viewport, sem rolagem e com rodapé visível */

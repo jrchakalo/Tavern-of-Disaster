@@ -1,6 +1,8 @@
 import { Types } from 'mongoose';
 import Token, { IToken } from '../models/Token.model';
 import Scene, { IScene } from '../models/Scene.model';
+import Table from '../models/Table.model';
+import System, { ISystem } from '../models/System.model';
 import Character from '../models/Character.model';
 import { assertCondition, ServiceError } from './serviceErrors';
 
@@ -16,6 +18,32 @@ const sizeMap: Record<string, number> = {
   'Descomunal': 4,
   'Colossal': 5,
 };
+
+async function loadSystemForTable(tableId: string): Promise<ISystem | null> {
+  const table = await Table.findById(tableId).select('systemId');
+  if (!table?.systemId) {
+    return null;
+  }
+  return System.findById(table.systemId).select('movementRules');
+}
+
+function deriveMovementFromSystem(system: ISystem | null, scene: IScene): number | null {
+  const baseSpeedFeet = system?.movementRules?.baseSpeedFeet;
+  if (!baseSpeedFeet) {
+    return null;
+  }
+  const gridSizeFeet = system?.movementRules?.gridSizeFeet && system.movementRules.gridSizeFeet > 0
+    ? system.movementRules.gridSizeFeet
+    : 5;
+  const metersPerSquare = (scene as any).metersPerSquare ?? 1.5;
+  const squares = baseSpeedFeet / gridSizeFeet;
+  const derived = squares * metersPerSquare;
+  if (Number.isFinite(derived) && derived > 0) {
+    return derived;
+  }
+  const metersFallback = baseSpeedFeet * 0.3048;
+  return metersFallback > 0 ? metersFallback : null;
+}
 
 export type GridContext = {
   gridWidth: number;
@@ -106,7 +134,7 @@ export async function createToken(payload: {
   ownerId: string;
   name: string;
   imageUrl?: string;
-  movement: number;
+  movement?: number;
   remainingMovement?: number;
   size: string;
   canOverlap?: boolean;
@@ -122,6 +150,10 @@ export async function createToken(payload: {
   const colliding = await isFootprintColliding(payload.sceneId, footprintSquares);
   assertCondition(!colliding || !!payload.canOverlap, 'Área ocupada por outro token.', 400);
   const characterRef = await resolveCharacterForTable(payload.characterId, payload.tableId);
+  const system = await loadSystemForTable(payload.tableId);
+  const systemMovement = deriveMovementFromSystem(system, scene as IScene);
+  const movement = payload.movement ?? systemMovement ?? 9;
+  const remainingMovement = payload.remainingMovement ?? movement;
 
   const token = new Token({
     tableId: payload.tableId,
@@ -131,8 +163,8 @@ export async function createToken(payload: {
     ownerId: payload.ownerId,
     name: payload.name,
     imageUrl: payload.imageUrl,
-    movement: payload.movement,
-    remainingMovement: payload.remainingMovement ?? payload.movement,
+    movement,
+    remainingMovement,
     size: payload.size,
     canOverlap: !!payload.canOverlap,
     characterId: characterRef,

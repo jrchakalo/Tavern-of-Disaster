@@ -3,6 +3,33 @@ export type TokenSize = typeof tokenSizes[number];
 
 export type KeptFlag = 'kept' | 'dropped';
 
+export type AttributeType = 'number' | 'text' | 'boolean';
+export type DiagonalRule = '5-10-5' | '5' | 'euclidean';
+
+export interface SystemDTO {
+  _id: string;
+  key: string;
+  name: string;
+  description?: string;
+  defaultAttributes?: Array<{
+    key: string;
+    label: string;
+    type: AttributeType;
+  }>;
+  movementRules?: {
+    baseSpeedFeet?: number;
+    diagonalRule?: DiagonalRule;
+    gridSizeFeet?: number;
+  };
+  dicePresets?: Array<{
+    key: string;
+    label: string;
+    expression: string;
+    category?: string;
+  }>;
+  docsUrl?: string | null;
+}
+
 export interface SingleDieRoll {
   die: number;
   value: number;
@@ -44,6 +71,9 @@ export interface ITable {
   activeSceneId?: string | null | undefined;
   status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED';
   pauseUntil?: string | null;
+  systemId?: string | null;
+  systemKey?: string | null;
+  systemName?: string | null;
 }
 
 export interface PlayerInfo {
@@ -113,6 +143,19 @@ export interface UserSummaryDTO {
   username: string;
 }
 
+export interface UserProfileDTO {
+  _id: string;
+  username: string;
+  email: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  bio?: string | null;
+  preferredSystemId?: string | null;
+  measurementColor?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface TableInfoDTO {
   _id: string;
   name: string;
@@ -122,6 +165,9 @@ export interface TableInfoDTO {
   status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED';
   pauseUntil: string | null;
   activeSceneId?: string | null;
+  systemId?: string | null;
+  systemKey?: string | null;
+  systemName?: string | null;
 }
 
 export interface InitiativeEntryDTO {
@@ -157,6 +203,34 @@ export interface TokenDTO {
   size: TokenSize;
   canOverlap: boolean;
   characterId?: string;
+}
+
+export interface TokenTemplateDTO {
+  _id: string;
+  ownerId: string;
+  systemId?: string | null;
+  name: string;
+  imageUrl?: string;
+  size?: TokenSize;
+  color?: string;
+  tags?: string[];
+  baseMovement?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SceneTemplateDTO {
+  _id: string;
+  ownerId: string;
+  systemId?: string | null;
+  name: string;
+  mapUrl: string;
+  gridWidth?: number;
+  gridHeight?: number;
+  type?: 'battlemap' | 'image';
+  defaultMetersPerSquare?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface MeasurementDTO {

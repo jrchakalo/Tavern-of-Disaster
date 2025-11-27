@@ -8,12 +8,16 @@ import connectDB from './config/db';
 import authRouter from './routes/auth.routes';
 import tableRouter from './routes/table.routes';
 import characterRouter from './routes/character.routes';
+import systemRouter from './routes/system.routes';
 import { registerTableHandlers } from './socketHandlers/tableHandlers';
 import { registerTokenHandlers } from './socketHandlers/tokenHandlers';
 import { registerInitiativeHandlers } from './socketHandlers/initiativeHandlers';
 import { registerMeasurementHandlers } from './socketHandlers/measurementHandlers';
 import { registerDiceHandlers } from './socketHandlers/diceHandlers';
 import { cleanupInactiveTables } from './socketHandlers/measurementStore';
+import tokenTemplateRouter from './routes/tokenTemplate.routes';
+import sceneTemplateRouter from './routes/sceneTemplate.routes';
+import userRouter from './routes/user.routes';
 
 dotenv.config();
 connectDB();
@@ -35,6 +39,10 @@ app.use(express.json());
 app.use('/api/auth', authRouter);
 app.use('/api/tables', tableRouter);
 app.use('/api', characterRouter);
+app.use('/api', systemRouter);
+app.use('/api/users', userRouter);
+app.use('/api/token-templates', tokenTemplateRouter);
+app.use('/api/scene-templates', sceneTemplateRouter);
 
 
 server.listen(port, () => {

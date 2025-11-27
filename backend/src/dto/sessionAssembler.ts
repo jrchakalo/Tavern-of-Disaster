@@ -26,6 +26,10 @@ function mapTable(table: ITable): TableInfoDTO {
   const players = ((table as any).players ?? [])
     .map((player: any) => mapUser(player))
     .filter((player: UserSummaryDTO | null): player is UserSummaryDTO => !!player);
+  const systemField = (table as any).systemId;
+  const systemId = table.systemId ? table.systemId.toString?.() ?? String(table.systemId) : null;
+  const systemKey = systemField && typeof systemField === 'object' && 'key' in systemField ? systemField.key : null;
+  const systemName = systemField && typeof systemField === 'object' && 'name' in systemField ? systemField.name : null;
   return {
     _id: table._id.toString(),
     name: table.name,
@@ -35,6 +39,9 @@ function mapTable(table: ITable): TableInfoDTO {
     status: table.status,
     pauseUntil: table.pauseUntil ? table.pauseUntil.toISOString() : null,
     activeSceneId: table.activeScene ? table.activeScene.toString() : null,
+    systemId,
+    systemKey,
+    systemName,
   };
 }
 

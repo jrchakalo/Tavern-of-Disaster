@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
+import { storeToRefs } from 'pinia';
 import { authToken, currentUser } from '../services/authService';
 import { toast } from '../services/toast';
 import Icon from '../components/Icon.vue';
 import type { ITable } from '../types';
+import { useSystemStore } from '../stores/systemStore';
+import { useUserStore } from '../stores/userStore';
 
 const router = useRouter();
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const newTableName = ref('');
+const selectedSystemId = ref('');
 const userTables = ref<ITable[]>([]);
 const inviteCodeInput = ref('');
 const editingTable = ref<ITable | null>(null);
@@ -17,6 +21,12 @@ const managingPlayers = ref<ITable | null>(null);
 const leaving = ref<ITable | null>(null);
 const deleting = ref<ITable | null>(null);
 const feedback = ref('');
+
+const systemStore = useSystemStore();
+const userStore = useUserStore();
+const { systems, isLoading: systemsLoading, isLoaded: systemsLoaded } = storeToRefs(systemStore);
+const { profile } = storeToRefs(userStore);
+const selectedSystem = computed(() => systemStore.getById(selectedSystemId.value || undefined));
 
 
 async function fetchMyTables() {
@@ -104,21 +114,30 @@ async function handleCreateTable() {
   if (!newTableName.value.trim() || !authToken.value) return;
 
   try {
+    const payload = { name: newTableName.value.trim() };
     const response = await fetch(`${API_BASE_URL}/api/tables/create`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${authToken.value}`, // Envia o token para autenticação
       },
-      body: JSON.stringify({ name: newTableName.value }),
+      body: JSON.stringify(payload),
     });
 
     const newTableData = await response.json();
 
     if (response.ok) {
-  toast.success(`Mesa "${newTableData.name}" criada! Código: ${newTableData.inviteCode}`);
-  newTableName.value = '';
-  fetchMyTables();
+      if (selectedSystemId.value) {
+        try {
+          await assignSystemToTable(newTableData._id, selectedSystemId.value);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Não foi possível definir o sistema favorito.';
+          toast.warning(message);
+        }
+      }
+      toast.success(`Mesa "${newTableData.name}" criada! Código: ${newTableData.inviteCode}`);
+      newTableName.value = '';
+      fetchMyTables();
     } else {
   toast.error(`Erro ao criar mesa: ${newTableData.message}`);
     }
@@ -130,6 +149,57 @@ async function handleCreateTable() {
 function goToTable(tableId: string) {
   router.push({ name: 'table', params: { tableId: tableId } });
 }
+
+async function assignSystemToTable(tableId: string, systemId: string) {
+  if (!authToken.value || !systemId) return;
+  const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/system`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken.value}`,
+    },
+    body: JSON.stringify({ systemId }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const message = (data && data.message) || 'Não foi possível salvar o sistema da mesa.';
+    throw new Error(message);
+  }
+}
+
+async function initPreferences() {
+  try {
+    if (!systemsLoaded.value) {
+      await systemStore.fetchAll();
+    }
+  } catch (error) {
+    console.warn('[tables] não foi possível carregar sistemas', error);
+  }
+  try {
+    if (!profile.value && authToken.value) {
+      await userStore.fetchProfile();
+    }
+  } catch (error) {
+    console.warn('[tables] não foi possível carregar perfil', error);
+  }
+  applyPreferredSystem();
+}
+
+function applyPreferredSystem() {
+  if (selectedSystemId.value) return;
+  const preferredId = profile.value?.preferredSystemId;
+  if (preferredId && systemStore.getById(preferredId)) {
+    selectedSystemId.value = preferredId;
+  }
+}
+
+watch(
+  () => [profile.value?.preferredSystemId, systems.value.length],
+  () => {
+    applyPreferredSystem();
+  },
+  { immediate: true }
+);
 
 async function handleJoinTable() {
   if (!inviteCodeInput.value.trim() || !authToken.value) return;
@@ -160,6 +230,7 @@ async function handleJoinTable() {
 
 onMounted(() => {
   fetchMyTables();
+  initPreferences();
 });
 
 </script>

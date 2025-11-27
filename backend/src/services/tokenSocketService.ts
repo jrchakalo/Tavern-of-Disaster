@@ -30,7 +30,7 @@ export type PlaceTokenPayload = {
   squareId: string;
   name: string;
   imageUrl?: string;
-  movement: number;
+  movement?: number;
   remainingMovement?: number;
   ownerId?: string;
   size: string;
