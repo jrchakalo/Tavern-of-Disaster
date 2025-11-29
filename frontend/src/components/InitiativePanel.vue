@@ -66,7 +66,7 @@ function handleDragEnd() {
       <div class="header-right" v-if="isDM">
         <div class="actions">
           <button @click="emit('undo-move')" :disabled="!enriched.some(i => i.entry.isCurrentTurn && i.token)">Desfazer</button>
-          <button class="next-btn" @click="emit('next-turn')">Próximo Turno ➤</button>
+          <button class="next-btn" aria-label="Próximo turno" @click="emit('next-turn')">Próximo Turno ➤</button>
         </div>
       </div>
       <!-- Player controls + collapse toggle -->
@@ -76,7 +76,7 @@ function handleDragEnd() {
         </button>
         <div class="actions" v-if="isMyTurn && !collapsed">
           <button @click="emit('undo-move')">Desfazer</button>
-          <button class="next-btn" @click="emit('next-turn')">Encerrar Turno</button>
+          <button class="next-btn" aria-label="Encerrar turno" @click="emit('next-turn')">Encerrar Turno</button>
         </div>
       </div>
     </div>

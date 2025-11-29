@@ -36,11 +36,12 @@ function setStatus(status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED') {
       <button
         v-if="isEnded"
         class="btn btn-sm session-btn session-prepare"
+        aria-label="Preparar sessão"
         @click="setStatus('PREPARING')"
       >Preparar Sessão</button>
 
       <div v-if="isPreparing" class="row gap-2">
-        <button class="btn btn-sm session-btn session-start" @click="emit('start-session')">
+        <button class="btn btn-sm session-btn session-start" aria-label="Iniciar sessão" @click="emit('start-session')">
           Iniciar Sessão
         </button>
       </div>
@@ -48,6 +49,7 @@ function setStatus(status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED') {
       <button
         v-if="isLive"
         class="btn btn-sm session-btn session-pause"
+        aria-label="Pausar sessão"
         @click="setStatus('PAUSED')"
       >Pausar</button>
 
@@ -66,12 +68,14 @@ function setStatus(status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED') {
       <button
         v-if="isPaused"
         class="btn btn-sm session-btn session-resume"
+        aria-label="Retomar sessão"
         @click="setStatus('LIVE')"
       >Retomar</button>
 
       <button
         v-if="isLive || isPaused"
         class="btn btn-sm session-btn session-end"
+        aria-label="Encerrar sessão"
         @click="setStatus('ENDED')"
       >Encerrar Sessão</button>
 

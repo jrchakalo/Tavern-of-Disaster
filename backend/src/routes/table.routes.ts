@@ -11,8 +11,11 @@ import { addPlayerToTable, removePlayerFromTable, getTableById, assertUserIsDM, 
 import { clearAllMeasurements, clearTableMeasurementState } from '../services/measurementService';
 import { addTokenToInitiative } from '../services/initiativeService';
 import { createToken } from '../services/tokenService';
+import { ServiceError } from '../services/serviceErrors';
+import { createLogger } from '../logger';
 
 const router = Router();
+const log = createLogger({ scope: 'table-routes' });
 
 // Rota para criar uma nova mesa.
 router.post('/create', authMiddleware, (async (req: AuthRequest, res) => {
@@ -45,7 +48,7 @@ router.post('/create', authMiddleware, (async (req: AuthRequest, res) => {
     res.status(201).json(newTable); // Retorna os dados da nova mesa criada
 
   } catch (error) {
-    console.error('Erro ao criar a mesa:', error);
+    log.error({ err: error }, 'Erro ao criar a mesa');
     res.status(500).json({ message: 'Erro interno ao criar a mesa.' });
   }
 }) as RequestHandler);
@@ -66,7 +69,7 @@ router.get('/mytables', authMiddleware, (async (req: AuthRequest, res) => {
     res.json(tables);
 
   } catch (error) {
-    console.error('Erro ao buscar mesas do usuário:', error);
+    log.error({ err: error }, 'Erro ao buscar mesas do usuário');
     res.status(500).json({ message: 'Erro interno ao buscar as mesas.' });
   }
 }) as RequestHandler);
@@ -88,7 +91,7 @@ router.post('/join', authMiddleware, (async (req: AuthRequest, res) => {
 
     // Verifica se o usuário já é um jogador nesta mesa
     if (table.players.map(p => p.toString()).includes(userId!)) {
-      console.log(`Usuário ${userId} já está na mesa ${table.name}`);
+      log.info({ userId, tableId: table._id }, 'Usuário já está na mesa');
       // Retorna sucesso, pois o usuário já é membro.
       return res.json({ message: 'Você já faz parte desta mesa.', table });
     }
@@ -98,7 +101,7 @@ router.post('/join', authMiddleware, (async (req: AuthRequest, res) => {
     res.json({ message: `Você entrou na mesa "${table.name}" com sucesso!`, table });
 
   } catch (error) {
-    console.error('Erro ao entrar na mesa:', error);
+    log.error({ err: error }, 'Erro ao entrar na mesa');
     res.status(500).json({ message: 'Erro interno ao entrar na mesa.' });
   }
 }) as RequestHandler);
@@ -127,7 +130,7 @@ router.post('/:tableId/scenes', authMiddleware, (async (req: AuthRequest, res) =
     res.status(201).json(newScene);
 
   } catch (error) {
-    console.error('Erro ao adicionar cena:', error);
+    log.error({ err: error }, 'Erro ao adicionar cena');
     res.status(500).json({ message: 'Erro interno ao adicionar cena.' });
   }
 }) as RequestHandler);
@@ -168,7 +171,7 @@ router.post('/:tableId/scenes/from-template/:templateId', authMiddleware, (async
 
     res.status(201).json(scene);
   } catch (error) {
-    console.error('Erro ao criar cena via template:', error);
+    log.error({ err: error }, 'Erro ao criar cena via template');
     res.status(500).json({ message: 'Erro interno ao criar cena via template.' });
   }
 }) as RequestHandler);
@@ -264,7 +267,7 @@ router.post('/:tableId/scenes/:sceneId/tokens/from-template/:templateId', authMi
     const initiative = await addTokenToInitiative(sceneId, token as any);
     res.status(201).json({ token, initiative });
   } catch (error) {
-    console.error('Erro ao criar token via template:', error);
+    log.error({ err: error }, 'Erro ao criar token via template');
     res.status(500).json({ message: 'Erro interno ao criar token via template.' });
   }
 }) as RequestHandler);
@@ -306,7 +309,7 @@ router.put('/:tableId', authMiddleware, (async (req: AuthRequest, res) => {
     await table.save();
     res.json({ message: 'Mesa atualizada.', table });
   } catch (error) {
-    console.error('Erro ao renomear mesa:', error);
+    log.error({ err: error }, 'Erro ao renomear mesa');
     res.status(500).json({ message: 'Erro interno.' });
   }
 }) as RequestHandler);
@@ -349,7 +352,11 @@ router.put('/:tableId/system', authMiddleware, (async (req: AuthRequest, res) =>
     await table.save();
     res.json({ message: 'Sistema atualizado.', table });
   } catch (error) {
-    console.error('Erro ao atualizar sistema da mesa:', error);
+    log.error({ err: error }, 'Erro ao atualizar sistema da mesa');
+    if (error instanceof ServiceError) {
+      res.status(error.status).json({ message: error.message });
+      return;
+    }
     res.status(500).json({ message: 'Erro interno ao atualizar sistema.' });
   }
 }) as RequestHandler);
@@ -370,7 +377,7 @@ router.delete('/:tableId/players/:playerId', authMiddleware, (async (req: AuthRe
     }
     res.json({ message: 'Jogador removido.' });
   } catch (error) {
-    console.error('Erro ao remover jogador:', error);
+    log.error({ err: error }, 'Erro ao remover jogador');
     res.status(500).json({ message: 'Erro interno.' });
   }
 }) as RequestHandler);
@@ -392,7 +399,7 @@ router.post('/:tableId/leave', authMiddleware, (async (req: AuthRequest, res) =>
     }
     res.json({ message: 'Você saiu da mesa.' });
   } catch (error) {
-    console.error('Erro ao sair da mesa:', error);
+    log.error({ err: error }, 'Erro ao sair da mesa');
     res.status(500).json({ message: 'Erro interno.' });
   }
 }) as RequestHandler);
@@ -409,7 +416,7 @@ router.delete('/:tableId', authMiddleware, (async (req: AuthRequest, res) => {
     clearTableMeasurementState(tableId);
     res.json({ message: 'Mesa excluída.' });
   } catch (error) {
-    console.error('Erro ao excluir mesa:', error);
+    log.error({ err: error }, 'Erro ao excluir mesa');
     res.status(500).json({ message: 'Erro interno.' });
   }
 }) as RequestHandler);

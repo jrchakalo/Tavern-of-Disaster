@@ -8,8 +8,32 @@ import {
   undoTokenMoveForUser,
 } from '../services/tokenSocketService';
 import { ServiceError } from '../services/serviceErrors';
+import { IInitiativeEntry } from '../models/Scene.model';
+import { createLogger } from '../logger';
+import { recordTokenMove, recordTokenMoveError } from '../metrics';
+
+function toInitiativeEntryDTO(entry: IInitiativeEntry) {
+  return {
+    _id: entry._id?.toString() || '',
+    characterName: entry.characterName,
+    tokenId: entry.tokenId ? entry.tokenId.toString() : undefined,
+    characterId: entry.characterId ? entry.characterId.toString() : undefined,
+    isCurrentTurn: !!entry.isCurrentTurn,
+  };
+}
+
+function emitInitiativeNamePatch(io: Server, tableId: string, sceneId: string | undefined, entry: IInitiativeEntry | undefined) {
+  if (!sceneId || !entry?._id) return;
+  io.to(tableId).emit('initiativeEntryUpdated', {
+    tableId,
+    sceneId,
+    entryId: entry._id.toString(),
+    patch: { characterName: entry.characterName },
+  });
+}
 
 export function registerTokenHandlers(io: Server, socket: Socket) {
+  const log = createLogger({ scope: 'socket:token', socketId: socket.id, userId: socket.data.user?.id });
 
   const emitError = (event: string, error: unknown, fallback: string) => {
     const message = error instanceof ServiceError ? error.message : fallback;
@@ -28,11 +52,19 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         const result = await placeTokenForTable(userId, data as PlaceTokenPayload);
         io.to(tableId).emit('tokenPlaced', result.token);
         if (result.initiative) {
-            io.to(tableId).emit('initiativeUpdated', result.initiative);
+          const createdEntry = result.initiative.find((entry) => entry.tokenId?.toString() === result.token._id.toString());
+          if (createdEntry) {
+            io.to(tableId).emit('initiativeEntryAdded', {
+              tableId,
+              sceneId: data.sceneId,
+              entry: toInitiativeEntryDTO(createdEntry),
+              order: result.initiative.map((entry) => entry._id?.toString()).filter(Boolean),
+            });
+          }
         }
     } catch (error: any) {
-        console.error('Erro ao processar requestPlaceToken:', error.message);
-        emitError('tokenPlacementError', error, 'Erro ao colocar o token.');
+      log.error({ err: error, tableId: data?.tableId }, 'Erro ao processar requestPlaceToken');
+      emitError('tokenPlacementError', error, 'Erro ao colocar o token.');
     }
   };
 
@@ -44,22 +76,19 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         const { tableId } = data;
         const { updated, oldSquareId } = await moveTokenForUser(userId, data);
         if (!oldSquareId) return;
+      recordTokenMove();
         io.to(tableId).emit('tokenMoved', {
-          _id: updated._id.toString(),
+          tableId,
+          sceneId: updated.sceneId ? updated.sceneId.toString() : '',
+          tokenId: updated._id.toString(),
           oldSquareId,
           squareId: updated.squareId,
-          color: updated.color,
-          ownerId: updated.ownerId,
-          name: updated.name,
-          imageUrl: updated.imageUrl,
-          sceneId: updated.sceneId ? updated.sceneId.toString() : '',
-          movement: updated.movement,
           remainingMovement: updated.remainingMovement,
-          size: updated.size,
-          characterId: updated.characterId?.toString() || null,
+          movement: updated.movement,
         });
     } catch (error: any) {
-        console.error('Erro ao processar requestMoveToken:', error.message);
+        log.error({ err: error, tableId: data?.tableId }, 'Erro ao processar requestMoveToken');
+      recordTokenMoveError();
       emitError('tokenMoveError', error, 'Erro interno ao mover o token.');
     }
   };
@@ -79,7 +108,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
           });
         }
     } catch (error) { 
-        console.error("Erro ao atribuir token:", error); 
+      log.error({ err: error, tableId: data?.tableId }, 'Erro ao atribuir token'); 
     }
   };
 
@@ -92,25 +121,32 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
       const result = await editTokenForTable(userId, data);
       if (!result?.updated) return;
       const { updated, initiative } = result;
-      if (initiative) {
-        io.to(tableId).emit('initiativeUpdated', initiative);
+      const patch: Record<string, unknown> = {};
+      if (typeof data.name === 'string') patch.name = updated.name;
+      if (typeof data.movement === 'number') {
+        patch.movement = updated.movement;
+        patch.remainingMovement = updated.remainingMovement;
       }
+      if (typeof data.imageUrl === 'string') patch.imageUrl = updated.imageUrl;
+      if (typeof data.ownerId === 'string') patch.ownerId = updated.ownerId;
+      if (typeof data.size === 'string') patch.size = updated.size;
+      if (typeof data.canOverlap === 'boolean') patch.canOverlap = updated.canOverlap;
+      if (data.characterId !== undefined) patch.characterId = updated.characterId?.toString() || null;
+      if (data.resetRemainingMovement) patch.remainingMovement = updated.remainingMovement;
+
       io.to(tableId).emit('tokenUpdated', {
-        _id: updated._id.toString(),
-        squareId: updated.squareId,
-        color: updated.color,
-        ownerId: updated.ownerId,
-        name: updated.name,
-        imageUrl: updated.imageUrl,
-        tableId: updated.tableId?.toString(),
-        sceneId: updated.sceneId?.toString(),
-        movement: updated.movement,
-        remainingMovement: updated.remainingMovement,
-        size: updated.size,
-        characterId: updated.characterId?.toString() || null,
+        tableId,
+        sceneId: updated.sceneId?.toString() || '',
+        tokenId: updated._id.toString(),
+        patch,
       });
+
+      if (initiative) {
+        const changedEntry = initiative.find((entry) => entry.tokenId?.toString() === updated._id.toString());
+        emitInitiativeNamePatch(io, tableId, updated.sceneId?.toString(), changedEntry);
+      }
     } catch (error) {
-      console.error('Erro ao editar token:', error);
+      log.error({ err: error, tableId: data?.tableId }, 'Erro ao editar token');
     }
   };
 
@@ -124,23 +160,18 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
       if (!result) return;
       const { updated, previousSquare } = result;
       io.to(tableId).emit('tokenMoved', {
-        _id: updated._id.toString(),
+        tableId,
+        sceneId: updated.sceneId ? updated.sceneId.toString() : '',
+        tokenId: updated._id.toString(),
         oldSquareId: previousSquare,
         squareId: updated.squareId,
-        color: updated.color,
-        ownerId: updated.ownerId,
-        name: updated.name,
-        imageUrl: updated.imageUrl,
-        sceneId: updated.sceneId ? updated.sceneId.toString() : "",
-        movement: updated.movement,
         remainingMovement: updated.remainingMovement,
-        savedToken: updated,
-        size: updated.size,
-        characterId: updated.characterId?.toString() || null,
+        movement: updated.movement,
       });
 
+      recordTokenMove();
     } catch (error) { 
-      console.error("Erro ao desfazer movimento:", error); 
+      log.error({ err: error, tableId: data?.tableId }, 'Erro ao desfazer movimento'); 
     }
   };
 

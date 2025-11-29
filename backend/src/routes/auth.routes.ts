@@ -2,15 +2,21 @@ import { Router, RequestHandler } from 'express';
 import User from '../models/User.model';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { createLogger } from '../logger';
+import { recordAuthFailure } from '../metrics';
 
 const router = Router();
+const log = createLogger({ scope: 'auth-routes' });
 
 const registerUserHandler: RequestHandler = async (req, res) => {
+  const requestLog = log.child({ route: 'register', email: req.body?.email, username: req.body?.username });
   try {
     const { username, email, password } = req.body;
 
     // Validação simples
     if (!username || !email || !password) {
+      recordAuthFailure();
+      requestLog.warn('Campos obrigatórios ausentes no registro');
       res.status(400).json({ message: 'Por favor, preencha todos os campos.' });
       return;
     }
@@ -18,6 +24,8 @@ const registerUserHandler: RequestHandler = async (req, res) => {
     // Verifica se o usuário ou email já existem
     const existingUser = await User.findOne({ $or: [{ email }, { username }] });
     if (existingUser) {
+      recordAuthFailure();
+      requestLog.warn('Usuário ou email já cadastrados');
       res.status(400).json({ message: 'Nome de usuário ou email já cadastrado.' });
       return;
     }
@@ -36,6 +44,7 @@ const registerUserHandler: RequestHandler = async (req, res) => {
     const savedUser = await newUser.save();
 
     // Responde ao frontend. Não envie a senha/hash de volta!
+    requestLog.info({ userId: savedUser._id }, 'Usuário registrado');
     res.status(201).json({
       message: 'Usuário registrado com sucesso!',
       user: {
@@ -45,17 +54,21 @@ const registerUserHandler: RequestHandler = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Erro no registro:', error);
+    recordAuthFailure();
+    requestLog.error({ err: error }, 'Erro no registro');
     res.status(500).json({ message: 'Erro interno do servidor.' });
   }
 };
 
 const loginUserHandler: RequestHandler = async (req, res) => {
+  const requestLog = log.child({ route: 'login', email: req.body?.email });
   try {
     const { email, password } = req.body;
 
     // Validação simples
     if (!email || !password) {
+      recordAuthFailure();
+      requestLog.warn('Credenciais incompletas no login');
       res.status(400).json({ message: 'Por favor, preencha email e senha.' });
       return;
     }
@@ -63,6 +76,8 @@ const loginUserHandler: RequestHandler = async (req, res) => {
     // Encontrar o usuário pelo email
     const user = await User.findOne({ email });
     if (!user) {
+      recordAuthFailure();
+      requestLog.warn('Usuário não encontrado para email informado');
       res.status(400).json({ message: 'Credenciais inválidas.' });
       return;
     }
@@ -71,6 +86,8 @@ const loginUserHandler: RequestHandler = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
       // Mesma mensagem genérica
+      recordAuthFailure();
+      requestLog.warn('Senha inválida');
       res.status(400).json({ message: 'Credenciais inválidas.' });
       return;
     }
@@ -95,6 +112,7 @@ const loginUserHandler: RequestHandler = async (req, res) => {
       (err, token) => {
         if (err) throw err;
         // 4. Enviar o token de volta para o frontend
+        requestLog.info({ userId: user._id }, 'Login bem-sucedido');
         res.json({
           message: 'Login bem-sucedido!',
           token: token // O frontend precisa salvar isso
@@ -103,7 +121,8 @@ const loginUserHandler: RequestHandler = async (req, res) => {
     );
 
   } catch (error) {
-    console.error('Erro no login:', error);
+    recordAuthFailure();
+    requestLog.error({ err: error }, 'Erro no login');
     res.status(500).json({ message: 'Erro interno do servidor.' });
   }
 };

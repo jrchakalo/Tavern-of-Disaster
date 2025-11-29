@@ -4,6 +4,8 @@ import { getTableById, assertUserInTable, isUserDM } from '../services/tableServ
 import Token from '../models/Token.model';
 import Character from '../models/Character.model';
 import { assertCondition, ServiceError } from '../services/serviceErrors';
+import { createLogger } from '../logger';
+import { recordDiceRoll } from '../metrics';
 
 export interface RequestRollDicePayload {
   tableId: string;
@@ -25,6 +27,7 @@ export interface DiceRolledPayload extends DiceRollResult {
 }
 
 export function registerDiceHandlers(io: Server, socket: Socket) {
+  const log = createLogger({ scope: 'socket:dice', socketId: socket.id, userId: socket.data.user?.id });
   const emitError = (error: unknown) => {
     const message = error instanceof ServiceError ? error.message : 'Falha ao executar rolagem.';
     socket.emit('diceRollError', { message });
@@ -72,8 +75,9 @@ export function registerDiceHandlers(io: Server, socket: Socket) {
         createdAt: new Date().toISOString(),
       };
       io.to(payload.tableId).emit('diceRolled', response);
+      recordDiceRoll();
     } catch (error) {
-      console.error('requestRollDice error:', error);
+      log.error({ err: error, tableId: payload?.tableId }, 'requestRollDice error');
       emitError(error);
     }
   };

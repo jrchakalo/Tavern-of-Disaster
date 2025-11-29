@@ -86,63 +86,70 @@ function toggleCollapse() {
 </script>
 
 <template>
-  <div class="toolbar-container" :class="{ collapsed }">
+  <div class="toolbar-container" :class="{ collapsed }" role="toolbar" aria-label="Ferramentas do mapa">
     <button class="collapse-toggle" :title="collapsed ? 'Expandir' : 'Recolher'" @click="toggleCollapse">
       <Icon name="collapse" :size="22" />
     </button>
     <div class="tools" v-show="!collapsed">
-  <button class="tool-button" :class="{ active: activeTool === 'select' }" @click="selectTool('select')" title="Selecionar">
+  <button class="tool-button" :class="{ active: activeTool === 'select' }" @click="selectTool('select')" title="Selecionar" aria-label="Selecionar">
     <Icon name="select" />
   </button>
-  <button class="tool-button" :class="{ active: activeTool === 'ruler' }" @click="selectTool('ruler')" title="Régua">
+  <button class="tool-button" :class="{ active: activeTool === 'ruler' }" @click="selectTool('ruler')" title="Régua" aria-label="Ferramenta régua">
     <Icon name="ruler" />
   </button>
-  <button class="tool-button" :class="{ active: activeTool === 'cone' }" @click="selectTool('cone')" title="Cone">
+  <button class="tool-button" :class="{ active: activeTool === 'cone' }" @click="selectTool('cone')" title="Cone" aria-label="Ferramenta cone">
     <Icon name="cone" />
   </button>
-  <button class="tool-button" :class="{ active: activeTool === 'circle' }" @click="selectTool('circle')" title="Círculo">
+  <button class="tool-button" :class="{ active: activeTool === 'circle' }" @click="selectTool('circle')" title="Círculo" aria-label="Ferramenta círculo">
     <Icon name="circle" />
   </button>
-  <button class="tool-button" :class="{ active: activeTool === 'square' }" @click="selectTool('square')" title="Quadrado">
+  <button class="tool-button" :class="{ active: activeTool === 'square' }" @click="selectTool('square')" title="Quadrado" aria-label="Ferramenta quadrado">
     <Icon name="square" />
   </button>
-  <button class="tool-button" :class="{ active: activeTool === 'line' }" @click="selectTool('line')" title="Linha">
+  <button class="tool-button" :class="{ active: activeTool === 'line' }" @click="selectTool('line')" title="Linha" aria-label="Ferramenta linha">
     <Icon name="line" />
   </button>
-  <button class="tool-button" :class="{ active: activeTool === 'beam' }" @click="selectTool('beam')" title="Feixe">
+  <button class="tool-button" :class="{ active: activeTool === 'beam' }" @click="selectTool('beam')" title="Feixe" aria-label="Ferramenta feixe">
     <Icon name="beam" />
   </button>
 
     
     
     <hr class="divider" />
-  <button class="tool-button" :class="{ active: !!persistentMode }" @click="togglePersistent" title="Fixar">
+  <button class="tool-button" :class="{ active: !!persistentMode }" @click="togglePersistent" title="Fixar" aria-label="Alternar medições persistentes">
     <Icon name="pin" />
   </button>
 
-  <button v-if="canDelete" class="tool-button danger" @click="$emit('delete-selected')" title="Excluir">
+  <button v-if="canDelete" class="tool-button danger" @click="$emit('delete-selected')" title="Excluir" aria-label="Excluir seleção">
     <Icon name="delete" />
   </button>
 
-  <button v-if="canAddAura" class="tool-button" @click="$emit('edit-aura')" title="Editar/Adicionar aura">
+  <button v-if="canAddAura" class="tool-button" @click="$emit('edit-aura')" title="Editar/Adicionar aura" aria-label="Editar aura">
     <Icon name="aura" />
   </button>
 
-  <button v-if="canRemoveAura" class="tool-button danger" @click="$emit('remove-aura')" title="Remover aura">
+  <button v-if="canRemoveAura" class="tool-button danger" @click="$emit('remove-aura')" title="Remover aura" aria-label="Remover aura">
     <Icon name="auraRemove" />
   </button>
 
-  <button v-if="isDM" class="tool-button danger" :class="{ confirming: clearConfirming }" :title="clearConfirming ? 'Toque novamente para confirmar' : 'Limpar tudo'" @click="requestClearAll">
+  <button
+    v-if="isDM"
+    class="tool-button danger"
+    :class="{ confirming: clearConfirming }"
+    :title="clearConfirming ? 'Toque novamente para confirmar' : 'Limpar tudo'"
+    aria-label="Limpar todas as medições"
+    @click="requestClearAll"
+  >
     <Icon name="clear" />
   </button>
 
   <hr class="divider" />
-  <button class="tool-button" title="Rolagens" @click="$emit('toggle-dice-roller')">
+  <button class="tool-button" title="Rolagens" aria-label="Abrir rolagens" @click="$emit('toggle-dice-roller')">
     <Icon name="dice" />
   </button>
 
     <hr class="divider" />
-  <button class="tool-button" title="Cor" @click="showPalette = !showPalette">
+  <button class="tool-button" title="Cor" aria-label="Selecionar cor" @click="showPalette = !showPalette">
     <Icon name="color" />
   </button>
   
@@ -209,6 +216,10 @@ function toggleCollapse() {
   transition: background .2s;
 }
 .collapse-toggle:hover { background: var(--color-surface); }
+.collapse-toggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
 .tools { display:flex; flex-direction:column; gap:10px; }
 
 .tool-button {
@@ -228,6 +239,11 @@ function toggleCollapse() {
 
 .tool-button:hover {
   background: var(--color-surface);
+}
+
+.tool-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .tool-button.active {
@@ -283,21 +299,33 @@ function toggleCollapse() {
   .toolbar-container {
     position: fixed;
     top: auto;
-    bottom: 6px; /* just above bottom edge */
-    left: 10px;
+    bottom: 0;
+    left: 0;
+    right: 0;
     transform: none;
     flex-direction: row;
     align-items: center;
-    gap: 8px;
-    padding: 8px;
-    max-width: calc(100vw - 20px);
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0));
+    border-radius: 16px 16px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.35);
+    max-width: unset;
     overflow-x: auto;
     overscroll-behavior-x: contain;
   }
-  .toolbar-container.collapsed { transform: none; padding: 8px; }
-  .tools { flex-direction: row; gap: 8px; }
-  .collapse-toggle { width: 36px; height: 36px; }
-  .tool-button { width: 36px; height: 36px; }
+  .toolbar-container.collapsed { transform: none; padding: 10px 12px; }
+  .collapse-toggle { width: 42px; height: 42px; border-radius: 999px; }
+  .tools {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 10px;
+    min-width: 0;
+  }
+  .tool-button { width: 42px; height: 42px; }
 }
 
 @media (max-height: 560px) {
