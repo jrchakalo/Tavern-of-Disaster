@@ -41,6 +41,65 @@ type PersistentMeasurement = {
 type IncomingPersistentMeasurement = Omit<PersistentMeasurement, 'sceneId'> & { sceneId?: string };
 export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
 
+type TokenMovePayload = {
+    tableId?: string;
+    sceneId: string;
+    tokenId: string;
+    oldSquareId: string;
+    squareId: string;
+    remainingMovement?: number;
+    movement?: number;
+};
+
+type TokenPatchPayload = {
+    tableId?: string;
+    sceneId?: string;
+    tokenId: string;
+    patch: Partial<TokenInfo>;
+};
+
+type TokensMovementResetPayload = {
+    tableId?: string;
+    sceneId: string;
+    updates: Array<{ tokenId: string; remainingMovement: number; movement?: number }>;
+};
+
+type InitiativeEntryAddedPayload = {
+    tableId?: string;
+    sceneId: string;
+    entry: InitiativeEntryDTO;
+    order: string[];
+};
+
+type InitiativeEntryRemovedPayload = {
+    tableId?: string;
+    sceneId: string;
+    entryId: string;
+    order: string[];
+};
+
+type InitiativeEntryUpdatedPayload = {
+    tableId?: string;
+    sceneId: string;
+    entryId: string;
+    patch: Partial<IInitiativeEntry>;
+};
+
+type InitiativeOrderUpdatedPayload = {
+    tableId?: string;
+    sceneId: string;
+    order: string[];
+    currentTurnId?: string | null;
+};
+
+type InitiativeTurnAdvancedPayload = {
+    tableId?: string;
+    sceneId: string;
+    currentEntryId: string;
+    previousEntryId?: string;
+    newRound?: boolean;
+};
+
 function isTokenSizeValue(value: string): value is TokenInfo['size'] {
     return (tokenSizes as readonly string[]).includes(value);
 }
@@ -352,13 +411,25 @@ export const useTableStore = defineStore('table', () => {
         }
     }
 
-    function moveToken(movedTokenData: TokenInfo & { oldSquareId: string }) {
-        if (movedTokenData.sceneId === activeSceneId.value) {
-        const oldSquare = squares.value.find(sq => sq.id === movedTokenData.oldSquareId);
-        if (oldSquare) oldSquare.token = null;
-        
-        const newSquare = squares.value.find(sq => sq.id === movedTokenData.squareId);
-        if (newSquare) newSquare.token = movedTokenData;
+    function moveToken(moved: TokenMovePayload) {
+        if (moved.sceneId !== activeSceneId.value) return;
+        let oldSquare = squares.value.find((sq) => sq.id === moved.oldSquareId);
+        if (!oldSquare) {
+            oldSquare = squares.value.find((sq) => sq.token?._id === moved.tokenId);
+        }
+        const token = oldSquare?.token;
+        if (!token) return;
+        oldSquare!.token = null;
+        token.squareId = moved.squareId;
+        if (typeof moved.remainingMovement === 'number') {
+            token.remainingMovement = moved.remainingMovement;
+        }
+        if (typeof moved.movement === 'number') {
+            token.movement = moved.movement;
+        }
+        const newSquare = squares.value.find((sq) => sq.id === moved.squareId);
+        if (newSquare) {
+            newSquare.token = token;
         }
     }
 
@@ -376,11 +447,22 @@ export const useTableStore = defineStore('table', () => {
         }
     }
 
-    function applyTokenUpdate(updated: TokenInfo) {
-        const square = squares.value.find(sq => sq.token?._id === updated._id);
-        if (square && square.token) {
-            Object.assign(square.token, updated);
-        }
+    function applyTokenUpdate(payload: TokenPatchPayload) {
+        const square = squares.value.find((sq) => sq.token?._id === payload.tokenId);
+        if (!square || !square.token) return;
+        Object.assign(square.token, payload.patch);
+    }
+
+    function applyTokensMovementReset(payload: TokensMovementResetPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        payload.updates.forEach((item) => {
+            const tokenSquare = squares.value.find((sq) => sq.token?._id === item.tokenId);
+            if (!tokenSquare?.token) return;
+            tokenSquare.token.remainingMovement = item.remainingMovement;
+            if (typeof item.movement === 'number') {
+                tokenSquare.token.movement = item.movement;
+            }
+        });
     }
 
     // Ação para o evento de reset de rodada
@@ -453,6 +535,81 @@ export const useTableStore = defineStore('table', () => {
             persistentMeasurements.value = [...others, ...finalForScene];
         }
 
+    function setCurrentTurnEntry(entryId?: string | null) {
+        if (entryId === undefined) return;
+        let changed = false;
+        initiativeList.value.forEach((entry) => {
+            const shouldBeCurrent = entryId !== null && entry._id === entryId;
+            if (entry.isCurrentTurn !== shouldBeCurrent) {
+                entry.isCurrentTurn = shouldBeCurrent;
+                changed = true;
+            }
+        });
+        if (changed) {
+            initiativeList.value = [...initiativeList.value];
+        }
+    }
+
+    function reorderInitiativeList(order: string[] | undefined | null, currentTurnId?: string | null) {
+        if (!order || order.length === 0) {
+            setCurrentTurnEntry(currentTurnId);
+            return;
+        }
+        const byId = new Map(initiativeList.value.map((entry) => [entry._id, entry]));
+        const reordered: IInitiativeEntry[] = [];
+        order.forEach((id) => {
+            const entry = byId.get(id);
+            if (entry) reordered.push(entry);
+        });
+        initiativeList.value.forEach((entry) => {
+            if (!order.includes(entry._id)) {
+                reordered.push(entry);
+            }
+        });
+        initiativeList.value = reordered;
+        setCurrentTurnEntry(currentTurnId);
+    }
+
+    function handleInitiativeEntryAdded(payload: InitiativeEntryAddedPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        const mapped = mapInitiativeDTO(payload.entry);
+        const withoutEntry = initiativeList.value.filter((entry) => entry._id !== mapped._id);
+        initiativeList.value = [...withoutEntry, mapped];
+        reorderInitiativeList(payload.order, mapped.isCurrentTurn ? mapped._id : undefined);
+    }
+
+    function handleInitiativeEntryRemoved(payload: InitiativeEntryRemovedPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        initiativeList.value = initiativeList.value.filter((entry) => entry._id !== payload.entryId);
+        reorderInitiativeList(payload.order);
+    }
+
+    function handleInitiativeEntryUpdated(payload: InitiativeEntryUpdatedPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        const entry = initiativeList.value.find((item) => item._id === payload.entryId);
+        if (!entry) return;
+        Object.assign(entry, payload.patch);
+        initiativeList.value = [...initiativeList.value];
+        if (payload.patch.isCurrentTurn !== undefined) {
+            setCurrentTurnEntry(payload.patch.isCurrentTurn ? entry._id : null);
+        }
+    }
+
+    function handleInitiativeOrderUpdated(payload: InitiativeOrderUpdatedPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        reorderInitiativeList(payload.order, payload.currentTurnId ?? undefined);
+    }
+
+    function handleInitiativeTurnAdvanced(payload: InitiativeTurnAdvancedPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        setCurrentTurnEntry(payload.currentEntryId);
+    }
+
+    function handleInitiativeReset(sceneId: string) {
+        if (sceneId !== activeSceneId.value) return;
+        initiativeList.value = [];
+    }
+
     function updateSceneScale(sceneId: string, newScale: number) {
         const scene = scenes.value.find(s => s._id === sceneId);
         if (scene) scene.metersPerSquare = newScale;
@@ -503,6 +660,7 @@ export const useTableStore = defineStore('table', () => {
         removeToken,
         updateTokenOwner,
     applyTokenUpdate,
+    applyTokensMovementReset,
         updateAllTokens,
         upsertSharedMeasurement,
         removeSharedMeasurement,
@@ -528,6 +686,12 @@ export const useTableStore = defineStore('table', () => {
     clearPings,
     setScenesFromDTO,
     setInitiativeFromDTO,
+    handleInitiativeEntryAdded,
+    handleInitiativeEntryRemoved,
+    handleInitiativeEntryUpdated,
+    handleInitiativeOrderUpdated,
+    handleInitiativeTurnAdvanced,
+    handleInitiativeReset,
         connectionStatus,
         setConnectionStatus,
     };

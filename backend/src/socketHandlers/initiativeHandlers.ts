@@ -12,8 +12,39 @@ import {
 } from '../services/initiativeService';
 import { getTableById, assertUserIsDM } from '../services/tableService';
 import { clearEphemeralMeasurements } from '../services/measurementService';
+import { createLogger } from '../logger';
+
+const serializeEntry = (entry: IInitiativeEntry) => ({
+  _id: entry._id?.toString() || '',
+  characterName: entry.characterName,
+  tokenId: entry.tokenId ? entry.tokenId.toString() : undefined,
+  characterId: entry.characterId ? entry.characterId.toString() : undefined,
+  isCurrentTurn: !!entry.isCurrentTurn,
+});
+
+const serializeOrder = (initiative: IInitiativeEntry[]) =>
+  initiative.map((entry) => entry._id?.toString()).filter((id): id is string => Boolean(id));
+
+function emitTurnState(io: Server, tableId: string, sceneId: string, initiative: IInitiativeEntry[], newRound = false) {
+  const current = initiative.find((entry) => entry.isCurrentTurn);
+  if (!current?._id) return;
+  const currentIndex = initiative.findIndex((entry) => entry._id?.toString() === current._id?.toString());
+  const previous = currentIndex === -1
+    ? undefined
+    : initiative[(currentIndex - 1 + initiative.length) % initiative.length];
+
+  io.to(tableId).emit('initiativeTurnAdvanced', {
+    tableId,
+    sceneId,
+    currentEntryId: current._id.toString(),
+    previousEntryId: previous?._id?.toString(),
+    currentTokenId: current.tokenId?.toString(),
+    newRound,
+  });
+}
 
 export function registerInitiativeHandlers(io: Server, socket: Socket) {
+  const log = createLogger({ scope: 'socket:initiative', socketId: socket.id, userId: socket.data.user?.id });
 
   // Adiciona token à iniciativa (apenas Mestre). Evita duplicatas do mesmo token.
   const requestAddCharacterToInitiative = async (data: { tableId: string, sceneId: string, tokenId: string }) => {
@@ -37,9 +68,17 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
 
         const initiative = await addTokenToInitiative(sceneId, token);
 
-  if (initiative) io.to(tableId).emit('initiativeUpdated', initiative);
+        const createdEntry = initiative.find((entry) => entry.tokenId?.toString() === tokenId);
+        if (createdEntry) {
+          io.to(tableId).emit('initiativeEntryAdded', {
+            tableId,
+            sceneId,
+            entry: serializeEntry(createdEntry),
+            order: serializeOrder(initiative),
+          });
+        }
     } catch (error) { 
-        console.error("Erro ao adicionar personagem à iniciativa:", error); 
+      log.error({ err: error, tableId: data?.tableId, sceneId: data?.sceneId }, 'Erro ao adicionar personagem à iniciativa'); 
     }
   };
 
@@ -55,16 +94,25 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
 
         const result = await advanceTurn(table, scene, userId);
 
-        io.to(tableId).emit('initiativeUpdated', result.initiative);
+        emitTurnState(io, tableId, sceneId, result.initiative, result.newRound);
+
         if (result.newRound) {
-          const updatedTokens = await Token.find({ sceneId }).populate('ownerId', '_id username');
-          io.to(tableId).emit('tokensUpdated', updatedTokens);
+          const updatedTokens = await Token.find({ sceneId });
+          const resets = updatedTokens.map((token) => ({
+            tokenId: token._id.toString(),
+            remainingMovement: token.remainingMovement,
+            movement: token.movement,
+          }));
+          io.to(tableId).emit('tokensMovementReset', {
+            tableId,
+            sceneId,
+            updates: resets,
+          });
         }
-  // Limpa medições compartilhadas no servidor e notifica clientes
-  clearEphemeralMeasurements(tableId);
-  io.to(tableId).emit('allMeasurementsCleared');
+        clearEphemeralMeasurements(tableId);
+        io.to(tableId).emit('allMeasurementsCleared', { sceneId });
     } catch (error) { 
-        console.error("Erro ao avançar o turno:", error); 
+      log.error({ err: error, tableId: data?.tableId, sceneId: data?.sceneId }, 'Erro ao avançar o turno'); 
     }
   };
 
@@ -80,12 +128,12 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
 
   const initiative = await resetInitiative(sceneId);
 
-  io.to(tableId).emit('initiativeUpdated', initiative);
-  // Limpa medições ao resetar iniciativa
+  io.to(tableId).emit('initiativeReset', { tableId, sceneId });
+  io.to(tableId).emit('initiativeOrderUpdated', { tableId, sceneId, order: serializeOrder(initiative), currentTurnId: null });
   clearEphemeralMeasurements(tableId);
-  io.to(tableId).emit('allMeasurementsCleared');
+  io.to(tableId).emit('allMeasurementsCleared', { sceneId });
     } catch (error) { 
-        console.error("Erro ao resetar a iniciativa:", error); 
+      log.error({ err: error, tableId: data?.tableId, sceneId: data?.sceneId }, 'Erro ao resetar a iniciativa'); 
     }
   };
 
@@ -102,11 +150,16 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         const { initiative, removedTokenId } = await removeInitiativeEntry(sceneId, initiativeEntryId, true);
 
         if (initiative) {
-          io.to(tableId).emit('initiativeUpdated', initiative);
+          io.to(tableId).emit('initiativeEntryRemoved', {
+            tableId,
+            sceneId,
+            entryId: initiativeEntryId,
+            order: serializeOrder(initiative),
+          });
           if (removedTokenId) io.to(tableId).emit('tokenRemoved', { tokenId: removedTokenId });
         }
     } catch (error) { 
-        console.error("Erro ao remover da iniciativa:", error); 
+      log.error({ err: error, tableId: data?.tableId, sceneId: data?.sceneId }, 'Erro ao remover da iniciativa'); 
     }
   };
 
@@ -122,9 +175,16 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
 
       const initiative = await reorderInitiative(sceneId, newOrder);
 
-    if (initiative) socket.to(tableId).emit('initiativeUpdated', initiative);
+      if (initiative) {
+        socket.to(tableId).emit('initiativeOrderUpdated', {
+          tableId,
+          sceneId,
+          order: serializeOrder(initiative),
+          currentTurnId: initiative.find((entry) => entry.isCurrentTurn)?._id?.toString() || null,
+        });
+      }
     } catch (error) { 
-        console.error("Erro ao reordenar iniciativa:", error); 
+      log.error({ err: error, tableId: data?.tableId, sceneId: data?.sceneId }, 'Erro ao reordenar iniciativa'); 
     }
   };
 
@@ -140,10 +200,17 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
 
       const initiative = await editInitiativeEntry(sceneId, initiativeEntryId, newName);
 
-      // Notifica todos na sala sobre a lista de iniciativa atualizada
-      io.to(tableId).emit('initiativeUpdated', initiative);
+      const updatedEntry = initiative.find((entry) => entry._id?.toString() === initiativeEntryId);
+      if (updatedEntry) {
+        io.to(tableId).emit('initiativeEntryUpdated', {
+          tableId,
+          sceneId,
+          entryId: initiativeEntryId,
+          patch: { characterName: updatedEntry.characterName },
+        });
+      }
     } catch (error) { 
-      console.error("Erro ao editar entrada da iniciativa:", error); 
+      log.error({ err: error, tableId: data?.tableId, sceneId: data?.sceneId }, 'Erro ao editar entrada da iniciativa'); 
     }
   };
 

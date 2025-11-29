@@ -103,4 +103,16 @@ describe('diceService.roll', () => {
     expect(kept[0].value).toBe(4);
     expect(result.total).toBe(4 - 1);
   });
+
+  it('preserves metadata to identify presets/systems', () => {
+    setRandomSequence([{ value: 6, die: 8 }]);
+    const result = roll('1d8+2', { metadata: 'system:dnd5e:atk' });
+    expect(result.metadata).toBe('system:dnd5e:atk');
+    expect(result.total).toBe(8); // 6 + 2 modifier
+  });
+
+  it('rejects invalid dice expressions and face counts', () => {
+    expect(() => roll('not-a-die')).toThrow('Expressão de dado inválida.');
+    expect(() => roll('1d1')).toThrow('Número de faces inválido.');
+  });
 });

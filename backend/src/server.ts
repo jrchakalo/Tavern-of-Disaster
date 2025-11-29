@@ -18,9 +18,16 @@ import { cleanupInactiveTables } from './socketHandlers/measurementStore';
 import tokenTemplateRouter from './routes/tokenTemplate.routes';
 import sceneTemplateRouter from './routes/sceneTemplate.routes';
 import userRouter from './routes/user.routes';
+import { createLogger } from './logger';
+import {
+  getMetricsSnapshot,
+  recordSocketConnected,
+  recordSocketDisconnected,
+} from './metrics';
 
 dotenv.config();
 connectDB();
+const log = createLogger({ scope: 'server' });
 
 const app = express();
 const server = http.createServer(app);
@@ -44,43 +51,54 @@ app.use('/api/users', userRouter);
 app.use('/api/token-templates', tokenTemplateRouter);
 app.use('/api/scene-templates', sceneTemplateRouter);
 
+app.get('/metrics', (_req, res) => {
+  res.json(getMetricsSnapshot());
+});
+
 
 server.listen(port, () => {
-  console.log(`Server rodando em http://localhost:${port}`);
+  log.info({ port }, 'Server iniciado');
 });
 
 if (measurementIdleTtlMs > 0 && measurementCleanupIntervalMs > 0) {
   setInterval(() => {
+    log.debug({ measurementIdleTtlMs }, 'Executando limpeza de medições inativas');
     cleanupInactiveTables(measurementIdleTtlMs);
   }, measurementCleanupIntervalMs);
 } else {
-  console.warn('[measurement] Cleanup desabilitado; verifique as variáveis MEASUREMENT_IDLE_TTL_MS e MEASUREMENT_CLEANUP_INTERVAL_MS');
+  log.warn({ measurementIdleTtlMs, measurementCleanupIntervalMs }, '[measurement] Cleanup desabilitado; verifique variáveis de ambiente');
 }
 
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
+  const socketLog = log.child({ scope: 'socket-auth', socketId: socket.id });
   if (!token) {
+    socketLog.warn('Tentativa de conexão sem token');
     return next(new Error('Authentication error: Token não fornecido.'));
   }
 
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
+    socketLog.error('JWT_SECRET ausente no servidor');
     return next(new Error('Authentication error: JWT Secret não configurada no servidor.'));
   }
 
   jwt.verify(token, jwtSecret, (err: any, decoded: any) => {
     if (err) {
+      socketLog.warn({ err }, 'Token inválido');
       return next(new Error('Authentication error: Token inválido.'));
     }
-    // Anexa o usuário ao objeto socket para uso posterior
     socket.data.user = decoded.user;
+    socketLog.info({ userId: decoded.user?.id }, 'Socket autenticado');
     next();
   });
 });
 
 // Configuração do Socket.IO
 io.on('connection', async (socket) => {
-  console.log(`Usuário conectado:, ${socket.id}`);
+  recordSocketConnected(socket.id);
+  const socketLog = log.child({ scope: 'socket', socketId: socket.id, userId: socket.data.user?.id });
+  socketLog.info('Socket conectado');
 
   registerTableHandlers(io, socket);
   registerTokenHandlers(io, socket);
@@ -89,6 +107,7 @@ io.on('connection', async (socket) => {
   registerDiceHandlers(io, socket);
 
   socket.on('disconnect', () => {
-    console.log(`Usuário desconectado: ${socket.id}`);
+    recordSocketDisconnected(socket.id);
+    socketLog.info('Socket desconectado');
   });
 });

@@ -11,8 +11,10 @@ import {
   removeTokenAura,
 } from '../services/measurementService';
 import { nanoid } from 'nanoid';
+import { createLogger } from '../logger';
 
 export function registerMeasurementHandlers(io: Server, socket: Socket) {
+  const log = createLogger({ scope: 'socket:measurement', socketId: socket.id, userId: socket.data.user?.id });
 
   // Compartilha medição efêmera. Jogador só pode se for turno do seu token; Mestre sempre.
   const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; color?: string; }) => {
@@ -31,7 +33,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       });
       if (!measurement) return;
       io.to(tableId).emit('measurementShared', measurement);
-    } catch (e) { console.error('Erro share measurement', e); }
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'Erro share measurement'); }
   };
 
   // Remove medição efêmera própria.
@@ -82,7 +84,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
     color: persistent.color,
     username: persistent.username,
   });
-    } catch (e) { console.error('requestAddPersistentMeasurement', e);} 
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestAddPersistentMeasurement');} 
   });
 
   // Remove medição persistente (Mestre ou autor).
@@ -92,7 +94,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       const { tableId, sceneId, id } = data;
       await removePersistentMeasurement(user, tableId, sceneId, id);
       io.to(tableId).emit('persistentMeasurementRemoved', { sceneId, id });
-    } catch (e) { console.error('requestRemovePersistentMeasurement', e);} 
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestRemovePersistentMeasurement');} 
   });
 
   // Limpar todas as medições compartilhadas da mesa (DM apenas)
@@ -107,7 +109,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       if (!isDM) return;
       await clearAllMeasurements(tableId, sceneId);
       io.to(tableId).emit('allMeasurementsCleared', { sceneId });
-    } catch (e) { console.error('requestClearAllMeasurements', e); }
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestClearAllMeasurements'); }
   });
 
   // --- Auras ancoradas ao token ---
@@ -118,7 +120,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
   const { tableId, sceneId, tokenId, name, color, radiusMeters, difficultTerrain } = data;
       const aura = await upsertTokenAura(user, tableId, sceneId, tokenId, { name, color, radiusMeters, difficultTerrain });
       io.to(tableId).emit('auraUpserted', aura);
-    } catch (e) { console.error('requestUpsertAura', e); }
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestUpsertAura'); }
   });
 
   // Remove aura (apenas Mestre).
@@ -128,7 +130,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       const { tableId, sceneId, tokenId } = data;
       await removeTokenAura(user, tableId, sceneId, tokenId);
       io.to(tableId).emit('auraRemoved', { sceneId, tokenId });
-    } catch (e) { console.error('requestRemoveAura', e); }
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestRemoveAura'); }
   });
 
   // Ping efêmero (ripple). Apenas verifica se usuário está na mesa e cena ativa bate.
@@ -142,6 +144,6 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       if (!table.activeScene || table.activeScene._id.toString() !== sceneId) return;
       const payload = { id: nanoid(6), userId: user.id, username: user.username, sceneId, squareId, x, y, color, ts: Date.now() };
       io.to(tableId).emit('pingBroadcast', payload);
-    } catch (e) { console.error('requestPing', e); }
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestPing'); }
   });
 }

@@ -22,6 +22,8 @@ import CharacterSheet from '../components/CharacterSheet.vue';
 import ActionLog from '../components/ActionLog.vue';
 import DiceRoller from '../components/DiceRoller.vue';
 import DiceAnimation from '../components/DiceAnimation.vue';
+import DMSessionControls from '../components/DMSessionControls.vue';
+import SceneManager from '../components/SceneManager.vue';
 
 import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character, DiceRolledPayload } from '../types';
 
@@ -58,6 +60,10 @@ const gridDisplayRef = ref<GridDisplayExpose | null>(null);
 const mapImgRef = ref<HTMLImageElement | null>(null);
 const imageRenderedWidth = ref<number | null>(null);
 const imageRenderedHeight = ref<number | null>(null);
+const isMobileLayout = ref(false);
+const isDmDrawerOpen = ref(false);
+const MOBILE_BREAKPOINT = 900;
+let layoutMediaQuery: MediaQueryList | null = null;
 // Escala (m por quadrado) controlada pelo Mestre
 const squareFeet = computed(() => (metersPerSquare.value || 1.5) * 3.28084);
 // Modo persistente: próxima medição vira persistente
@@ -84,6 +90,17 @@ function setMapImageEl(el: HTMLImageElement | null) {
 
 function setGridDisplayInstance(instance: GridDisplayExpose | null) {
   gridDisplayRef.value = instance;
+}
+
+function updateLayoutFlags() {
+  if (!layoutMediaQuery) {
+    layoutMediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`);
+  }
+  const matches = layoutMediaQuery.matches;
+  isMobileLayout.value = matches;
+  if (!matches) {
+    isDmDrawerOpen.value = false;
+  }
 }
 
 function closeAssignMenu() {
@@ -146,12 +163,14 @@ const {
 const characterStore = useCharacterStore();
 const { selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
 
-watch(currentTable, (table) => {
-  if (!table) return;
-  if (!systemStore.isLoaded) {
+watch(
+  () => currentTable.value?._id ?? null,
+  (tableId) => {
+    if (!tableId || systemStore.isLoaded) return;
     systemStore.fetchAll().catch((error) => console.error('[systems] falha ao carregar', error));
-  }
-}, { immediate: true });
+  },
+  { immediate: true }
+);
 
 const currentSystem = computed(() => {
   const table = currentTable.value;
@@ -353,11 +372,14 @@ watch(characterFetchScope, () => {
   fetchCharactersForTable();
 }, { immediate: true });
 
-watch(charactersForTable, (list) => {
-  if (activeCharacterId.value && !list.some((char) => char._id === activeCharacterId.value)) {
-    closeCharacterSheet();
+watch(
+  () => charactersForTable.value.map((char) => char._id).join(','),
+  () => {
+    if (activeCharacterId.value && !charactersForTable.value.some((char) => char._id === activeCharacterId.value)) {
+      closeCharacterSheet();
+    }
   }
-});
+);
 
 watch(selectedCharacterStoreId, (newId) => {
   if (newId === activeCharacterId.value) {
@@ -813,55 +835,46 @@ async function handleDeleteScene(sceneId: string) {
 
 // Função para quando um ponteiro (dedo/mouse) toca a tela
 function handlePointerDown(event: PointerEvent) {
-  // Ignora se o clique não for o botão esquerdo do mouse (ou um toque)
-  if (event.button !== 0) return;
+  const isTouch = event.pointerType === 'touch';
+  const isPrimaryButton = event.button === 0;
+  const isMiddleButton = event.pointerType === 'mouse' && event.button === 1;
+  if (!isTouch && !isPrimaryButton && !isMiddleButton) return;
 
-  if (isMeasuring.value) {
-    // Se uma ferramenta está ativa, o pointerDown INICIA a pré-visualização.
-  if (activeTool.value === 'ruler') {
-      if (!gridDisplayRef.value) return;
-      const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
-      const scale = viewTransform.value.scale || 1;
-      const local = {
-        x: (event.clientX - gridRect.left) / scale,
-        y: (event.clientY - gridRect.top) / scale
-      };
+  if (isMeasuring.value && (isPrimaryButton || isTouch)) {
+    if (!gridDisplayRef.value) return;
+    const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
+    const scale = viewTransform.value.scale || 1;
+    const local = {
+      x: (event.clientX - gridRect.left) / scale,
+      y: (event.clientY - gridRect.top) / scale
+    };
+    if (activeTool.value === 'ruler') {
       previewMeasurement.value = {
         type: 'ruler',
         start: local,
         end: local,
-  distance: '0.0m (0ft)'
+        distance: '0.0m (0ft)'
       };
-  } else if (activeTool.value === 'cone' || activeTool.value === 'circle' || activeTool.value === 'square' || activeTool.value === 'line' || activeTool.value === 'beam') {
-      if (!gridDisplayRef.value) return;
-      const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
-      const scale = viewTransform.value.scale || 1;
-      const local = {
-        x: (event.clientX - gridRect.left) / scale,
-        y: (event.clientY - gridRect.top) / scale
-      };
-      // Determina o quadrado de origem baseado na posição local e usa o CENTRO dessa célula como ápice
-        const originSquare = getSquareIdFromLocalPoint(local.x, local.y);
-        coneOriginSquareId.value = originSquare;
-        const originCenter = originSquare ? getSquareCenterLocalPointFromId(originSquare) : local;
-        const measurementType = activeTool.value as MeasurementTool;
-        previewMeasurement.value = { type: measurementType, start: originCenter, end: originCenter };
-      // Inicializa sem afetar nada (comprimento 0)
+    } else if (isMeasurementTool(activeTool.value as ToolMode)) {
+      const originSquare = getSquareIdFromLocalPoint(local.x, local.y);
+      coneOriginSquareId.value = originSquare;
+      const originCenter = originSquare ? getSquareCenterLocalPointFromId(originSquare) : local;
+      const measurementType = activeTool.value as MeasurementTool;
+      previewMeasurement.value = { type: measurementType, start: originCenter, end: originCenter };
       coneAffectedSquares.value = [];
     }
-    // (Futuramente: else if (activeTool.value === 'cone') { ... })
-
-    // Captura o ponteiro para que o 'pointerup' funcione mesmo se o mouse sair da área
     (event.target as HTMLElement).setPointerCapture(event.pointerId);
     return;
   }
 
-  // Lógica de pan: desabilita pan quando ferramenta SELECT está ativa
-  if (activeTool.value === 'select') return;
-  // Lógica original de pan
+  if (isMeasuring.value) return;
+
+  const shouldPan = isTouch || isMiddleButton || (isPrimaryButton && activeTool.value !== 'select');
+  if (!shouldPan) return;
   if ((event.target as HTMLElement).closest('button, .token')) return;
   activePointers.value.push(event);
   viewportRef.value?.setPointerCapture(event.pointerId);
+  event.preventDefault();
 }
 
 // Função para quando um ponteiro se move
@@ -1475,9 +1488,9 @@ watch(activeSceneId, () => {
   activeTool.value = 'none';
 });
 
-watch(persistentMeasurements, () => {
-  if (!selectedPersistentId.value) return;
-  const stillExists = persistentMeasurements.value.some(pm => pm.id === selectedPersistentId.value);
+watch([selectedPersistentId, () => persistentMeasurements.value.length], ([id]) => {
+  if (!id) return;
+  const stillExists = persistentMeasurements.value.some(pm => pm.id === id);
   if (!stillExists) selectedPersistentId.value = null;
 });
 
@@ -1485,25 +1498,57 @@ onMounted(() => {
   socketService.connect(tableId);
   // Resize janela -> recalcula dimensões imagem
   window.addEventListener('resize', updateImageDimensions);
-  window.addEventListener('keydown', handleGlobalEsc);
+  window.addEventListener('keydown', handleGlobalKeydown);
+  updateLayoutFlags();
+  if (layoutMediaQuery) {
+    layoutMediaQuery.addEventListener('change', updateLayoutFlags);
+  }
 });
 
 onUnmounted(() => {
   socketService.disconnect();
   window.removeEventListener('resize', updateImageDimensions);
-  window.removeEventListener('keydown', handleGlobalEsc);
+  window.removeEventListener('keydown', handleGlobalKeydown);
+  layoutMediaQuery?.removeEventListener('change', updateLayoutFlags);
+  layoutMediaQuery = null;
 });
 
-function handleGlobalEsc(e: KeyboardEvent) {
+function handleGlobalKeydown(e: KeyboardEvent) {
+  const target = e.target as HTMLElement | null;
+  const isTextInput = target ? ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable : false;
+  const key = e.key.toLowerCase();
+
   if (e.key === 'Escape') {
-  // ESC: limpa medições
+    if (isDmDrawerOpen.value) {
+      isDmDrawerOpen.value = false;
+      return;
+    }
     previewMeasurement.value = null;
     rulerStartPoint.value = null;
     rulerEndPoint.value = null;
     coneOriginSquareId.value = null;
     coneAffectedSquares.value = [];
-    // Sai de ferramenta se estava medindo
     if (isMeasuring.value) activeTool.value = 'none';
+    return;
+  }
+
+  if (isTextInput) return;
+
+  if (key === 'n' && isDM.value) {
+    e.preventDefault();
+    handleNextTurn();
+    return;
+  }
+
+  if (key === 'm') {
+    e.preventDefault();
+    handleToolSelected('ruler');
+    return;
+  }
+
+  if (key === 'g') {
+    e.preventDefault();
+    resetView();
   }
 }
 
@@ -1605,7 +1650,27 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       <span>{{ connectionLabel }}</span>
     </div>
 
-  <div v-if="!isDM && sessionStatus === 'LIVE' && activeScene?.type === 'battlemap'" class="player-initiative-wrapper">
+    <button
+      v-if="isDM && isMobileLayout"
+      class="dm-drawer-toggle surface"
+      type="button"
+      aria-label="Abrir painel do Mestre"
+      @click="isDmDrawerOpen = true"
+    >
+      Painel do Mestre
+    </button>
+
+    <div
+      v-if="isDM && isMobileLayout && isDmDrawerOpen"
+      class="dm-panel-backdrop"
+      @click="isDmDrawerOpen = false"
+    ></div>
+
+  <div
+      v-if="!isDM && sessionStatus === 'LIVE' && activeScene?.type === 'battlemap'"
+      class="player-initiative-wrapper"
+      :class="{ 'bottom-sheet': isMobileLayout }"
+    >
       <InitiativePanel
         :initiativeList="initiativeList"
         :tokensOnMap="tokensOnMap"
@@ -1620,15 +1685,23 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </div>
 
 
-  <aside v-if="isDM" class="dm-panel" :class="{ collapsed: isDmPanelCollapsed }">
-      <button @click="isDmPanelCollapsed = !isDmPanelCollapsed" class="toggle-button">
+    <aside
+      v-if="isDM && (!isMobileLayout || isDmDrawerOpen)"
+      class="dm-panel"
+      :class="{ collapsed: isDmPanelCollapsed && !isMobileLayout, 'mobile-drawer': isMobileLayout, open: isDmDrawerOpen }"
+    >
+      <div v-if="isMobileLayout" class="drawer-header">
+        <h3>Painel do Mestre</h3>
+        <button class="drawer-close" type="button" aria-label="Fechar painel do Mestre" @click="isDmDrawerOpen = false">×</button>
+      </div>
+      <button v-if="!isMobileLayout" @click="isDmPanelCollapsed = !isDmPanelCollapsed" class="toggle-button">
         <span>Painel do Mestre</span>
         <span class="chevron" :class="{ collapsed: isDmPanelCollapsed }">
           <Icon :name="isDmPanelCollapsed ? 'plus' : 'minus'" size="18" />
         </span>
       </button>
       
-      <div v-show="!isDmPanelCollapsed" class="panel-content">        
+      <div v-show="!isDmPanelCollapsed || isMobileLayout" class="panel-content">        
         <DMSessionControls
           :session-status="sessionStatus"
           :pause-input="pauseInput"
@@ -1802,12 +1875,13 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       </div>
     </main>
 
-    <button v-if="canUseMap" @click="resetView" class="reset-view-btn below">Recentralizar</button>
+    <button v-if="canUseMap" @click="resetView" class="reset-view-btn below" type="button" aria-label="Recentralizar mapa">Recentralizar</button>
 
     <button
       class="log-toggle-btn surface"
       :class="{ open: showActionLog }"
       type="button"
+      aria-label="Alternar registro de ações"
       @click="toggleActionLog"
     >
       {{ showActionLog ? 'Fechar log' : 'Log' }}
@@ -1815,7 +1889,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </button>
 
     <transition name="log-panel">
-      <aside v-if="showActionLog" class="action-log-panel surface">
+      <aside v-if="showActionLog" :class="['action-log-panel surface', { 'mobile-sheet': isMobileLayout }]">
         <header class="log-panel__header">
           <div>
             <p class="log-panel__eyebrow">Timeline</p>
@@ -1976,6 +2050,13 @@ main{
   flex-direction: column;
   gap: 12px;
 }
+.action-log-panel.mobile-sheet {
+  left: 10px;
+  right: 10px;
+  bottom: calc(90px + env(safe-area-inset-bottom, 0));
+  width: auto;
+  border-radius: 20px 20px 0 0;
+}
 .log-panel__header {
   display: flex;
   justify-content: space-between;
@@ -2038,6 +2119,12 @@ main{
   .log-toggle-btn {
     right: 10px;
     left: auto;
+  }
+}
+@media (max-width: 900px) {
+  .log-toggle-btn {
+    bottom: calc(110px + env(safe-area-inset-bottom, 0));
+    right: 14px;
   }
 }
 .connection-indicator {
@@ -2105,6 +2192,53 @@ main{
   backdrop-filter: blur(4px);
   font-family: var(--font-sans);
 }
+.dm-panel.mobile-drawer {
+  position: fixed;
+  inset: auto 0 0 0;
+  width: inherit;
+  max-width: 100%;
+  height: auto;
+  max-height: 85vh;
+  border-radius: 20px 20px 0 0;
+  z-index: 90;
+  box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.55);
+}
+.dm-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: 80;
+}
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.dm-panel .drawer-close {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  font-size: 1.4rem;
+}
+.dm-panel.mobile-drawer .toggle-button {
+  display: none;
+}
+.dm-drawer-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto 10px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  font-weight: 600;
+}
 .toggle-button {
   background: var(--color-surface-alt);
   color: var(--color-accent);
@@ -2163,6 +2297,18 @@ panel h2 {
 @media (max-width: 900px) {
   /* On mobile: dock above the map stage area for better panning */
   .player-initiative-wrapper { position: static; margin: 8px 8px 6px; }
+}
+.player-initiative-wrapper.bottom-sheet {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(88px + env(safe-area-inset-bottom, 0));
+  margin: 0;
+  pointer-events: none;
+  z-index: 72;
+}
+.player-initiative-wrapper.bottom-sheet .initiative-panel {
+  pointer-events: auto;
 }
 .grid-controls label {
     font-size: 0.9em;
