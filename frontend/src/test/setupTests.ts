@@ -19,6 +19,7 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
   window.matchMedia = () => ({
     matches: false,
     media: '',
+    onchange: null,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
     addListener: vi.fn(),
