@@ -12,6 +12,7 @@ const props = defineProps<{
   newSceneName: string;
   newSceneImageUrl: string;
   newSceneType: 'battlemap' | 'image';
+  isUploadingMap: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -26,6 +27,7 @@ const emit = defineEmits<{
   (e: 'update:newSceneName', value: string): void;
   (e: 'update:newSceneImageUrl', value: string): void;
   (e: 'update:newSceneType', value: 'battlemap' | 'image'): void;
+  (e: 'upload-map-file', file: File): void;
 }>();
 
 const internalScenes = computed({
@@ -35,6 +37,17 @@ const internalScenes = computed({
 
 function onDragEnd() {
   emit('reorder', internalScenes.value);
+}
+
+function handleMapFileChange(event: Event) {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (file) {
+    emit('upload-map-file', file);
+  }
+  if (input) {
+    input.value = '';
+  }
 }
 </script>
 
@@ -86,6 +99,19 @@ function onDragEnd() {
           />
           <button @click="emit('set-map')" type="button" class="btn btn-xs btn-ghost">Definir</button>
         </div>
+        <div class="map-upload-row">
+          <label class="upload-button" :class="{ disabled: isUploadingMap }">
+            <input
+              class="file-input"
+              type="file"
+              accept="image/*"
+              :disabled="isUploadingMap"
+              @change="handleMapFileChange"
+            />
+            <span>{{ isUploadingMap ? 'Enviando…' : 'Enviar arquivo' }}</span>
+          </label>
+          <small>Você também pode colar uma URL direta acima.</small>
+        </div>
       </div>
     </div>
 
@@ -120,3 +146,42 @@ function onDragEnd() {
     </form>
   </div>
 </template>
+
+<style scoped>
+.map-upload-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+.upload-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+}
+.upload-button.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.file-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.upload-button.disabled .file-input {
+  cursor: not-allowed;
+}
+.map-upload-row small {
+  color: var(--color-text-muted);
+}
+</style>

@@ -18,6 +18,7 @@ import { cleanupInactiveTables } from './socketHandlers/measurementStore';
 import tokenTemplateRouter from './routes/tokenTemplate.routes';
 import sceneTemplateRouter from './routes/sceneTemplate.routes';
 import userRouter from './routes/user.routes';
+import assetRouter from './routes/asset.routes';
 import { createLogger } from './logger';
 import {
   getMetricsSnapshot,
@@ -50,6 +51,7 @@ app.use('/api', systemRouter);
 app.use('/api/users', userRouter);
 app.use('/api/token-templates', tokenTemplateRouter);
 app.use('/api/scene-templates', sceneTemplateRouter);
+app.use('/api/assets', assetRouter);
 
 app.get('/metrics', (_req, res) => {
   res.json(getMetricsSnapshot());

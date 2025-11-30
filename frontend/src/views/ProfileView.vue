@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia';
 import { useUserStore } from '../stores/userStore';
 import { useSystemStore } from '../stores/systemStore';
 import { toast } from '../services/toast';
+import { uploadAvatar } from '../services/storageService';
 import Icon from '../components/Icon.vue';
 
 const userStore = useUserStore();
@@ -22,6 +23,7 @@ const form = reactive({
 
 const isSaving = ref(false);
 const hasChanges = ref(false);
+const isUploadingAvatar = ref(false);
 
 function applyProfile() {
   if (!profile.value) return;
@@ -119,6 +121,25 @@ function handleAvatarError(event: Event) {
   }
 }
 
+async function handleAvatarFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) return;
+  try {
+    isUploadingAvatar.value = true;
+    const url = await uploadAvatar(file);
+    form.avatarUrl = url;
+    handleFieldInput();
+    toast.success('Avatar enviado com sucesso.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Não foi possível enviar o avatar.';
+    toast.error(message);
+  } finally {
+    if (input) input.value = '';
+    isUploadingAvatar.value = false;
+  }
+}
+
 onMounted(() => {
   loadInitialData();
 });
@@ -148,6 +169,13 @@ onMounted(() => {
         <label class="form-field">
           <span>URL do avatar</span>
           <input type="text" v-model="form.avatarUrl" :disabled="disabled" maxlength="1024" placeholder="https://..." @input="handleFieldInput" />
+          <div class="file-actions">
+            <label class="upload-btn" :class="{ disabled: disabled || isUploadingAvatar }">
+              <input type="file" accept="image/*" :disabled="disabled || isUploadingAvatar" @change="handleAvatarFileSelected" />
+              <span>{{ isUploadingAvatar ? 'Enviando…' : 'Enviar arquivo' }}</span>
+            </label>
+            <small>O link será preenchido automaticamente após o envio.</small>
+          </div>
         </label>
         <label class="form-field">
           <span>Bio</span>
@@ -293,6 +321,40 @@ select:focus {
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid var(--color-border);
+}
+.file-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+}
+.file-actions small {
+  color: var(--color-text-muted);
+}
+.upload-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: var(--color-surface-alt);
+}
+.upload-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.upload-btn.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.upload-btn.disabled input {
+  cursor: not-allowed;
 }
 .color-row {
   display: flex;

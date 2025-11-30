@@ -6,6 +6,7 @@ import { storeToRefs } from 'pinia';
 import { authToken, currentUser } from '../services/authService';
 import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
+import { uploadMap } from '../services/storageService';
 import { useTableStore } from '../stores/tableStore';
 import { useCharacterStore } from '../stores/characterStore';
 import { useSystemStore } from '../stores/systemStore';
@@ -55,6 +56,7 @@ const mapUrlInput = ref(''); // URL digitada para imagem de cena
 const newSceneName = ref('');
 const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena
+const isUploadingMap = ref(false);
 const isDmPanelCollapsed = ref(false);
 const gridDisplayRef = ref<GridDisplayExpose | null>(null);
 const mapImgRef = ref<HTMLImageElement | null>(null);
@@ -461,6 +463,26 @@ function toggleDmRoller() {
 function setMap() {
   if (mapUrlInput.value.trim() !== '') {
     socketService.setMap(tableId, mapUrlInput.value);
+  }
+}
+
+async function handleMapFileUpload(file: File) {
+  if (!tableId) {
+    toast.error('Mesa inválida para upload de mapa.');
+    return;
+  }
+  try {
+    isUploadingMap.value = true;
+    const url = await uploadMap(file, tableId);
+    mapUrlInput.value = url;
+    setMap();
+    toast.success('Mapa atualizado com sucesso.');
+  } catch (error) {
+    console.error('[map-upload] erro ao enviar arquivo', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível enviar o mapa.';
+    toast.error(message);
+  } finally {
+    isUploadingMap.value = false;
   }
 }
 
@@ -1721,6 +1743,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           :new-scene-name="newSceneName"
           :new-scene-image-url="newSceneImageUrl"
           :new-scene-type="newSceneType"
+          :is-uploading-map="isUploadingMap"
           @toggle="isScenesCollapsed = !isScenesCollapsed"
           @set-active-scene="handleSetActiveScene"
           @edit-scene="handleEditScene"
@@ -1732,6 +1755,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           @update:newSceneName="newSceneName = $event"
           @update:newSceneImageUrl="newSceneImageUrl = $event"
           @update:newSceneType="newSceneType = $event"
+          @upload-map-file="handleMapFileUpload"
         />
 
         <!-- Initiative table now after Scenes and before Grid controls -->
@@ -1924,6 +1948,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       v-if="showTokenForm && isDM"
       :players="currentTable?.players || []"
       :characters="charactersForTable"
+      :table-id="tableId || ''"
       @create-token="createToken"
       @cancel="showTokenForm = false"
     />
@@ -1932,6 +1957,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       :token="tokenBeingEdited"
       :players="currentTable?.players || []"
       :characters="charactersForTable"
+      :table-id="tableId || ''"
       @close="showTokenEditForm = false; tokenBeingEdited = null;"
       @save="handleSaveTokenEdit"
     />

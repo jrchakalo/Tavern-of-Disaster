@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
 import { toast } from '../services/toast';
-import { PlayerInfo, TokenSize, Character } from '../types'; 
+import { uploadTokenImage } from '../services/storageService';
+import { PlayerInfo, TokenSize, Character } from '../types';
 import { tokenSizes } from '../types';
 
 const tokenName = ref('');
@@ -11,10 +12,12 @@ const assignedOwnerId = ref('');
 const tokenSize = ref<TokenSize>('Pequeno/Médio');
 const canOverlap = ref(false);
 const selectedCharacterId = ref<string | null>(null);
+const isUploadingImage = ref(false);
 
 interface Props {
   players: PlayerInfo[]; 
   characters: Character[];
+  tableId: string;
 }
 const props = defineProps<Props>();
 
@@ -47,6 +50,29 @@ function handleCancel() {
     emit('cancel');
 }
 
+async function handleFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (!props.tableId) {
+    toast.error('Mesa inválida para upload.');
+    if (input) input.value = '';
+    return;
+  }
+  try {
+    isUploadingImage.value = true;
+    const url = await uploadTokenImage(file, props.tableId);
+    tokenImageUrl.value = url;
+    toast.success('Imagem do token enviada.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Não foi possível enviar o arquivo.';
+    toast.error(message);
+  } finally {
+    if (input) input.value = '';
+    isUploadingImage.value = false;
+  }
+}
+
 onMounted(() => {
   if (props.players.length > 0) {
     assignedOwnerId.value = props.players[0]._id; 
@@ -74,6 +100,18 @@ watch(
 
       <label for="token-image">URL da Imagem:</label>
       <input id="token-image" v-model="tokenImageUrl" type="url" placeholder="https://exemplo.com/imagem.png" />
+      <div class="upload-row">
+        <label class="upload-btn" :class="{ disabled: isUploadingImage }">
+          <input
+            type="file"
+            accept="image/*"
+            :disabled="isUploadingImage"
+            @change="handleFileSelected"
+          />
+          <span>{{ isUploadingImage ? 'Enviando…' : 'Enviar arquivo' }}</span>
+        </label>
+        <small>Ou cole uma URL direta no campo acima.</small>
+      </div>
 
       <label for="token-movement">Movimento (m):</label>
       <input id="token-movement" v-model="tokenMovement" type="number" required />
@@ -135,5 +173,39 @@ input:focus, select:focus { outline:2px solid var(--color-border-strong); outlin
   display: flex;
   justify-content: space-around;
   margin-top: 10px;
+}
+.upload-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+.upload-row small {
+  color: var(--color-text-muted);
+}
+.upload-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: var(--color-surface-alt);
+}
+.upload-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.upload-btn.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.upload-btn.disabled input {
+  cursor: not-allowed;
 }
 </style>
