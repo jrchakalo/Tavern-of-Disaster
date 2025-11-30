@@ -12,15 +12,30 @@ import {
 } from '../services/measurementService';
 import { nanoid } from 'nanoid';
 import { createLogger } from '../logger';
+import { validate } from '../validation/validate';
+import {
+  zShareMeasurementPayload,
+  zAddPersistentMeasurementPayload,
+  zRemovePersistentMeasurementPayload,
+  zClearAllMeasurementsPayload,
+} from '../validation/schemas';
+import type {
+  ShareMeasurementPayload,
+  AddPersistentMeasurementPayload,
+  RemovePersistentMeasurementPayload,
+  ClearAllMeasurementsPayload,
+} from '../validation/schemas';
 
 export function registerMeasurementHandlers(io: Server, socket: Socket) {
   const log = createLogger({ scope: 'socket:measurement', socketId: socket.id, userId: socket.data.user?.id });
 
   // Compartilha medição efêmera. Jogador só pode se for turno do seu token; Mestre sempre.
-  const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; color?: string; }) => {
+  const requestShareMeasurement = async (payload: unknown) => {
+    let data: ShareMeasurementPayload | undefined;
     try {
       const user = socket.data.user;
       if (!user) return;
+      data = validate(zShareMeasurementPayload, payload);
       const { tableId, sceneId, start, end, distance, type, affectedSquares, color } = data;
       const measurement = await shareEphemeralMeasurement(user, tableId, sceneId, {
         start,
@@ -60,48 +75,54 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
 
   // --- Persistentes ---
   // Cria/guarda medição persistente associada à cena. Mestre sempre; jogador apenas no seu turno.
-  socket.on('requestAddPersistentMeasurement', async (data: { tableId: string; sceneId: string; payload: { id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; color?: string } }) => {
+  const requestAddPersistentMeasurement = async (payload: unknown) => {
+    let data: AddPersistentMeasurementPayload | undefined;
     try {
       const user = socket.data.user;
       if (!user) return;
-      const { tableId, sceneId, payload } = data;
+      data = validate(zAddPersistentMeasurementPayload, payload);
+      const { tableId, sceneId, payload: measurementPayload } = data;
       const persistent = await addPersistentMeasurement(user, tableId, sceneId, {
-        ...payload,
-        color: payload.color || '#ff8c00',
+        ...measurementPayload,
+        color: measurementPayload.color || '#ff8c00',
         sceneId,
       });
-  io.to(tableId).emit('persistentMeasurementAdded', {
-    tableId,
-    sceneId,
-    ownerId: user.id,
-    userId: persistent.userId,
-    id: persistent.id,
-    start: persistent.start,
-    end: persistent.end,
-    distance: persistent.distance,
-    type: persistent.type,
-    affectedSquares: persistent.affectedSquares,
-    color: persistent.color,
-    username: persistent.username,
-  });
-    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestAddPersistentMeasurement');} 
-  });
+      io.to(tableId).emit('persistentMeasurementAdded', {
+        tableId,
+        sceneId,
+        ownerId: user.id,
+        userId: persistent.userId,
+        id: persistent.id,
+        start: persistent.start,
+        end: persistent.end,
+        distance: persistent.distance,
+        type: persistent.type,
+        affectedSquares: persistent.affectedSquares,
+        color: persistent.color,
+        username: persistent.username,
+      });
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestAddPersistentMeasurement'); }
+  };
 
   // Remove medição persistente (Mestre ou autor).
-  socket.on('requestRemovePersistentMeasurement', async (data: { tableId: string; sceneId: string; id: string }) => {
+  const requestRemovePersistentMeasurement = async (payload: unknown) => {
+    let data: RemovePersistentMeasurementPayload | undefined;
     try {
       const user = socket.data.user; if (!user) return;
+      data = validate(zRemovePersistentMeasurementPayload, payload);
       const { tableId, sceneId, id } = data;
       await removePersistentMeasurement(user, tableId, sceneId, id);
       io.to(tableId).emit('persistentMeasurementRemoved', { sceneId, id });
-    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestRemovePersistentMeasurement');} 
-  });
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestRemovePersistentMeasurement'); }
+  };
 
   // Limpar todas as medições compartilhadas da mesa (DM apenas)
   // Limpa (Mestre) tudo: efêmeras + persistentes + auras da cena.
-  socket.on('requestClearAllMeasurements', async (data: { tableId: string; sceneId: string }) => {
+  const requestClearAllMeasurements = async (payload: unknown) => {
+    let data: ClearAllMeasurementsPayload | undefined;
     try {
       const user = socket.data.user; if (!user) return;
+      data = validate(zClearAllMeasurementsPayload, payload);
       const { tableId, sceneId } = data;
       const table = await Table.findById(tableId).populate('dm','_id');
       if (!table) return;
@@ -110,7 +131,11 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       await clearAllMeasurements(tableId, sceneId);
       io.to(tableId).emit('allMeasurementsCleared', { sceneId });
     } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestClearAllMeasurements'); }
-  });
+  };
+
+  socket.on('requestAddPersistentMeasurement', requestAddPersistentMeasurement);
+  socket.on('requestRemovePersistentMeasurement', requestRemovePersistentMeasurement);
+  socket.on('requestClearAllMeasurements', requestClearAllMeasurements);
 
   // --- Auras ancoradas ao token ---
   // Inclui/atualiza aura ancorada a token. Permissão: Mestre, dono do token ou dono do token em turno.

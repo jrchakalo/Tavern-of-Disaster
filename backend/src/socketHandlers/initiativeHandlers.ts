@@ -13,6 +13,19 @@ import {
 import { getTableById, assertUserIsDM } from '../services/tableService';
 import { clearEphemeralMeasurements } from '../services/measurementService';
 import { createLogger } from '../logger';
+import { validate } from '../validation/validate';
+import {
+  zAddInitiativeEntryPayload,
+  zRemoveInitiativeEntryPayload,
+  zReorderInitiativePayload,
+  zNextTurnPayload,
+} from '../validation/schemas';
+import type {
+  AddInitiativeEntryPayload,
+  RemoveInitiativeEntryPayload,
+  ReorderInitiativePayload,
+  NextTurnPayload,
+} from '../validation/schemas';
 
 const serializeEntry = (entry: IInitiativeEntry) => ({
   _id: entry._id?.toString() || '',
@@ -47,18 +60,15 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
   const log = createLogger({ scope: 'socket:initiative', socketId: socket.id, userId: socket.data.user?.id });
 
   // Adiciona token à iniciativa (apenas Mestre). Evita duplicatas do mesmo token.
-  const requestAddCharacterToInitiative = async (data: { tableId: string, sceneId: string, tokenId: string }) => {
+  const requestAddCharacterToInitiative = async (payload: unknown) => {
+    let data: AddInitiativeEntryPayload | undefined;
     try {
+        data = validate(zAddInitiativeEntryPayload, payload);
         const { tableId, sceneId, tokenId } = data;
         const userId = socket.data.user?.id;
         const table = await getTableById(tableId);
         if (!table) return;
         assertUserIsDM(userId, table);
-
-        if (!tokenId) {
-        socket.emit('error', { message: 'Nenhum token foi selecionado.' });
-        return;
-        }
 
         const token = await Token.findById(tokenId);
         if (!token) {
@@ -84,8 +94,10 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
 
 
   // Avança para o próximo turno. Se voltar ao início da lista: nova rodada -> reseta movimento.
-  const requestNextTurn = async (data: { tableId: string, sceneId: string }) => {
+  const requestNextTurn = async (payload: unknown) => {
+    let data: NextTurnPayload | undefined;
     try {
+        data = validate(zNextTurnPayload, payload);
         const { tableId, sceneId } = data;
         const userId = socket.data.user?.id; 
         
@@ -117,8 +129,10 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
   };
 
   // Remove todas as entradas da iniciativa (apenas Mestre) e limpa medições.
-  const requestResetInitiative = async (data: { tableId: string, sceneId: string }) => {
+  const requestResetInitiative = async (payload: unknown) => {
+    let data: NextTurnPayload | undefined;
     try {
+        data = validate(zNextTurnPayload, payload);
         const { tableId, sceneId } = data;
         const userId = socket.data.user?.id;
         const table = await getTableById(tableId);
@@ -138,8 +152,10 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
   };
 
   // Remove entrada específica e deleta token associado (se houver). Apenas Mestre.
-  const requestRemoveFromInitiative = async (data: { tableId: string; sceneId: string; initiativeEntryId: string }) => {
+  const requestRemoveFromInitiative = async (payload: unknown) => {
+    let data: RemoveInitiativeEntryPayload | undefined;
     try {
+        data = validate(zRemoveInitiativeEntryPayload, payload);
         const { tableId, sceneId, initiativeEntryId } = data;
         
         const userId = socket.data.user?.id;
@@ -164,16 +180,19 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
   };
 
   // Reordena manualmente a lista (apenas Mestre). Mantém flags isCurrentTurn conforme recebido.
-  const requestReorderInitiative = async (data: { tableId: string; sceneId: string; newOrder: IInitiativeEntry[] }) => {
+  const requestReorderInitiative = async (payload: unknown) => {
+    let data: ReorderInitiativePayload | undefined;
     try {
+        data = validate(zReorderInitiativePayload, payload);
         const { tableId, sceneId, newOrder } = data;
+        const orderForService = newOrder as unknown as IInitiativeEntry[];
         const userId = socket.data.user?.id;
 
       const table = await getTableById(tableId);
       if (!table) return;
     assertUserIsDM(userId, table);
 
-      const initiative = await reorderInitiative(sceneId, newOrder);
+      const initiative = await reorderInitiative(sceneId, orderForService);
 
       if (initiative) {
         socket.to(tableId).emit('initiativeOrderUpdated', {

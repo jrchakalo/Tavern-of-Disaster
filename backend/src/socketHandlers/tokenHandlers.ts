@@ -11,6 +11,21 @@ import { ServiceError } from '../services/serviceErrors';
 import { IInitiativeEntry } from '../models/Scene.model';
 import { createLogger } from '../logger';
 import { recordTokenMove, recordTokenMoveError } from '../metrics';
+import { validate } from '../validation/validate';
+import {
+  zPlaceTokenPayload,
+  zMoveTokenPayload,
+  zAssignTokenPayload,
+  zEditTokenPayload,
+  zUndoMovePayload,
+} from '../validation/schemas';
+import type {
+  PlaceTokenPayloadInput,
+  MoveTokenPayload,
+  AssignTokenPayload,
+  EditTokenPayload,
+  UndoMovePayload,
+} from '../validation/schemas';
 
 function toInitiativeEntryDTO(entry: IInitiativeEntry) {
   return {
@@ -41,14 +56,13 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   };
 
   // Coloca um novo token no grid + adiciona entrada na iniciativa. Valida footprint e ocupação.
-  const requestPlaceToken = async (data: { tableId: string, sceneId: string, squareId: string; name: string; imageUrl?: string; movement?: number; remainingMovement?: number; ownerId?: string; size: string; canOverlap?: boolean; characterId?: string | null }) => {
+  const requestPlaceToken = async (payload: unknown) => {
+    let data: PlaceTokenPayloadInput | undefined;
     try {
         const userId = socket.data.user?.id; 
         if (!userId) return;
-
+        data = validate(zPlaceTokenPayload, payload);
         const { tableId } = data;
-        if (!data.sceneId) return socket.emit('tokenPlacementError', { message: 'ID da cena não fornecido.' });
-
         const result = await placeTokenForTable(userId, data as PlaceTokenPayload);
         io.to(tableId).emit('tokenPlaced', result.token);
         if (result.initiative) {
@@ -69,10 +83,12 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   };
 
   // Move token validando turno (jogador só move no seu turno) + movimento restante + footprint.
-  const requestMoveToken = async (data: { tableId: string, tokenId: string; targetSquareId: string }) => {
+  const requestMoveToken = async (payload: unknown) => {
+    let data: MoveTokenPayload | undefined;
     try {
         const userId = socket.data.user?.id;
         if (!userId) return;
+        data = validate(zMoveTokenPayload, payload);
         const { tableId } = data;
         const { updated, oldSquareId } = await moveTokenForUser(userId, data);
         if (!oldSquareId) return;
@@ -94,10 +110,12 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   };
 
   // Atribui novo dono a um token (apenas Mestre) para permitir controle ao jogador.
-  const requestAssignToken = async (data: { tableId: string; tokenId: string; newOwnerId: string }) => {
+  const requestAssignToken = async (payload: unknown) => {
+    let data: AssignTokenPayload | undefined;
     try {
         const userId = socket.data.user?.id;
         if (!userId) return;
+        data = validate(zAssignTokenPayload, payload);
         const { tableId } = data;
         const updatedToken = await assignTokenOwnerForTable(userId, data);
 
@@ -113,32 +131,34 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   };
 
   // Edita atributos do token (apenas Mestre). Se nome muda, reflete na iniciativa.
-  const requestEditToken = async (data: { tableId: string; tokenId: string; name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean; canOverlap?: boolean; characterId?: string | null }) => {
+  const requestEditToken = async (payload: unknown) => {
+    let data: EditTokenPayload | undefined;
     try {
       const userId = socket.data.user?.id;
       if (!userId) return;
-      const { tableId } = data;
-      const result = await editTokenForTable(userId, data);
+      data = validate(zEditTokenPayload, payload);
+      const { tableId, tokenId, patch } = data;
+      const result = await editTokenForTable(userId, { tableId, tokenId, ...patch });
       if (!result?.updated) return;
       const { updated, initiative } = result;
-      const patch: Record<string, unknown> = {};
-      if (typeof data.name === 'string') patch.name = updated.name;
-      if (typeof data.movement === 'number') {
-        patch.movement = updated.movement;
-        patch.remainingMovement = updated.remainingMovement;
+      const patchPayload: Record<string, unknown> = {};
+      if (typeof patch.name === 'string') patchPayload.name = updated.name;
+      if (typeof patch.movement === 'number') {
+        patchPayload.movement = updated.movement;
+        patchPayload.remainingMovement = updated.remainingMovement;
       }
-      if (typeof data.imageUrl === 'string') patch.imageUrl = updated.imageUrl;
-      if (typeof data.ownerId === 'string') patch.ownerId = updated.ownerId;
-      if (typeof data.size === 'string') patch.size = updated.size;
-      if (typeof data.canOverlap === 'boolean') patch.canOverlap = updated.canOverlap;
-      if (data.characterId !== undefined) patch.characterId = updated.characterId?.toString() || null;
-      if (data.resetRemainingMovement) patch.remainingMovement = updated.remainingMovement;
+      if (typeof patch.imageUrl === 'string') patchPayload.imageUrl = updated.imageUrl;
+      if (typeof patch.ownerId === 'string') patchPayload.ownerId = updated.ownerId;
+      if (typeof patch.size === 'string') patchPayload.size = updated.size;
+      if (typeof patch.canOverlap === 'boolean') patchPayload.canOverlap = updated.canOverlap;
+      if (patch.characterId !== undefined) patchPayload.characterId = updated.characterId?.toString() || null;
+      if (patch.resetRemainingMovement) patchPayload.remainingMovement = updated.remainingMovement;
 
       io.to(tableId).emit('tokenUpdated', {
         tableId,
         sceneId: updated.sceneId?.toString() || '',
         tokenId: updated._id.toString(),
-        patch,
+        patch: patchPayload,
       });
 
       if (initiative) {
@@ -151,10 +171,12 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
   };
 
   // Desfaz último movimento restaurando custo de deslocamento. Permite apenas Mestre ou dono.
-  const requestUndoMove = async (data: { tableId: string, tokenId: string }) => {
+  const requestUndoMove = async (payload: unknown) => {
+    let data: UndoMovePayload | undefined;
     try {
       const userId = socket.data.user?.id;
       if (!userId) return;
+      data = validate(zUndoMovePayload, payload);
       const { tableId } = data;
       const result = await undoTokenMoveForUser(userId, data);
       if (!result) return;

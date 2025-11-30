@@ -1,8 +1,18 @@
 import { ZodSchema } from 'zod';
 import { ServiceError } from '../services/serviceErrors';
 
-// Generic validation helper that will be wired with Zod safeParse soon.
+const DEFAULT_ERROR_MESSAGE = 'Payload inválido.';
+
 export function validate<T>(schema: ZodSchema<T>, value: unknown): T {
-  // TODO: Run schema.safeParse(value) and throw ServiceError on validation failure.
-  return value as T;
+  const result = schema.safeParse(value);
+  if (!result.success) {
+    const issues = result.error.issues.map((issue) => ({
+      path: issue.path.join('.') || undefined,
+      message: issue.message,
+      code: issue.code,
+    }));
+    const topMessage = issues[0]?.message ? `${DEFAULT_ERROR_MESSAGE} ${issues[0].message}` : DEFAULT_ERROR_MESSAGE;
+    throw new ServiceError(topMessage, 400, { issues });
+  }
+  return result.data;
 }

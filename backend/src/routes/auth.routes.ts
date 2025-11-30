@@ -4,6 +4,12 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { createLogger } from '../logger';
 import { recordAuthFailure } from '../metrics';
+import { validate } from '../validation/validate';
+import {
+  zLoginRequest,
+  zRegisterRequest,
+} from '../validation/schemas';
+import { ServiceError } from '../services/serviceErrors';
 
 const router = Router();
 const log = createLogger({ scope: 'auth-routes' });
@@ -11,15 +17,7 @@ const log = createLogger({ scope: 'auth-routes' });
 const registerUserHandler: RequestHandler = async (req, res) => {
   const requestLog = log.child({ route: 'register', email: req.body?.email, username: req.body?.username });
   try {
-    const { username, email, password } = req.body;
-
-    // Validação simples
-    if (!username || !email || !password) {
-      recordAuthFailure();
-      requestLog.warn('Campos obrigatórios ausentes no registro');
-      res.status(400).json({ message: 'Por favor, preencha todos os campos.' });
-      return;
-    }
+    const { username, email, password } = validate(zRegisterRequest, req.body);
 
     // Verifica se o usuário ou email já existem
     const existingUser = await User.findOne({ $or: [{ email }, { username }] });
@@ -54,6 +52,12 @@ const registerUserHandler: RequestHandler = async (req, res) => {
     });
 
   } catch (error) {
+    if (error instanceof ServiceError) {
+      recordAuthFailure();
+      requestLog.warn({ err: error, details: error.details }, 'Payload inválido no registro');
+      res.status(error.status).json({ message: error.message, details: error.details });
+      return;
+    }
     recordAuthFailure();
     requestLog.error({ err: error }, 'Erro no registro');
     res.status(500).json({ message: 'Erro interno do servidor.' });
@@ -63,15 +67,7 @@ const registerUserHandler: RequestHandler = async (req, res) => {
 const loginUserHandler: RequestHandler = async (req, res) => {
   const requestLog = log.child({ route: 'login', email: req.body?.email });
   try {
-    const { email, password } = req.body;
-
-    // Validação simples
-    if (!email || !password) {
-      recordAuthFailure();
-      requestLog.warn('Credenciais incompletas no login');
-      res.status(400).json({ message: 'Por favor, preencha email e senha.' });
-      return;
-    }
+    const { email, password } = validate(zLoginRequest, req.body);
 
     // Encontrar o usuário pelo email
     const user = await User.findOne({ email });
@@ -121,6 +117,12 @@ const loginUserHandler: RequestHandler = async (req, res) => {
     );
 
   } catch (error) {
+    if (error instanceof ServiceError) {
+      recordAuthFailure();
+      requestLog.warn({ err: error, details: error.details }, 'Payload inválido no login');
+      res.status(error.status).json({ message: error.message, details: error.details });
+      return;
+    }
     recordAuthFailure();
     requestLog.error({ err: error }, 'Erro no login');
     res.status(500).json({ message: 'Erro interno do servidor.' });
