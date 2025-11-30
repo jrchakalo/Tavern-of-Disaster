@@ -13,6 +13,7 @@ import { useSystemStore } from '../stores/systemStore';
 import { useUserStore } from '../stores/userStore';
 
 import MapViewport from '../components/MapViewport.vue';
+import MapViewportPixi from '../components/MapViewportPixi.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import TokenEditForm from '../components/TokenEditForm.vue';
 import InitiativePanel from '../components/InitiativePanel.vue';
@@ -60,6 +61,9 @@ const isUploadingMap = ref(false);
 const isDmPanelCollapsed = ref(false);
 const gridDisplayRef = ref<GridDisplayExpose | null>(null);
 const mapImgRef = ref<HTMLImageElement | null>(null);
+const pixiRendererFlag = import.meta.env.VITE_USE_PIXI ?? 'true';
+const usePixiRenderer = ref(pixiRendererFlag !== 'false');
+const rendererComponent = computed(() => (usePixiRenderer.value ? MapViewportPixi : MapViewport));
 const imageRenderedWidth = ref<number | null>(null);
 const imageRenderedHeight = ref<number | null>(null);
 const isMobileLayout = ref(false);
@@ -151,58 +155,59 @@ const {
   pauseUntil,
   transitionAt,
   transitionMs,
-  userMeasurementColors,
-  clockSkewMs,
-  logs,
-  currentTurnTokenId,
-  // Getters
-  isDM, 
-  activeScene, 
-  tokensOnMap, 
-  myActiveToken 
-} = storeToRefs(tableStore);
-
-const characterStore = useCharacterStore();
-const { selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
-
-watch(
-  () => currentTable.value?._id ?? null,
-  (tableId) => {
-    if (!tableId || systemStore.isLoaded) return;
-    systemStore.fetchAll().catch((error) => console.error('[systems] falha ao carregar', error));
-  },
-  { immediate: true }
-);
-
-const currentSystem = computed(() => {
-  const table = currentTable.value;
-  return (
-    systemStore.getById(table?.systemId ?? null) ||
-    systemStore.getByKey(table?.systemKey ?? 'generic')
-  );
-});
-
-const showCharacterSheet = ref(false);
-const activeCharacterId = ref<string | null>(null);
-const charactersForTable = computed(() => characterStore.charactersForTable(tableId));
-const activeCharacter = computed<Character | null>(() => {
-  if (!activeCharacterId.value) return null;
-  return charactersForTable.value.find((char) => char._id === activeCharacterId.value) || null;
-});
-const isActiveCharacterOwner = computed(() => {
-  if (!activeCharacter.value || !currentUser.value) return false;
-  return activeCharacter.value.ownerId === currentUser.value.id;
-});
-const characterFetchScope = computed(() => (isDM.value ? 'dm' : 'player'));
-
-const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
-const showActionLog = ref(false);
-const logCount = computed(() => logs.value.length);
-const showDicePopup = ref(false);
-const diceAnimationPayload = ref<DiceRolledPayload | null>(null);
-const diceAnimationVisible = ref(false);
-const diceAnimationId = ref(0);
-const DICE_ANIMATION_DURATION = 3600;
+      <component
+        :is="rendererComponent"
+        v-if="canUseMap"
+        :is-measuring="isMeasuring"
+        :view-transform="viewTransform"
+        :current-map-url="currentMapUrl"
+        :active-scene-type="activeScene?.type"
+        :grid-width="gridWidth"
+        :grid-height="gridHeight"
+        :meters-per-square="metersPerSquare"
+        :ruler-start-point="rulerStartPoint"
+        :ruler-end-point="rulerEndPoint"
+        :ruler-distance="rulerDistance"
+        :preview-measurement="previewMeasurement"
+        :shared-measurements="sharedMeasurementList"
+        :persistent-measurements="persistentsForActiveScene"
+        :auras="auras"
+        :user-measurement-colors="userMeasurementColors"
+        :cone-affected-squares="coneAffectedSquares"
+        :measurement-color="measurementColor"
+        :current-turn-token-id="currentTurnTokenId"
+        :squares="squares"
+        :image-rendered-width="imageRenderedWidth"
+        :image-rendered-height="imageRenderedHeight"
+        :selected-token-id="selectedTokenId"
+        :is-dm="isDM"
+        :current-user-id="currentUser?.id || null"
+        :selected-persistent-id="selectedPersistentId"
+        :pings="pings"
+        :show-assign-menu="showAssignMenu"
+        :assign-menu-position="assignMenuPosition"
+        :assign-menu-target-token="assignMenuTargetToken"
+        :players="currentTable?.players || []"
+        :map-image-ref-setter="setMapImageEl"
+        :viewport-ref-setter="setViewportEl"
+        :grid-display-ref-setter="setGridDisplayInstance"
+        :on-wheel="handleWheel"
+        :on-pointer-down="handlePointerDown"
+        :on-pointer-move="handlePointerMove"
+        :on-pointer-up="handlePointerUp"
+        :on-middle-click="handleMiddleClickFree"
+        :on-square-right-click="handleRightClick"
+        :on-square-left-click="handleLeftClickOnSquare"
+        :on-token-move-request="handleTokenMoveRequest"
+        :on-remove-persistent="handleRemovePersistent"
+        :on-select-persistent="handleSelectPersistent"
+        :on-viewport-contextmenu="handleViewportContextMenu"
+        :on-shape-contextmenu="handleShapeContextmenu"
+        :on-image-load="updateImageDimensions"
+        :on-assign-token="handleAssignToken"
+        :on-close-assign-menu="closeAssignMenu"
+        :on-open-character-from-token="handleOpenCharacterFromToken"
+      />
 
 // Transição curta antes do LIVE
 const showTransition = ref(false);
