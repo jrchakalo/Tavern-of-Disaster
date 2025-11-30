@@ -10,6 +10,7 @@ import {
   zRegisterRequest,
 } from '../validation/schemas';
 import { ServiceError } from '../services/serviceErrors';
+import { limitCreate, limitLogin } from '../middleware/rateLimit';
 
 const router = Router();
 const log = createLogger({ scope: 'auth-routes' });
@@ -129,7 +130,7 @@ const loginUserHandler: RequestHandler = async (req, res) => {
   }
 };
 
-router.post('/register', registerUserHandler);
-router.post('/login', loginUserHandler);
+router.post('/register', limitCreate, registerUserHandler);
+router.post('/login', limitLogin, loginUserHandler);
 
 export default router;

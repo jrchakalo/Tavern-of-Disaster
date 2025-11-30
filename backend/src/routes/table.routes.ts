@@ -2,6 +2,7 @@ import { Router, RequestHandler } from 'express';
 import { nanoid } from 'nanoid';
 import mongoose, { Types } from 'mongoose'
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
+import { limitCreate } from '../middleware/rateLimit';
 import Table from '../models/Table.model';
 import System from '../models/System.model';
 import SceneTemplate from '../models/SceneTemplate.model';
@@ -18,7 +19,7 @@ const router = Router();
 const log = createLogger({ scope: 'table-routes' });
 
 // Rota para criar uma nova mesa.
-router.post('/create', authMiddleware, (async (req: AuthRequest, res) => {
+router.post('/create', authMiddleware, limitCreate, (async (req: AuthRequest, res) => {
   try {
     const { name } = req.body;
     const dmId = req.user?.id; // Pegamos o ID do usuário que o middleware decodificou do token

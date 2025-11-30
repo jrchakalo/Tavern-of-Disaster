@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import System from '../models/System.model';
+import { validate } from '../validation/validate';
+import { zSystemKeyParams, zSystemIdParams } from '../validation/schemas';
 
 const router = Router();
 
@@ -15,7 +17,7 @@ router.get('/systems', async (_req, res) => {
 
 router.get('/systems/key/:key', async (req, res) => {
   try {
-    const { key } = req.params;
+    const { key } = validate(zSystemKeyParams, req.params);
     const system = await System.findOne({ key }).lean();
     if (!system) {
       res.status(404).json({ message: 'Sistema não encontrado.' });
@@ -30,7 +32,7 @@ router.get('/systems/key/:key', async (req, res) => {
 
 router.get('/systems/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } = validate(zSystemIdParams, req.params);
     const system = await System.findById(id).lean();
     if (!system) {
       res.status(404).json({ message: 'Sistema não encontrado.' });

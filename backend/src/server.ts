@@ -19,6 +19,7 @@ import tokenTemplateRouter from './routes/tokenTemplate.routes';
 import sceneTemplateRouter from './routes/sceneTemplate.routes';
 import userRouter from './routes/user.routes';
 import assetRouter from './routes/asset.routes';
+import rollRouter from './routes/roll.routes';
 import { createLogger } from './logger';
 import {
   getMetricsSnapshot,
@@ -32,9 +33,23 @@ const log = createLogger({ scope: 'server' });
 
 const app = express();
 const server = http.createServer(app);
+// Defina CORS_ORIGIN (ex.: https://app.exemplo.com) em produção para limitar a origem.
+const allowedOrigin = process.env.CORS_ORIGIN || '*';
+const normalizedOrigin =
+  allowedOrigin === '*'
+    ? '*'
+    : allowedOrigin
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter((origin) => origin.length > 0);
+const corsOptions = {
+  origin: normalizedOrigin as '*' | string | string[],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  credentials: true,
+};
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: corsOptions.origin,
     methods: ['GET', 'POST'],
   },
 });
@@ -42,7 +57,7 @@ const port = process.env.PORT || 3001;
 const measurementIdleTtlMs = Number(process.env.MEASUREMENT_IDLE_TTL_MS ?? 30 * 60 * 1000);
 const measurementCleanupIntervalMs = Number(process.env.MEASUREMENT_CLEANUP_INTERVAL_MS ?? 5 * 60 * 1000);
 
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use('/api/auth', authRouter);
 app.use('/api/tables', tableRouter);
@@ -52,6 +67,7 @@ app.use('/api/users', userRouter);
 app.use('/api/token-templates', tokenTemplateRouter);
 app.use('/api/scene-templates', sceneTemplateRouter);
 app.use('/api/assets', assetRouter);
+app.use('/api', rollRouter);
 
 app.get('/metrics', (_req, res) => {
   res.json(getMetricsSnapshot());

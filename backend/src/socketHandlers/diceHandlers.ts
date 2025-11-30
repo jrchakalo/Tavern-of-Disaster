@@ -9,6 +9,7 @@ import { recordDiceRoll } from '../metrics';
 import { validate } from '../validation/validate';
 import { zRollDicePayload } from '../validation/schemas';
 import type { RollDicePayload } from '../validation/schemas';
+import Roll from '../models/Roll.model';
 
 export interface DiceRolledPayload extends DiceRollResult {
   tableId: string;
@@ -68,6 +69,25 @@ export function registerDiceHandlers(io: Server, socket: Socket) {
         tags: data.tags,
         createdAt: new Date().toISOString(),
       };
+      try {
+        await Roll.create({
+          userId: user.id,
+          tableId: data.tableId,
+          expression: result.expression,
+          total: result.total,
+          modifier: result.modifier,
+          rolls: result.rolls.map((r) => ({ die: r.die, value: r.value, kept: r.kept })),
+          metadata: data.metadata,
+          tags: data.tags,
+          characterId: data.characterId || undefined,
+          tokenId: data.tokenId || undefined,
+        });
+      } catch (persistError) {
+        log.error(
+          { err: persistError, tableId: data.tableId, userId: user.id },
+          'Falha ao persistir histórico de rolagem'
+        );
+      }
       io.to(data.tableId).emit('diceRolled', response);
       recordDiceRoll();
     } catch (error) {

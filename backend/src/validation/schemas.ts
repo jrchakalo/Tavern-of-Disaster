@@ -1,12 +1,23 @@
 import { z } from 'zod';
 
 // Helpers ------------------------------------------------------------------
-const objectId = z.string().trim().min(1).max(48);
+const CONTROL_CHAR_REGEX = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+const sanitizeText = (schema: z.ZodString) =>
+  schema.refine((value) => !CONTROL_CHAR_REGEX.test(value), { message: 'Texto contém caracteres inválidos.' });
+const trimmedString = (min: number, max: number) => sanitizeText(z.string().trim().min(min).max(max));
+const optionalTrimmedString = (max: number) => sanitizeText(z.string().trim().max(max));
+const coerceQueryValue = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((value) => {
+    if (Array.isArray(value)) return value[0];
+    return value;
+  }, schema);
+
+const objectId = trimmedString(1, 48);
 const nullableObjectId = objectId.nullable();
 const tableId = objectId;
 const sceneId = objectId;
-const nameString = z.string().trim().min(1).max(100);
-const optionalUrl = z.string().trim().url().max(2048);
+const nameString = trimmedString(1, 100);
+const optionalUrl = sanitizeText(z.string().trim().url().max(2048));
 const pointSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
@@ -20,7 +31,8 @@ const hexColor = z
   .trim()
   .regex(/^#(?:[0-9a-fA-F]{3}){1,2}$/, 'Cor inválida. Use #RGB ou #RRGGBB.');
 const nullableHexColor = hexColor.nullable();
-const nullableString = (max: number) => z.union([z.string().trim().max(max), z.null()]);
+const nullableString = (max: number) => z.union([optionalTrimmedString(max), z.null()]);
+const queryLimit = z.coerce.number().int().min(1).max(200).optional();
 
 // Auth ---------------------------------------------------------------------
 export const zLoginRequest = z.object({
@@ -153,28 +165,28 @@ export const zClearAllMeasurementsPayload = z.object({
 // Dice ---------------------------------------------------------------------
 export const zRollDicePayload = z.object({
   tableId,
-  expression: z.string().trim().min(1).max(64),
+  expression: trimmedString(1, 64),
   tokenId: objectId.optional(),
   characterId: objectId.optional(),
-  metadata: z.string().trim().max(128).optional(),
+  metadata: optionalTrimmedString(128).optional(),
   tags: z.array(tagSchema).max(8).optional(),
 });
 
 // Characters ---------------------------------------------------------------
-const characterAttributeKey = z.string().trim().min(1).max(64);
+const characterAttributeKey = trimmedString(1, 64);
 const characterAttributes = z
   .record(characterAttributeKey, z.number().finite())
   .refine((value) => Object.keys(value).length <= 64, { message: 'Limite de 64 atributos.' });
-const characterSkillValue = z.union([z.number().finite(), z.string().trim().min(1).max(256)]);
+const characterSkillValue = z.union([z.number().finite(), trimmedString(1, 256)]);
 const characterSkills = z
   .record(characterAttributeKey, characterSkillValue)
   .refine((value) => Object.keys(value).length <= 64, { message: 'Limite de 64 perícias.' });
 const zCharacterStats = z
   .object({
-    currentHP: z.number().finite().min(0).optional(),
-    maxHP: z.number().finite().min(0).optional(),
-    defense: z.number().finite().min(0).optional(),
-    baseInitiative: z.number().finite().optional(),
+    currentHP: z.number().finite().min(0).max(100000).optional(),
+    maxHP: z.number().finite().min(0).max(100000).optional(),
+    defense: z.number().finite().min(0).max(10000).optional(),
+    baseInitiative: z.number().finite().min(-50).max(1000).optional(),
   })
   .superRefine((stats, ctx) => {
     if (
@@ -189,7 +201,7 @@ const zCharacterStats = z
       });
     }
   });
-const characterNotes = z.string().trim().max(4000);
+const characterNotes = optionalTrimmedString(1024);
 
 const characterBodyBase = {
   name: nameString,
@@ -200,11 +212,11 @@ const characterBodyBase = {
   notes: characterNotes.optional(),
 };
 
-export const zCreateCharacterPayload = z.object({
+export const zCreateCharacter = z.object({
   ...characterBodyBase,
 });
 
-export const zUpdateCharacterPayload = z
+export const zUpdateCharacter = z
   .object({
     name: nameString.optional(),
     avatarUrl: optionalUrl.optional(),
@@ -223,7 +235,7 @@ const gridDimension = z.number().int().min(1).max(5000);
 const metersPerSquare = z.number().positive().max(10000);
 const sceneTemplateTypes = z.enum(['battlemap', 'image']);
 
-export const zSceneTemplatePayload = z.object({
+export const zCreateSceneTemplate = z.object({
   name: nameString,
   mapUrl: optionalUrl,
   type: sceneTemplateTypes.optional(),
@@ -233,7 +245,7 @@ export const zSceneTemplatePayload = z.object({
   systemId: templateSystemId,
 });
 
-export const zSceneTemplateUpdatePayload = z
+export const zUpdateSceneTemplate = z
   .object({
     name: nameString.optional(),
     mapUrl: optionalUrl.optional(),
@@ -247,22 +259,22 @@ export const zSceneTemplateUpdatePayload = z
     message: 'Informe ao menos um campo para atualizar.',
   });
 
-export const zTokenTemplatePayload = z.object({
+export const zCreateTokenTemplate = z.object({
   name: nameString,
   imageUrl: optionalUrl.optional(),
   size: tokenSizeEnum.optional(),
-  color: z.string().trim().max(32).optional(),
+  color: optionalTrimmedString(32).optional(),
   systemId: templateSystemId,
   tags: z.array(tagSchema).max(16).optional(),
   baseMovement: z.number().positive().max(10000).optional(),
 });
 
-export const zTokenTemplateUpdatePayload = z
+export const zUpdateTokenTemplate = z
   .object({
     name: nameString.optional(),
     imageUrl: optionalUrl.optional(),
     size: tokenSizeEnum.optional(),
-    color: z.string().trim().max(32).optional(),
+    color: optionalTrimmedString(32).optional(),
     systemId: templateSystemId,
     tags: z.array(tagSchema).max(16).optional(),
     baseMovement: z.number().positive().max(10000).optional(),
@@ -272,7 +284,7 @@ export const zTokenTemplateUpdatePayload = z
   });
 
 export const zTemplateListQuery = z.object({
-  systemId: objectId.optional(),
+  systemId: coerceQueryValue(objectId).optional(),
 });
 
 // Profile -----------------------------------------------------------------
@@ -290,12 +302,59 @@ export const zUpdateProfilePayload = z
 
 // Systems -----------------------------------------------------------------
 export const zSystemKeyParams = z.object({
-  key: z.string().trim().min(1).max(64),
+    key: trimmedString(1, 64),
 });
 
 export const zSystemIdParams = z.object({
   id: objectId,
 });
+
+  const attributeTypeEnum = z.enum(['number', 'text', 'boolean']);
+  const diagonalRuleEnum = z.enum(['5-10-5', '5', 'euclidean']);
+
+  export const zSystemDTO = z.object({
+    _id: objectId,
+    key: trimmedString(1, 64),
+    name: nameString,
+    description: optionalTrimmedString(2048).optional(),
+    defaultAttributes: z
+      .array(
+        z.object({
+          key: trimmedString(1, 64),
+          label: trimmedString(1, 100),
+          type: attributeTypeEnum,
+        })
+      )
+      .optional(),
+    movementRules: z
+      .object({
+        baseSpeedFeet: z.number().positive().max(10000).optional(),
+        diagonalRule: diagonalRuleEnum.optional(),
+        gridSizeFeet: z.number().positive().max(1000).optional(),
+      })
+      .optional(),
+    dicePresets: z
+      .array(
+        z.object({
+          key: trimmedString(1, 64),
+          label: trimmedString(1, 100),
+          expression: trimmedString(1, 64),
+          category: optionalTrimmedString(64).optional(),
+        })
+      )
+      .optional(),
+    docsUrl: optionalUrl.optional(),
+    createdAt: z.string().optional(),
+    updatedAt: z.string().optional(),
+  });
+
+  export const zTableIdParams = z.object({
+    tableId,
+  });
+
+  export const zRollHistoryQuery = z.object({
+    limit: queryLimit,
+  });
 
 // Types --------------------------------------------------------------------
 export type LoginRequest = z.infer<typeof zLoginRequest>;
@@ -315,16 +374,19 @@ export type RemovePersistentMeasurementPayload = z.infer<typeof zRemovePersisten
 export type ClearAllMeasurementsPayload = z.infer<typeof zClearAllMeasurementsPayload>;
 export type RollDicePayload = z.infer<typeof zRollDicePayload>;
 export type CharacterStatsInput = z.infer<typeof zCharacterStats>;
-export type CreateCharacterPayload = z.infer<typeof zCreateCharacterPayload>;
-export type UpdateCharacterPayload = z.infer<typeof zUpdateCharacterPayload>;
-export type SceneTemplatePayload = z.infer<typeof zSceneTemplatePayload>;
-export type SceneTemplateUpdatePayload = z.infer<typeof zSceneTemplateUpdatePayload>;
-export type TokenTemplatePayload = z.infer<typeof zTokenTemplatePayload>;
-export type TokenTemplateUpdatePayload = z.infer<typeof zTokenTemplateUpdatePayload>;
+export type CreateCharacterPayload = z.infer<typeof zCreateCharacter>;
+export type UpdateCharacterPayload = z.infer<typeof zUpdateCharacter>;
+export type CreateSceneTemplatePayload = z.infer<typeof zCreateSceneTemplate>;
+export type UpdateSceneTemplatePayload = z.infer<typeof zUpdateSceneTemplate>;
+export type CreateTokenTemplatePayload = z.infer<typeof zCreateTokenTemplate>;
+export type UpdateTokenTemplatePayload = z.infer<typeof zUpdateTokenTemplate>;
 export type TemplateListQuery = z.infer<typeof zTemplateListQuery>;
 export type UpdateProfilePayload = z.infer<typeof zUpdateProfilePayload>;
 export type SystemKeyParams = z.infer<typeof zSystemKeyParams>;
 export type SystemIdParams = z.infer<typeof zSystemIdParams>;
+export type SystemDTO = z.infer<typeof zSystemDTO>;
+export type TableIdParams = z.infer<typeof zTableIdParams>;
+export type RollHistoryQuery = z.infer<typeof zRollHistoryQuery>;
 
 export const schemas = {
   zLoginRequest,
@@ -344,14 +406,17 @@ export const schemas = {
   zClearAllMeasurementsPayload,
   zRollDicePayload,
   zCharacterStats,
-  zCreateCharacterPayload,
-  zUpdateCharacterPayload,
-  zSceneTemplatePayload,
-  zSceneTemplateUpdatePayload,
-  zTokenTemplatePayload,
-  zTokenTemplateUpdatePayload,
+  zCreateCharacter,
+  zUpdateCharacter,
+  zCreateSceneTemplate,
+  zUpdateSceneTemplate,
+  zCreateTokenTemplate,
+  zUpdateTokenTemplate,
   zTemplateListQuery,
   zUpdateProfilePayload,
   zSystemKeyParams,
   zSystemIdParams,
+  zSystemDTO,
+  zTableIdParams,
+  zRollHistoryQuery,
 };

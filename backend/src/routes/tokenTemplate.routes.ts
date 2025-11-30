@@ -1,7 +1,15 @@
 import { Router, RequestHandler } from 'express';
 import { Types } from 'mongoose';
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
+import { limitCreate } from '../middleware/rateLimit';
 import TokenTemplate from '../models/TokenTemplate.model';
+import { validate } from '../validation/validate';
+import {
+  zCreateTokenTemplate,
+  zTemplateListQuery,
+  zUpdateTokenTemplate,
+  type TemplateListQuery,
+} from '../validation/schemas';
 
 const router = Router();
 
@@ -18,7 +26,7 @@ router.get('/', authMiddleware, (async (req: AuthRequest, res) => {
       return;
     }
     const filter: Record<string, unknown> = { ownerId: new Types.ObjectId(userId) };
-    const systemId = req.query.systemId as string | undefined;
+    const { systemId } = validate(zTemplateListQuery, req.query ?? {}) as TemplateListQuery;
     const systemObjectId = toObjectId(systemId);
     if (systemId && !systemObjectId) {
       res.status(400).json({ message: 'systemId inválido.' });
@@ -35,38 +43,34 @@ router.get('/', authMiddleware, (async (req: AuthRequest, res) => {
   }
 }) as RequestHandler);
 
-router.post('/', authMiddleware, (async (req: AuthRequest, res) => {
+router.post('/', authMiddleware, limitCreate, (async (req: AuthRequest, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
       res.status(401).json({ message: 'Usuário não autenticado.' });
       return;
     }
-    const { name, imageUrl, size, color, systemId, tags, baseMovement } = req.body || {};
-    if (!name || !name.trim()) {
-      res.status(400).json({ message: 'Nome é obrigatório.' });
-      return;
-    }
-    const payload: any = {
+    const payload = validate(zCreateTokenTemplate, req.body ?? {});
+    const doc: Record<string, unknown> = {
       ownerId: new Types.ObjectId(userId),
-      name: name.trim(),
+      name: payload.name,
     };
-    if (imageUrl) payload.imageUrl = imageUrl;
-    if (size) payload.size = size;
-    if (color) payload.color = color;
-    const systemObjectId = toObjectId(systemId);
-    if (systemId && !systemObjectId) {
+    if (payload.imageUrl) doc.imageUrl = payload.imageUrl;
+    if (payload.size) doc.size = payload.size;
+    if (payload.color) doc.color = payload.color;
+    if (payload.tags) doc.tags = payload.tags;
+    if (payload.baseMovement !== undefined) doc.baseMovement = payload.baseMovement;
+    const systemObjectId = payload.systemId ? toObjectId(payload.systemId) : null;
+    if (payload.systemId && !systemObjectId) {
       res.status(400).json({ message: 'systemId inválido.' });
       return;
     }
-    if (systemObjectId) payload.systemId = systemObjectId;
-    if (Array.isArray(tags)) {
-      payload.tags = tags.filter((tag) => typeof tag === 'string' && tag.trim()).map((tag) => tag.trim());
+    if (payload.systemId === null) {
+      doc.systemId = null;
+    } else if (systemObjectId) {
+      doc.systemId = systemObjectId;
     }
-    if (typeof baseMovement === 'number' && baseMovement > 0) {
-      payload.baseMovement = baseMovement;
-    }
-    const template = new TokenTemplate(payload);
+    const template = new TokenTemplate(doc);
     await template.save();
     res.status(201).json(template);
   } catch (error) {
@@ -96,42 +100,23 @@ router.put('/:templateId', authMiddleware, (async (req: AuthRequest, res) => {
       res.status(403).json({ message: 'Sem permissão para editar este template.' });
       return;
     }
-    const { name, imageUrl, size, color, systemId, tags, baseMovement } = req.body || {};
-    if (name !== undefined) {
-      if (!name || !name.trim()) {
-        res.status(400).json({ message: 'Nome inválido.' });
-        return;
-      }
-      template.name = name.trim();
-    }
-    if (imageUrl !== undefined) template.imageUrl = imageUrl;
-    if (size !== undefined) template.size = size;
-    if (color !== undefined) template.color = color;
-    if (systemId !== undefined) {
-      if (!systemId) {
+    const patch = validate(zUpdateTokenTemplate, req.body ?? {});
+    if (patch.name !== undefined) template.name = patch.name;
+    if (patch.imageUrl !== undefined) template.imageUrl = patch.imageUrl;
+    if (patch.size !== undefined) template.size = patch.size;
+    if (patch.color !== undefined) template.color = patch.color;
+    if (patch.tags !== undefined) template.tags = patch.tags;
+    if (patch.baseMovement !== undefined) template.baseMovement = patch.baseMovement;
+    if (patch.systemId !== undefined) {
+      if (patch.systemId === null) {
         template.systemId = null as any;
       } else {
-        const systemObjectId = toObjectId(systemId);
+        const systemObjectId = toObjectId(patch.systemId);
         if (!systemObjectId) {
           res.status(400).json({ message: 'systemId inválido.' });
           return;
         }
         template.systemId = systemObjectId;
-      }
-    }
-    if (tags !== undefined) {
-      template.tags = Array.isArray(tags)
-        ? tags.filter((tag) => typeof tag === 'string' && tag.trim()).map((tag) => tag.trim())
-        : [];
-    }
-    if (baseMovement !== undefined) {
-      if (baseMovement === null || baseMovement === '') {
-        template.baseMovement = undefined;
-      } else if (typeof baseMovement === 'number' && baseMovement > 0) {
-        template.baseMovement = baseMovement;
-      } else {
-        res.status(400).json({ message: 'baseMovement inválido.' });
-        return;
       }
     }
     await template.save();

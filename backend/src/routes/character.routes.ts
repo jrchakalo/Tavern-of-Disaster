@@ -6,9 +6,11 @@ import {
   createCharacter,
   updateCharacter,
   deleteCharacter,
-  CharacterPayload,
 } from '../services/characterService';
 import { ServiceError } from '../services/serviceErrors';
+import { validate } from '../validation/validate';
+import { zCreateCharacter, zUpdateCharacter } from '../validation/schemas';
+import { limitCreate } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -36,11 +38,11 @@ router.get('/tables/:tableId/characters', async (req: AuthRequest, res) => {
   }
 });
 
-router.post('/tables/:tableId/characters', async (req: AuthRequest, res) => {
+router.post('/tables/:tableId/characters', limitCreate, async (req: AuthRequest, res) => {
   try {
     const { tableId } = req.params;
     const userId = req.user?.id as string;
-    const payload = req.body as CharacterPayload;
+    const payload = validate(zCreateCharacter, req.body);
     const character = await createCharacter(userId, tableId, payload);
     res.status(201).json(character);
   } catch (error) {
@@ -52,7 +54,7 @@ router.put('/tables/:tableId/characters/:characterId', async (req: AuthRequest, 
   try {
     const { tableId, characterId } = req.params;
     const userId = req.user?.id as string;
-    const payload = req.body as CharacterPayload;
+    const payload = validate(zUpdateCharacter, req.body);
     const updated = await updateCharacter(userId, tableId, characterId, payload);
     res.json(updated);
   } catch (error) {

@@ -37,5 +37,8 @@ const RollSchema = new Schema<IRoll>(
   { timestamps: true }
 );
 
+RollSchema.index({ tableId: 1, createdAt: -1 });
+RollSchema.index({ userId: 1, tableId: 1, createdAt: -1 });
+
 // Future steps will use this model to persist the dice roll history for auditing and analytics.
 export default model<IRoll>('Roll', RollSchema);

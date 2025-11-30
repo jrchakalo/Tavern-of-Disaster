@@ -3,6 +3,7 @@ import Character, { ICharacter, CharacterStats } from '../models/Character.model
 import Table, { ITable } from '../models/Table.model';
 import System, { ISystem } from '../models/System.model';
 import { ServiceError } from './serviceErrors';
+import type { CreateCharacterPayload, UpdateCharacterPayload } from '../validation/schemas';
 
 class NotFoundError extends ServiceError {
   constructor(message: string) {
@@ -109,15 +110,6 @@ function mergeWithSystemDefaultAttributes(system: ISystem | null, provided?: Rec
   return merged;
 }
 
-export type CharacterPayload = {
-  name?: string;
-  avatarUrl?: string;
-  attributes?: Record<string, number>;
-  stats?: CharacterStats;
-  skills?: Record<string, number | string>;
-  notes?: string;
-};
-
 export async function getMyCharacters(userId: string, tableId: string) {
   const table = await getTableOrThrow(tableId);
   assertUserInTableOrDm(userId, table);
@@ -132,7 +124,7 @@ export async function getTableCharacters(userId: string, tableId: string) {
   return Character.find({ tableId: table._id }).sort({ createdAt: 1 });
 }
 
-export async function createCharacter(userId: string, tableId: string, payload: CharacterPayload) {
+export async function createCharacter(userId: string, tableId: string, payload: CreateCharacterPayload) {
   const table = await getTableOrThrow(tableId);
   assertUserInTableOrDm(userId, table);
   const name = sanitizeName(payload.name);
@@ -172,7 +164,12 @@ function assertCanMutateCharacter(userId: string | undefined, table: ITable, cha
   }
 }
 
-export async function updateCharacter(userId: string, tableId: string, characterId: string, payload: CharacterPayload) {
+export async function updateCharacter(
+  userId: string,
+  tableId: string,
+  characterId: string,
+  payload: UpdateCharacterPayload
+) {
   const character = await getCharacterOrThrow(characterId);
   if (character.tableId.toString() !== tableId) {
     throw new ServiceError('Personagem não pertence à mesa informada.', 400);

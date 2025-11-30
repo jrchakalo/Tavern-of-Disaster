@@ -2,10 +2,10 @@ import { Router, RequestHandler } from 'express';
 import { Types } from 'mongoose';
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
 import User from '../models/User.model';
+import { validate } from '../validation/validate';
+import { zUpdateProfilePayload } from '../validation/schemas';
 
 const router = Router();
-const HEX_COLOR_REGEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-
 function sanitizeUser(user: any) {
   return {
     _id: user._id,
@@ -56,57 +56,36 @@ router.put('/me', (async (req: AuthRequest, res) => {
       return;
     }
 
-    const {
-      displayName,
-      avatarUrl,
-      bio,
-      preferredSystemId,
-      measurementColor,
-    } = req.body ?? {};
+    const payload = validate(zUpdateProfilePayload, req.body ?? {});
 
-    if (displayName !== undefined) {
-      if (displayName !== null && typeof displayName !== 'string') {
-        res.status(400).json({ message: 'displayName deve ser texto.' });
-        return;
-      }
-      user.displayName = displayName ? displayName.trim().slice(0, 80) : undefined;
+    if (payload.displayName !== undefined) {
+      user.displayName = payload.displayName ? payload.displayName : undefined;
     }
 
-    if (avatarUrl !== undefined) {
-      if (avatarUrl !== null && typeof avatarUrl !== 'string') {
-        res.status(400).json({ message: 'avatarUrl deve ser texto.' });
-        return;
-      }
-      user.avatarUrl = avatarUrl ? avatarUrl.trim().slice(0, 512) : undefined;
+    if (payload.avatarUrl !== undefined) {
+      user.avatarUrl = payload.avatarUrl ? payload.avatarUrl : undefined;
     }
 
-    if (bio !== undefined) {
-      if (bio !== null && typeof bio !== 'string') {
-        res.status(400).json({ message: 'bio deve ser texto.' });
-        return;
-      }
-      user.bio = bio ? bio.trim().slice(0, 1024) : undefined;
+    if (payload.bio !== undefined) {
+      user.bio = payload.bio ? payload.bio : undefined;
     }
 
-    if (preferredSystemId !== undefined) {
-      if (!preferredSystemId) {
+    if (payload.preferredSystemId !== undefined) {
+      if (!payload.preferredSystemId) {
         user.preferredSystemId = null;
-      } else if (typeof preferredSystemId === 'string' && Types.ObjectId.isValid(preferredSystemId)) {
-        user.preferredSystemId = new Types.ObjectId(preferredSystemId);
+      } else if (Types.ObjectId.isValid(payload.preferredSystemId)) {
+        user.preferredSystemId = new Types.ObjectId(payload.preferredSystemId);
       } else {
         res.status(400).json({ message: 'preferredSystemId inválido.' });
         return;
       }
     }
 
-    if (measurementColor !== undefined) {
-      if (!measurementColor) {
+    if (payload.measurementColor !== undefined) {
+      if (!payload.measurementColor) {
         user.measurementColor = undefined;
-      } else if (typeof measurementColor === 'string' && HEX_COLOR_REGEX.test(measurementColor)) {
-        user.measurementColor = measurementColor;
       } else {
-        res.status(400).json({ message: 'measurementColor inválido. Use formato #RGB ou #RRGGBB.' });
-        return;
+        user.measurementColor = payload.measurementColor;
       }
     }
 
