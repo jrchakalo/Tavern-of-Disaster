@@ -133,15 +133,17 @@ const previewMeasurement = ref<{
 
 const tableStore = useTableStore();
 const systemStore = useSystemStore();
+const characterStore = useCharacterStore();
 const userStore = useUserStore();
+
 const { profile } = storeToRefs(userStore);
+const { selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
 const {
-  //State
-  currentTable, 
-  scenes, 
-  activeSceneId, 
-  initiativeList, 
-  squares, 
+  currentTable,
+  scenes,
+  activeSceneId,
+  initiativeList,
+  squares,
   gridWidth,
   gridHeight,
   sessionStatus,
@@ -155,59 +157,52 @@ const {
   pauseUntil,
   transitionAt,
   transitionMs,
-      <component
-        :is="rendererComponent"
-        v-if="canUseMap"
-        :is-measuring="isMeasuring"
-        :view-transform="viewTransform"
-        :current-map-url="currentMapUrl"
-        :active-scene-type="activeScene?.type"
-        :grid-width="gridWidth"
-        :grid-height="gridHeight"
-        :meters-per-square="metersPerSquare"
-        :ruler-start-point="rulerStartPoint"
-        :ruler-end-point="rulerEndPoint"
-        :ruler-distance="rulerDistance"
-        :preview-measurement="previewMeasurement"
-        :shared-measurements="sharedMeasurementList"
-        :persistent-measurements="persistentsForActiveScene"
-        :auras="auras"
-        :user-measurement-colors="userMeasurementColors"
-        :cone-affected-squares="coneAffectedSquares"
-        :measurement-color="measurementColor"
-        :current-turn-token-id="currentTurnTokenId"
-        :squares="squares"
-        :image-rendered-width="imageRenderedWidth"
-        :image-rendered-height="imageRenderedHeight"
-        :selected-token-id="selectedTokenId"
-        :is-dm="isDM"
-        :current-user-id="currentUser?.id || null"
-        :selected-persistent-id="selectedPersistentId"
-        :pings="pings"
-        :show-assign-menu="showAssignMenu"
-        :assign-menu-position="assignMenuPosition"
-        :assign-menu-target-token="assignMenuTargetToken"
-        :players="currentTable?.players || []"
-        :map-image-ref-setter="setMapImageEl"
-        :viewport-ref-setter="setViewportEl"
-        :grid-display-ref-setter="setGridDisplayInstance"
-        :on-wheel="handleWheel"
-        :on-pointer-down="handlePointerDown"
-        :on-pointer-move="handlePointerMove"
-        :on-pointer-up="handlePointerUp"
-        :on-middle-click="handleMiddleClickFree"
-        :on-square-right-click="handleRightClick"
-        :on-square-left-click="handleLeftClickOnSquare"
-        :on-token-move-request="handleTokenMoveRequest"
-        :on-remove-persistent="handleRemovePersistent"
-        :on-select-persistent="handleSelectPersistent"
-        :on-viewport-contextmenu="handleViewportContextMenu"
-        :on-shape-contextmenu="handleShapeContextmenu"
-        :on-image-load="updateImageDimensions"
-        :on-assign-token="handleAssignToken"
-        :on-close-assign-menu="closeAssignMenu"
-        :on-open-character-from-token="handleOpenCharacterFromToken"
-      />
+  clockSkewMs,
+  userMeasurementColors,
+  isDM,
+  activeScene,
+  tokensOnMap,
+  currentTurnTokenId,
+  myActiveToken,
+  logs,
+} = storeToRefs(tableStore);
+
+const characterFetchScope = ref<'player' | 'dm'>('player');
+const activeCharacterId = ref<string | null>(null);
+const showCharacterSheet = ref(false);
+const showActionLog = ref(false);
+const showDicePopup = ref(false);
+const diceAnimationVisible = ref(false);
+const diceAnimationPayload = ref<DiceRolledPayload | null>(null);
+const diceAnimationId = ref(0);
+const DICE_ANIMATION_DURATION = 4600;
+
+const charactersForTable = computed(() => (tableId ? characterStore.charactersForTable(tableId) : []));
+const activeCharacter = computed(() => {
+  if (activeCharacterId.value) {
+    return charactersForTable.value.find((char) => char._id === activeCharacterId.value) || null;
+  }
+  if (tableId) {
+    return characterStore.selectedCharacter(tableId);
+  }
+  return null;
+});
+const isActiveCharacterOwner = computed(() => {
+  const character = activeCharacter.value;
+  return Boolean(character && character.ownerId === currentUser.value?.id);
+});
+const currentSystem = computed(() => {
+  const tableSystem = systemStore.currentSystemForTable(currentTable.value);
+  if (tableSystem) return tableSystem;
+  const preferredId = profile.value?.preferredSystemId;
+  return preferredId ? systemStore.getById(preferredId) : null;
+});
+const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
+const logCount = computed(() => logs.value.length);
+
+systemStore.fetchAll().catch((error) => {
+  console.warn('[table] não foi possível carregar sistemas', error);
+});
 
 // Transição curta antes do LIVE
 const showTransition = ref(false);
