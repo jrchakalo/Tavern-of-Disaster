@@ -12,7 +12,7 @@ import {
   mapAura,
 } from '../dto/sessionAssembler';
 import { getRevision } from './revisionService';
-import { listPresence, PresenceEntry, SessionRole } from './presenceService';
+import { isDisplayUserId, listPresence, PresenceEntry, SessionRole } from './presenceService';
 import {
   InitiativeEntryDTO,
   SceneDTO,
@@ -93,6 +93,8 @@ export async function loadSessionState(tableId: string): Promise<SessionStateBun
 }
 
 export function resolveRole(table: TableInfoDTO, userId: string): SessionRole {
+  // O id sintético da TV nunca é membro real; força DISPLAY (nunca DM/PLAYER).
+  if (isDisplayUserId(userId)) return 'DISPLAY';
   const dmId = table.dm?._id?.toString();
   if (dmId === userId) return 'DM';
   if (table.players?.some((player) => player._id?.toString() === userId)) return 'PLAYER';
@@ -113,12 +115,13 @@ export function buildPresence(table: TableInfoDTO, tableId: string): PresenceEnt
 export async function buildSessionSnapshot(
   tableId: string,
   userId: string,
-  username: string
+  username: string,
+  options: { roleOverride?: SessionRole } = {}
 ): Promise<SessionSnapshotDTO | null> {
   const bundle = await loadSessionState(tableId);
   if (!bundle) return null;
   const revision = await getRevision(tableId);
-  const role = resolveRole(bundle.tableInfo, userId);
+  const role = options.roleOverride ?? resolveRole(bundle.tableInfo, userId);
   return {
     protocolVersion: SESSION_PROTOCOL_VERSION,
     tableId,
