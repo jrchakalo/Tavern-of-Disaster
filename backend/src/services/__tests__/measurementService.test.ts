@@ -1,4 +1,10 @@
-import { shareEphemeralMeasurement, cleanupUserMeasurements, clearTableMeasurementState, clearAllMeasurements } from '../measurementService';
+import {
+  shareEphemeralMeasurement,
+  cleanupUserMeasurements,
+  clearTableMeasurementState,
+  clearAllMeasurements,
+  clearPersistentMeasurementsForScene,
+} from '../measurementService';
 import * as measurementStore from '../../socketHandlers/measurementStore';
 import Table from '../../models/Table.model';
 import Scene from '../../models/Scene.model';
@@ -45,6 +51,14 @@ describe('measurementService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('clears persistent measurements of a scene without touching auras', async () => {
+    await clearPersistentMeasurementsForScene('table1', 'scene1');
+
+    expect(mockedStore.clearPersistentsForScene).toHaveBeenCalledWith('table1', 'scene1');
+    expect(mockedStore.clearAurasForScene).not.toHaveBeenCalled();
+    expect(mockedStore.clearMeasurementsForScene).not.toHaveBeenCalled();
   });
 
   it('shares an ephemeral measurement when the requester is the DM', async () => {

@@ -19,6 +19,11 @@ import type {
     AuraDTO,
     DiceRolledPayload,
     LogEntry,
+    SessionSnapshot,
+    SessionPatch,
+    SessionYou,
+    PresenceEntry,
+    TokenUpdateDTO,
 } from '../types';
 import { currentUser } from '../services/authService';
 
@@ -102,6 +107,29 @@ type InitiativeTurnAdvancedPayload = {
 
 function isTokenSizeValue(value: string): value is TokenInfo['size'] {
     return (tokenSizes as readonly string[]).includes(value);
+}
+
+// O socketService se registra aqui para que o store possa pedir resync quando
+// detectar um buraco de revisão, sem importar o socketService (evita ciclo).
+let resyncRequester: (() => void) | null = null;
+export function registerResyncRequester(fn: (() => void) | null) {
+    resyncRequester = fn;
+}
+
+function requestResyncFromStore() {
+    try {
+        resyncRequester?.();
+    } catch {
+        // Nunca deixar a falha de resync quebrar a aplicação de patch.
+    }
+}
+
+function mergeTokenDTO(token: TokenInfo, dto: Partial<TokenDTO> | TokenUpdateDTO['patch']) {
+    const { owner, ...rest } = dto;
+    if (owner !== undefined) {
+        token.ownerId = owner;
+    }
+    Object.assign(token, rest);
 }
 
 function normalizeSceneType(type?: string): 'battlemap' | 'image' {
@@ -241,6 +269,13 @@ export const useTableStore = defineStore('table', () => {
     const persistentMeasurements: Ref<PersistentMeasurement[]> = ref([]);
     const logs: Ref<LogEntry[]> = ref([]);
     const diceAnimationHook: Ref<((payload: DiceRolledPayload) => void) | null> = ref(null);
+
+    // ---- Estado do protocolo realtime (revision-aware) ----
+    const revision: Ref<number> = ref(0);
+    const lastSyncAt: Ref<number> = ref(0);
+    const you: Ref<SessionYou | null> = ref(null);
+    const presence: Ref<PresenceEntry[]> = ref([]);
+    const isApplyingPatch: Ref<boolean> = ref(false);
 
     function setScenesFromDTO(sceneDtos: SceneDTO[]) {
         scenes.value = sceneDtos.map(mapSceneDTO);
@@ -404,6 +439,164 @@ export const useTableStore = defineStore('table', () => {
         }
     }
 
+    // ------------------------------------------------------------------
+    // Protocolo realtime: snapshot canônico e patch por revisão
+    // ------------------------------------------------------------------
+
+    /**
+     * Substitui todo o estado da mesa por um snapshot canônico do servidor.
+     * Seguro para chamar repetidamente (join, resync, troca grande de cena).
+     */
+    function applySnapshot(snapshot: SessionSnapshot) {
+        currentTable.value = mapTableDTO(snapshot.table);
+        scenes.value = snapshot.scenes.map(mapSceneDTO);
+        const nextActiveSceneId = snapshot.activeScene?._id || snapshot.table.activeSceneId || null;
+        activeSceneId.value = nextActiveSceneId;
+        currentMapUrl.value = snapshot.activeScene?.imageUrl || null;
+        const derivedGridWidth = snapshot.activeScene?.gridWidth ?? DEFAULT_GRID;
+        const derivedGridHeight = snapshot.activeScene?.gridHeight ?? DEFAULT_GRID;
+        gridWidth.value = derivedGridWidth;
+        gridHeight.value = derivedGridHeight;
+        metersPerSquare.value = snapshot.activeScene?.metersPerSquare ?? DEFAULT_METERS_PER_SQUARE;
+        sessionStatus.value = snapshot.table.status;
+        pauseUntil.value = snapshot.table.pauseUntil ? new Date(snapshot.table.pauseUntil) : null;
+        const mappedTokens = snapshot.tokens.map(mapTokenDTO);
+        _rebuildGridRectangular(derivedGridWidth, derivedGridHeight, mappedTokens);
+        initiativeList.value = snapshot.initiative.map(mapInitiativeDTO);
+        setPersistentsFromDTO(snapshot.measurements, nextActiveSceneId);
+        setAurasFromDTO(snapshot.auras, nextActiveSceneId);
+        you.value = snapshot.you;
+        presence.value = [...snapshot.presence];
+        revision.value = snapshot.revision;
+        clockSkewMs.value = snapshot.serverNowMs - Date.now();
+        lastSyncAt.value = Date.now();
+        // Ephemeral state is rebuilt from the authoritative snapshot
+        sharedMeasurements.value = {};
+        pings.value = [];
+        return nextActiveSceneId;
+    }
+
+    /**
+     * Aplica um patch incremental do servidor.
+     * Retorna true quando o patch foi aplicado.
+     */
+    function applyPatch(patch: SessionPatch): boolean {
+        // Nunca aplicar patch de outra mesa, nem patch sem base local.
+        if (!currentTable.value || patch.tableId !== currentTable.value._id) return false;
+        // Evento atrasado/duplicado: ignorar.
+        if (patch.revision <= revision.value) return false;
+        // O patch foi construído sobre outra base (buraco na revisão): pedir
+        // ressincronização e NÃO aplicar, mesmo que seja current+1 — aplicar
+        // pularia silenciosamente as mudanças intermediárias.
+        if (patch.baseRevision !== revision.value) {
+            requestResyncFromStore();
+            return false;
+        }
+        isApplyingPatch.value = true;
+        try {
+            const changes = patch.changes;
+            if (changes.table) {
+                currentTable.value = { ...currentTable.value, ...changes.table };
+            }
+            if (changes.scenes) {
+                scenes.value = changes.scenes.map(mapSceneDTO);
+            }
+            if (changes.activeScene !== undefined) {
+                const dto = changes.activeScene;
+                if (dto) {
+                    const mapped = mapSceneDTO(dto);
+                    const idx = scenes.value.findIndex((s) => s._id === mapped._id);
+                    if (idx >= 0) {
+                        const clone = [...scenes.value];
+                        clone[idx] = mapped;
+                        scenes.value = clone;
+                    } else {
+                        scenes.value = [...scenes.value, mapped];
+                    }
+                    const isSceneSwitch = activeSceneId.value !== mapped._id;
+                    const newWidth = mapped.gridWidth ?? DEFAULT_GRID;
+                    const newHeight = mapped.gridHeight ?? DEFAULT_GRID;
+                    activeSceneId.value = mapped._id;
+                    currentMapUrl.value = mapped.imageUrl ?? null;
+                    const dimensionsChanged = newWidth !== gridWidth.value || newHeight !== gridHeight.value;
+                    gridWidth.value = newWidth;
+                    gridHeight.value = newHeight;
+                    metersPerSquare.value = mapped.metersPerSquare ?? DEFAULT_METERS_PER_SQUARE;
+                    if (isSceneSwitch) {
+                        // Tokens da cena antiga não pertencem ao novo grid.
+                        _rebuildGridRectangular(newWidth, newHeight, []);
+                    } else if (dimensionsChanged) {
+                        // Resize da mesma cena: preserva os tokens atuais
+                        // (tokens fora dos novos limites caem fora do grid).
+                        _rebuildGridRectangular(newWidth, newHeight, tokensOnMap.value);
+                    }
+                } else {
+                    activeSceneId.value = null;
+                    currentMapUrl.value = null;
+                }
+                sharedMeasurements.value = {};
+                pings.value = [];
+            }
+            if (changes.tokens) {
+                const mappedTokens = changes.tokens.map(mapTokenDTO);
+                _rebuildGridRectangular(gridWidth.value, gridHeight.value, mappedTokens);
+            }
+            if (changes.tokenUpdates) {
+                changes.tokenUpdates.forEach((update) => {
+                    const square = squares.value.find((sq) => sq.token?._id === update.tokenId);
+                    const token = square?.token;
+                    if (!token) return;
+                    const targetSquareId = update.patch.squareId;
+                    const isMove = typeof targetSquareId === 'string' && targetSquareId !== token.squareId;
+                    mergeTokenDTO(token, update.patch);
+                    if (isMove && square) {
+                        // Desapega do quadrado antigo e reaparece no novo (se existir).
+                        // Token sem quadrado válido cai fora do grid; um snapshot
+                        // posterior (resync) restaura o estado canônico.
+                        square.token = null;
+                        const target = squares.value.find((sq) => sq.id === token.squareId);
+                        if (target) target.token = token;
+                    }
+                });
+            }
+            if (changes.tokensRemoved) {
+                changes.tokensRemoved.forEach((tokenId) => removeToken(tokenId));
+            }
+            if (changes.initiative) {
+                initiativeList.value = changes.initiative.map(mapInitiativeDTO);
+            }
+            if (changes.measurements) {
+                setPersistentsFromDTO(changes.measurements, activeSceneId.value);
+            }
+            if (changes.auras) {
+                setAurasFromDTO(changes.auras, activeSceneId.value);
+            }
+            if (changes.sessionStatus) {
+                const next = changes.sessionStatus.status;
+                if (
+                    next === 'PREPARING' || next === 'LIVE' ||
+                    next === 'PAUSED' || next === 'ENDED'
+                ) {
+                    sessionStatus.value = next;
+                }
+                pauseUntil.value = changes.sessionStatus.pauseUntil
+                    ? new Date(changes.sessionStatus.pauseUntil)
+                    : null;
+                clockSkewMs.value = changes.sessionStatus.serverNowMs - Date.now();
+            }
+            revision.value = patch.revision;
+            clockSkewMs.value = patch.serverNowMs - Date.now();
+            lastSyncAt.value = Date.now();
+            return true;
+        } finally {
+            isApplyingPatch.value = false;
+        }
+    }
+
+    function setPresence(entries: PresenceEntry[]) {
+        presence.value = [...entries];
+    }
+
     function placeToken(newToken: TokenInfo) {
         if (newToken.sceneId === activeSceneId.value) {
         const squareToUpdate = squares.value.find(sq => sq.id === newToken.squareId);
@@ -476,7 +669,7 @@ export const useTableStore = defineStore('table', () => {
     }
 
     // Medições compartilhadas
-    function upsertSharedMeasurement(m: { userId: string; username: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square'; affectedSquares?: string[] }) {
+    function upsertSharedMeasurement(m: { userId: string; username: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: MeasurementShape; affectedSquares?: string[] }) {
         sharedMeasurements.value = { ...sharedMeasurements.value, [m.userId]: m };
     }
     function removeSharedMeasurement(userId: string) {
@@ -694,5 +887,14 @@ export const useTableStore = defineStore('table', () => {
     handleInitiativeReset,
         connectionStatus,
         setConnectionStatus,
+        // Protocolo realtime
+        revision,
+        lastSyncAt,
+        you,
+        presence,
+        isApplyingPatch,
+        applySnapshot,
+        applyPatch,
+        setPresence,
     };
 });

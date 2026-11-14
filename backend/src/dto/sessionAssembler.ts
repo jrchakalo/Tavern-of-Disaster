@@ -13,7 +13,7 @@ import {
   UserSummaryDTO,
 } from './session.dto';
 
-function mapUser(user: any): UserSummaryDTO | null {
+export function mapUser(user: any): UserSummaryDTO | null {
   if (!user) return null;
   return {
     _id: user._id?.toString?.() ?? String(user._id),
@@ -21,7 +21,7 @@ function mapUser(user: any): UserSummaryDTO | null {
   };
 }
 
-function mapTable(table: ITable): TableInfoDTO {
+export function mapTable(table: ITable): TableInfoDTO {
   const dmUser = mapUser((table as any).dm) ?? { _id: table.dm.toString(), username: '' };
   const players = ((table as any).players ?? [])
     .map((player: any) => mapUser(player))
@@ -45,7 +45,7 @@ function mapTable(table: ITable): TableInfoDTO {
   };
 }
 
-function mapScene(scene: IScene | (IScene & { toObject?: () => IScene })): SceneDTO {
+export function mapScene(scene: IScene | (IScene & { toObject?: () => IScene })): SceneDTO {
   const plain = 'toObject' in scene && typeof (scene as any).toObject === 'function' ? (scene as any).toObject() : scene;
   return {
     _id: plain._id.toString(),
@@ -59,7 +59,7 @@ function mapScene(scene: IScene | (IScene & { toObject?: () => IScene })): Scene
   };
 }
 
-function mapToken(token: IToken & { ownerId?: any }): TokenDTO {
+export function mapToken(token: IToken & { ownerId?: any }): TokenDTO {
   const owner = mapUser(token.ownerId);
   return {
     _id: token._id.toString(),
@@ -78,7 +78,7 @@ function mapToken(token: IToken & { ownerId?: any }): TokenDTO {
   };
 }
 
-function mapInitiativeEntry(entry: IInitiativeEntry): InitiativeEntryDTO {
+export function mapInitiativeEntry(entry: IInitiativeEntry): InitiativeEntryDTO {
   return {
     _id: entry._id.toString(),
     characterName: entry.characterName,
@@ -88,7 +88,7 @@ function mapInitiativeEntry(entry: IInitiativeEntry): InitiativeEntryDTO {
   };
 }
 
-function mapMeasurement(measurement: Measurement | PersistentMeasurement): MeasurementDTO {
+export function mapMeasurement(measurement: Measurement | PersistentMeasurement): MeasurementDTO {
   return {
     id: (measurement as PersistentMeasurement).id,
     userId: measurement.userId,
@@ -103,7 +103,7 @@ function mapMeasurement(measurement: Measurement | PersistentMeasurement): Measu
   };
 }
 
-function mapAura(aura: Aura): AuraDTO {
+export function mapAura(aura: Aura): AuraDTO {
   return {
     id: aura.id,
     tokenId: aura.tokenId,

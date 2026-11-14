@@ -100,6 +100,14 @@ export function clearEphemeralMeasurements(tableId: string) {
   clearMeasurementsForTable(tableId);
 }
 
+/**
+ * Limpa apenas medições persistentes da cena (não mexe em auras nem efêmeras).
+ * Usado na virada de rodada para manter cliente e servidor consistentes.
+ */
+export async function clearPersistentMeasurementsForScene(tableId: string, sceneId: string) {
+  await clearPersistentsForScene(tableId, sceneId);
+}
+
 export async function addPersistentMeasurement(
   user: AuthUser,
   tableId: string,

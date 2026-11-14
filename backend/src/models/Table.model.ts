@@ -13,6 +13,7 @@ export interface ITable extends Document {
   status: string;
   pauseUntil?: Date | null;
   systemId?: Types.ObjectId | null;
+  revision: number; // Revisão monotônica do estado da mesa (protocolo realtime)
 }
 
 const TableSchema: Schema<ITable> = new Schema({
@@ -29,6 +30,7 @@ const TableSchema: Schema<ITable> = new Schema({
   },
   pauseUntil: { type: Date, required: false, default: null },
   systemId: { type: Schema.Types.ObjectId, ref: 'System', default: null },
+  revision: { type: Number, default: 0, min: 0 },
 }, {
   timestamps: true
 });
