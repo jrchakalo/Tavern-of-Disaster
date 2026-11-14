@@ -10,6 +10,9 @@ Thumbs.db
 node_modules/
 **/node_modules/
 
+# Agent worktrees (per-coder branches)
+.worktrees/
+
 # Build output
 dist/
 **/dist/
