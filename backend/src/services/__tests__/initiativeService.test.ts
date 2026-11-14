@@ -1,13 +1,25 @@
 import { advanceTurn } from '../initiativeService';
 import { resetMovementForScene } from '../tokenService';
+import Scene from '../../models/Scene.model';
 
 jest.mock('../tokenService', () => ({
   resetMovementForScene: jest.fn(),
 }));
 
+// advanceTurn agora persiste via CAS em Scene.findOneAndUpdate (turnVersion).
+jest.mock('../../models/Scene.model', () => ({
+  __esModule: true,
+  default: {
+    findOneAndUpdate: jest.fn((_filter: unknown, update: any) =>
+      Promise.resolve({ initiative: update.$set.initiative })
+    ),
+  },
+}));
+
 describe('initiativeService.advanceTurn', () => {
   beforeEach(() => {
     (resetMovementForScene as jest.Mock).mockClear();
+    (Scene.findOneAndUpdate as jest.Mock).mockClear();
   });
 
   const buildTable = (dmId: string) => ({

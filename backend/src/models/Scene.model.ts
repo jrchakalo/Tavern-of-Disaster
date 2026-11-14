@@ -18,6 +18,7 @@ export interface IScene extends Document {
   type: 'battlemap' | 'image';
   initiative: IInitiativeEntry[];
   metersPerSquare?: number; // escala dinâmica
+  turnVersion: number; // CAS para avanço atômico de turno
 }
 
 const InitiativeEntrySchema: Schema<IInitiativeEntry> = new Schema({
@@ -41,6 +42,7 @@ const SceneSchema: Schema<IScene> = new Schema({
   },
   initiative: [InitiativeEntrySchema],
   metersPerSquare: { type: Number, default: 1.5 },
+  turnVersion: { type: Number, default: 0, min: 0 },
 }, {
   timestamps: true
 });
