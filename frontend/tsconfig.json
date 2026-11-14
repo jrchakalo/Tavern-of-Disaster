@@ -1,12 +1,7 @@
 {
   "files": [],
-  "references": [{ "path": "./tsconfig.node.json" }],
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
-  "compilerOptions": {
-    "noEmit": true,
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "target": "ES2020",
-    "skipLibCheck": true
-  }
+  "references": [
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.app.json" }
+  ]
 }

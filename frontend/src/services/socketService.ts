@@ -2,6 +2,7 @@ import { toast } from './toast';
 import { io, Socket } from 'socket.io-client';
 import { useTableStore } from '../stores/tableStore';
 import { authToken } from './authService';
+import { SOCKET_URL } from './apiBase';
 import type {
   TokenInfo,
   IInitiativeEntry,
@@ -84,9 +85,7 @@ class SocketService {
     this.currentTableId = tableId;
     this.store.setConnectionStatus('connecting');
 
-    const socketURL = import.meta.env.VITE_API_URL || 'ws://localhost:3001';
-
-    this.socket = io(socketURL, {
+    this.socket = io(SOCKET_URL, {
       transports: ['websocket'],
       auth: { token: authToken.value }
     });
@@ -247,7 +246,7 @@ class SocketService {
   }
 
   // Tokens
-  placeToken(payload: { tableId: string; sceneId: string; squareId: string; name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; }) {
+  placeToken(payload: { tableId: string; sceneId: string; squareId: string; name: string; imageUrl?: string; movement: number; ownerId: string; size: TokenSize; }) {
     this.socket?.emit('requestPlaceToken', payload);
   }
 

@@ -1,0 +1,50 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      MONGO_URI: mongodb://mongo:27017/tavern_of_disaster
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      STORAGE_DRIVER: local
+      LOCAL_UPLOAD_DIR: /app/uploads
+      ASSET_BASE_URL: ${ASSET_BASE_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Vazio = mesma origem; o Nginx faz proxy para o backend.
+        VITE_API_URL: ${VITE_API_URL:-}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  mongo-data:
+  uploads:

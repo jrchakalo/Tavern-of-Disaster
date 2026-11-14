@@ -45,6 +45,7 @@ const ensureLocalStorage = () => {
 export default defineConfig(async () => {
   ensureLocalStorage();
   const plugins: PluginOption[] = [vue()];
+  const proxyTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:3001';
   const enableDevTools = process.env.VITE_ENABLE_DEVTOOLS === 'true';
   if (enableDevTools) {
     try {
@@ -59,6 +60,17 @@ export default defineConfig(async () => {
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
+      },
+    },
+    server: {
+      host: true,
+      port: 5173,
+      // Proxy para o backend local: o frontend usa a própria origem e pode ser
+      // aberto pelo notebook, pela TV e por celulares na mesma rede.
+      proxy: {
+        '/api': { target: proxyTarget, changeOrigin: true },
+        '/socket.io': { target: proxyTarget, ws: true },
+        '/uploads': { target: proxyTarget, changeOrigin: true },
       },
     },
     test: {

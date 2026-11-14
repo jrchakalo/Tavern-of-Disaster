@@ -3,11 +3,11 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { setAuthToken } from '../services/authService';
 import { toast } from '../services/toast';
+import { API_BASE_URL } from '../services/apiBase';
 
 const email = ref('');
 const password = ref('');
 const router = useRouter();
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 async function handleLogin() {
   console.log('Tentando fazer login com:', email.value);

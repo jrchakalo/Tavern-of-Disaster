@@ -39,12 +39,14 @@ const systemStoreStub = {
   fetchAll: vi.fn(() => Promise.resolve()),
   getById: vi.fn(() => null),
   getByKey: vi.fn(() => null),
+  currentSystemForTable: vi.fn(() => null),
 };
 vi.mock('../../stores/systemStore', () => ({ useSystemStore: () => systemStoreStub }));
 
 const characterStoreStub = {
   __refs: { selectedCharacterId: ref<string | null>(null) },
   charactersForTable: vi.fn(() => []),
+  selectedCharacter: vi.fn(() => null),
   fetchForTable: vi.fn(() => Promise.resolve([])),
   setSelectedCharacter: vi.fn(),
   updateCharacter: vi.fn(),

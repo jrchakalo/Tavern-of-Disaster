@@ -1,5 +1,5 @@
 import { Router, RequestHandler } from 'express';
-import { nanoid } from 'nanoid';
+import { randomId } from '../utils/id';
 import mongoose, { Types } from 'mongoose'
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
 import { limitCreate } from '../middleware/rateLimit';
@@ -37,7 +37,7 @@ router.post('/create', authMiddleware, limitCreate, (async (req: AuthRequest, re
       name,
       dm: dmId,
       players: [dmId],
-      inviteCode: nanoid(8),
+      inviteCode: randomId(8),
       scenes: [],
     });
 

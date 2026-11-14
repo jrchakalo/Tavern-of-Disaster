@@ -65,7 +65,7 @@ interface MapViewportProps {
   players?: PlayerInfo[];
   mapImageRefSetter?: (el: HTMLImageElement | null) => void;
   viewportRefSetter?: (el: HTMLDivElement | null) => void;
-  gridDisplayRefSetter?: (instance: ComponentPublicInstance | null) => void;
+  gridSurfaceRefSetter?: (instance: ComponentPublicInstance | null) => void;
   onWheel: (event: WheelEvent) => void;
   onPointerDown: (event: PointerEvent) => void;
   onPointerMove: (event: PointerEvent) => void;
@@ -112,7 +112,7 @@ const hasBattlemap = computed(() => props.currentMapUrl && props.activeSceneType
 const viewportRef = ref<HTMLDivElement | null>(null);
 const mapImageRef = ref<HTMLImageElement | null>(null);
 const gridOverlayRef = ref<HTMLDivElement | null>(null);
-const gridDisplayExpose = { $el: null as HTMLElement | null };
+const gridSurfaceExpose = { $el: null as HTMLElement | null };
 
 function handleViewportRef(el: Element | ComponentPublicInstance | null) {
   viewportRef.value = el as HTMLDivElement | null;
@@ -124,15 +124,19 @@ function handleMapImageRef(el: Element | ComponentPublicInstance | null) {
   props.mapImageRefSetter?.(mapImageRef.value);
 }
 
+function handleMouseLeave(event: MouseEvent) {
+  props.onPointerUp(event as unknown as PointerEvent);
+}
+
 watch(() => gridOverlayRef.value, (el) => {
-  if (!props.gridDisplayRefSetter) return;
+  if (!props.gridSurfaceRefSetter) return;
   if (!el) {
-    gridDisplayExpose.$el = null;
-    props.gridDisplayRefSetter(null);
+    gridSurfaceExpose.$el = null;
+    props.gridSurfaceRefSetter(null);
     return;
   }
-  gridDisplayExpose.$el = el;
-  props.gridDisplayRefSetter(gridDisplayExpose as unknown as ComponentPublicInstance);
+  gridSurfaceExpose.$el = el;
+  props.gridSurfaceRefSetter(gridSurfaceExpose as unknown as ComponentPublicInstance);
 });
 
 const squareSizePx = ref(32);
@@ -221,7 +225,7 @@ const footprintOccupied = computed(() => {
   return Array.from(occ);
 });
 
-let throttleTimeout: number | null = null;
+let lastDragOverAt = 0;
 const THROTTLE_DELAY_MS = 50;
 
 function onSquareLeftClick(square: GridSquare, event: MouseEvent) {
@@ -248,13 +252,17 @@ function handleDragStart(event: DragEvent, token: TokenInfo) {
   pathPreview.value = [];
 }
 
-function handleGridDragOver(square: GridSquare) {
+function handleGridDragOver(square: GridSquare, force = false) {
   if (props.isMeasuring) return;
-  if (throttleTimeout) return;
 
-  throttleTimeout = window.setTimeout(() => {
-    throttleTimeout = null;
-  }, THROTTLE_DELAY_MS);
+  // Throttle de borda de ataque: o primeiro evento calcula na hora. O modelo
+  // anterior descartava o primeiro `dragover` e dependia de outro evento antes
+  // do drop, o que quebrava arrastos rápidos (e testes automatizados).
+  if (!force) {
+    const now = Date.now();
+    if (now - lastDragOverAt < THROTTLE_DELAY_MS) return;
+    lastDragOverAt = now;
+  }
 
   if (!draggedTokenInfo.value || !square || draggedTokenInfo.value.squareId === square.id) {
     pathPreview.value = [];
@@ -304,6 +312,8 @@ function handleGridDragOver(square: GridSquare) {
 function handleGridDrop({ square, event }: { square: GridSquare; event: DragEvent }) {
   if (props.isMeasuring) return;
   event.preventDefault();
+  // Recalcula no drop para não depender do último `dragover` (throttle).
+  handleGridDragOver(square, true);
   if (!isPathValid.value) {
     pathPreview.value = [];
     draggedTokenInfo.value = null;
@@ -341,9 +351,9 @@ function handleGridDrop({ square, event }: { square: GridSquare; event: DragEven
     }
   }
 
-  if (event.dataTransfer) {
-    const data = JSON.parse(event.dataTransfer.getData('application/json'));
-    props.onTokenMoveRequest({ tokenId: data.tokenId, targetSquareId: square.id });
+  const tokenId = draggedTokenInfo.value?._id;
+  if (tokenId) {
+    props.onTokenMoveRequest({ tokenId, targetSquareId: square.id });
   }
   pathPreview.value = [];
   draggedTokenInfo.value = null;
@@ -453,7 +463,7 @@ function findShortestPath(startId: string, endId: string): string[] {
     @pointerdown="props.onPointerDown"
     @pointermove="props.onPointerMove"
     @pointerup="props.onPointerUp"
-    @mouseleave="props.onPointerUp"
+    @mouseleave="handleMouseLeave"
   >
     <div
       class="map-stage"

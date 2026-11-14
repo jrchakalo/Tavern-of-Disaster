@@ -1,7 +1,6 @@
 import type { UserProfileDTO } from '../types';
 import { authToken } from './authService';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { API_BASE_URL } from './apiBase';
 
 function buildHeaders(json = true) {
   const headers: Record<string, string> = {};

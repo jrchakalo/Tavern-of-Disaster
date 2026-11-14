@@ -18,6 +18,12 @@ const tableId = objectId;
 const sceneId = objectId;
 const nameString = trimmedString(1, 100);
 const optionalUrl = sanitizeText(z.string().trim().url().max(2048));
+// Campos de URL opcionais chegam do formulário como `''` quando vazios.
+// Tratar `''` como ausência evita erro de validação ao criar token/cena sem imagem.
+const optionalUrlInput = z
+  .union([optionalUrl, z.literal('')])
+  .transform((value) => (value === '' ? undefined : value))
+  .optional();
 const pointSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
@@ -52,7 +58,7 @@ export const zPlaceTokenPayload = z.object({
   sceneId,
   squareId: z.string().trim().min(1).max(64),
   name: nameString,
-  imageUrl: optionalUrl.optional(),
+  imageUrl: optionalUrlInput,
   movement: z.number().int().min(0).max(1000).optional(),
   remainingMovement: z.number().int().min(0).max(1000).optional(),
   ownerId: objectId.optional(),
@@ -77,7 +83,7 @@ const tokenEditPatch = z
   .object({
     name: nameString.optional(),
     movement: z.number().int().min(0).max(1000).optional(),
-    imageUrl: optionalUrl.optional(),
+    imageUrl: optionalUrlInput,
     ownerId: objectId.optional(),
     size: tokenSizeEnum.optional(),
     resetRemainingMovement: z.boolean().optional(),
@@ -205,7 +211,7 @@ const characterNotes = optionalTrimmedString(1024);
 
 const characterBodyBase = {
   name: nameString,
-  avatarUrl: optionalUrl.optional(),
+  avatarUrl: optionalUrlInput,
   attributes: characterAttributes.optional(),
   stats: zCharacterStats.optional(),
   skills: characterSkills.optional(),
@@ -219,7 +225,7 @@ export const zCreateCharacter = z.object({
 export const zUpdateCharacter = z
   .object({
     name: nameString.optional(),
-    avatarUrl: optionalUrl.optional(),
+    avatarUrl: optionalUrlInput,
     attributes: characterAttributes.optional(),
     stats: zCharacterStats.optional(),
     skills: characterSkills.optional(),
@@ -248,7 +254,7 @@ export const zCreateSceneTemplate = z.object({
 export const zUpdateSceneTemplate = z
   .object({
     name: nameString.optional(),
-    mapUrl: optionalUrl.optional(),
+    mapUrl: optionalUrlInput,
     type: sceneTemplateTypes.optional(),
     gridWidth: gridDimension.optional(),
     gridHeight: gridDimension.optional(),
@@ -261,7 +267,7 @@ export const zUpdateSceneTemplate = z
 
 export const zCreateTokenTemplate = z.object({
   name: nameString,
-  imageUrl: optionalUrl.optional(),
+  imageUrl: optionalUrlInput,
   size: tokenSizeEnum.optional(),
   color: optionalTrimmedString(32).optional(),
   systemId: templateSystemId,
@@ -272,7 +278,7 @@ export const zCreateTokenTemplate = z.object({
 export const zUpdateTokenTemplate = z
   .object({
     name: nameString.optional(),
-    imageUrl: optionalUrl.optional(),
+    imageUrl: optionalUrlInput,
     size: tokenSizeEnum.optional(),
     color: optionalTrimmedString(32).optional(),
     systemId: templateSystemId,
@@ -343,7 +349,7 @@ export const zSystemIdParams = z.object({
         })
       )
       .optional(),
-    docsUrl: optionalUrl.optional(),
+    docsUrl: optionalUrlInput,
     createdAt: z.string().optional(),
     updatedAt: z.string().optional(),
   });

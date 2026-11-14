@@ -9,8 +9,6 @@ import System from '../../models/System.model';
 import Table from '../../models/Table.model';
 import { connectMongoMemory, disconnectMongoMemory, clearMongoMemory } from '../../test-utils/mongoMemory';
 
-jest.mock('nanoid', () => ({ nanoid: () => 'test-nanoid' }));
-
 const buildApp = () => {
   const app = express();
   app.use(express.json());

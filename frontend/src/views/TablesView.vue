@@ -4,13 +4,13 @@ import { useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { authToken, currentUser } from '../services/authService';
 import { toast } from '../services/toast';
+import { API_BASE_URL } from '../services/apiBase';
 import Icon from '../components/Icon.vue';
 import type { ITable } from '../types';
 import { useSystemStore } from '../stores/systemStore';
 import { useUserStore } from '../stores/userStore';
 
 const router = useRouter();
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const newTableName = ref('');
 const selectedSystemId = ref('');
 const userTables = ref<ITable[]>([]);

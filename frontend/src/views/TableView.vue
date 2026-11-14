@@ -7,13 +7,13 @@ import { authToken, currentUser } from '../services/authService';
 import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
 import { uploadMap } from '../services/storageService';
+import { API_BASE_URL } from '../services/apiBase';
 import { useTableStore } from '../stores/tableStore';
 import { useCharacterStore } from '../stores/characterStore';
 import { useSystemStore } from '../stores/systemStore';
 import { useUserStore } from '../stores/userStore';
 
 import MapViewport from '../components/MapViewport.vue';
-import MapViewportPixi from '../components/MapViewportPixi.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import TokenEditForm from '../components/TokenEditForm.vue';
 import InitiativePanel from '../components/InitiativePanel.vue';
@@ -31,7 +31,6 @@ import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Charac
 
 type MeasurementTool = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
 type ToolMode = MeasurementTool | 'select' | 'none';
-type GridDisplayExpose = { $el: HTMLElement };
 type MiddleClickHandler = ((event: MouseEvent) => void) & { lastTriggerTs?: number };
 const isMeasurementTool = (tool: ToolMode): tool is MeasurementTool => tool !== 'select' && tool !== 'none';
 
@@ -49,7 +48,6 @@ const showTokenForm = ref(false);
 const showTokenEditForm = ref(false);
 const tokenBeingEdited = ref<TokenInfo | null>(null);
 const targetSquareIdForToken = ref<string | null>(null);
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 // Auras dialog state
 const showAuraDialog = ref(false);
 const auraDialogTokenId = ref<string | null>(null);
@@ -59,11 +57,9 @@ const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena
 const isUploadingMap = ref(false);
 const isDmPanelCollapsed = ref(false);
-const gridDisplayRef = ref<GridDisplayExpose | null>(null);
+type GridSurfaceExpose = { $el: HTMLElement };
+const gridSurfaceRef = ref<GridSurfaceExpose | null>(null);
 const mapImgRef = ref<HTMLImageElement | null>(null);
-const pixiRendererFlag = import.meta.env.VITE_USE_PIXI ?? 'true';
-const usePixiRenderer = ref(pixiRendererFlag !== 'false');
-const rendererComponent = computed(() => (usePixiRenderer.value ? MapViewportPixi : MapViewport));
 const imageRenderedWidth = ref<number | null>(null);
 const imageRenderedHeight = ref<number | null>(null);
 const isMobileLayout = ref(false);
@@ -94,8 +90,8 @@ function setMapImageEl(el: HTMLImageElement | null) {
   mapImgRef.value = el;
 }
 
-function setGridDisplayInstance(instance: GridDisplayExpose | null) {
-  gridDisplayRef.value = instance;
+function setGridSurfaceInstance(instance: GridSurfaceExpose | null) {
+  gridSurfaceRef.value = instance;
 }
 
 function updateLayoutFlags() {
@@ -496,7 +492,7 @@ function onSceneReorder(updatedScenes: IScene[]) {
   onSceneDragEnd();
 }
 
-function createToken(payload: { name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null }) {
+function createToken(payload: { name: string; imageUrl?: string; movement: number; ownerId: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null }) {
   if (targetSquareIdForToken.value && activeSceneId.value) {
   // Validação footprint local
     const sizeMap: Record<string, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 };
@@ -863,8 +859,8 @@ function handlePointerDown(event: PointerEvent) {
   if (!isTouch && !isPrimaryButton && !isMiddleButton) return;
 
   if (isMeasuring.value && (isPrimaryButton || isTouch)) {
-    if (!gridDisplayRef.value) return;
-    const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
+    if (!gridSurfaceRef.value) return;
+    const gridRect = gridSurfaceRef.value.$el.getBoundingClientRect();
     const scale = viewTransform.value.scale || 1;
     const local = {
       x: (event.clientX - gridRect.left) / scale,
@@ -882,10 +878,10 @@ function handlePointerDown(event: PointerEvent) {
       coneOriginSquareId.value = originSquare;
       const originCenter = originSquare ? getSquareCenterLocalPointFromId(originSquare) : local;
       const measurementType = activeTool.value as MeasurementTool;
-      previewMeasurement.value = { type: measurementType, start: originCenter, end: originCenter };
+      previewMeasurement.value = { type: measurementType, start: originCenter ?? local, end: originCenter ?? local };
       coneAffectedSquares.value = [];
     }
-    (event.target as HTMLElement).setPointerCapture(event.pointerId);
+    try { (event.target as HTMLElement).setPointerCapture(event.pointerId); } catch {}
     return;
   }
 
@@ -895,7 +891,7 @@ function handlePointerDown(event: PointerEvent) {
   if (!shouldPan) return;
   if ((event.target as HTMLElement).closest('button, .token')) return;
   activePointers.value.push(event);
-  viewportRef.value?.setPointerCapture(event.pointerId);
+  try { viewportRef.value?.setPointerCapture(event.pointerId); } catch {}
   event.preventDefault();
 }
 
@@ -903,8 +899,8 @@ function handlePointerDown(event: PointerEvent) {
 function handlePointerMove(event: PointerEvent) {
   // Se a régua estiver ativa e um ponto inicial tiver sido definido, atualiza a linha.
   if (previewMeasurement.value) {
-    if (!gridDisplayRef.value) return;
-    const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
+    if (!gridSurfaceRef.value) return;
+    const gridRect = gridSurfaceRef.value.$el.getBoundingClientRect();
     const scale = viewTransform.value.scale || 1;
     const currentPos = {
       x: (event.clientX - gridRect.left) / scale,
@@ -998,7 +994,7 @@ function handlePointerMove(event: PointerEvent) {
       previewMeasurement.value.distance = formatDistance(sideMeters);
 
       coneAffectedSquares.value = calculateSquareArea(coneOriginSquareId.value, sideMeters);
-  // Apenas rótulo; contorno é desenhado pelo GridDisplay como quadrado centrado na origem
+  // Apenas rótulo; contorno é desenhado pelo GridLayer como quadrado centrado na origem
   previewMeasurement.value.start = originCenter;
   previewMeasurement.value.end = currentPos;
     } else if (previewMeasurement.value.type === 'line') {
@@ -1074,7 +1070,7 @@ function handlePointerUp(event: PointerEvent) {
       const canShare = isDM.value || !!myActiveToken.value; // DM ou jogador cujo token está no turno
       if (canShare) {
     // Converte pontos locais (px) para unidades de grade (células)
-    const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+    const gridRect = gridSurfaceRef.value!.$el.getBoundingClientRect();
     const scale = viewTransform.value.scale || 1;
     const unscaledGridWidth = gridRect.width / scale;
     const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
@@ -1092,7 +1088,7 @@ function handlePointerUp(event: PointerEvent) {
     } else if (activeTool.value === 'cone' && previewMeasurement.value.type === 'cone' && activeSceneId.value) {
       const canShare = isDM.value || !!myActiveToken.value;
       if (canShare) {
-    const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+    const gridRect = gridSurfaceRef.value!.$el.getBoundingClientRect();
     const scale = viewTransform.value.scale || 1;
     const unscaledGridWidth = gridRect.width / scale;
     const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
@@ -1127,7 +1123,7 @@ function handlePointerUp(event: PointerEvent) {
     } else if (activeTool.value === 'circle' && previewMeasurement.value.type === 'circle' && activeSceneId.value) {
       const canShare = isDM.value || !!myActiveToken.value;
       if (canShare) {
-    const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+    const gridRect = gridSurfaceRef.value!.$el.getBoundingClientRect();
     const scale = viewTransform.value.scale || 1;
     const unscaledGridWidth = gridRect.width / scale;
     const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
@@ -1161,7 +1157,7 @@ function handlePointerUp(event: PointerEvent) {
   } else if (activeTool.value === 'square' && previewMeasurement.value.type === 'square' && activeSceneId.value) {
       const canShare = isDM.value || !!myActiveToken.value;
       if (canShare) {
-    const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+    const gridRect = gridSurfaceRef.value!.$el.getBoundingClientRect();
     const scale = viewTransform.value.scale || 1;
     const unscaledGridWidth = gridRect.width / scale;
     const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
@@ -1195,7 +1191,7 @@ function handlePointerUp(event: PointerEvent) {
     } else if (activeTool.value === 'line' && previewMeasurement.value.type === 'line' && activeSceneId.value) {
       const canShare = isDM.value || !!myActiveToken.value;
       if (canShare) {
-        const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+        const gridRect = gridSurfaceRef.value!.$el.getBoundingClientRect();
         const scale = viewTransform.value.scale || 1;
         const unscaledGridWidth = gridRect.width / scale;
         const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
@@ -1228,7 +1224,7 @@ function handlePointerUp(event: PointerEvent) {
   } else if (activeTool.value === 'beam' && previewMeasurement.value.type === 'beam' && activeSceneId.value) {
       const canShare = isDM.value || !!myActiveToken.value;
       if (canShare) {
-        const gridRect = gridDisplayRef.value!.$el.getBoundingClientRect();
+        const gridRect = gridSurfaceRef.value!.$el.getBoundingClientRect();
         const scale = viewTransform.value.scale || 1;
         const unscaledGridWidth = gridRect.width / scale;
         const worldSquareSize = unscaledGridWidth / (gridWidth.value || 1);
@@ -1275,7 +1271,7 @@ function handlePointerUp(event: PointerEvent) {
       }
     }
 
-    (event.target as HTMLElement).releasePointerCapture(event.pointerId);
+    try { (event.target as HTMLElement).releasePointerCapture(event.pointerId); } catch {}
     return;
   }
 
@@ -1284,7 +1280,7 @@ function handlePointerUp(event: PointerEvent) {
   if (activePointers.value.length < 2) {
     initialPinchDistance.value = 0;
   }
-  viewportRef.value?.releasePointerCapture(event.pointerId);
+  try { viewportRef.value?.releasePointerCapture(event.pointerId); } catch {}
 }
 
 function handleWheel(event: WheelEvent) {
@@ -1305,7 +1301,7 @@ function resetView() {
   viewTransform.value.y = 0;
 }
 
-function handleToolSelected(tool: 'ruler' | 'cone' | 'circle' | 'square' | 'none') {
+function handleToolSelected(tool: ToolMode) {
   activeTool.value = tool;
 
   // Reset geral ao trocar ferramenta
@@ -1443,8 +1439,8 @@ function calculateBeamOrWallArea(originId: string, targetId: string, widthSquare
 
 // Local (px) -> id do quadrado
 function getSquareIdFromLocalPoint(localX: number, localY: number): string | null {
-  if (!gridDisplayRef.value) return null;
-  const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
+  if (!gridSurfaceRef.value) return null;
+  const gridRect = gridSurfaceRef.value.$el.getBoundingClientRect();
   const scale = viewTransform.value.scale || 1;
   const unscaledGridWidth = gridRect.width / scale;
   const unscaledGridHeight = gridRect.height / scale;
@@ -1459,8 +1455,8 @@ function getSquareIdFromLocalPoint(localX: number, localY: number): string | nul
 
 // Centro local (px) para id
 function getSquareCenterLocalPointFromId(squareId: string): { x: number; y: number } | null {
-  if (!gridDisplayRef.value) return null;
-  const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
+  if (!gridSurfaceRef.value) return null;
+  const gridRect = gridSurfaceRef.value.$el.getBoundingClientRect();
   const scale = viewTransform.value.scale || 1;
   const unscaledGridWidth = gridRect.width / scale;
   const unscaledGridHeight = gridRect.height / scale;
@@ -1851,7 +1847,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :players="currentTable?.players || []"
         :map-image-ref-setter="setMapImageEl"
         :viewport-ref-setter="setViewportEl"
-        :grid-display-ref-setter="setGridDisplayInstance"
+        :grid-surface-ref-setter="setGridSurfaceInstance"
         :on-wheel="handleWheel"
         :on-pointer-down="handlePointerDown"
         :on-pointer-move="handlePointerMove"
@@ -1966,7 +1962,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       :tokenId="auraDialogTokenId"
       :defaultName="(auraDialogTokenId && auras.find(a => a.tokenId === auraDialogTokenId)?.name) || 'Aura'"
       :defaultColor="(auraDialogTokenId && auras.find(a => a.tokenId === auraDialogTokenId)?.color) || measurementColor"
-  :defaultRadiusMeters="(auraDialogTokenId && auras.find(a => a.tokenId === auraDialogTokenId)?.radiusMeters) ?? 0"
+  :defaultRadiusMeters="Number((auraDialogTokenId && auras.find(a => a.tokenId === auraDialogTokenId)?.radiusMeters) ?? 0)"
       :isDM="isDM"
       :isOwner="Boolean(tokensOnMap.find(t => t._id === auraDialogTokenId)?.ownerId?._id === currentUser?.id)"
       @save="handleAuraSave"

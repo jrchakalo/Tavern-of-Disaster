@@ -132,7 +132,7 @@ test('DM e jogador percorrem fluxo colaborativo principal', async ({ browser, re
 
   await dmPage.locator('.grid-square').nth(5).click({ button: 'right' });
   await dmPage.fill('#token-name', tokenName);
-  await dmPage.fill('#token-movement', '9');
+  await dmPage.fill('#token-movement', '60');
   await dmPage.locator('.token-form button', { hasText: 'Criar' }).click();
 
   const dmTokenLocator = dmPage.locator('.token').first();

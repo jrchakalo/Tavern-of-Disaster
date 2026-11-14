@@ -2,7 +2,7 @@
 import { ref, onMounted, watch } from 'vue';
 import { toast } from '../services/toast';
 import { uploadTokenImage } from '../services/storageService';
-import { PlayerInfo, TokenSize, Character } from '../types';
+import type { PlayerInfo, TokenSize, Character } from '../types';
 import { tokenSizes } from '../types';
 
 const tokenName = ref('');
@@ -22,7 +22,7 @@ interface Props {
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
-  (e: 'create-token', payload: { name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null }): void; // includes canOverlap
+  (e: 'create-token', payload: { name: string; imageUrl?: string; movement: number; ownerId: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null }): void; // includes canOverlap
   (e: 'cancel'): void;
 }>();
 
@@ -33,7 +33,7 @@ function handleSubmit() {
   }
   emit('create-token', {
     name: tokenName.value,
-    imageUrl: tokenImageUrl.value,
+    imageUrl: tokenImageUrl.value.trim() || undefined,
     movement: tokenMovement.value,
     ownerId: assignedOwnerId.value,
   size: tokenSize.value,
