@@ -31,7 +31,7 @@ Regras herdadas de `AGENTS.md`:
 
 | Coder | Escopo | Branch | Worktree | Modelo | Status |
 |---|---|---|---|---|---|
-| `coder-backend` | Protocolo de estado, authz por entidade, revisão, turnos, reconexão server-side, refresh de JWT | `restore/phase-1-backend` | `.worktrees/p1-backend` | `opencode-go/mimo-v2.6-flash` | a iniciar |
+| `coder-backend` | Protocolo de estado, authz por entidade, revisão, turnos, reconexão server-side, refresh de JWT | `restore/phase-1-backend` | `.worktrees/p1-backend` | `opencode-go/deepseek-v4.1-flash` (compartilhado com o PO) | a iniciar |
 | `coder-frontend` | Cliente Socket.IO, store de revisão, ack/timeout, resync, fallback de transporte | `restore/phase-1-frontend` | `.worktrees/p1-frontend` | `opencode-go/glm-5.3-flash` | a iniciar |
 | `coder-ux` | `/play/:id` e `/display/:id`, mobile, TV read-only, safe areas, alvos de toque | `restore/phase-1-ux` | `.worktrees/p1-ux` | `opencode-go/longcat-2.5-free` | concluído — commit `aaaa83b` |
 | `coder-qa` | Testes de autorização, caos com 6 clientes, convergência de revisão | `restore/phase-1-qa` | `.worktrees/p1-qa` | `opencode-go/minimax-m3.1-flash` | a iniciar |
@@ -55,11 +55,11 @@ Alibaba e OpenCode Console.
 
 | Modelo | Limite Go (5h / semana / mês) | Evidência | Por que foi escolhido |
 |---|---|---|---|
-| `mimo-v2.6-flash` | 30.100 / 75.200 / 150.400 req | DeepSWE 67,9; Terminal-Bench 2.1 87,6 (fornecedor) e 76,4 (Vals); OSWorld 80,8; Visual Coding 71,5; 1M contexto | **Backend.** Segundo maior limite prático depois do DeepSeek do PO, com coding agêntico forte e contexto de 1M. O backend tem muitas mutações, testes e leituras de arquivo; volume importa. |
+| `mimo-v2.6-flash` | 30.100 / 75.200 / 150.400 req | DeepSWE 67,9; Terminal-Bench 2.1 87,6 (fornecedor) e 76,4 (Vals); OSWorld 80,8; Visual Coding 71,5; 1M contexto | **Reserva de volume / fallback do backend.** Coding agêntico forte e cota alta; entra se o DeepSeek compartilhado apertar ou se o backend precisar de uma segunda opinião. |
 | `glm-5.3-flash` | 6.320 / 15.790 / 31.580 req | Terminal-Bench 2.1 ~82-84; SWE-bench Verified ~79; Terminal-Bench 4.0 ~38; 1M contexto | **Frontend.** Menos volume que backend, mas exige paciência em refactor e reconciliação de eventos. GLM é estável e não alucina estado com a mesma frequência. |
 | `longcat-2.5-free` | Gratuito no Go; 100 req/dia | Terminal-Bench 2.1 88,4; DeepSWE 64,6; multimodal; visual/3D forte | **UX.** Já entregou a branch com sucesso. O trabalho visual exige leitura de tela e iteração; 100 req/dia é suficiente para menos ciclos. |
 | `minimax-m3.1-flash` | 3.880 / 9.690 / 19.380 req | DeepSWE 73,7; AutomationBench 62,8; OSWorld 61,7; 1M contexto | **QA.** Automação de agentes e muitos passos de ferramenta. O resultado é um teste executável: converge ou falha, o que mitiga o ponto fraco de alucinação factual. |
-| `deepseek-v4.1-flash` (PO) | 43.330 / 108.330 / 216.670 req | DeepSWE ~77; Terminal-Bench 2.1 ~90; melhor agente-código/ferramenta do conjunto | **PO/auditor.** Revisão, execução de testes e merges. O maior limite fica com quem mais precisa de contexto longo e julgamento. |
+| `deepseek-v4.1-flash` (PO + backend) | 43.330 / 108.330 / 216.670 req | DeepSWE ~77; Terminal-Bench 2.1 ~90; SkillsBench ~69,8; melhor agente-código/ferramenta do conjunto | **PO/auditor + backend.** O backend é a parte mais crítica e complexa da fase; o usuário autorizou compartilhar o modelo com outra função. A cota é suficiente para PO (revisão) + backend (implementação) no mesmo período de 5h. |
 
 Modelos considerados e não escolhidos:
 
@@ -187,6 +187,7 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-14 | Primeira rodada com modelos `*-free` do Zen falhou por cota diária | Backend, frontend e QA receberam “Free usage limit reached”; UX concluiu antes do limite. |
 | 2026-11-14 | Migrar a equipe para o plano Go | Limites por modelo com janelas de 5h/semana/mês; o Go permite continuar sem depender da cota diária gratuita. |
 | 2026-11-14 | Backend em MiMo-V2.6-Flash | Maior limite prático fora o DeepSeek do PO; coding agêntico forte e 1M de contexto. |
+| 2026-11-14 | Reatribuir backend para DeepSeek V4.1 Flash 1017 (compartilhado com o PO) | Usuário autorizou; backend é a parte mais crítica e o DeepSeek é o modelo mais forte do conjunto. A cota compartilhada (43.330/5h) é folgada para PO + backend. MiMo fica como fallback. |
 | 2026-11-14 | Frontend em GLM-5.3-Flash | Menor volume, maior necessidade de estabilidade em refactor e reconciliação. |
 | 2026-11-14 | QA em MiniMax M3.1 Flash | Automação/OSWorld fortes; teste executável reduz risco de alucinação. |
 | 2026-11-14 | DeepSeek V4.1 Flash 1017 fica reservado ao PO | Maior cota e melhor julgamento; evita disputa de limite com coders. |
