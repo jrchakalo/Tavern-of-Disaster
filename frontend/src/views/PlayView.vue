@@ -115,21 +115,26 @@ function handleNextTurn() {
   socketService.nextTurn(tableId, activeScene.value._id);
 }
 
-// O `socketService` ainda não expõe o evento `actionError` do protocolo da
-// Fase 1. Enquanto a store não centraliza esse tratamento, a view escuta o
-// socket diretamente para garantir que o erro chega ao jogador.
+// O `socketService` centraliza o toast de `actionError` (fonte única). Esta
+// view só precisa da mensagem para alimentar o banner persistente. Enquanto o
+// serviço não expõe o evento publicamente, lemos o socket privado com um type
+// guard estrito e removemos o listener ao desmontar.
 type SocketLike = {
-  on?: (event: string, listener: (payload: unknown) => void) => unknown;
-  off?: (event: string, listener: (payload: unknown) => void) => unknown;
+  on: (event: string, listener: (payload: unknown) => void) => unknown;
+  off: (event: string, listener: (payload: unknown) => void) => unknown;
 };
 
 let actionErrorListener: ((payload: unknown) => void) | null = null;
 
+function isSocketLike(value: unknown): value is SocketLike {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as { on?: unknown; off?: unknown };
+  return typeof candidate.on === 'function' && typeof candidate.off === 'function';
+}
+
 function readSocket(): SocketLike | null {
   const candidate = (socketService as unknown as { socket?: unknown }).socket;
-  if (!candidate || typeof candidate !== 'object') return null;
-  const maybeSocket = candidate as SocketLike;
-  return typeof maybeSocket.on === 'function' ? maybeSocket : null;
+  return isSocketLike(candidate) ? candidate : null;
 }
 
 function extractActionErrorMessage(payload: unknown): string {
@@ -146,15 +151,15 @@ function extractActionErrorMessage(payload: unknown): string {
 }
 
 function handleActionError(payload: unknown) {
-  const message = extractActionErrorMessage(payload);
-  errorMessage.value = message;
-  toast.error(message);
+  // O toast de erro é responsabilidade do socketService (fonte única). Aqui só
+  // alimentamos o banner persistente da view.
+  errorMessage.value = extractActionErrorMessage(payload);
 }
 
 onMounted(() => {
   socketService.connect(tableId);
   const socket = readSocket();
-  if (socket?.on) {
+  if (socket && !actionErrorListener) {
     actionErrorListener = handleActionError;
     socket.on('actionError', actionErrorListener);
   }
@@ -162,7 +167,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   const socket = readSocket();
-  if (socket?.off && actionErrorListener) {
+  if (socket && actionErrorListener) {
     socket.off('actionError', actionErrorListener);
   }
   actionErrorListener = null;
