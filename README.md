@@ -20,9 +20,21 @@
 
 Tavern of Disaster is a virtual tabletop where I mix two passions: web development and RPG. The goal is to build a lean, fast real‑time tool for my groups, iterating features as creativity (and playtest) demands.
 
+Restoration status: Phase 1 (`v0.9.2-phase1`) is integrated — authoritative
+realtime protocol with revision/resync/acks, entity-based authorization,
+reconnection, atomic turn advancement, and the `/play/:id` + `/display/:id`
+shells. See `docs/RESTORATION.md`, `docs/REALTIME_PROTOCOL.md` and
+`docs/ORCHESTRATION.md`.
+
 Currently implemented core features:
 
-* Real-time token placement & movement (Socket.IO)
+* Real-time token placement & movement (Socket.IO) with revision-aware state,
+  acks, reconnection and automatic resync
+* Entity-based authorization (token → scene → table → role) and cross-table IDOR
+  protection
+* Mobile player controller (`/play/:id`) and read-only TV board (`/display/:id`)
+* Automated tests: backend unit + Socket.IO integration, frontend unit,
+  Playwright E2E and a 6-client chaos harness
 * Multi-footprint tokens with footprint collision validation
 * Measurement tools (ruler, cone, circle, square, line, beam) with optional persistence
 * Auras linked to tokens (configurable radius/color)
@@ -65,7 +77,8 @@ Frontend:
 Tooling & Misc:
 * ESLint / TypeScript config
 * npm scripts
-* (Planned) Tests & CI pipeline
+* Jest + Vitest + Playwright + chaos harness
+* GitHub Actions CI (backend, frontend, E2E)
 
 ---
 

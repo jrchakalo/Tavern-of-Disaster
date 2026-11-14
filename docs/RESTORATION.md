@@ -1,7 +1,7 @@
 # Plano de Restauração — Tavern of Disaster
 
-> Status: em execução. Fase 0 (fundação) concluída tecnicamente; próxima: Fase 1.
-> Última atualização: 2026-11-14.
+> Status: em execução. Fases 0 e 1 concluídas e integradas; próxima: Fase 2.
+> Última atualização: 2026-11-14. Tag da Fase 1: `v0.9.2-phase1`.
 
 ## 1. Diagnóstico em uma frase
 
@@ -25,12 +25,16 @@ recuperação.
 
 ```
 main
-└── restore/phase-0-foundation     ambiente, limpeza, CI, docs
-    ├── restore/phase-1-realtime   protocolo de estado, authz, turnos, reconexão
-    ├── restore/phase-2-table-mode /display, /play, QR, geometria canônica
-    ├── restore/phase-3-sheets-dice fichas, dados, sistemas
-    ├── restore/phase-4-media-scenes uploads, cenas, persistência
-    └── restore/phase-5-beta-ops   deploy free, observabilidade, playtest simulado
+├── restore/phase-0-foundation     ambiente, limpeza, CI, docs        (v0.9.1-phase0)
+├── restore/phase-1-realtime       protocolo, authz, turnos, reconexão (v0.9.2-phase1)
+│   ├── restore/phase-1-backend    revision, authz por entidade, acks, presença, JWT
+│   ├── restore/phase-1-frontend   store revision-aware, resync, transporte, refresh
+│   ├── restore/phase-1-ux         /play e /display, mobile/TV read-only
+│   └── restore/phase-1-qa         authz cross-table + caos de 6 clientes
+├── restore/phase-2-table-mode     /display, /play, QR, geometria canônica
+├── restore/phase-3-sheets-dice    fichas, dados, sistemas
+├── restore/phase-4-media-scenes   uploads, cenas, persistência
+└── restore/phase-5-beta-ops       deploy free, observabilidade, playtest simulado
 ```
 
 Cada fase é integrada em `main` com `git merge --no-ff`, preservando a árvore de
@@ -58,16 +62,44 @@ decisões. Tags: `v0.9.0-restore` (marco zero), `v0.9.x` por fase, `v1.0.0-beta`
 
 **Saída:** clone novo sobe com um comando; CI verde; smoke test com 2 navegadores.
 
-### Fase 1 — Núcleo em tempo real (1 semana)
+### Fase 1 — Núcleo em tempo real (1 semana) — CONCLUÍDA
 
-- Autorização de `joinTable` e de toda mutação por entidade → mesa → papel.
-- Protocolo `sessionSnapshot` / `sessionPatch` com `revision`, `requestResync` e acks.
-- Reconexão com rejoin automático e resync em foco/visibilidade.
-- Turnos: máquina de estados, dono do turno, updates atômicos, rodada, erros visíveis.
-- Transporte: WebSocket + polling, URL derivada de HTTPS, refresh de sessão.
-- Testes de integração Socket.IO e **chaos test** com 6 clientes.
+- [x] Autorização de `joinTable` e de toda mutação por entidade → mesa → papel.
+- [x] Protocolo `sessionSnapshot` / `sessionPatch` com `revision`, `requestResync` e acks.
+- [x] Reconexão com rejoin automático e resync em foco/visibilidade.
+- [x] Turnos: máquina de estados, dono do turno, updates atômicos (CAS), rodada, erros visíveis.
+- [x] Transporte: WebSocket + polling, URL derivada de HTTPS, refresh de sessão.
+- [x] Testes de integração Socket.IO e **chaos test** com 6 clientes.
+- [x] Contrato escrito em `docs/REALTIME_PROTOCOL.md` e diário do PO em
+      `docs/ORCHESTRATION.md`.
+- [x] Rotas `/play/:tableId` e `/display/:tableId` (shells mobile/TV read-only).
 
 **Saída:** chaos test converge; nenhuma ação silenciosa.
+
+**Evidência (2026-11-14, integração `ef44594`, tag `v0.9.2-phase1`):**
+
+| Gate | Resultado |
+|---|---|
+| Backend `npm test` | **64/64**, 12 suítes (inclui integração Socket.IO com 2+ clientes) |
+| Backend `npm run build` | OK |
+| Frontend `type-check` | OK |
+| Frontend `npm run test:unit` | **43/43** |
+| Frontend `npm run build` | OK |
+| Playwright E2E completo | **8/8** (DM + jogador, authz, acks, cross-table, revisão) |
+| Caos 6 clientes | **14/14 PASS**, `revision=4`, hashes de tokens/iniciativa iguais, 0 `actionError` |
+
+**Gaps conhecidos da Fase 1 (para a Fase 2):**
+
+- Movimento de token ainda é last-write-wins (sem CAS por token); dois movimentos
+  concorrentes podem estourar `remainingMovement`.
+- Mutações fora do turno (edições, medições) também são last-write-wins; só o
+  avanço de turno tem CAS forte.
+- `/play` e `/display` foram validados por testes de componente, não por
+  screenshots em dispositivo real.
+- Token de display separado da conta do Mestre ainda não existe (Fase 2).
+- `tests/e2e/global-setup.ts` ainda pode deixar processos filhos em alguns
+  ambientes; CI limpa o runner, mas a correção de grupo de processos fica para
+  a Fase 5.
 
 ### Fase 2 — Modo Mesa Presencial (1,5–2 semanas)
 
@@ -140,8 +172,11 @@ uma mesa inteira. Ele é o principal critério de release.
 
 ### Onde roda
 
-- Local: `npm run test:sim`.
+- Local (caos headless): `cd tests/e2e && node chaos/run.mjs`.
+- Local (E2E com navegador): `cd tests/e2e && npx playwright test`.
 - CI: GitHub Actions (repositório público → minutos gratuitos), em PRs da Fase 1+.
+- Se o binário do Mongo não estiver em cache: `MONGOMS_SYSTEM_BINARY=...` ou
+  deixe o `mongodb-memory-server` baixar uma vez.
 
 ## 6. Infra 100% gratuita — limites e mitigação
 
