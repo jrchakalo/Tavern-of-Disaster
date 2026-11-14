@@ -485,8 +485,10 @@ export const useTableStore = defineStore('table', () => {
         if (!currentTable.value || patch.tableId !== currentTable.value._id) return false;
         // Evento atrasado/duplicado: ignorar.
         if (patch.revision <= revision.value) return false;
-        // Buraco na revisão: pedir ressincronização e NÃO aplicar.
-        if (patch.baseRevision !== revision.value && patch.revision > revision.value + 1) {
+        // O patch foi construído sobre outra base (buraco na revisão): pedir
+        // ressincronização e NÃO aplicar, mesmo que seja current+1 — aplicar
+        // pularia silenciosamente as mudanças intermediárias.
+        if (patch.baseRevision !== revision.value) {
             requestResyncFromStore();
             return false;
         }

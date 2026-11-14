@@ -181,6 +181,26 @@ describe('tableStore — protocolo realtime', () => {
     expect(store.squares.some((sq) => sq.token?._id === 'tk-1')).toBe(false);
   });
 
+  it('applyPatch com baseRevision defasada pede resync mesmo sendo current+1', () => {
+    const store = useTableStore();
+    store.applySnapshot(makeSnapshot()); // revision 5
+    const resyncMock = vi.fn();
+    registerResyncRequester(resyncMock);
+
+    // Patch construído sobre a revisão 3: aplicar pularia as mudanças 4 e 5.
+    const applied = store.applyPatch(
+      makePatch(
+        { revision: 6, baseRevision: 3 },
+        { tokenUpdates: [{ tokenId: 'tk-1', patch: { name: 'Goblin X' } }] },
+      ),
+    );
+
+    expect(applied).toBe(false);
+    expect(resyncMock).toHaveBeenCalledTimes(1);
+    expect(store.revision).toBe(5);
+    expect(store.squares.some((sq) => sq.token?._id === 'tk-1')).toBe(false);
+  });
+
   it('applyPatch aplica changes contíguas e avança a revisão', () => {
     const store = useTableStore();
     store.applySnapshot(
