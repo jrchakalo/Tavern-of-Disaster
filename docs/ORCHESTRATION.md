@@ -206,6 +206,7 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-14 | Frontend (GLM-5.3-Flash) | `restore/phase-1-frontend` / `3c0eed1` + `8db2177` + `8e66d8d` | **Aprovado** | `npm run type-check` OK; `npm run test:unit` 35/35; `npm run build` OK; integração com UX: 43/43 testes | `baseRevision`, movimento via `tokenUpdates` e resize de grid corrigidos e testados. |
 | 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | `restore/phase-1-backend` / `f8df20a` + `f6ac357` | **Aprovado** | `npm test` 64/64; `npm run build` OK; 12 suítes; integração 2+ clientes | Authz por entidade, ack, revisão, CAS de turno, presença e refresh; 4 correções aplicadas. |
 | 2026-11-14 | QA (MiniMax M3.1 Flash) | `restore/phase-1-qa` / `8fc0243` | **Aprovado** | Spec authz 7/7; suíte E2E completa 8/8; caos 14/14 PASS, `revision=4`, 0 `actionError` | Cross-table, actionError, revisão monotônica, reconexão, turno concorrente e convergência de 7 clientes. |
+| 2026-11-14 | Frontend P2 (GLM-5.3-Flash) | `restore/phase-2-frontend` / `d36ca84` | **Aprovado** | `type-check` OK; `test:unit` 69/69; `build` OK | `connectDisplay` sem JWT/refresh, `canWrite`, join por convite e REST de token. Ping em pixel no `TableView` sinalizado para UX. |
 | — | — | — | — | — | (preencher a cada PR) |
 
 ## 10. Registro de correções
