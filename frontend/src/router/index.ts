@@ -29,6 +29,18 @@ const router = createRouter({
     meta: { requiresAuth: true }
     },
     {
+      path: '/play/:tableId', // Controle mobile do jogador
+      name: 'play',
+      component: () => import('../views/PlayView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/display/:tableId', // TV read-only (token de display é Fase 2)
+      name: 'display',
+      component: () => import('../views/DisplayView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/dice',
       name: 'dice-sandbox',
       component: () => import('../views/DiceSandboxView.vue')
