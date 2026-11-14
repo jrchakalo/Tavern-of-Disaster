@@ -198,7 +198,7 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | Data | Coder | Branch/commit | Veredito | Evidência | Observações |
 |---|---|---|---|---|---|
 | 2026-11-14 | UX (LongCat 2.5 Free) | `restore/phase-1-ux` / `aaaa83b` + `965d32c` | **Aprovado com ressalvas** | `npm run type-check` OK; `npm run test:unit` 17/17; `npm run build` OK; integração: 38/38; rotas `/play`, `/display` emitidas | Toast duplicado de `actionError` corrigido em `965d32c`; falta validação visual em navegador real; `revision/you/presence` lidos defensivamente. |
-| 2026-11-14 | Frontend (GLM-5.3-Flash) | `restore/phase-1-frontend` / `3c0eed1` + `8db2177` | **Aprovado com ressalvas** | `npm run type-check` OK; `npm run test:unit` 30/30; `npm run build` OK; integração com UX: 38/38 testes | `baseRevision` corrigido; patches de movimento/grid em correção (rodada 2). |
+| 2026-11-14 | Frontend (GLM-5.3-Flash) | `restore/phase-1-frontend` / `3c0eed1` + `8db2177` + `8e66d8d` | **Aprovado** | `npm run type-check` OK; `npm run test:unit` 35/35; `npm run build` OK; integração com UX: 43/43 testes | `baseRevision`, movimento via `tokenUpdates` e resize de grid corrigidos e testados. |
 | 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | `restore/phase-1-backend` / `f8df20a` | **Aprovado com ressalvas** | `npm test` 52/52; `npm run build` OK; 12 testes de integração 2+ clientes | Authz por entidade, ack, revisão e CAS de turno implementados; 4 correções de integração devolvidas. |
 | — | — | — | — | — | (preencher a cada PR) |
 
@@ -212,8 +212,8 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | Nova rodada limpava medições persistentes no cliente, mas não no servidor | Limpar persistentes da cena no servidor e manter auras | 1 | devolvido |
 | 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | `requestReorderInitiative` aceitava entradas arbitrárias do cliente (token de outra mesa) | Validar IDs contra a iniciativa existente e reconstruir a partir do servidor | 1 | devolvido |
 | 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | Patch de edição de token não incluía mudança de dono | Incluir `owner` no `tokenUpdates` | 1 | devolvido |
-| 2026-11-14 | Frontend (GLM-5.3-Flash) | `tokenUpdates` com `squareId` não movia o token entre quadrados no store | Mover o token no grid ao aplicar o patch | 1 | devolvido |
-| 2026-11-14 | Frontend (GLM-5.3-Flash) | Patch de `activeScene` com novo grid não reconstruía `squares` | Reconstruir o grid preservando tokens | 1 | devolvido |
+| 2026-11-14 | Frontend (GLM-5.3-Flash) | `tokenUpdates` com `squareId` não movia o token entre quadrados no store | Mover o token no grid ao aplicar o patch | 1 | corrigido em `8e66d8d` |
+| 2026-11-14 | Frontend (GLM-5.3-Flash) | Patch de `activeScene` com novo grid não reconstruía `squares` | Reconstruir o grid preservando tokens | 1 | corrigido em `8e66d8d` |
 | — | — | — | — | — | — |
 
 ## 11. Riscos e limites
