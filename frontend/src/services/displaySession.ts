@@ -5,32 +5,20 @@ export type DisplayConnection = {
   token: string;
 };
 
-type DisplaySocketService = {
-  connectDisplay?: (tableId: string, token: string) => void;
-  disconnectDisplay?: () => void;
-  isDisplayMode?: () => boolean;
-};
-
-function service(): DisplaySocketService {
-  return socketService as unknown as DisplaySocketService;
-}
-
 /**
- * Conecta a TV usando token de display (sem JWT).
- * A implementação real vive em `socketService` (branch `restore/phase-2-frontend`).
+ * Wrapper fino sobre `socketService` para a TV (`/display/:tableId`).
+ * Conecta com token de display (sem JWT, sem refresh de sessão) e aplica
+ * snapshot/patch no `tableStore` como qualquer cliente. A implementação
+ * real vive em `socketService.connectDisplay/disconnectDisplay`.
  */
 export function connectDisplay(connection: DisplayConnection): void {
-  const target = service();
-  if (!target.connectDisplay) {
-    throw new Error('Conexão de display ainda não implementada.');
-  }
-  target.connectDisplay(connection.tableId, connection.token);
+  socketService.connectDisplay(connection.tableId, connection.token);
 }
 
 export function disconnectDisplay(): void {
-  service().disconnectDisplay?.();
+  socketService.disconnectDisplay();
 }
 
 export function isDisplayMode(): boolean {
-  return service().isDisplayMode?.() === true;
+  return socketService.isDisplayMode();
 }

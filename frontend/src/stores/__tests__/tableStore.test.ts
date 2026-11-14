@@ -512,3 +512,45 @@ describe('tableStore — protocolo realtime', () => {
     expect(store.squares.some((sq) => sq.token?._id === 'tk-3')).toBe(true);
   });
 });
+
+describe('tableStore — modo display (TV read-only)', () => {
+  it('canWrite é falso para DISPLAY e para quem veio sem permissões', () => {
+    const store = useTableStore();
+
+    store.applySnapshot(makeSnapshot()); // DM com permissions ['session:write']
+    expect(store.canWrite).toBe(true);
+
+    store.applySnapshot(makeSnapshot({
+      you: { userId: 'display:table-1', username: 'TV', role: 'DISPLAY', permissions: [] },
+    }));
+    expect(store.you?.role).toBe('DISPLAY');
+    expect(store.canWrite).toBe(false);
+
+    store.applySnapshot(makeSnapshot({
+      you: { userId: 'u2', username: 'Sem Permissão', role: 'PLAYER', permissions: [] },
+    }));
+    expect(store.canWrite).toBe(false);
+  });
+
+  it('setDisplayMode liga/desliga o flag de modo TV', () => {
+    const store = useTableStore();
+    expect(store.displayMode).toBe(false);
+
+    store.setDisplayMode(true);
+    expect(store.displayMode).toBe(true);
+
+    store.setDisplayMode(false);
+    expect(store.displayMode).toBe(false);
+  });
+
+  it('applySnapshot de DISPLAY mantém o estado da mesa intacto (só leitura)', () => {
+    const store = useTableStore();
+    store.applySnapshot(makeSnapshot({
+      you: { userId: 'display:table-1', username: 'TV', role: 'DISPLAY', permissions: [] },
+    }));
+
+    expect(store.currentTable?._id).toBe('table-1');
+    expect(store.activeSceneId).toBe('scene-1');
+    expect(store.revision).toBe(5);
+  });
+});
