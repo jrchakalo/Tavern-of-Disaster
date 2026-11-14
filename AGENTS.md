@@ -14,8 +14,10 @@ Vue 3 + Vite + TypeScript + Pinia no frontend.
 
 - `main` contém a antiga branch `expand`, que já incorpora `character`, `rolling`,
   `system`, `polishing` e `fix`.
-- A restauração está organizada em fases. Branch atual de trabalho:
-  `restore/phase-0-foundation`.
+- A restauração está organizada em fases. Fases 0 e 1 concluídas; a próxima é
+  `restore/phase-2-table-mode`. Tag da Fase 1: `v0.9.2-phase1`.
+- O protocolo realtime está em `docs/REALTIME_PROTOCOL.md`; o diário de
+  decisões/modelos/coders está em `docs/ORCHESTRATION.md`.
 - PixiJS está morto (não renderiza). O renderizador oficial é DOM/SVG
   (`MapViewport.vue` + `GridLayer.vue` + `TokenLayer.vue`).
 - O backend não depende mais do Supabase para iniciar: o storage usa o driver
@@ -43,6 +45,11 @@ npm run dev          # Vite (porta 5173)
 npm run build
 npm run test:unit
 npx vue-tsc --noEmit -p tsconfig.app.json   # type-check real
+
+# testes de tempo real / caos
+cd tests/e2e
+npx playwright test                         # E2E com 2+ navegadores
+node chaos/run.mjs                          # caos headless de 6 clientes
 ```
 
 > A partir da Fase 0 há um `docker compose up` na raiz (Mongo + backend +
