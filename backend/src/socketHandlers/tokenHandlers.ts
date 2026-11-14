@@ -241,6 +241,9 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
                 size: updated.size,
                 canOverlap: updated.canOverlap,
                 characterId: updated.characterId ? updated.characterId.toString() : undefined,
+                ...(typeof patch.ownerId === 'string'
+                  ? { owner: getUserSummary((updated as any).ownerId) }
+                  : {}),
               },
             },
           ],

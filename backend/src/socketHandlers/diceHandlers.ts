@@ -113,8 +113,12 @@ export function registerDiceHandlers(io: Server, socket: Socket) {
           recordDiceRoll();
           return { tableId: data.tableId, revision };
         } catch (error) {
-          // Compatibilidade temporária: cliente antigo escuta diceRollError.
-          socket.emit('diceRollError', { message: toAckError(error).message });
+          // Compatibilidade temporária: o cliente antigo (sem ack) escuta
+          // diceRollError. Com ack, runAction responde uma única vez, evitando
+          // dois toasts para a mesma falha.
+          if (!ack) {
+            socket.emit('diceRollError', { message: toAckError(error).message });
+          }
           throw error;
         }
       },

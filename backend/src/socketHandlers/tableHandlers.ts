@@ -79,8 +79,12 @@ export function registerTableHandlers(io: Server, socket: Socket) {
         // Autoriza ANTES de entrar na sala. A mesa é carregada sem populate
         // para que dm/players continuem como ObjectId na checagem de vínculo.
         const table = await getTableById(tableId);
-        assertCondition(!!table, 'Mesa não encontrada.', 404);
-        assertUserInTable(userId, table!);
+        // Normaliza mesa inexistente para FORBIDDEN: não revela existência de
+        // mesas para não membros (joinTable já é limitado por socket).
+        if (!table) {
+          throw new ServiceError('Usuário não faz parte desta mesa.', 403);
+        }
+        assertUserInTable(userId, table);
 
         if (!socket.rooms.has(tableId)) {
           await socket.join(tableId);

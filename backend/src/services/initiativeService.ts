@@ -128,6 +128,86 @@ export async function removeInitiativeEntry(sceneId: string, entryId: string, de
   return { initiative: scene!.initiative, removedTokenId };
 }
 
+export type RequestedInitiativeOrder = Array<{
+  _id?: string;
+  tokenId?: string;
+  characterId?: string;
+  characterName?: string;
+  isCurrentTurn?: boolean;
+}>;
+
+/**
+ * Valida a ordem enviada pelo cliente contra a iniciativa existente e
+ * reconstrói as entradas a partir dos dados do servidor. O cliente só pode
+ * decidir a posição e qual entrada está ativa (no máximo uma). Identidade
+ * (token/personagem) e nome nunca vêm do payload.
+ */
+export function buildReorderedInitiative(
+  scene: IScene,
+  requested: RequestedInitiativeOrder
+): IInitiativeEntry[] {
+  assertCondition(Array.isArray(requested) && requested.length > 0, 'Ordem de iniciativa inválida.', 400);
+  assertCondition(
+    requested.length === scene.initiative.length,
+    'Ordem de iniciativa inválida: quantidade de entradas divergente.',
+    400
+  );
+
+  const serverEntries = new Map<string, IInitiativeEntry>();
+  scene.initiative.forEach((entry) => {
+    const id = entry._id?.toString();
+    if (id) serverEntries.set(id, entry);
+  });
+
+  const seen = new Set<string>();
+  let currentTurnCount = 0;
+  const rebuilt: IInitiativeEntry[] = [];
+
+  for (const item of requested) {
+    const id = item?._id?.toString();
+    assertCondition(!!id, 'Ordem de iniciativa inválida: entrada sem identificador.', 400);
+    assertCondition(!seen.has(id!), 'Ordem de iniciativa inválida: entrada duplicada.', 400);
+    seen.add(id!);
+
+    const serverEntry = serverEntries.get(id!);
+    assertCondition(!!serverEntry, 'Ordem de iniciativa inválida: entrada desconhecida.', 400);
+
+    if (item.tokenId !== undefined) {
+      assertCondition(
+        item.tokenId === (serverEntry!.tokenId?.toString() ?? ''),
+        'Ordem de iniciativa inválida: token não pertence à entrada.',
+        400
+      );
+    }
+    if (item.characterId !== undefined) {
+      assertCondition(
+        item.characterId === (serverEntry!.characterId?.toString() ?? ''),
+        'Ordem de iniciativa inválida: personagem não pertence à entrada.',
+        400
+      );
+    }
+
+    const isCurrentTurn = !!item.isCurrentTurn;
+    if (isCurrentTurn) currentTurnCount += 1;
+
+    rebuilt.push({
+      _id: serverEntry!._id,
+      characterName: serverEntry!.characterName,
+      tokenId: serverEntry!.tokenId,
+      characterId: serverEntry!.characterId,
+      isCurrentTurn,
+    });
+  }
+
+  assertCondition(
+    currentTurnCount <= 1,
+    'Ordem de iniciativa inválida: mais de uma entrada atual.',
+    400
+  );
+
+  return rebuilt;
+}
+
 export async function reorderInitiative(sceneId: string, newOrder: IInitiativeEntry[]) {
   const scene = await Scene.findByIdAndUpdate(
     sceneId,

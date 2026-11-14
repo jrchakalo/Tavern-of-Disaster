@@ -4,13 +4,17 @@ import Token from '../models/Token.model';
 import {
   addTokenToInitiative,
   advanceTurn,
+  buildReorderedInitiative,
   resetInitiative,
   removeInitiativeEntry,
   reorderInitiative,
   editInitiativeEntry,
 } from '../services/initiativeService';
 import { assertUserInTable, assertUserIsDM } from '../services/tableService';
-import { clearEphemeralMeasurements } from '../services/measurementService';
+import {
+  clearEphemeralMeasurements,
+  clearPersistentMeasurementsForScene,
+} from '../services/measurementService';
 import { assertCondition } from '../services/serviceErrors';
 import {
   assertEntityBelongsToTable,
@@ -158,10 +162,14 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
             })),
           });
           changes.tokens = tokens;
+
+          // Nova rodada limpa efêmeras + persistentes da cena no servidor para
+          // que o cliente e o próximo resync concordem. Auras são preservadas.
+          clearEphemeralMeasurements(data.tableId);
+          await clearPersistentMeasurementsForScene(data.tableId, data.sceneId);
+          io.to(data.tableId).emit('allMeasurementsCleared', { sceneId: data.sceneId, revision });
+          changes.measurements = [];
         }
-        clearEphemeralMeasurements(data.tableId);
-        io.to(data.tableId).emit('allMeasurementsCleared', { sceneId: data.sceneId, revision });
-        changes.measurements = [];
 
         return { tableId: data.tableId, revision, changes };
       },
@@ -199,6 +207,7 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
           currentTurnId: null,
         });
         clearEphemeralMeasurements(data.tableId);
+        await clearPersistentMeasurementsForScene(data.tableId, data.sceneId);
         io.to(data.tableId).emit('allMeasurementsCleared', { sceneId: data.sceneId, revision });
 
         return {
@@ -271,7 +280,9 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         assertEntityBelongsToTable(table._id.toString(), data.tableId);
         assertUserIsDM(userId, table);
 
-        const orderForService = data.newOrder as unknown as IInitiativeEntry[];
+        // Reconstrói a ordem a partir das entradas do servidor; o payload só
+        // decide posição e qual entrada está ativa.
+        const orderForService = buildReorderedInitiative(scene, data.newOrder);
         const initiative = await reorderInitiative(scene._id.toString(), orderForService);
         const revision = await bumpRevision(data.tableId);
 

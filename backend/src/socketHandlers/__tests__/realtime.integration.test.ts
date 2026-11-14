@@ -490,6 +490,184 @@ describe('realtime integration (2+ clients)', () => {
     expect(error.data?.code).toBe('TOKEN_EXPIRED');
   });
 
+  it('12. reorder injetado (entrada desconhecida ou token de outra mesa) é rejeitado sem alterar a iniciativa', async () => {
+    const dm = await createUser('dm-reorder');
+    const otherDm = await createUser('dm-reorder-other');
+    const { table, scene } = await createTableWithScene(dm._id, []);
+    await seedInitiative(scene._id, [{ name: 'A' }, { name: 'B' }]);
+    const { table: otherTable, scene: otherScene } = await createTableWithScene(otherDm._id, []);
+    const foreignToken = await createTokenFor({
+      tableId: otherTable._id,
+      sceneId: otherScene._id,
+      ownerId: otherDm._id,
+    });
+
+    const storedScene = await Scene.findById(scene._id);
+    const [entryA, entryB] = storedScene!.initiative;
+    const entryAId = entryA._id.toString();
+    const entryBId = entryB._id.toString();
+
+    const client = await connectClient(signToken(dm));
+    await joinTable(client, table._id.toString());
+
+    const unknown = await emitAck(client, 'requestReorderInitiative', {
+      tableId: table._id.toString(),
+      sceneId: scene._id.toString(),
+      newOrder: [{ _id: entryAId, isCurrentTurn: false }, { _id: new Types.ObjectId().toString() }],
+    });
+    expect(unknown.ok).toBe(false);
+    expect(unknown.error.code).toBe('VALIDATION');
+
+    const crossToken = await emitAck(client, 'requestReorderInitiative', {
+      tableId: table._id.toString(),
+      sceneId: scene._id.toString(),
+      newOrder: [
+        { _id: entryAId, tokenId: foreignToken._id.toString(), isCurrentTurn: false },
+        { _id: entryBId, isCurrentTurn: false },
+      ],
+    });
+    expect(crossToken.ok).toBe(false);
+    expect(crossToken.error.code).toBe('VALIDATION');
+
+    const after = await Scene.findById(scene._id);
+    expect(after!.initiative.map((entry) => entry._id.toString())).toEqual([entryAId, entryBId]);
+    expect(after!.initiative[0].tokenId).toBeUndefined();
+    expect(after!.initiative.every((entry) => !entry.isCurrentTurn)).toBe(true);
+    expect((await Table.findById(table._id))!.revision).toBe(0);
+  });
+
+  it('13. edição de token inclui owner no patch (cliente patch-only vê a troca)', async () => {
+    const dm = await createUser('dm-edit-owner');
+    const player = await createUser('player-edit-owner');
+    const { table, scene } = await createTableWithScene(dm._id, [player._id]);
+    const token = await createTokenFor({
+      tableId: table._id,
+      sceneId: scene._id,
+      ownerId: dm._id,
+    });
+
+    const client = await connectClient(signToken(dm));
+    await joinTable(client, table._id.toString());
+
+    const patchPromise = onceEvent(client, 'sessionPatch');
+    const ack = await emitAck(client, 'requestEditToken', {
+      tableId: table._id.toString(),
+      tokenId: token._id.toString(),
+      patch: { ownerId: player._id.toString() },
+    });
+    const patch = await patchPromise;
+
+    expect(ack.ok).toBe(true);
+    expect(patch.changes.tokenUpdates[0].tokenId).toBe(token._id.toString());
+    expect(patch.changes.tokenUpdates[0].patch.owner).toEqual({
+      _id: player._id.toString(),
+      username: player.username,
+    });
+  });
+
+  it('14. rolagem com ack não emite diceRollError duplicado; sem ack emite', async () => {
+    const dm = await createUser('dm-dice');
+    const player = await createUser('player-dice');
+    const otherDm = await createUser('dm-dice-other');
+    const otherPlayer = await createUser('player-dice-other');
+    const { table } = await createTableWithScene(dm._id, [player._id]);
+    const { table: otherTable, scene: otherScene } = await createTableWithScene(otherDm._id, [otherPlayer._id]);
+    const foreignToken = await createTokenFor({
+      tableId: otherTable._id,
+      sceneId: otherScene._id,
+      ownerId: otherPlayer._id,
+    });
+
+    const client = await connectClient(signToken(player));
+    await joinTable(client, table._id.toString());
+
+    const legacyErrors: unknown[] = [];
+    client.on('diceRollError', (payload: unknown) => legacyErrors.push(payload));
+
+    const ack = await emitAck(client, 'requestRollDice', {
+      tableId: table._id.toString(),
+      expression: '1d20',
+      tokenId: foreignToken._id.toString(),
+    });
+    expect(ack.ok).toBe(false);
+    expect(ack.error.code).toBe('FORBIDDEN');
+    await sleep(250);
+    expect(legacyErrors).toHaveLength(0);
+
+    const legacyErrorPromise = onceEvent(client, 'diceRollError');
+    client.emit('requestRollDice', {
+      tableId: table._id.toString(),
+      expression: '1d20',
+      tokenId: foreignToken._id.toString(),
+    });
+    const legacyError = await legacyErrorPromise;
+    expect(typeof legacyError.message).toBe('string');
+  });
+
+  it('15. nova rodada limpa persistentes no servidor e preserva auras', async () => {
+    const dm = await createUser('dm-round-clear');
+    const { table, scene } = await createTableWithScene(dm._id, []);
+    const token = await createTokenFor({
+      tableId: table._id,
+      sceneId: scene._id,
+      ownerId: dm._id,
+    });
+    await seedInitiative(scene._id, [{ name: 'A' }, { name: 'B', current: true }]);
+
+    const client = await connectClient(signToken(dm));
+    await joinTable(client, table._id.toString());
+
+    const addMeasurement = await emitAck(client, 'requestAddPersistentMeasurement', {
+      tableId: table._id.toString(),
+      sceneId: scene._id.toString(),
+      payload: {
+        start: { x: 0, y: 0 },
+        end: { x: 1, y: 1 },
+        distance: '1,5 m',
+        type: 'ruler',
+        affectedSquares: ['sq-0'],
+        color: '#ff8c00',
+      },
+    });
+    expect(addMeasurement.ok).toBe(true);
+
+    const addAura = await emitAck(client, 'requestUpsertAura', {
+      tableId: table._id.toString(),
+      sceneId: scene._id.toString(),
+      tokenId: token._id.toString(),
+      name: 'Aura',
+      color: '#ff8c00',
+      radiusMeters: 3,
+      difficultTerrain: false,
+    });
+    expect(addAura.ok).toBe(true);
+
+    const beforeSnapshot = await (async () => {
+      const promise = onceEvent(client, 'sessionSnapshot');
+      await emitAck(client, 'requestResync', { tableId: table._id.toString() });
+      return promise;
+    })();
+    expect(beforeSnapshot.measurements).toHaveLength(1);
+    expect(beforeSnapshot.auras).toHaveLength(1);
+
+    const patchPromise = onceEvent(client, 'sessionPatch');
+    const nextTurn = await emitAck(client, 'requestNextTurn', {
+      tableId: table._id.toString(),
+      sceneId: scene._id.toString(),
+    });
+    const patch = await patchPromise;
+    expect(nextTurn.ok).toBe(true);
+    expect(patch.changes.measurements).toEqual([]);
+
+    const afterSnapshot = await (async () => {
+      const promise = onceEvent(client, 'sessionSnapshot');
+      await emitAck(client, 'requestResync', { tableId: table._id.toString() });
+      return promise;
+    })();
+    expect(afterSnapshot.measurements).toHaveLength(0);
+    expect(afterSnapshot.auras).toHaveLength(1);
+  });
+
   it('11. expectedRevision divergente responde CONFLICT e não aplica a mutação', async () => {
     const dm = await createUser('dm-expected');
     const { table, scene: firstScene } = await createTableWithScene(dm._id, []);
