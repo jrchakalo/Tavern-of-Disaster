@@ -198,13 +198,14 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | Data | Coder | Branch/commit | Veredito | Evidência | Observações |
 |---|---|---|---|---|---|
 | 2026-11-14 | UX (LongCat 2.5 Free) | `restore/phase-1-ux` / `aaaa83b` | **Aprovado com ressalvas** | `npm run type-check` OK; `npm run test:unit` 17/17; `npm run build` OK (6,89s); rotas `/play`, `/display` emitidas | Falta validação visual em navegador real; `actionError` é ponte temporária até o socketService da branch frontend; `revision/you/presence` lidos defensivamente. |
+| 2026-11-14 | Frontend (GLM-5.3-Flash) | `restore/phase-1-frontend` / `3c0eed1` + `8db2177` | **Aprovado** | `npm run type-check` OK; `npm run test:unit` 30/30; `npm run build` OK; integração com UX: 38/38 testes | Defeito de `baseRevision` corrigido e testado; `joinTable` usa string crua (backend aceitará string e objeto). |
 | — | — | — | — | — | (preencher a cada PR) |
 
 ## 10. Registro de correções
 
 | Data | Coder | Defeito | Correção pedida | Rodada | Status |
 |---|---|---|---|---|---|
-| 2026-11-14 | Frontend (GLM-5.3-Flash) | `applyPatch` aplicava patch com `baseRevision` antigo quando `revision === local + 1` | Ressincronizar sempre que `baseRevision !== revision`; teste com local 5, base 3, revision 6 | 1 | devolvido |
+| 2026-11-14 | Frontend (GLM-5.3-Flash) | `applyPatch` aplicava patch com `baseRevision` antigo quando `revision === local + 1` | Ressincronizar sempre que `baseRevision !== revision`; teste com local 5, base 3, revision 6 | 1 | corrigido em `8db2177` |
 | — | — | — | — | — | — |
 
 ## 11. Riscos e limites
