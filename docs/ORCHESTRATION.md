@@ -31,38 +31,55 @@ Regras herdadas de `AGENTS.md`:
 
 | Coder | Escopo | Branch | Worktree | Modelo | Status |
 |---|---|---|---|---|---|
-| `coder-backend` | Protocolo de estado, authz por entidade, revisão, turnos, reconexão server-side, refresh de JWT | `restore/phase-1-backend` | `.worktrees/p1-backend` | `opencode/deepseek-v4.1-flash-free` | a iniciar |
-| `coder-frontend` | Cliente Socket.IO, store de revisão, ack/timeout, resync, fallback de transporte | `restore/phase-1-frontend` | `.worktrees/p1-frontend` | `opencode/glm-5.3-flash-free` | a iniciar |
-| `coder-ux` | `/play/:id` e `/display/:id`, mobile, TV read-only, safe areas, alvos de toque | `restore/phase-1-ux` | `.worktrees/p1-ux` | `opencode/longcat-2.5-free` | a iniciar |
-| `coder-qa` | Testes de autorização, caos com 6 clientes, convergência de revisão | `restore/phase-1-qa` | `.worktrees/p1-qa` | `opencode/minimax-m3.1-flash-free` | a iniciar |
+| `coder-backend` | Protocolo de estado, authz por entidade, revisão, turnos, reconexão server-side, refresh de JWT | `restore/phase-1-backend` | `.worktrees/p1-backend` | `opencode-go/mimo-v2.6-flash` | a iniciar |
+| `coder-frontend` | Cliente Socket.IO, store de revisão, ack/timeout, resync, fallback de transporte | `restore/phase-1-frontend` | `.worktrees/p1-frontend` | `opencode-go/glm-5.3-flash` | a iniciar |
+| `coder-ux` | `/play/:id` e `/display/:id`, mobile, TV read-only, safe areas, alvos de toque | `restore/phase-1-ux` | `.worktrees/p1-ux` | `opencode-go/longcat-2.5-free` | concluído — commit `aaaa83b` |
+| `coder-qa` | Testes de autorização, caos com 6 clientes, convergência de revisão | `restore/phase-1-qa` | `.worktrees/p1-qa` | `opencode-go/minimax-m3.1-flash` | a iniciar |
+| PO/auditor | Contrato, revisão, testes, merge, documentação | `restore/phase-1-realtime` | raiz | `opencode-go/deepseek-v4.1-flash` (1017) | ativo |
 
 Integração: `restore/phase-1-realtime` (criada de `main` em `de0ca9f`).
 Nenhum coder commita na integração.
 
-### 2.1 Por que esses modelos
+### 2.1 Por que esses modelos (revisão 2026-11-14, plano Go)
 
-Pesquisa feita em 2026-11-14 (fontes: cards oficiais, Artificial Analysis, Vals AI,
-Meituan/LongCat, NVIDIA, OpenCode docs).
+A primeira rodada usou modelos `*-free` do Zen. Três coders bateram no limite
+diário gratuito (“Free usage limit reached”). O PO migrou a equipe para o plano
+**OpenCode Go**, cujos limites são por modelo e divididos em janelas de 5 horas
+(20%), semana (50%) e mês (100%). O PO continua em
+`opencode-go/deepseek-v4.1-flash` (DeepSeek V4.1 Flash 1017), como definido pelo
+usuário.
 
-| Modelo | Evidência principal | Por que foi escolhido |
-|---|---|---|
-| `deepseek-v4.1-flash-free` | DeepSWE v1.1 ~74; Terminal-Bench 2.1 ~90 no harness próprio; SkillsBench ~69,8; AutomationBench ~55-69; 1M contexto; rápido; provider zero-retention | Melhor relação agente-código/ferramenta entre os gratuitos. O backend desta fase é exatamente isso: muitas mutações, autorização, revisão, testes de integração e uso intenso de ferramentas. |
-| `glm-5.3-flash-free` | Terminal-Bench 2.1 ~82-84; SWE-bench Verified ~79; Terminal-Bench 4.0 ~38; 1M contexto | Mais estável em tarefas longas de terminal/refactor que o MiniMax; escolhido para o cliente realtime, que precisa de paciência para reconciliar eventos e não “inventar” estado. |
-| `longcat-2.5-free` | Terminal-Bench 2.1 88,4; DeepSWE 64,6; nativo multimodal; 1,6T MoE; visual/3D forte; 100 req/dia | Trabalho de UX/design exige leitura de tela, hierarquia visual e iteração com screenshots. O limite de 100 req/dia é aceitável porque UX tem menos ciclos que backend. Provider zero-retention. |
-| `minimax-m3.1-flash-free` | DeepSWE 73,7; AutomationBench 62,8; OSWorld 61,7; 1M contexto; multimodal | QA de caos é automação de agente com muitos passos e ferramentas. O ponto fraco (alucinação factual) é mitigado porque o resultado é um teste executável: ou converge, ou falha. |
+Fontes: `https://opencode.ai/docs/go/` (tabela de limites e estimativas de
+requisições), cards oficiais, Artificial Analysis, Vals AI, Xiaomi/MiMo, Meta,
+Alibaba e OpenCode Console.
+
+| Modelo | Limite Go (5h / semana / mês) | Evidência | Por que foi escolhido |
+|---|---|---|---|
+| `mimo-v2.6-flash` | 30.100 / 75.200 / 150.400 req | DeepSWE 67,9; Terminal-Bench 2.1 87,6 (fornecedor) e 76,4 (Vals); OSWorld 80,8; Visual Coding 71,5; 1M contexto | **Backend.** Segundo maior limite prático depois do DeepSeek do PO, com coding agêntico forte e contexto de 1M. O backend tem muitas mutações, testes e leituras de arquivo; volume importa. |
+| `glm-5.3-flash` | 6.320 / 15.790 / 31.580 req | Terminal-Bench 2.1 ~82-84; SWE-bench Verified ~79; Terminal-Bench 4.0 ~38; 1M contexto | **Frontend.** Menos volume que backend, mas exige paciência em refactor e reconciliação de eventos. GLM é estável e não alucina estado com a mesma frequência. |
+| `longcat-2.5-free` | Gratuito no Go; 100 req/dia | Terminal-Bench 2.1 88,4; DeepSWE 64,6; multimodal; visual/3D forte | **UX.** Já entregou a branch com sucesso. O trabalho visual exige leitura de tela e iteração; 100 req/dia é suficiente para menos ciclos. |
+| `minimax-m3.1-flash` | 3.880 / 9.690 / 19.380 req | DeepSWE 73,7; AutomationBench 62,8; OSWorld 61,7; 1M contexto | **QA.** Automação de agentes e muitos passos de ferramenta. O resultado é um teste executável: converge ou falha, o que mitiga o ponto fraco de alucinação factual. |
+| `deepseek-v4.1-flash` (PO) | 43.330 / 108.330 / 216.670 req | DeepSWE ~77; Terminal-Bench 2.1 ~90; melhor agente-código/ferramenta do conjunto | **PO/auditor.** Revisão, execução de testes e merges. O maior limite fica com quem mais precisa de contexto longo e julgamento. |
 
 Modelos considerados e não escolhidos:
 
-- `flint-40b-free`: ótimo custo/velocidade, mas 262K de contexto e menos maduro em
-  tarefas longas; fica como reserva para patches pequenos.
-- `nemotron-3.5-super-vl-free`: multimodal e bom em SWE (71), mas Terminal-Bench 2.1
-  ~60 e DeepSWE ~24; bom para inspeção visual, não para o núcleo.
-- `nemotron-3.5-lightning-free`: pequeno; só para tarefas mecânicas.
-- `inkling-2-small-free`, `big-pickle`, `iceman-free`, `beam-free`, `mimo-v2.6-flash-free`:
-  informação pública insuficiente ou foco não comprovado em código; não usar no caminho
-  crítico.
-- `glm-5.3-flash-free` vs `minimax-m3.1-flash-free`: GLM escolhido para frontend por
-  confiabilidade; MiniMax para QA por automação.
+- `muse-spark-1.3-contributor`: maior limite (45.300 / 113.300 / 226.600) e
+  benchmarks fortes (DeepSWE 75,4; Terminal-Bench 88,8), mas é “limited regions”
+  e o tier Contributor tem termos de treinamento. Fica como **reserva** se
+  disponível na região e se um coder esgotar a cota.
+- `miMo-v2.6-pro`: melhor que o Flash em alguns benchmarks, mas limite de
+  3.250 / 8.150 / 16.300 e custo maior; não compensa para esta fase.
+- `qwen3.7-plus`: SWE-bench 77,7 e Terminal-Bench 2.0 70,3, mas DeepSWE 16,5
+  (fraco em longa duração) e limite 4.300 / 10.800 / 21.600; não serve para o
+  núcleo.
+- `glm-5.3`: qualidade alta, mas limite 220 / 540 / 1.080; inviável para coder.
+- `claude-haiku-5-5`, `gpt-6-luna`, `hy4`: limites menores (≈2.700-4.200 / 5h)
+  e/ou perfil menos comprovado em agente-código; ficam como fallback.
+- `iceman-contributor-free`, `beam-free`: gratuitos no Go e sem cota, mas são
+  modelos stealth com dados de treinamento/qualidade incerta. Reserva para
+  tarefas mecânicas, nunca para o caminho crítico.
+- `hy4`, `kimi-k3.1-pro`, `grok-4.7`, `gemini-4-argon`: cotas baixas demais
+  (147-2.710 req/5h) para o volume de um coder.
 
 ## 3. Skills instaladas e designação
 
@@ -167,11 +184,19 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-14 | PRs são branches locais, não GitHub PRs | Beta local-first; revisão e merge pelo PO. |
 | 2026-11-14 | `socket.io-client` entra como devDependency do backend | Exigência de teste de integração com 2+ clientes. |
 | 2026-11-14 | LongCat 2.5 no UX apesar de 100 req/dia | Menos ciclos; limite suficiente para a fase. |
+| 2026-11-14 | Primeira rodada com modelos `*-free` do Zen falhou por cota diária | Backend, frontend e QA receberam “Free usage limit reached”; UX concluiu antes do limite. |
+| 2026-11-14 | Migrar a equipe para o plano Go | Limites por modelo com janelas de 5h/semana/mês; o Go permite continuar sem depender da cota diária gratuita. |
+| 2026-11-14 | Backend em MiMo-V2.6-Flash | Maior limite prático fora o DeepSeek do PO; coding agêntico forte e 1M de contexto. |
+| 2026-11-14 | Frontend em GLM-5.3-Flash | Menor volume, maior necessidade de estabilidade em refactor e reconciliação. |
+| 2026-11-14 | QA em MiniMax M3.1 Flash | Automação/OSWorld fortes; teste executável reduz risco de alucinação. |
+| 2026-11-14 | DeepSeek V4.1 Flash 1017 fica reservado ao PO | Maior cota e melhor julgamento; evita disputa de limite com coders. |
+| 2026-11-14 | Muse Spark 1.3 Contributor como reserva | Maior cota do print (226k/mês), mas região limitada e termos de treinamento. |
 
 ## 9. Registro de resultados
 
 | Data | Coder | Branch/commit | Veredito | Evidência | Observações |
 |---|---|---|---|---|---|
+| 2026-11-14 | UX (LongCat 2.5 Free) | `restore/phase-1-ux` / `aaaa83b` | **Aprovado com ressalvas** | `npm run type-check` OK; `npm run test:unit` 17/17; `npm run build` OK (6,89s); rotas `/play`, `/display` emitidas | Falta validação visual em navegador real; `actionError` é ponte temporária até o socketService da branch frontend; `revision/you/presence` lidos defensivamente. |
 | — | — | — | — | — | (preencher a cada PR) |
 
 ## 10. Registro de correções
