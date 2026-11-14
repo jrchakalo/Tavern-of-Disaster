@@ -4,3 +4,6 @@
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Node modules
+tests/e2e/node_modules/

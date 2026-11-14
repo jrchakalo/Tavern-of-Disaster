@@ -1,49 +1,54 @@
 import { Server, Socket } from 'socket.io';
 import Table from '../models/Table.model';
-import Scene from '../models/Scene.model';
-import Token from '../models/Token.model';
-import { setMeasurement, removeMeasurement, clearAllForUser, getTablesForUser, addPersistent, removePersistent, listPersistents, upsertAura, removeAura, listAuras, clearPersistentsForScene } from './measurementStore';
+import {
+  shareEphemeralMeasurement,
+  removeEphemeralMeasurement,
+  cleanupUserMeasurements,
+  addPersistentMeasurement,
+  removePersistentMeasurement,
+  clearAllMeasurements,
+  upsertTokenAura,
+  removeTokenAura,
+} from '../services/measurementService';
 import { nanoid } from 'nanoid';
+import { createLogger } from '../logger';
+import { validate } from '../validation/validate';
+import {
+  zShareMeasurementPayload,
+  zAddPersistentMeasurementPayload,
+  zRemovePersistentMeasurementPayload,
+  zClearAllMeasurementsPayload,
+} from '../validation/schemas';
+import type {
+  ShareMeasurementPayload,
+  AddPersistentMeasurementPayload,
+  RemovePersistentMeasurementPayload,
+  ClearAllMeasurementsPayload,
+} from '../validation/schemas';
 
 export function registerMeasurementHandlers(io: Server, socket: Socket) {
+  const log = createLogger({ scope: 'socket:measurement', socketId: socket.id, userId: socket.data.user?.id });
+
   // Compartilha medição efêmera. Jogador só pode se for turno do seu token; Mestre sempre.
-  const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; color?: string; }) => {
+  const requestShareMeasurement = async (payload: unknown) => {
+    let data: ShareMeasurementPayload | undefined;
     try {
       const user = socket.data.user;
       if (!user) return;
-      const { tableId, sceneId, start, end, distance, type, affectedSquares } = data;
-      const table = await Table.findById(tableId).populate('dm', '_id username').populate('players', '_id username').populate('activeScene');
-      if (!table) return;
-      if (!table.activeScene || table.activeScene._id.toString() !== sceneId) return; // only for active scene
-
-  // Permissão: Mestre sempre; jogador apenas se é dono do token em turno
-      const isDM = table.dm._id.toString() === user.id;
-      let canShare = isDM;
-      if (!isDM) {
-        const scene = await Scene.findById(sceneId);
-        const currentEntry = scene?.initiative?.find((e: any) => e.isCurrentTurn);
-        if (currentEntry?.tokenId) {
-          const token = await Token.findById(currentEntry.tokenId);
-          if (token && token.ownerId?.toString() === user.id) {
-            canShare = true;
-          }
-        }
-      }
-      if (!canShare) return; // silencioso
-
-  // Cor padrão: Mestre roxo; jogador mantém cor enviada/fallback
-      const color = isDM ? '#3c096c' : (data.color || '#ff8c00');
-      const measurement = {
-        userId: user.id,
-        username: user.username,
-        start, end, distance, color,
-        type: type || 'ruler',
-        affectedSquares: Array.isArray(affectedSquares) ? affectedSquares : undefined,
-        sceneId
-      };
-      setMeasurement(tableId, user.id, measurement);
+      data = validate(zShareMeasurementPayload, payload);
+      const { tableId, sceneId, start, end, distance, type, affectedSquares, color } = data;
+      const measurement = await shareEphemeralMeasurement(user, tableId, sceneId, {
+        start,
+        end,
+        distance,
+        type,
+        affectedSquares,
+        color: color || '#ff8c00',
+        sceneId,
+      });
+      if (!measurement) return;
       io.to(tableId).emit('measurementShared', measurement);
-    } catch (e) { console.error('Erro share measurement', e); }
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'Erro share measurement'); }
   };
 
   // Remove medição efêmera própria.
@@ -51,7 +56,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
     const user = socket.data.user;
     if (!user) return;
     const { tableId } = data;
-    removeMeasurement(tableId, user.id);
+    removeEphemeralMeasurement(tableId, user.id);
     io.to(tableId).emit('measurementRemoved', { userId: user.id });
   };
 
@@ -60,9 +65,8 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
     const user = socket.data.user;
     if (!user) return;
     // Emite remoção para todas as mesas onde o usuário tinha medição, e limpa
-    const tables = getTablesForUser(user.id);
+    const tables = cleanupUserMeasurements(user.id);
     tables.forEach(tid => io.to(tid).emit('measurementRemoved', { userId: user.id }));
-    clearAllForUser(user.id);
   };
 
   socket.on('requestShareMeasurement', requestShareMeasurement);
@@ -71,68 +75,67 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
 
   // --- Persistentes ---
   // Cria/guarda medição persistente associada à cena. Mestre sempre; jogador apenas no seu turno.
-  socket.on('requestAddPersistentMeasurement', async (data: { tableId: string; sceneId: string; payload: { id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; color?: string } }) => {
+  const requestAddPersistentMeasurement = async (payload: unknown) => {
+    let data: AddPersistentMeasurementPayload | undefined;
     try {
       const user = socket.data.user;
       if (!user) return;
-      const { tableId, sceneId, payload } = data;
-      const table = await Table.findById(tableId).populate('dm','_id');
-      if (!table) return;
-      const isDM = table.dm._id.toString() === user.id;
-      // Jogador pode adicionar no próprio turno; DM sempre
-      let canAdd = isDM;
-      if (!isDM) {
-        const scene = await Scene.findById(sceneId);
-        const currentEntry = scene?.initiative?.find((e:any)=>e.isCurrentTurn);
-        if (currentEntry?.tokenId) {
-          const tok = await Token.findById(currentEntry.tokenId);
-          canAdd = tok?.ownerId?.toString() === user.id;
-        }
-      }
-    if (!canAdd) return;
-  const color = isDM ? '#3c096c' : (payload.color || '#ff8c00');
-  const id = payload.id || nanoid(8);
-  addPersistent(tableId, sceneId, { id, userId: user.id, username: user.username, color, sceneId, start: payload.start, end: payload.end, distance: payload.distance, type: payload.type, affectedSquares: payload.affectedSquares });
-  io.to(tableId).emit('persistentMeasurementAdded', { tableId, sceneId, ownerId: user.id, userId: user.id, id, start: payload.start, end: payload.end, distance: payload.distance, type: payload.type, affectedSquares: payload.affectedSquares, color, username: user.username });
-    } catch (e) { console.error('requestAddPersistentMeasurement', e);} 
-  });
+      data = validate(zAddPersistentMeasurementPayload, payload);
+      const { tableId, sceneId, payload: measurementPayload } = data;
+      const persistent = await addPersistentMeasurement(user, tableId, sceneId, {
+        ...measurementPayload,
+        color: measurementPayload.color || '#ff8c00',
+        sceneId,
+      });
+      io.to(tableId).emit('persistentMeasurementAdded', {
+        tableId,
+        sceneId,
+        ownerId: user.id,
+        userId: persistent.userId,
+        id: persistent.id,
+        start: persistent.start,
+        end: persistent.end,
+        distance: persistent.distance,
+        type: persistent.type,
+        affectedSquares: persistent.affectedSquares,
+        color: persistent.color,
+        username: persistent.username,
+      });
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestAddPersistentMeasurement'); }
+  };
 
   // Remove medição persistente (Mestre ou autor).
-  socket.on('requestRemovePersistentMeasurement', async (data: { tableId: string; sceneId: string; id: string }) => {
+  const requestRemovePersistentMeasurement = async (payload: unknown) => {
+    let data: RemovePersistentMeasurementPayload | undefined;
     try {
       const user = socket.data.user; if (!user) return;
+      data = validate(zRemovePersistentMeasurementPayload, payload);
       const { tableId, sceneId, id } = data;
-      const table = await Table.findById(tableId).populate('dm','_id');
-      if (!table) return;
-      const isDM = table.dm._id.toString() === user.id;
-      // Permitir DM sempre; autor pode remover seu próprio
-      const items = listPersistents(tableId, sceneId);
-      const item = items.find(i => i.id === id);
-      if (!item) return;
-      if (!(isDM || item.userId === user.id)) return;
-      removePersistent(tableId, sceneId, id);
+      await removePersistentMeasurement(user, tableId, sceneId, id);
       io.to(tableId).emit('persistentMeasurementRemoved', { sceneId, id });
-    } catch (e) { console.error('requestRemovePersistentMeasurement', e);} 
-  });
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestRemovePersistentMeasurement'); }
+  };
 
   // Limpar todas as medições compartilhadas da mesa (DM apenas)
   // Limpa (Mestre) tudo: efêmeras + persistentes + auras da cena.
-  socket.on('requestClearAllMeasurements', async (data: { tableId: string; sceneId: string }) => {
+  const requestClearAllMeasurements = async (payload: unknown) => {
+    let data: ClearAllMeasurementsPayload | undefined;
     try {
       const user = socket.data.user; if (!user) return;
+      data = validate(zClearAllMeasurementsPayload, payload);
       const { tableId, sceneId } = data;
       const table = await Table.findById(tableId).populate('dm','_id');
       if (!table) return;
       const isDM = table.dm._id.toString() === user.id;
       if (!isDM) return;
-      // Limpa em memória e notifica os clientes
-      const { clearMeasurementsForTable, clearAurasForScene } = await import('./measurementStore');
-      clearMeasurementsForTable(tableId);
-      if (sceneId) clearPersistentsForScene(tableId, sceneId);
-      if (sceneId) clearAurasForScene(tableId, sceneId);
+      await clearAllMeasurements(tableId, sceneId);
       io.to(tableId).emit('allMeasurementsCleared', { sceneId });
-    } catch (e) { console.error('requestClearAllMeasurements', e); }
-  });
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestClearAllMeasurements'); }
+  };
+
+  socket.on('requestAddPersistentMeasurement', requestAddPersistentMeasurement);
+  socket.on('requestRemovePersistentMeasurement', requestRemovePersistentMeasurement);
+  socket.on('requestClearAllMeasurements', requestClearAllMeasurements);
 
   // --- Auras ancoradas ao token ---
   // Inclui/atualiza aura ancorada a token. Permissão: Mestre, dono do token ou dono do token em turno.
@@ -140,27 +143,9 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
     try {
       const user = socket.data.user; if (!user) return;
   const { tableId, sceneId, tokenId, name, color, radiusMeters, difficultTerrain } = data;
-      const table = await Table.findById(tableId).populate('dm','_id');
-      if (!table) return;
-      const token = await Token.findById(tokenId);
-      if (!token) return;
-      const isDM = table.dm._id.toString() === user.id;
-      const isOwner = token.ownerId?.toString() === user.id;
-      // Permitir também o jogador cujo token está no turno atual
-      let isTurnOwner = false;
-      try {
-        const scene = await Scene.findById(sceneId);
-        const currentEntry: any = scene?.initiative?.find((e: any) => e.isCurrentTurn);
-        if (currentEntry?.tokenId) {
-          const turnTok = await Token.findById(currentEntry.tokenId);
-          if (turnTok && turnTok.ownerId?.toString() === user.id) isTurnOwner = true;
-        }
-      } catch {}
-      if (!(isDM || isOwner || isTurnOwner)) return;
-  const aura = { id: tokenId, tokenId, tableId, sceneId, name: name?.trim() || 'Aura', color, radiusMeters: Math.max(0, radiusMeters || 0), ownerId: token.ownerId?.toString() || user.id, difficultTerrain: !!difficultTerrain };
-      upsertAura(aura);
+      const aura = await upsertTokenAura(user, tableId, sceneId, tokenId, { name, color, radiusMeters, difficultTerrain });
       io.to(tableId).emit('auraUpserted', aura);
-    } catch (e) { console.error('requestUpsertAura', e); }
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestUpsertAura'); }
   });
 
   // Remove aura (apenas Mestre).
@@ -168,13 +153,9 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
     try {
       const user = socket.data.user; if (!user) return;
       const { tableId, sceneId, tokenId } = data;
-      const table = await Table.findById(tableId).populate('dm','_id');
-      if (!table) return;
-      const isDM = table.dm._id.toString() === user.id;
-      if (!isDM) return; // Apenas DM remove
-      removeAura(tableId, sceneId, tokenId);
+      await removeTokenAura(user, tableId, sceneId, tokenId);
       io.to(tableId).emit('auraRemoved', { sceneId, tokenId });
-    } catch (e) { console.error('requestRemoveAura', e); }
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestRemoveAura'); }
   });
 
   // Ping efêmero (ripple). Apenas verifica se usuário está na mesa e cena ativa bate.
@@ -188,6 +169,6 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       if (!table.activeScene || table.activeScene._id.toString() !== sceneId) return;
       const payload = { id: nanoid(6), userId: user.id, username: user.username, sceneId, squareId, x, y, color, ts: Date.now() };
       io.to(tableId).emit('pingBroadcast', payload);
-    } catch (e) { console.error('requestPing', e); }
+    } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestPing'); }
   });
 }

@@ -2,14 +2,24 @@ import { Router, RequestHandler } from 'express';
 import { nanoid } from 'nanoid';
 import mongoose, { Types } from 'mongoose'
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
+import { limitCreate } from '../middleware/rateLimit';
 import Table from '../models/Table.model';
-import Scene from '../models/Scene.model';
-import Token from '../models/Token.model';
+import System from '../models/System.model';
+import SceneTemplate from '../models/SceneTemplate.model';
+import TokenTemplate from '../models/TokenTemplate.model';
+import { createScene as createSceneService, renameScene, deleteScene as deleteSceneService, createDefaultScene } from '../services/sceneService';
+import { addPlayerToTable, removePlayerFromTable, getTableById, assertUserIsDM, deleteTableAndDependents } from '../services/tableService';
+import { clearAllMeasurements, clearTableMeasurementState } from '../services/measurementService';
+import { addTokenToInitiative } from '../services/initiativeService';
+import { createToken } from '../services/tokenService';
+import { ServiceError } from '../services/serviceErrors';
+import { createLogger } from '../logger';
 
 const router = Router();
+const log = createLogger({ scope: 'table-routes' });
 
 // Rota para criar uma nova mesa.
-router.post('/create', authMiddleware, (async (req: AuthRequest, res) => {
+router.post('/create', authMiddleware, limitCreate, (async (req: AuthRequest, res) => {
   try {
     const { name } = req.body;
     const dmId = req.user?.id; // Pegamos o ID do usuário que o middleware decodificou do token
@@ -26,25 +36,20 @@ router.post('/create', authMiddleware, (async (req: AuthRequest, res) => {
     const newTable = new Table({
       name,
       dm: dmId,
-      players: [dmId], // O mestre é automaticamente o primeiro jogador
-      inviteCode: nanoid(8), // Gera um código de convite aleatório de 8 caracteres
-      scenes: [], // Inicia com um array vazio de cenas
+      players: [dmId],
+      inviteCode: nanoid(8),
+      scenes: [],
     });
 
-    const defaultScene = new Scene({
-      tableId: newTable._id,
-      name: 'Primeira Cena',
-      imageUrl: '', // Começa sem imagem
-    });
-
-    await defaultScene.save();
+    await newTable.save();
+    const defaultScene = await createDefaultScene(newTable._id);
     newTable.activeScene = defaultScene._id;
     newTable.scenes.push(defaultScene._id);
     await newTable.save();
     res.status(201).json(newTable); // Retorna os dados da nova mesa criada
 
   } catch (error) {
-    console.error('Erro ao criar a mesa:', error);
+    log.error({ err: error }, 'Erro ao criar a mesa');
     res.status(500).json({ message: 'Erro interno ao criar a mesa.' });
   }
 }) as RequestHandler);
@@ -65,7 +70,7 @@ router.get('/mytables', authMiddleware, (async (req: AuthRequest, res) => {
     res.json(tables);
 
   } catch (error) {
-    console.error('Erro ao buscar mesas do usuário:', error);
+    log.error({ err: error }, 'Erro ao buscar mesas do usuário');
     res.status(500).json({ message: 'Erro interno ao buscar as mesas.' });
   }
 }) as RequestHandler);
@@ -87,19 +92,17 @@ router.post('/join', authMiddleware, (async (req: AuthRequest, res) => {
 
     // Verifica se o usuário já é um jogador nesta mesa
     if (table.players.map(p => p.toString()).includes(userId!)) {
-      console.log(`Usuário ${userId} já está na mesa ${table.name}`);
+      log.info({ userId, tableId: table._id }, 'Usuário já está na mesa');
       // Retorna sucesso, pois o usuário já é membro.
       return res.json({ message: 'Você já faz parte desta mesa.', table });
     }
 
-    // Adiciona o novo jogador ao array de jogadores
-    table.players.push(new Types.ObjectId(userId!));
-    await table.save();
+    await addPlayerToTable(table as any, userId!);
 
     res.json({ message: `Você entrou na mesa "${table.name}" com sucesso!`, table });
 
   } catch (error) {
-    console.error('Erro ao entrar na mesa:', error);
+    log.error({ err: error }, 'Erro ao entrar na mesa');
     res.status(500).json({ message: 'Erro interno ao entrar na mesa.' });
   }
 }) as RequestHandler);
@@ -111,36 +114,66 @@ router.post('/:tableId/scenes', authMiddleware, (async (req: AuthRequest, res) =
   const { name, imageUrl, gridWidth, gridHeight, type } = req.body;
     const userId = req.user?.id;
 
-    const table = await Table.findById(tableId);
+    const table = await getTableById(tableId);
 
     if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
     // Verificação de permissão: só o Mestre pode adicionar cenas
-    if (table.dm.toString() !== userId) {
-      return res.status(403).json({ message: 'Apenas o Mestre pode adicionar cenas.' });
-    }
+    assertUserIsDM(userId, table);
 
-  const resolvedWidth = gridWidth || 30;
-  const resolvedHeight = gridHeight || 30;
-
-    const newScene = new Scene({
-      tableId: table._id,
-      name: name || 'Nova Cena',
-      imageUrl: imageUrl || '',
-  gridWidth: resolvedWidth,
-  gridHeight: resolvedHeight,
-      type: type || 'battlemap',
+    const newScene = await createSceneService(table as any, {
+      name,
+      imageUrl,
+      gridWidth,
+      gridHeight,
+      type,
     });
-    await newScene.save();
 
-    // Adiciona a nova cena ao array de cenas da mesa
-    table.scenes.push(newScene._id);
-    await table.save();
-
-    res.status(201).json(newScene); // Retorna a cena recém-criada
+    res.status(201).json(newScene);
 
   } catch (error) {
-    console.error('Erro ao adicionar cena:', error);
+    log.error({ err: error }, 'Erro ao adicionar cena');
     res.status(500).json({ message: 'Erro interno ao adicionar cena.' });
+  }
+}) as RequestHandler);
+
+router.post('/:tableId/scenes/from-template/:templateId', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId, templateId } = req.params;
+    const overrides = req.body || {};
+    const userId = req.user?.id;
+
+    const table = await getTableById(tableId);
+    if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
+    assertUserIsDM(userId, table);
+
+    if (!Types.ObjectId.isValid(templateId)) {
+      return res.status(400).json({ message: 'Template inválido.' });
+    }
+
+    const template = await SceneTemplate.findById(templateId);
+    if (!template) {
+      return res.status(404).json({ message: 'Template de cena não encontrado.' });
+    }
+    if (template.ownerId.toString() !== userId) {
+      return res.status(403).json({ message: 'Sem permissão para usar este template.' });
+    }
+
+    const sanitizeNumber = (value: unknown) => typeof value === 'number' && value > 0 ? value : undefined;
+    const sanitizeText = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined;
+
+    const scene = await createSceneService(table as any, {
+      name: sanitizeText(overrides.name) || template.name,
+      imageUrl: sanitizeText(overrides.mapUrl) || sanitizeText(overrides.imageUrl) || template.mapUrl,
+      gridWidth: sanitizeNumber(overrides.gridWidth) || template.gridWidth,
+      gridHeight: sanitizeNumber(overrides.gridHeight) || template.gridHeight,
+      type: sanitizeText(overrides.type) as any || template.type,
+      metersPerSquare: sanitizeNumber(overrides.metersPerSquare) || template.defaultMetersPerSquare,
+    });
+
+    res.status(201).json(scene);
+  } catch (error) {
+    log.error({ err: error }, 'Erro ao criar cena via template');
+    res.status(500).json({ message: 'Erro interno ao criar cena via template.' });
   }
 }) as RequestHandler);
 
@@ -150,28 +183,93 @@ router.put('/:tableId/scenes/:sceneId', authMiddleware, (async (req: AuthRequest
     const { name} = req.body; // Pega os novos dados do corpo da requisição
     const userId = req.user?.id;
 
-    const table = await Table.findById(tableId);
-    if (!table || table.dm.toString() !== userId) {
-      return res.status(403).json({ message: 'Acesso negado.' });
-    }
-
-    // Garante que a cena a ser editada realmente pertence à mesa
+    const table = await getTableById(tableId);
+    if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
+    assertUserIsDM(userId, table);
     if (!table.scenes.map(s => s.toString()).includes(sceneId)) {
       return res.status(404).json({ message: 'Cena não encontrada nesta mesa.' });
     }
 
-    const updatedScene = await Scene.findByIdAndUpdate(
-      sceneId,
-      { name },
-      { new: true } // Retorna o documento atualizado
-    );
-
-    if (!updatedScene) return res.status(404).json({ message: 'Cena não encontrada.' });
-
+    const updatedScene = await renameScene(sceneId, name);
     res.json(updatedScene);
 
   } catch (error) {
     res.status(500).json({ message: 'Erro ao editar a cena.' });
+  }
+}) as RequestHandler);
+
+router.post('/:tableId/scenes/:sceneId/tokens/from-template/:templateId', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId, sceneId, templateId } = req.params;
+    const {
+      squareId,
+      ownerId,
+      name,
+      size,
+      imageUrl,
+      color,
+      movement,
+      canOverlap,
+      characterId,
+    } = req.body || {};
+    const userId = req.user?.id;
+
+    if (!squareId || typeof squareId !== 'string' || !squareId.trim()) {
+      return res.status(400).json({ message: 'squareId é obrigatório.' });
+    }
+
+    const table = await getTableById(tableId);
+    if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
+    assertUserIsDM(userId, table);
+
+    const sceneBelongs = table.scenes.some((scene) => scene.toString() === sceneId);
+    if (!sceneBelongs) {
+      return res.status(404).json({ message: 'Cena não pertence à mesa.' });
+    }
+
+    if (!Types.ObjectId.isValid(templateId)) {
+      return res.status(400).json({ message: 'Template inválido.' });
+    }
+
+    const template = await TokenTemplate.findById(templateId);
+    if (!template) {
+      return res.status(404).json({ message: 'Template de token não encontrado.' });
+    }
+    if (template.ownerId.toString() !== userId) {
+      return res.status(403).json({ message: 'Sem permissão para usar este template.' });
+    }
+
+    const finalName = typeof name === 'string' && name.trim() ? name.trim() : template.name;
+    if (!finalName) {
+      return res.status(400).json({ message: 'Nome do token não pode ser vazio.' });
+    }
+
+    const finalSize = typeof size === 'string' && size.trim() ? size.trim() : (template.size || 'Pequeno/Médio');
+    const finalImageUrl = typeof imageUrl === 'string' ? imageUrl : (template.imageUrl || undefined);
+    const movementOverride = typeof movement === 'number' && movement > 0 ? movement : template.baseMovement;
+    const finalColor = typeof color === 'string' && color.trim() ? color.trim() : template.color;
+    const tokenOwnerId = typeof ownerId === 'string' && ownerId.trim() ? ownerId.trim() : userId!;
+    const normalizedCharacterId = typeof characterId === 'string' && characterId.trim() ? characterId.trim() : null;
+
+    const token = await createToken({
+      tableId,
+      sceneId,
+      squareId: squareId.trim(),
+      ownerId: tokenOwnerId,
+      name: finalName,
+      imageUrl: finalImageUrl,
+      movement: movementOverride,
+      size: finalSize,
+      canOverlap: typeof canOverlap === 'boolean' ? canOverlap : false,
+      color: finalColor,
+      characterId: normalizedCharacterId,
+    });
+
+    const initiative = await addTokenToInitiative(sceneId, token as any);
+    res.status(201).json({ token, initiative });
+  } catch (error) {
+    log.error({ err: error }, 'Erro ao criar token via template');
+    res.status(500).json({ message: 'Erro interno ao criar token via template.' });
   }
 }) as RequestHandler);
 
@@ -181,30 +279,17 @@ router.delete('/:tableId/scenes/:sceneId', authMiddleware, (async (req: AuthRequ
         const { tableId, sceneId } = req.params;
         const userId = req.user?.id;
 
-        const table = await Table.findById(tableId);
-        if (!table || table.dm.toString() !== userId) {
-            return res.status(403).json({ message: 'Acesso negado.' });
-        }
-    const isDeletingActive = table.activeScene?.toString() === sceneId;
+        const table = await getTableById(tableId);
+        if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
+        assertUserIsDM(userId, table);
 
-    // Remove a cena da lista da mesa (em memória para decidir próxima ativa)
-    const newScenes = table.scenes.filter(s => s.toString() !== sceneId);
-    table.scenes = newScenes as any;
-
-    // Se está removendo a ativa, define a primeira restante como ativa (ou null se vazio)
-    if (isDeletingActive) {
-      table.activeScene = newScenes.length > 0 ? (newScenes[0] as any) : undefined;
-    }
-    await table.save();
-
-    // Deleta a cena e tokens relacionados
-    await Scene.findByIdAndDelete(sceneId);
-    await Token.deleteMany({ sceneId: sceneId });
+  const result = await deleteSceneService(table as any, sceneId);
+  await clearAllMeasurements(tableId, sceneId);
 
     res.status(200).json({ 
       message: 'Cena excluída com sucesso.', 
-      activeScene: table.activeScene || null,
-      scenes: table.scenes
+      activeScene: result.activeScene,
+      scenes: result.scenes
     });
     } catch (error) {
         res.status(500).json({ message: 'Erro ao excluir a cena.' });
@@ -225,8 +310,55 @@ router.put('/:tableId', authMiddleware, (async (req: AuthRequest, res) => {
     await table.save();
     res.json({ message: 'Mesa atualizada.', table });
   } catch (error) {
-    console.error('Erro ao renomear mesa:', error);
+    log.error({ err: error }, 'Erro ao renomear mesa');
     res.status(500).json({ message: 'Erro interno.' });
+  }
+}) as RequestHandler);
+
+router.put('/:tableId/system', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const { tableId } = req.params;
+    const { systemId, systemKey } = req.body || {};
+    const userId = req.user?.id;
+
+    const table = await getTableById(tableId);
+    if (!table) {
+      res.status(404).json({ message: 'Mesa não encontrada.' });
+      return;
+    }
+    assertUserIsDM(userId, table);
+
+    const wantsClear = systemId === null || systemKey === null;
+    if (wantsClear) {
+      (table as any).systemId = null;
+      await table.save();
+      res.json({ message: 'Sistema removido da mesa.', table });
+      return;
+    }
+
+    if (!systemId && !systemKey) {
+      res.status(400).json({ message: 'Informe systemId ou systemKey.' });
+      return;
+    }
+
+    const system = systemId
+      ? await System.findById(systemId)
+      : await System.findOne({ key: systemKey });
+    if (!system) {
+      res.status(404).json({ message: 'Sistema não encontrado.' });
+      return;
+    }
+
+    (table as any).systemId = system._id;
+    await table.save();
+    res.json({ message: 'Sistema atualizado.', table });
+  } catch (error) {
+    log.error({ err: error }, 'Erro ao atualizar sistema da mesa');
+    if (error instanceof ServiceError) {
+      res.status(error.status).json({ message: error.message });
+      return;
+    }
+    res.status(500).json({ message: 'Erro interno ao atualizar sistema.' });
   }
 }) as RequestHandler);
 
@@ -235,17 +367,18 @@ router.delete('/:tableId/players/:playerId', authMiddleware, (async (req: AuthRe
   try {
     const { tableId, playerId } = req.params;
     const userId = req.user?.id;
-    const table = await Table.findById(tableId);
+    const table = await getTableById(tableId);
     if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
-    if (table.dm.toString() !== userId) return res.status(403).json({ message: 'Apenas o Mestre pode remover jogadores.' });
+    assertUserIsDM(userId, table);
     if (playerId === userId) return res.status(400).json({ message: 'Use exclusão da mesa para removê-la por completo.' });
-    const before = table.players.length;
-    table.players = table.players.filter(p => p.toString() !== playerId);
-    if (table.players.length === before) return res.status(404).json({ message: 'Jogador não está na mesa.' });
-    await table.save();
+    try {
+      await removePlayerFromTable(table as any, playerId);
+    } catch (err) {
+      return res.status(404).json({ message: 'Jogador não está na mesa.' });
+    }
     res.json({ message: 'Jogador removido.' });
   } catch (error) {
-    console.error('Erro ao remover jogador:', error);
+    log.error({ err: error }, 'Erro ao remover jogador');
     res.status(500).json({ message: 'Erro interno.' });
   }
 }) as RequestHandler);
@@ -255,18 +388,19 @@ router.post('/:tableId/leave', authMiddleware, (async (req: AuthRequest, res) =>
   try {
     const { tableId } = req.params;
     const userId = req.user?.id;
-    const table = await Table.findById(tableId);
+    const table = await getTableById(tableId);
     if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
     if (table.dm.toString() === userId) {
       return res.status(400).json({ message: 'Mestre não pode sair; exclua a mesa.' });
     }
-    const before = table.players.length;
-    table.players = table.players.filter(p => p.toString() !== userId);
-    if (table.players.length === before) return res.status(400).json({ message: 'Você não faz parte desta mesa.' });
-    await table.save();
+    try {
+      await removePlayerFromTable(table as any, userId!);
+    } catch (err) {
+      return res.status(400).json({ message: 'Você não faz parte desta mesa.' });
+    }
     res.json({ message: 'Você saiu da mesa.' });
   } catch (error) {
-    console.error('Erro ao sair da mesa:', error);
+    log.error({ err: error }, 'Erro ao sair da mesa');
     res.status(500).json({ message: 'Erro interno.' });
   }
 }) as RequestHandler);
@@ -279,16 +413,11 @@ router.delete('/:tableId', authMiddleware, (async (req: AuthRequest, res) => {
     const table = await Table.findById(tableId);
     if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
     if (table.dm.toString() !== userId) return res.status(403).json({ message: 'Apenas o Mestre pode excluir a mesa.' });
-    // Remove cenas e tokens
-    const scenes = await Scene.find({ tableId: table._id });
-    for (const sc of scenes) {
-      await Token.deleteMany({ sceneId: sc._id });
-    }
-    await Scene.deleteMany({ tableId: table._id });
-    await Table.findByIdAndDelete(tableId);
+    await deleteTableAndDependents(tableId);
+    clearTableMeasurementState(tableId);
     res.json({ message: 'Mesa excluída.' });
   } catch (error) {
-    console.error('Erro ao excluir mesa:', error);
+    log.error({ err: error }, 'Erro ao excluir mesa');
     res.status(500).json({ message: 'Erro interno.' });
   }
 }) as RequestHandler);

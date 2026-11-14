@@ -1,23 +1,39 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import draggable from 'vuedraggable';
 
 import { storeToRefs } from 'pinia';
 import { authToken, currentUser } from '../services/authService';
 import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
+import { uploadMap } from '../services/storageService';
 import { useTableStore } from '../stores/tableStore';
+import { useCharacterStore } from '../stores/characterStore';
+import { useSystemStore } from '../stores/systemStore';
+import { useUserStore } from '../stores/userStore';
 
-import GridDisplay from '../components/GridDisplay.vue';
+import MapViewport from '../components/MapViewport.vue';
+import MapViewportPixi from '../components/MapViewportPixi.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
 import TokenEditForm from '../components/TokenEditForm.vue';
 import InitiativePanel from '../components/InitiativePanel.vue';
 import Icon from '../components/Icon.vue';
 import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
+import CharacterSheet from '../components/CharacterSheet.vue';
+import ActionLog from '../components/ActionLog.vue';
+import DiceRoller from '../components/DiceRoller.vue';
+import DiceAnimation from '../components/DiceAnimation.vue';
+import DMSessionControls from '../components/DMSessionControls.vue';
+import SceneManager from '../components/SceneManager.vue';
 
-import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize } from '../types';
+import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character, DiceRolledPayload } from '../types';
+
+type MeasurementTool = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
+type ToolMode = MeasurementTool | 'select' | 'none';
+type GridDisplayExpose = { $el: HTMLElement };
+type MiddleClickHandler = ((event: MouseEvent) => void) & { lastTriggerTs?: number };
+const isMeasurementTool = (tool: ToolMode): tool is MeasurementTool => tool !== 'select' && tool !== 'none';
 
 const route = useRoute();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
@@ -41,11 +57,19 @@ const mapUrlInput = ref(''); // URL digitada para imagem de cena
 const newSceneName = ref('');
 const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena
+const isUploadingMap = ref(false);
 const isDmPanelCollapsed = ref(false);
-const gridDisplayRef = ref<any>(null);
+const gridDisplayRef = ref<GridDisplayExpose | null>(null);
 const mapImgRef = ref<HTMLImageElement | null>(null);
+const pixiRendererFlag = import.meta.env.VITE_USE_PIXI ?? 'true';
+const usePixiRenderer = ref(pixiRendererFlag !== 'false');
+const rendererComponent = computed(() => (usePixiRenderer.value ? MapViewportPixi : MapViewport));
 const imageRenderedWidth = ref<number | null>(null);
 const imageRenderedHeight = ref<number | null>(null);
+const isMobileLayout = ref(false);
+const isDmDrawerOpen = ref(false);
+const MOBILE_BREAKPOINT = 900;
+let layoutMediaQuery: MediaQueryList | null = null;
 // Escala (m por quadrado) controlada pelo Mestre
 const squareFeet = computed(() => (metersPerSquare.value || 1.5) * 3.28084);
 // Modo persistente: próxima medição vira persistente
@@ -62,17 +86,43 @@ function updateImageDimensions() {
   }
 }
 
-const activeTool = ref<'select' | 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam' | 'none'>('none');
+function setViewportEl(el: HTMLDivElement | null) {
+  viewportRef.value = el;
+}
+
+function setMapImageEl(el: HTMLImageElement | null) {
+  mapImgRef.value = el;
+}
+
+function setGridDisplayInstance(instance: GridDisplayExpose | null) {
+  gridDisplayRef.value = instance;
+}
+
+function updateLayoutFlags() {
+  if (!layoutMediaQuery) {
+    layoutMediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`);
+  }
+  const matches = layoutMediaQuery.matches;
+  isMobileLayout.value = matches;
+  if (!matches) {
+    isDmDrawerOpen.value = false;
+  }
+}
+
+function closeAssignMenu() {
+  showAssignMenu.value = false;
+}
+
+const activeTool = ref<ToolMode>('none');
 const rulerStartPoint = ref<{ x: number; y: number } | null>(null);
 const rulerEndPoint = ref<{ x: number; y: number } | null>(null);
 const rulerDistance = ref('0.0m');
-const isMeasuring = computed(() => activeTool.value !== 'none' && activeTool.value !== 'select');
+const isMeasuring = computed(() => isMeasurementTool(activeTool.value));
 const coneOriginSquareId = ref<string | null>(null); // Origem área
 const coneAffectedSquares = ref<string[]>([]); // Quadrados afetados
-const coneLength = ref(9); // Comprimento padrão do cone (m)
 const selectedPersistentId = ref<string | null>(null);
 const previewMeasurement = ref<{
-  type: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
+  type: MeasurementTool;
   start: { x: number; y: number; };
   end: { x: number; y: number; };
   distance?: string;
@@ -82,13 +132,18 @@ const previewMeasurement = ref<{
 // Mobile drag for player initiative wrapper removed per latest request
 
 const tableStore = useTableStore();
+const systemStore = useSystemStore();
+const characterStore = useCharacterStore();
+const userStore = useUserStore();
+
+const { profile } = storeToRefs(userStore);
+const { selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
 const {
-  //State
-  currentTable, 
-  scenes, 
-  activeSceneId, 
-  initiativeList, 
-  squares, 
+  currentTable,
+  scenes,
+  activeSceneId,
+  initiativeList,
+  squares,
   gridWidth,
   gridHeight,
   sessionStatus,
@@ -98,13 +153,56 @@ const {
   persistentMeasurements,
   auras,
   pings,
-  // Getters
-  isDM, 
-  activeScene, 
-  tokensOnMap, 
-  currentTurnTokenId, 
-  myActiveToken 
+  connectionStatus,
+  pauseUntil,
+  transitionAt,
+  transitionMs,
+  clockSkewMs,
+  userMeasurementColors,
+  isDM,
+  activeScene,
+  tokensOnMap,
+  currentTurnTokenId,
+  myActiveToken,
+  logs,
 } = storeToRefs(tableStore);
+
+const characterFetchScope = ref<'player' | 'dm'>('player');
+const activeCharacterId = ref<string | null>(null);
+const showCharacterSheet = ref(false);
+const showActionLog = ref(false);
+const showDicePopup = ref(false);
+const diceAnimationVisible = ref(false);
+const diceAnimationPayload = ref<DiceRolledPayload | null>(null);
+const diceAnimationId = ref(0);
+const DICE_ANIMATION_DURATION = 4600;
+
+const charactersForTable = computed(() => (tableId ? characterStore.charactersForTable(tableId) : []));
+const activeCharacter = computed(() => {
+  if (activeCharacterId.value) {
+    return charactersForTable.value.find((char) => char._id === activeCharacterId.value) || null;
+  }
+  if (tableId) {
+    return characterStore.selectedCharacter(tableId);
+  }
+  return null;
+});
+const isActiveCharacterOwner = computed(() => {
+  const character = activeCharacter.value;
+  return Boolean(character && character.ownerId === currentUser.value?.id);
+});
+const currentSystem = computed(() => {
+  const tableSystem = systemStore.currentSystemForTable(currentTable.value);
+  if (tableSystem) return tableSystem;
+  const preferredId = profile.value?.preferredSystemId;
+  return preferredId ? systemStore.getById(preferredId) : null;
+});
+const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
+const logCount = computed(() => logs.value.length);
+
+systemStore.fetchAll().catch((error) => {
+  console.warn('[table] não foi possível carregar sistemas', error);
+});
 
 // Transição curta antes do LIVE
 const showTransition = ref(false);
@@ -115,37 +213,69 @@ const canUseMap = computed(() => isDM.value || sessionStatus.value === 'LIVE');
 const pauseInput = ref<number>(5); // default 5min
 const nowTs = ref<number>(Date.now());
 const pauseRemaining = computed(() => {
-  if (sessionStatus.value !== 'PAUSED' || !tableStore.pauseUntil) return 0;
-  const until = tableStore.pauseUntil?.getTime?.() || (tableStore.pauseUntil as any)?.valueOf?.() || 0;
+  if (sessionStatus.value !== 'PAUSED' || !pauseUntil.value) return 0;
+  const until = pauseUntil.value.getTime();
   // Corrige defasagem de relógio entre cliente e servidor
-  const skew = (tableStore as any).clockSkewMs || 0;
+  const skew = clockSkewMs.value || 0;
   const clientNowCorrected = nowTs.value + skew;
   const ms = Math.max(0, until - clientNowCorrected);
   return Math.ceil(ms / 1000);
 });
 
+const connectionLabel = computed(() => {
+  switch (connectionStatus.value) {
+    case 'connecting':
+      return 'Conectando…';
+    case 'reconnecting':
+      return 'Reconectando…';
+    case 'disconnected':
+      return 'Desconectado';
+    case 'error':
+      return 'Erro de conexão';
+    default:
+      return 'Conectado';
+  }
+});
+
+const isConnectionDegraded = computed(() => ['reconnecting', 'disconnected', 'error'].includes(connectionStatus.value));
+const dmRollerExpanded = ref(true);
+
 let intervalId: number | null = null;
+let diceAnimationTimer: number | null = null;
 onMounted(() => {
   intervalId = window.setInterval(() => { nowTs.value = Date.now(); }, 500);
+  tableStore.registerDiceAnimationHook(triggerDiceAnimation);
+  if (!profile.value) {
+    userStore.fetchProfile().catch((error) => {
+      console.warn('[table] não foi possível carregar perfil', error);
+    });
+  }
 });
 onUnmounted(() => {
   if (intervalId) clearInterval(intervalId);
   intervalId = null;
+  tableStore.registerDiceAnimationHook(null);
+  dismissDiceAnimation();
 });
 
 // Observa evento de transição vindo do servidor para todos os clientes
-watch(() => tableStore.transitionAt, (at) => {
+watch(transitionAt, (at) => {
   if (!at) return;
   showTransition.value = true;
   // tenta iniciar reprodução
   setTimeout(() => { transitionVideoRef.value?.play?.(); }, 0);
-  const duration = tableStore.transitionMs || 3000;
+  const duration = transitionMs.value || 3000;
   setTimeout(() => { showTransition.value = false; }, duration);
 });
 
 // Cor de medição
 const measurementColor = ref<string>('');
 const PLAYER_COLORS = ['#ff8c00', '#12c2e9', '#ff4d4d', '#43a047', '#ffd166', '#ff66cc', '#00bcd4', '#8bc34a', '#e91e63', '#9c27b0', '#795548', '#cddc39'];
+
+function normalizeHexColor(value?: string | null) {
+  if (!value) return '';
+  return value.startsWith('#') ? value : `#${value}`;
+}
 
 function loadOrInitUserColor() {
   // Mestre é sempre roxo
@@ -162,6 +292,13 @@ function loadOrInitUserColor() {
     measurementColor.value = saved.startsWith('#') ? saved : `#${saved}`;
     return;
   }
+  const profileColor = profile.value?.measurementColor;
+  if (profileColor) {
+    const normalizedProfileColor = normalizeHexColor(profileColor);
+    measurementColor.value = normalizedProfileColor;
+    localStorage.setItem(key, normalizedProfileColor);
+    return;
+  }
   // Escolhe cor aleatória não-roxa
   const random = PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)] || '#ff8c00';
   measurementColor.value = random;
@@ -169,7 +306,7 @@ function loadOrInitUserColor() {
 }
 
 // Inicializa e atualiza quando papel/cena muda
-watch([isDM, activeSceneId], () => {
+watch([isDM, activeSceneId, () => profile.value?.measurementColor], () => {
   loadOrInitUserColor();
 }, { immediate: true });
 
@@ -183,6 +320,78 @@ watch(measurementColor, (c) => {
   localStorage.setItem(key, c);
 });
 
+async function fetchCharactersForTable() {
+  if (!tableId) return;
+  try {
+    return await characterStore.fetchForTable(tableId, { scope: characterFetchScope.value });
+  } catch (error) {
+    console.error('[characters] falha ao carregar', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível carregar as fichas.';
+    toast.error(message);
+  }
+}
+
+function openCharacterSheet(characterId: string) {
+  activeCharacterId.value = characterId;
+  showCharacterSheet.value = true;
+  characterStore.setSelectedCharacter(characterId);
+}
+
+function closeCharacterSheet() {
+  showCharacterSheet.value = false;
+  activeCharacterId.value = null;
+  characterStore.setSelectedCharacter(null);
+}
+
+async function handleCharacterSave(payload: Partial<Character>) {
+  if (!tableId || !activeCharacterId.value) return;
+  try {
+    await characterStore.updateCharacter(tableId, activeCharacterId.value, payload);
+    toast.success('Ficha atualizada.');
+  } catch (error) {
+    console.error('[characters] erro ao salvar', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível salvar a ficha.';
+    toast.error(message);
+  }
+}
+
+async function handleCharacterDelete() {
+  if (!tableId || !activeCharacterId.value) return;
+  const confirmed = window.confirm('Remover esta ficha? Esta ação não pode ser desfeita.');
+  if (!confirmed) return;
+  try {
+    await characterStore.deleteCharacter(tableId, activeCharacterId.value);
+    toast.success('Ficha removida.');
+    closeCharacterSheet();
+  } catch (error) {
+    console.error('[characters] erro ao excluir', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível remover a ficha.';
+    toast.error(message);
+  }
+}
+
+watch(characterFetchScope, () => {
+  fetchCharactersForTable();
+}, { immediate: true });
+
+watch(
+  () => charactersForTable.value.map((char) => char._id).join(','),
+  () => {
+    if (activeCharacterId.value && !charactersForTable.value.some((char) => char._id === activeCharacterId.value)) {
+      closeCharacterSheet();
+    }
+  }
+);
+
+watch(selectedCharacterStoreId, (newId) => {
+  if (newId === activeCharacterId.value) {
+    showCharacterSheet.value = Boolean(newId);
+    return;
+  }
+  activeCharacterId.value = newId;
+  showCharacterSheet.value = Boolean(newId);
+});
+
 // Medições persistentes da cena ativa
 const persistentsForActiveScene = computed(() =>
   persistentMeasurements.value.filter(pm => pm.sceneId === activeSceneId.value)
@@ -193,7 +402,7 @@ function handleSetActiveScene(sceneId: string) {
 }
 
 function handleUpdateSessionStatus(newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED') {
-  const options: any = {};
+  const options: { pauseSeconds?: number } = {};
   if (newStatus === 'PAUSED') options.pauseSeconds = Math.max(0, Math.floor((pauseInput.value * 60) || 0));
   socketService.updateSessionStatus(tableId, newStatus, options);
 }
@@ -216,9 +425,64 @@ function handleColorSelected(color: string) {
   measurementColor.value = color;
 }
 
+function toggleActionLog() {
+  showActionLog.value = !showActionLog.value;
+}
+
+function toggleDicePopup() {
+  showDicePopup.value = !showDicePopup.value;
+}
+
+function dismissDiceAnimation(options: { clearPayload?: boolean } = {}) {
+  if (diceAnimationTimer) {
+    window.clearTimeout(diceAnimationTimer);
+    diceAnimationTimer = null;
+  }
+  diceAnimationVisible.value = false;
+  if (options.clearPayload !== false) {
+    diceAnimationPayload.value = null;
+  }
+}
+
+function triggerDiceAnimation(payload: DiceRolledPayload) {
+  dismissDiceAnimation({ clearPayload: false });
+  diceAnimationPayload.value = payload;
+  diceAnimationId.value += 1;
+  requestAnimationFrame(() => {
+    diceAnimationVisible.value = true;
+  });
+  diceAnimationTimer = window.setTimeout(() => {
+    dismissDiceAnimation();
+  }, DICE_ANIMATION_DURATION);
+}
+
+function toggleDmRoller() {
+  dmRollerExpanded.value = !dmRollerExpanded.value;
+}
+
 function setMap() {
   if (mapUrlInput.value.trim() !== '') {
     socketService.setMap(tableId, mapUrlInput.value);
+  }
+}
+
+async function handleMapFileUpload(file: File) {
+  if (!tableId) {
+    toast.error('Mesa inválida para upload de mapa.');
+    return;
+  }
+  try {
+    isUploadingMap.value = true;
+    const url = await uploadMap(file, tableId);
+    mapUrlInput.value = url;
+    setMap();
+    toast.success('Mapa atualizado com sucesso.');
+  } catch (error) {
+    console.error('[map-upload] erro ao enviar arquivo', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível enviar o mapa.';
+    toast.error(message);
+  } finally {
+    isUploadingMap.value = false;
   }
 }
 
@@ -227,7 +491,12 @@ function onSceneDragEnd() {
   socketService.reorderScenes(tableId, orderedSceneIds);
 }
 
-function createToken(payload: { name: string, imageUrl: string, movement: number, ownerId: string, size: TokenSize }) {
+function onSceneReorder(updatedScenes: IScene[]) {
+  scenes.value = [...updatedScenes];
+  onSceneDragEnd();
+}
+
+function createToken(payload: { name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null }) {
   if (targetSquareIdForToken.value && activeSceneId.value) {
   // Validação footprint local
     const sizeMap: Record<string, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 };
@@ -268,6 +537,11 @@ function handleAssignToken(newOwnerId: string) {
     });
   }
   showAssignMenu.value = false;
+}
+
+function handleOpenCharacterFromToken(characterId?: string | null) {
+  if (!characterId) return;
+  openCharacterSheet(characterId);
 }
 
 function handleSelectPersistent(payload: { id: string | null }) {
@@ -318,14 +592,7 @@ function handleRemoveFromInitiative(initiativeEntryId: string) {
 }
 
 
-function openEditTokenByEntry(entry: IInitiativeEntry) {
-  if (!entry.tokenId) return;
-  const tok = tokensOnMap.value.find(t => t._id === entry.tokenId) || null;
-  tokenBeingEdited.value = tok;
-  showTokenEditForm.value = !!tok;
-}
-
-function handleSaveTokenEdit(payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean }) {
+function handleSaveTokenEdit(payload: { name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: TokenSize; resetRemainingMovement?: boolean; canOverlap?: boolean; characterId?: string | null }) {
   if (!tokenBeingEdited.value) return;
   socketService.editToken({ tableId, tokenId: tokenBeingEdited.value._id, ...payload });
   showTokenEditForm.value = false;
@@ -342,7 +609,12 @@ function onInitiativeDragEnd() {
   }
 }
 
-function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
+function handleInitiativeReorder(newOrder: IInitiativeEntry[]) {
+  initiativeList.value = [...newOrder];
+  onInitiativeDragEnd();
+}
+
+function handleLeftClickOnSquare(square: GridSquare) {
   if (activeTool.value === 'ruler' || activeTool.value === 'cone') return;
   if (square.token) {
     selectedTokenId.value = (selectedTokenId.value === square.token._id) ? null : square.token._id;
@@ -352,11 +624,11 @@ function handleLeftClickOnSquare(square: GridSquare, event: MouseEvent) {
 }
 
 
-function handleMiddleClickFree(event: MouseEvent) {
+const handleMiddleClickFree: MiddleClickHandler = (event) => {
   if (event.button !== 1 || !activeSceneId.value) return;
   // Rate limit ping
-  if ((handleMiddleClickFree as any)._last && Date.now() - (handleMiddleClickFree as any)._last < 300) return;
-  (handleMiddleClickFree as any)._last = Date.now();
+  if (handleMiddleClickFree.lastTriggerTs && Date.now() - handleMiddleClickFree.lastTriggerTs < 300) return;
+  handleMiddleClickFree.lastTriggerTs = Date.now();
   // Coordenadas relativas ao grid interno
   const mapStage = event.currentTarget as HTMLElement;
   let viewportEl: HTMLElement | null = mapStage.querySelector('.grid-overlay .grid-viewport');
@@ -366,7 +638,7 @@ function handleMiddleClickFree(event: MouseEvent) {
   const x = (event.clientX - rect.left) / scale;
   const y = (event.clientY - rect.top) / scale;
   socketService.sendPing({ tableId, sceneId: activeSceneId.value, x, y, color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00') });
-}
+};
 
 // Mestre altera escala; jogadores recebem
 watch(metersPerSquare, (val, oldVal) => {
@@ -457,11 +729,6 @@ const auraForSelected = computed(() => selectedTokenId.value ? auras.value.find(
 const canRemoveAura = computed(() => Boolean(isDM.value && selectedToken.value && auraForSelected.value));
 // Editar aura: DM sempre; jogador só no seu turno
 const canAddAura = computed(() => Boolean((isDM.value || myActiveToken.value) && selectedTokenId.value && !isMeasuring.value));
-
-function openAuraDialogForToken(token: TokenInfo) {
-  auraDialogTokenId.value = token._id;
-  showAuraDialog.value = true;
-}
 
 function handleAuraSave(payload: { name: string; color: string; radiusMeters: number }) {
   if (!auraDialogTokenId.value || !activeSceneId.value) return;
@@ -578,7 +845,7 @@ async function handleDeleteScene(sceneId: string) {
         } else {
           // Sem cenas restantes
           // Zera mapa e ativos locais
-          (tableStore as any).currentMapUrl = null;
+          currentMapUrl.value = null;
         }
       }
       toast.success(data.message || 'Cena excluída.');
@@ -590,54 +857,46 @@ async function handleDeleteScene(sceneId: string) {
 
 // Função para quando um ponteiro (dedo/mouse) toca a tela
 function handlePointerDown(event: PointerEvent) {
-  // Ignora se o clique não for o botão esquerdo do mouse (ou um toque)
-  if (event.button !== 0) return;
+  const isTouch = event.pointerType === 'touch';
+  const isPrimaryButton = event.button === 0;
+  const isMiddleButton = event.pointerType === 'mouse' && event.button === 1;
+  if (!isTouch && !isPrimaryButton && !isMiddleButton) return;
 
-  if (isMeasuring.value) {
-    // Se uma ferramenta está ativa, o pointerDown INICIA a pré-visualização.
-  if (activeTool.value === 'ruler') {
-      if (!gridDisplayRef.value) return;
-      const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
-      const scale = viewTransform.value.scale || 1;
-      const local = {
-        x: (event.clientX - gridRect.left) / scale,
-        y: (event.clientY - gridRect.top) / scale
-      };
+  if (isMeasuring.value && (isPrimaryButton || isTouch)) {
+    if (!gridDisplayRef.value) return;
+    const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
+    const scale = viewTransform.value.scale || 1;
+    const local = {
+      x: (event.clientX - gridRect.left) / scale,
+      y: (event.clientY - gridRect.top) / scale
+    };
+    if (activeTool.value === 'ruler') {
       previewMeasurement.value = {
         type: 'ruler',
         start: local,
         end: local,
-  distance: '0.0m (0ft)'
+        distance: '0.0m (0ft)'
       };
-  } else if (activeTool.value === 'cone' || activeTool.value === 'circle' || activeTool.value === 'square' || activeTool.value === 'line' || activeTool.value === 'beam') {
-      if (!gridDisplayRef.value) return;
-      const gridRect = gridDisplayRef.value.$el.getBoundingClientRect();
-      const scale = viewTransform.value.scale || 1;
-      const local = {
-        x: (event.clientX - gridRect.left) / scale,
-        y: (event.clientY - gridRect.top) / scale
-      };
-      // Determina o quadrado de origem baseado na posição local e usa o CENTRO dessa célula como ápice
+    } else if (isMeasurementTool(activeTool.value as ToolMode)) {
       const originSquare = getSquareIdFromLocalPoint(local.x, local.y);
       coneOriginSquareId.value = originSquare;
       const originCenter = originSquare ? getSquareCenterLocalPointFromId(originSquare) : local;
-  previewMeasurement.value = { type: activeTool.value as any, start: originCenter, end: originCenter };
-      // Inicializa sem afetar nada (comprimento 0)
+      const measurementType = activeTool.value as MeasurementTool;
+      previewMeasurement.value = { type: measurementType, start: originCenter, end: originCenter };
       coneAffectedSquares.value = [];
     }
-    // (Futuramente: else if (activeTool.value === 'cone') { ... })
-
-    // Captura o ponteiro para que o 'pointerup' funcione mesmo se o mouse sair da área
     (event.target as HTMLElement).setPointerCapture(event.pointerId);
     return;
   }
 
-  // Lógica de pan: desabilita pan quando ferramenta SELECT está ativa
-  if (activeTool.value === 'select') return;
-  // Lógica original de pan
+  if (isMeasuring.value) return;
+
+  const shouldPan = isTouch || isMiddleButton || (isPrimaryButton && activeTool.value !== 'select');
+  if (!shouldPan) return;
   if ((event.target as HTMLElement).closest('button, .token')) return;
   activePointers.value.push(event);
   viewportRef.value?.setPointerCapture(event.pointerId);
+  event.preventDefault();
 }
 
 // Função para quando um ponteiro se move
@@ -1004,7 +1263,6 @@ function handlePointerUp(event: PointerEvent) {
     previewMeasurement.value = null; 
     // Limpeza dos quadrados pintados
     const canShareNow = isDM.value || !!myActiveToken.value;
-    const isAreaTool = (activeTool.value === 'cone' || activeTool.value === 'circle' || activeTool.value === 'square');
     if (!canShareNow) {
   // Não é turno do jogador: limpa prévia
       coneAffectedSquares.value = [];
@@ -1217,32 +1475,6 @@ function getSquareCenterLocalPointFromId(squareId: string): { x: number; y: numb
   return { x: col * cellW + cellW / 2, y: row * cellH + cellH / 2 };
 }
 
-function getMousePositionOnMap(event: PointerEvent): { x: number; y: number } | null {
-  if (!viewportRef.value) return null;
-
-  const viewportRect = viewportRef.value.getBoundingClientRect();
-  const viewportWidth = viewportRef.value.clientWidth;
-  const viewportHeight = viewportRef.value.clientHeight;
-
-  // Centro do viewport, que é a origem da transformação de escala
-  const centerX = viewportWidth / 2;
-  const centerY = viewportHeight / 2;
-
-  // Posição do mouse relativa ao viewport (a "mesa")
-  const mouseX = event.clientX - viewportRect.left;
-  const mouseY = event.clientY - viewportRect.top;
-
-  // Extrai os valores de pan e zoom do estado
-  const panX = viewTransform.value.x;
-  const scale = viewTransform.value.scale;
-  const panY = viewTransform.value.y;
-  
-  const worldX = (mouseX - centerX) / scale + centerX - (panX / scale);
-  const worldY = (mouseY - centerY) / scale + centerY - (panY / scale);
-
-  return { x: worldX, y: worldY };
-}
-
 // Arredonda metros para múltiplos de step
 function quantizeMeters(meters: number, step = 0.5): number {
   if (!isFinite(meters) || meters < 0) return 0;
@@ -1278,9 +1510,9 @@ watch(activeSceneId, () => {
   activeTool.value = 'none';
 });
 
-watch(persistentMeasurements, () => {
-  if (!selectedPersistentId.value) return;
-  const stillExists = persistentMeasurements.value.some(pm => pm.id === selectedPersistentId.value);
+watch([selectedPersistentId, () => persistentMeasurements.value.length], ([id]) => {
+  if (!id) return;
+  const stillExists = persistentMeasurements.value.some(pm => pm.id === id);
   if (!stillExists) selectedPersistentId.value = null;
 });
 
@@ -1288,25 +1520,57 @@ onMounted(() => {
   socketService.connect(tableId);
   // Resize janela -> recalcula dimensões imagem
   window.addEventListener('resize', updateImageDimensions);
-  window.addEventListener('keydown', handleGlobalEsc);
+  window.addEventListener('keydown', handleGlobalKeydown);
+  updateLayoutFlags();
+  if (layoutMediaQuery) {
+    layoutMediaQuery.addEventListener('change', updateLayoutFlags);
+  }
 });
 
 onUnmounted(() => {
   socketService.disconnect();
   window.removeEventListener('resize', updateImageDimensions);
-  window.removeEventListener('keydown', handleGlobalEsc);
+  window.removeEventListener('keydown', handleGlobalKeydown);
+  layoutMediaQuery?.removeEventListener('change', updateLayoutFlags);
+  layoutMediaQuery = null;
 });
 
-function handleGlobalEsc(e: KeyboardEvent) {
+function handleGlobalKeydown(e: KeyboardEvent) {
+  const target = e.target as HTMLElement | null;
+  const isTextInput = target ? ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable : false;
+  const key = e.key.toLowerCase();
+
   if (e.key === 'Escape') {
-  // ESC: limpa medições
+    if (isDmDrawerOpen.value) {
+      isDmDrawerOpen.value = false;
+      return;
+    }
     previewMeasurement.value = null;
     rulerStartPoint.value = null;
     rulerEndPoint.value = null;
     coneOriginSquareId.value = null;
     coneAffectedSquares.value = [];
-    // Sai de ferramenta se estava medindo
     if (isMeasuring.value) activeTool.value = 'none';
+    return;
+  }
+
+  if (isTextInput) return;
+
+  if (key === 'n' && isDM.value) {
+    e.preventDefault();
+    handleNextTurn();
+    return;
+  }
+
+  if (key === 'm') {
+    e.preventDefault();
+    handleToolSelected('ruler');
+    return;
+  }
+
+  if (key === 'g') {
+    e.preventDefault();
+    resetView();
   }
 }
 
@@ -1336,21 +1600,21 @@ function calculateCircleArea(originId: string, radiusMeters: number): string[] {
   const cols = gridWidth.value, rows = gridHeight.value;
   const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
   const getId = (x: number, y: number) => `sq-${y * cols + x}`;
-  let o = getCoords(originId);
+  const originCoords = getCoords(originId);
+  let centerX = originCoords.x + 0.5;
+  let centerY = originCoords.y + 0.5;
   // Multi-footprint: centro geométrico
   const square = squares.value.find(s => s.id === originId);
   if (square?.token) {
     const sizeMap: Record<TokenSize, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 } as const;
     const span = sizeMap[square.token.size as TokenSize] || 1;
     if (span > 1) {
-  // Anchor -> centro
-      o = getCoords(originId);
-      const ocx = o.x + (span / 2); // (0 + span)/2 => deslocamento do canto
-      const ocy = o.y + (span / 2);
-      return computeCircle(ocx, ocy);
+      // Anchor -> centro real do token
+      centerX = originCoords.x + (span / 2);
+      centerY = originCoords.y + (span / 2);
     }
   }
-  return computeCircle(o.x + 0.5, o.y + 0.5);
+  return computeCircle(centerX, centerY);
 
   function computeCircle(ocx: number, ocy: number): string[] {
     const maxDist = radiusSq + 0.5; // tolerância
@@ -1375,16 +1639,16 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   const cols = gridWidth.value, rows = gridHeight.value;
   const getCoords = (id: string) => { const idx = parseInt(id.replace('sq-', '')); return { x: idx % cols, y: Math.floor(idx / cols) }; };
   const getId = (x: number, y: number) => `sq-${y * cols + x}`;
-  let o = getCoords(originId);
-  let centerX = o.x + 0.5;
-  let centerY = o.y + 0.5;
+  const originCoords = getCoords(originId);
+  let centerX = originCoords.x + 0.5;
+  let centerY = originCoords.y + 0.5;
   const square = squares.value.find(s => s.id === originId);
   if (square?.token) {
     const sizeMap: Record<TokenSize, number> = { 'Pequeno/Médio':1,'Grande':2,'Enorme':3,'Descomunal':4,'Colossal':5 } as const;
     const span = sizeMap[square.token.size as TokenSize] || 1;
     if (span > 1) {
-      centerX = o.x + (span / 2);
-      centerY = o.y + (span / 2);
+      centerX = originCoords.x + (span / 2);
+      centerY = originCoords.y + (span / 2);
     }
   }
   const minX = centerX - half - 0.001, maxX = centerX + half + 0.001; // tolerância
@@ -1403,8 +1667,32 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 
 <template>
   <div class="table-view-layout">
+    <div class="connection-indicator" :class="['status-' + connectionStatus, { degraded: isConnectionDegraded }]">
+      <span class="dot"></span>
+      <span>{{ connectionLabel }}</span>
+    </div>
 
-  <div v-if="!isDM && sessionStatus === 'LIVE' && activeScene?.type === 'battlemap'" class="player-initiative-wrapper">
+    <button
+      v-if="isDM && isMobileLayout"
+      class="dm-drawer-toggle surface"
+      type="button"
+      aria-label="Abrir painel do Mestre"
+      @click="isDmDrawerOpen = true"
+    >
+      Painel do Mestre
+    </button>
+
+    <div
+      v-if="isDM && isMobileLayout && isDmDrawerOpen"
+      class="dm-panel-backdrop"
+      @click="isDmDrawerOpen = false"
+    ></div>
+
+  <div
+      v-if="!isDM && sessionStatus === 'LIVE' && activeScene?.type === 'battlemap'"
+      class="player-initiative-wrapper"
+      :class="{ 'bottom-sheet': isMobileLayout }"
+    >
       <InitiativePanel
         :initiativeList="initiativeList"
         :tokensOnMap="tokensOnMap"
@@ -1414,110 +1702,61 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :myActiveToken="myActiveToken"
         @undo-move="handleUndoMove"
         @next-turn="handleNextTurn"
+        @open-character-sheet="(id: string) => id && openCharacterSheet(id)"
       />
     </div>
 
 
-  <aside v-if="isDM" class="dm-panel" :class="{ collapsed: isDmPanelCollapsed }">
-      <button @click="isDmPanelCollapsed = !isDmPanelCollapsed" class="toggle-button">
+    <aside
+      v-if="isDM && (!isMobileLayout || isDmDrawerOpen)"
+      class="dm-panel"
+      :class="{ collapsed: isDmPanelCollapsed && !isMobileLayout, 'mobile-drawer': isMobileLayout, open: isDmDrawerOpen }"
+    >
+      <div v-if="isMobileLayout" class="drawer-header">
+        <h3>Painel do Mestre</h3>
+        <button class="drawer-close" type="button" aria-label="Fechar painel do Mestre" @click="isDmDrawerOpen = false">×</button>
+      </div>
+      <button v-if="!isMobileLayout" @click="isDmPanelCollapsed = !isDmPanelCollapsed" class="toggle-button">
         <span>Painel do Mestre</span>
         <span class="chevron" :class="{ collapsed: isDmPanelCollapsed }">
           <Icon :name="isDmPanelCollapsed ? 'plus' : 'minus'" size="18" />
         </span>
       </button>
       
-      <div v-show="!isDmPanelCollapsed" class="panel-content">        
-        <div class="panel-section">
-          <button class="subsection-toggle" @click="isSessionCollapsed = !isSessionCollapsed">
-            <h4>Sessão</h4>
-            <span class="chevron"><Icon :name="isSessionCollapsed ? 'plus' : 'minus'" size="16" /></span>
-          </button>
-          <div class="session-controls" v-show="!isSessionCollapsed">
-            <button
-              v-if="sessionStatus === 'ENDED'"
-              @click="handleUpdateSessionStatus('PREPARING')"
-              class="btn btn-sm session-btn session-prepare"
-            >Preparar Sessão</button>
-            <div v-if="sessionStatus === 'PREPARING'" class="row gap-2">
-              <button 
-                @click="startSessionWithTransition"
-                class="btn btn-sm session-btn session-start"
-              >Iniciar Sessão</button>
-            </div>
-            <button 
-              v-if="sessionStatus === 'LIVE'" 
-              @click="handleUpdateSessionStatus('PAUSED')"
-              class="btn btn-sm session-btn session-pause"
-            >Pausar</button>
-            <div v-if="sessionStatus === 'LIVE' || sessionStatus === 'PAUSED'" class="row gap-2" style="margin-top:15px; align-items:center;">
-              <label style="font-size:.85rem">Duração da pausa (min):</label>
-              <input class="input-xs" type="number" min="0" step="0.5" v-model.number="pauseInput" style="width:110px" />
-            </div>
-            <button 
-              v-if="sessionStatus === 'PAUSED'" 
-              @click="handleUpdateSessionStatus('LIVE')"
-              class="btn btn-sm session-btn session-resume"
-            >Retomar</button>
-            <button 
-              v-if="sessionStatus === 'LIVE' || sessionStatus === 'PAUSED'" 
-              @click="handleUpdateSessionStatus('ENDED')"
-              class="btn btn-sm session-btn session-end"
-            >Encerrar Sessão</button>
-          </div>
-        </div>
+      <div v-show="!isDmPanelCollapsed || isMobileLayout" class="panel-content">        
+        <DMSessionControls
+          :session-status="sessionStatus"
+          :pause-input="pauseInput"
+          :pause-remaining="pauseRemaining"
+          :is-collapsed="isSessionCollapsed"
+          @toggle="isSessionCollapsed = !isSessionCollapsed"
+          @update:pauseInput="pauseInput = $event"
+          @update-status="handleUpdateSessionStatus"
+          @start-session="startSessionWithTransition"
+        />
         
-        <div class="panel-section scene-manager">
-          <button class="subsection-toggle" @click="isScenesCollapsed = !isScenesCollapsed">
-            <h4>Cenas</h4>
-            <span class="chevron"><Icon :name="isScenesCollapsed ? 'plus' : 'minus'" size="16" /></span>
-          </button>
-          <div class="scenes-list-block" v-show="!isScenesCollapsed">
-            <draggable
-              v-model="scenes"
-              tag="ul"
-              class="scene-list"
-              item-key="_id"
-              @end="onSceneDragEnd"
-              handle=".drag-handle"
-            >
-              <template #item="{ element: scene }">
-                <li :class="{ 'active-scene': scene._id === activeSceneId }">
-                  <span class="drag-handle" title="Arrastar"><Icon name="drag" size="16" /></span> <span>{{ scene.name }}</span>
-                  <div class="scene-buttons">
-                    <button @click="handleSetActiveScene(scene._id)" :disabled="scene._id === activeSceneId">Ativar</button>
-                    <button @click="handleEditScene(scene)" class="icon-btn" title="Editar"><Icon name="edit" size="16" /></button>
-                    <button @click="handleDeleteScene(scene._id)" class="icon-btn delete-btn-small" title="Excluir"><Icon name="delete" size="16" /></button>
-                  </div>
-                </li>
-              </template>
-            </draggable>
-          </div>
-
-          <div class="panel-section" v-show="!isScenesCollapsed">
-            <h4>Imagem da Cena Ativa</h4>
-            <div class="map-controls">
-              <div class="inline-fields" style="width:100%">
-                <input id="map-url" class="input-sm" type="url" v-model="mapUrlInput" placeholder="URL da imagem da cena" />
-                <button @click="setMap" type="button" class="btn btn-xs btn-ghost">Definir</button>
-              </div>
-            </div>
-          </div>
-
-          <form @submit.prevent="handleCreateScene" class="create-scene-form" v-show="!isScenesCollapsed">
-            <h4>Criar Nova Cena</h4>
-            <div class="field-group">
-              <input class="input-sm" v-model="newSceneName" placeholder="Nome da Cena" required />
-              <input class="input-sm" v-model="newSceneImageUrl" placeholder="URL da Imagem (Opcional)" />
-              <div class="inline-fields">
-                <select class="input-sm" v-model="newSceneType">
-                  <option value="battlemap">Battlemap</option>
-                  <option value="image">Imagem</option>
-                </select>
-                <button type="submit" class="btn btn-xs alt">Adicionar Cena</button>
-              </div>
-            </div>
-          </form>
-        </div>
+        <SceneManager
+          :scenes="scenes"
+          :active-scene-id="activeSceneId"
+          :is-collapsed="isScenesCollapsed"
+          :map-url-input="mapUrlInput"
+          :new-scene-name="newSceneName"
+          :new-scene-image-url="newSceneImageUrl"
+          :new-scene-type="newSceneType"
+          :is-uploading-map="isUploadingMap"
+          @toggle="isScenesCollapsed = !isScenesCollapsed"
+          @set-active-scene="handleSetActiveScene"
+          @edit-scene="handleEditScene"
+          @delete-scene="handleDeleteScene"
+          @reorder="onSceneReorder"
+          @set-map="setMap"
+          @create-scene="handleCreateScene"
+          @update:mapUrlInput="mapUrlInput = $event"
+          @update:newSceneName="newSceneName = $event"
+          @update:newSceneImageUrl="newSceneImageUrl = $event"
+          @update:newSceneType="newSceneType = $event"
+          @upload-map-file="handleMapFileUpload"
+        />
 
         <!-- Initiative table now after Scenes and before Grid controls -->
         <div class="panel-section" v-if="activeScene?.type === 'battlemap' && initiativeList.length > 0">
@@ -1530,10 +1769,28 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             :myActiveToken="myActiveToken"
             @edit-token="(id:string)=>{ const tok=tokensOnMap.find(t=>t._id===id)||null; tokenBeingEdited=tok; showTokenEditForm=!!tok; }"
             @remove-entry="(entryId:string)=>handleRemoveFromInitiative(entryId)"
-            @reorder="(list)=>{ initiativeList = list as any; onInitiativeDragEnd(); }"
+            @reorder="handleInitiativeReorder"
             @undo-move="handleUndoMove"
             @next-turn="handleNextTurn"
+            @open-character-sheet="(id: string) => id && openCharacterSheet(id)"
           />
+        </div>
+
+        <div class="panel-section" v-if="activeScene?.type === 'battlemap'">
+          <div class="subsection-toggle" @click="toggleDmRoller">
+            <h4>Rolagens</h4>
+            <span class="chevron"><Icon :name="dmRollerExpanded ? 'minus' : 'plus'" size="16" /></span>
+          </div>
+          <div v-show="dmRollerExpanded">
+            <DiceRoller
+              :tableId="tableId"
+              :availableCharacters="charactersForTable"
+              :currentTokenId="currentTurnTokenId"
+              :activeCharacterId="activeCharacterId"
+              :system="currentSystem"
+              mode="embedded"
+            />
+          </div>
         </div>
 
         <div v-if="activeScene?.type === 'battlemap'" class="panel-section">
@@ -1560,97 +1817,58 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </aside>
 
     <main class="battlemap-main">
-      <div 
+      <MapViewport
         v-if="canUseMap"
-        class="viewport" :class="{ measuring: isMeasuring }"
-        ref="viewportRef"
-        @wheel.prevent="handleWheel"
-        @pointerdown="handlePointerDown"
-        @pointermove="handlePointerMove"
-        @pointerup="handlePointerUp"
-        @mouseleave="handlePointerUp" style="touch-action: none;" >
-
-        
-        <template v-if="sessionStatus === 'LIVE' || isDM">
-          <div 
-            class="map-stage"
-            @mousedown.middle.prevent="handleMiddleClickFree"
-            :style="{ transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale})` }"
-          >
-            <img 
-              v-if="currentMapUrl" 
-              :src="currentMapUrl" 
-              alt="Mapa de Batalha" 
-              class="map-image" 
-              draggable="false" 
-              @dragstart.prevent 
-              ref="mapImgRef" 
-              @load="updateImageDimensions" />
-            <div
-              v-else
-              class="map-placeholder"
-              style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center; max-width:80%; pointer-events:none;"
-            >
-              <p>Nenhum mapa definido para esta cena.</p>
-              <p v-if="isDM">Use o Painel do Mestre para definir uma imagem.</p>
-            </div>
-
-            <GridDisplay
-              v-if="currentMapUrl && activeScene?.type === 'battlemap'"
-              ref="gridDisplayRef"
-              class="grid-overlay"
-              :isMeasuring="isMeasuring"
-              :viewScale="viewTransform.scale"
-              :metersPerSquare="metersPerSquare"
-              :measureStartPoint="rulerStartPoint"
-              :measureEndPoint="rulerEndPoint"
-              :measuredDistance="rulerDistance"
-              :previewMeasurement="previewMeasurement"
-              :sharedMeasurements="Object.values(sharedMeasurements)"
-              :persistentMeasurements="persistentsForActiveScene"
-              :auras="auras"
-              :userColorMap="tableStore.userMeasurementColors"
-              :areaAffectedSquares="coneAffectedSquares"
-              :measurementColor="measurementColor"
-              :currentTurnTokenId="currentTurnTokenId"
-              :squares="squares"
-              :gridWidth="gridWidth" 
-              :gridHeight="gridHeight"
-              :imageWidth="imageRenderedWidth || undefined"
-              :imageHeight="imageRenderedHeight || undefined"
-              :selectedTokenId="selectedTokenId"
-              :isDM="isDM"
-              :currentUserId="currentUser?.id || null"
-              :selectedPersistentId="selectedPersistentId"
-              :pings="pings"
-              @square-right-click="handleRightClick"
-              @square-left-click="handleLeftClickOnSquare"
-              @token-move-requested="handleTokenMoveRequest"
-              @remove-persistent="handleRemovePersistent"
-              @select-persistent="handleSelectPersistent"
-              @viewport-contextmenu="handleViewportContextMenu"
-              @shape-contextmenu="handleShapeContextMenu"
-            />
-          </div>
-        </template>
-
-        <div 
-          v-if="showAssignMenu" 
-          class="context-menu" 
-          :style="{ top: `${assignMenuPosition.y}px`, left: `${assignMenuPosition.x}px` }"
-          @click.stop 
-          @contextmenu.prevent
-          @pointerdown.stop
-        >
-          <h4>Atribuir "{{ assignMenuTargetToken?.name }}"</h4>
-          <ul>
-            <li v-for="player in currentTable?.players" :key="player._id" @click="handleAssignToken(player._id)">
-              {{ player.username }}
-            </li>
-          </ul>
-          <button @click="showAssignMenu = false">Fechar</button>
-        </div>
-      </div>
+        :is-measuring="isMeasuring"
+        :view-transform="viewTransform"
+        :current-map-url="currentMapUrl"
+        :active-scene-type="activeScene?.type"
+        :grid-width="gridWidth"
+        :grid-height="gridHeight"
+        :meters-per-square="metersPerSquare"
+        :ruler-start-point="rulerStartPoint"
+        :ruler-end-point="rulerEndPoint"
+        :ruler-distance="rulerDistance"
+        :preview-measurement="previewMeasurement"
+        :shared-measurements="sharedMeasurementList"
+        :persistent-measurements="persistentsForActiveScene"
+        :auras="auras"
+        :user-measurement-colors="userMeasurementColors"
+        :cone-affected-squares="coneAffectedSquares"
+        :measurement-color="measurementColor"
+        :current-turn-token-id="currentTurnTokenId"
+        :squares="squares"
+        :image-rendered-width="imageRenderedWidth"
+        :image-rendered-height="imageRenderedHeight"
+        :selected-token-id="selectedTokenId"
+        :is-dm="isDM"
+        :current-user-id="currentUser?.id || null"
+        :selected-persistent-id="selectedPersistentId"
+        :pings="pings"
+        :show-assign-menu="showAssignMenu"
+        :assign-menu-position="assignMenuPosition"
+        :assign-menu-target-token="assignMenuTargetToken"
+        :players="currentTable?.players || []"
+        :map-image-ref-setter="setMapImageEl"
+        :viewport-ref-setter="setViewportEl"
+        :grid-display-ref-setter="setGridDisplayInstance"
+        :on-wheel="handleWheel"
+        :on-pointer-down="handlePointerDown"
+        :on-pointer-move="handlePointerMove"
+        :on-pointer-up="handlePointerUp"
+        :on-middle-click="handleMiddleClickFree"
+        :on-square-right-click="handleRightClick"
+        :on-square-left-click="handleLeftClickOnSquare"
+        :on-token-move-request="handleTokenMoveRequest"
+        :on-remove-persistent="handleRemovePersistent"
+        :on-select-persistent="handleSelectPersistent"
+        :on-viewport-contextmenu="handleViewportContextMenu"
+        :on-shape-contextmenu="handleShapeContextMenu"
+        :on-image-load="updateImageDimensions"
+        :on-assign-token="handleAssignToken"
+        :on-close-assign-menu="closeAssignMenu"
+        :on-open-character-from-token="handleOpenCharacterFromToken"
+      />
       <div v-else-if="!isDM && (sessionStatus === 'PREPARING' || sessionStatus === 'PAUSED' || sessionStatus === 'ENDED')" class="session-overlay" :class="`mode-${sessionStatus.toLowerCase()}`">
         <div class="overlay-card surface">
           <template v-if="sessionStatus === 'PREPARING'">
@@ -1681,7 +1899,31 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       </div>
     </main>
 
-    <button v-if="canUseMap" @click="resetView" class="reset-view-btn below">Recentralizar</button>
+    <button v-if="canUseMap" @click="resetView" class="reset-view-btn below" type="button" aria-label="Recentralizar mapa">Recentralizar</button>
+
+    <button
+      class="log-toggle-btn surface"
+      :class="{ open: showActionLog }"
+      type="button"
+      aria-label="Alternar registro de ações"
+      @click="toggleActionLog"
+    >
+      {{ showActionLog ? 'Fechar log' : 'Log' }}
+      <span v-if="logCount" class="log-badge">{{ logCount }}</span>
+    </button>
+
+    <transition name="log-panel">
+      <aside v-if="showActionLog" :class="['action-log-panel surface', { 'mobile-sheet': isMobileLayout }]">
+        <header class="log-panel__header">
+          <div>
+            <p class="log-panel__eyebrow">Timeline</p>
+            <h3>Registro de ações</h3>
+          </div>
+          <button type="button" class="log-panel__close" @click="toggleActionLog">×</button>
+        </header>
+        <ActionLog :logs="logs" />
+      </aside>
+    </transition>
 
     <Toolbar 
       v-if="(sessionStatus === 'LIVE' || isDM) && activeScene?.type === 'battlemap'"
@@ -1699,17 +1941,23 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @delete-selected="handleDeleteSelectedPersistent"
       @remove-aura="handleToolbarRemoveAura"
       @edit-aura="handleToolbarEditAura"
+      @toggle-dice-roller="toggleDicePopup"
     />
     
     <TokenCreationForm
       v-if="showTokenForm && isDM"
-      :players="currentTable?.players || []" @create-token="createToken"
+      :players="currentTable?.players || []"
+      :characters="charactersForTable"
+      :table-id="tableId || ''"
+      @create-token="createToken"
       @cancel="showTokenForm = false"
     />
     <TokenEditForm
       :open="showTokenEditForm"
       :token="tokenBeingEdited"
       :players="currentTable?.players || []"
+      :characters="charactersForTable"
+      :table-id="tableId || ''"
       @close="showTokenEditForm = false; tokenBeingEdited = null;"
       @save="handleSaveTokenEdit"
     />
@@ -1724,6 +1972,37 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @save="handleAuraSave"
       @remove="handleAuraRemove"
       @close="showAuraDialog = false; auraDialogTokenId = null;"
+    />
+    <CharacterSheet
+      :open="showCharacterSheet"
+      :character="activeCharacter"
+      :isDM="isDM"
+      :isOwner="isActiveCharacterOwner"
+      :system="currentSystem"
+      @close="closeCharacterSheet"
+      @save="handleCharacterSave"
+      @delete="handleCharacterDelete"
+    />
+
+    <transition name="dice-roller">
+      <div v-if="showDicePopup" class="dice-popup-overlay" @click.self="toggleDicePopup">
+        <DiceRoller
+          :tableId="tableId"
+          :availableCharacters="charactersForTable"
+          :currentTokenId="currentTurnTokenId"
+          :activeCharacterId="activeCharacterId"
+          :system="currentSystem"
+          mode="popup"
+          @close="toggleDicePopup"
+        />
+      </div>
+    </transition>
+
+    <DiceAnimation
+      v-if="diceAnimationVisible && diceAnimationPayload"
+      :key="diceAnimationId"
+      :payload="diceAnimationPayload"
+      @dismiss="dismissDiceAnimation()"
     />
   </div>
 </template>
@@ -1748,6 +2027,165 @@ main{
   padding: 20px;
   box-sizing: border-box; /* Garante que o padding não aumente a largura total */
   position: relative;
+}
+.log-toggle-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt));
+  box-shadow: var(--elev-2);
+  z-index: 70;
+}
+.log-toggle-btn.open {
+  background: var(--color-accent);
+  color: #0f0f15;
+}
+.log-badge {
+  min-width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--color-danger, #e53935);
+  color: #fff;
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.action-log-panel {
+  position: fixed;
+  bottom: 84px;
+  right: 20px;
+  width: min(420px, calc(100vw - 40px));
+  max-height: min(70vh, 540px);
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--elev-3);
+  background: linear-gradient(180deg, rgba(16, 12, 18, 0.95), rgba(11, 9, 14, 0.95));
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.action-log-panel.mobile-sheet {
+  left: 10px;
+  right: 10px;
+  bottom: calc(90px + env(safe-area-inset-bottom, 0));
+  width: auto;
+  border-radius: 20px 20px 0 0;
+}
+.log-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.log-panel__eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.68rem;
+  color: var(--color-text-muted, #c9c5d4);
+}
+.log-panel__header h3 {
+  margin: 4px 0 0;
+  font-size: 1.1rem;
+}
+.log-panel__close {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  width: 32px;
+  height: 32px;
+  font-size: 1.2rem;
+  background: var(--color-surface-alt);
+  cursor: pointer;
+}
+.log-panel-enter-active,
+.log-panel-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.log-panel-enter-from,
+.log-panel-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}
+.dice-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 8, 12, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+}
+.dice-roller-enter-active,
+.dice-roller-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.dice-roller-enter-from,
+.dice-roller-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+@media (max-width: 768px) {
+  .action-log-panel {
+    right: 10px;
+    left: 10px;
+    width: auto;
+  }
+  .log-toggle-btn {
+    right: 10px;
+    left: auto;
+  }
+}
+@media (max-width: 900px) {
+  .log-toggle-btn {
+    bottom: calc(110px + env(safe-area-inset-bottom, 0));
+    right: 14px;
+  }
+}
+.connection-indicator {
+  position: absolute;
+  top: 8px;
+  left: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 0.85rem;
+  color: var(--color-text);
+  box-shadow: var(--elev-1);
+}
+.connection-indicator .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success, #2ecc71);
+  display: inline-block;
+}
+.connection-indicator.status-reconnecting .dot,
+.connection-indicator.status-connecting .dot {
+  background: var(--color-warning, #f5a524);
+}
+.connection-indicator.status-disconnected .dot,
+.connection-indicator.status-error .dot {
+  background: var(--color-danger, #e53935);
+}
+.connection-indicator.degraded {
+  border-color: var(--color-danger, #e53935);
+  color: var(--color-danger, #e53935);
 }
 .battlemap-main {
   flex-grow: 1; /* Faz o battlemap ocupar o espaço principal */
@@ -1779,6 +2217,53 @@ main{
   box-shadow: var(--elev-2);
   backdrop-filter: blur(4px);
   font-family: var(--font-sans);
+}
+.dm-panel.mobile-drawer {
+  position: fixed;
+  inset: auto 0 0 0;
+  width: inherit;
+  max-width: 100%;
+  height: auto;
+  max-height: 85vh;
+  border-radius: 20px 20px 0 0;
+  z-index: 90;
+  box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.55);
+}
+.dm-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: 80;
+}
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.dm-panel .drawer-close {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  font-size: 1.4rem;
+}
+.dm-panel.mobile-drawer .toggle-button {
+  display: none;
+}
+.dm-drawer-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto 10px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  font-weight: 600;
 }
 .toggle-button {
   background: var(--color-surface-alt);
@@ -1839,6 +2324,18 @@ panel h2 {
   /* On mobile: dock above the map stage area for better panning */
   .player-initiative-wrapper { position: static; margin: 8px 8px 6px; }
 }
+.player-initiative-wrapper.bottom-sheet {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(88px + env(safe-area-inset-bottom, 0));
+  margin: 0;
+  pointer-events: none;
+  z-index: 72;
+}
+.player-initiative-wrapper.bottom-sheet .initiative-panel {
+  pointer-events: auto;
+}
 .grid-controls label {
     font-size: 0.9em;
     text-align: left;
@@ -1855,22 +2352,6 @@ panel h2 {
 }
 .scale-control input {
   width: 120px;
-}
-.viewport {
-  width: 100%;
-  height: calc(100dvh - 140px);
-  max-width: 1600px;
-  background: var(--color-surface);
-  border: 10px solid rgba(0 0 0 / 0.5);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  position: relative; 
-  cursor: grab;
-  box-shadow: var(--elev-2);
-}
-@media (max-width: 900px) {
-  /* Fix mobile: use large viewport height so the map doesn't stretch/shrink on scroll */
-  .viewport { height: calc(100lvh - 240px); }
 }
 .session-overlay {
   display:flex; align-items:center; justify-content:center; height:70vh; width:100%;
@@ -1892,34 +2373,6 @@ panel h2 {
 .session-btn.session-end { margin-top: 15px; background: var(--color-danger); color: var(--color-text); }
 
 .transition-overlay { position: fixed; inset:0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,.6); z-index: 100; }
-.viewport:active {
-  cursor: grabbing;
-}
-.viewport.measuring { cursor: crosshair; }
-.map-stage {
-  width: 100%;
-  height: 100%;
-  position: relative; /* Para que a imagem e o grid se alinhem a ele */
-  transition: transform 0.1s ease-out; /* Transição suave para o zoom */
-  overflow: hidden; /* Clipa tanto vertical quanto horizontal */
-  transform-origin: center center;
-}
-.map-image,
-.grid-overlay {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  max-width: 100%;
-  max-height: 100%;
-  user-select: none;
-}
-.map-image {
-  object-fit: contain;
-  user-select: none;
-  pointer-events: none;
-  display: block;
-}
 .reset-view-btn { padding: 8px 12px; background: var(--color-surface-alt); color: var(--color-text); border:1px solid var(--color-border); border-radius: var(--radius-sm); cursor:pointer; font: inherit; display:block; margin: 10px auto 0; }
 .reset-view-btn.below { margin-top: 10px; }
 .reset-view-btn:hover { background: var(--color-surface); }
@@ -2019,12 +2472,6 @@ panel h2 {
   cursor: pointer;
   font-size: 1.1em;
 }
-.context-menu { position:absolute; background: var(--color-surface-alt); border:1px solid var(--color-border); border-radius: var(--radius-sm); padding:5px 0; z-index:1000; min-width:150px; box-shadow: var(--elev-2); }
-.context-menu ul { list-style: none; padding: 0; margin: 0; }
-.context-menu li { padding:8px 12px; cursor:pointer; color: var(--color-text); font-size: var(--text-sm); }
-.context-menu li:hover { background: var(--color-accent); color: var(--color-text); }
-.context-menu button { background:none; border:none; color: var(--color-text-muted); width:100%; padding:8px; margin-top:5px; border-top:1px solid var(--color-border); cursor:pointer; font:inherit; }
-.context-menu button:hover { color: var(--color-text); background: var(--color-surface); }
 .turn-status-panel { margin-top:20px; background: var(--color-surface); padding:15px; border-radius: var(--radius-md); border:1px solid var(--color-border); text-align:center; width:100%; max-width:400px; box-shadow: var(--elev-1); }
 .turn-status-panel h3 { margin-top:0; color: var(--color-accent); font-family: var(--font-display); letter-spacing:.5px; }
 .initiative-list li {
@@ -2057,7 +2504,6 @@ panel h2 {
 
 @media (max-width: 900px) {
   .dm-panel { position: fixed; left: 10px; right: 10px; top: 10px; width: auto; max-height: calc(100dvh - 20px); }
-  .viewport { border-width: 6px; }
   .battlemap-main { padding-bottom: 80px; } /* breathing room for docked toolbar */
 }
 </style>

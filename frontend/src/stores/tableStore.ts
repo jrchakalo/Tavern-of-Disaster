@@ -1,8 +1,203 @@
 import { defineStore } from 'pinia';
 import type { Ref, ComputedRef } from 'vue';
 import { ref, computed } from 'vue';
-import type { IScene, ITable, IInitiativeEntry, GridSquare, TokenInfo, PlayerInfo, AuraInfo } from '../types';
+import { tokenSizes } from '../types';
+import type {
+    IScene,
+    ITable,
+    IInitiativeEntry,
+    GridSquare,
+    TokenInfo,
+    PlayerInfo,
+    AuraInfo,
+    SessionStateDTO,
+    SceneDTO,
+    TokenDTO,
+    InitiativeEntryDTO,
+    TableInfoDTO,
+    MeasurementDTO,
+    AuraDTO,
+    DiceRolledPayload,
+    LogEntry,
+} from '../types';
 import { currentUser } from '../services/authService';
+
+const DEFAULT_GRID = 30;
+const DEFAULT_METERS_PER_SQUARE = 1.5;
+const LOG_CAP = 200;
+type MeasurementShape = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
+type PersistentMeasurement = {
+    id: string;
+    userId: string;
+    username: string;
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+    distance: string;
+    color: string;
+    type?: MeasurementShape;
+    affectedSquares?: string[];
+    sceneId: string;
+};
+type IncomingPersistentMeasurement = Omit<PersistentMeasurement, 'sceneId'> & { sceneId?: string };
+export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
+
+type TokenMovePayload = {
+    tableId?: string;
+    sceneId: string;
+    tokenId: string;
+    oldSquareId: string;
+    squareId: string;
+    remainingMovement?: number;
+    movement?: number;
+};
+
+type TokenPatchPayload = {
+    tableId?: string;
+    sceneId?: string;
+    tokenId: string;
+    patch: Partial<TokenInfo>;
+};
+
+type TokensMovementResetPayload = {
+    tableId?: string;
+    sceneId: string;
+    updates: Array<{ tokenId: string; remainingMovement: number; movement?: number }>;
+};
+
+type InitiativeEntryAddedPayload = {
+    tableId?: string;
+    sceneId: string;
+    entry: InitiativeEntryDTO;
+    order: string[];
+};
+
+type InitiativeEntryRemovedPayload = {
+    tableId?: string;
+    sceneId: string;
+    entryId: string;
+    order: string[];
+};
+
+type InitiativeEntryUpdatedPayload = {
+    tableId?: string;
+    sceneId: string;
+    entryId: string;
+    patch: Partial<IInitiativeEntry>;
+};
+
+type InitiativeOrderUpdatedPayload = {
+    tableId?: string;
+    sceneId: string;
+    order: string[];
+    currentTurnId?: string | null;
+};
+
+type InitiativeTurnAdvancedPayload = {
+    tableId?: string;
+    sceneId: string;
+    currentEntryId: string;
+    previousEntryId?: string;
+    newRound?: boolean;
+};
+
+function isTokenSizeValue(value: string): value is TokenInfo['size'] {
+    return (tokenSizes as readonly string[]).includes(value);
+}
+
+function normalizeSceneType(type?: string): 'battlemap' | 'image' {
+    return type === 'image' ? 'image' : 'battlemap';
+}
+
+function mapTableDTO(dto: TableInfoDTO): ITable {
+    return {
+        _id: dto._id,
+        name: dto.name,
+        dm: dto.dm,
+        players: dto.players,
+        inviteCode: dto.inviteCode,
+        status: dto.status,
+        activeSceneId: dto.activeSceneId ?? null,
+        pauseUntil: dto.pauseUntil,
+        systemId: dto.systemId ?? null,
+        systemKey: dto.systemKey ?? null,
+        systemName: dto.systemName ?? null,
+    };
+}
+
+function mapSceneDTO(dto: SceneDTO): IScene {
+    return {
+        _id: dto._id,
+        tableId: dto.tableId,
+        name: dto.name,
+        imageUrl: dto.imageUrl,
+        gridWidth: dto.gridWidth ?? DEFAULT_GRID,
+        gridHeight: dto.gridHeight ?? DEFAULT_GRID,
+        type: normalizeSceneType(dto.type),
+        initiative: [],
+        metersPerSquare: dto.metersPerSquare ?? DEFAULT_METERS_PER_SQUARE,
+    };
+}
+
+function toTokenSize(value: string): TokenInfo['size'] {
+    return isTokenSizeValue(value) ? value : 'Pequeno/Médio';
+}
+
+function mapTokenDTO(dto: TokenDTO): TokenInfo {
+    return {
+        _id: dto._id,
+        tableId: dto.tableId,
+        squareId: dto.squareId,
+        color: dto.color,
+        ownerId: dto.owner,
+        name: dto.name,
+        imageUrl: dto.imageUrl,
+        sceneId: dto.sceneId || '',
+        movement: dto.movement,
+        remainingMovement: dto.remainingMovement,
+        size: toTokenSize(dto.size),
+        canOverlap: dto.canOverlap,
+        characterId: dto.characterId ?? null,
+    };
+}
+
+function mapInitiativeDTO(dto: InitiativeEntryDTO): IInitiativeEntry {
+    return {
+        _id: dto._id,
+        characterName: dto.characterName,
+        tokenId: dto.tokenId,
+        characterId: dto.characterId,
+        isCurrentTurn: dto.isCurrentTurn,
+    };
+}
+
+function mapMeasurementDTO(dto: MeasurementDTO): PersistentMeasurement {
+    return {
+        id: dto.id ?? `${dto.userId}-${dto.sceneId}`,
+        userId: dto.userId,
+        username: dto.username,
+        start: dto.start,
+        end: dto.end,
+        distance: dto.distance,
+        color: dto.color,
+        type: dto.type,
+        affectedSquares: dto.affectedSquares,
+        sceneId: dto.sceneId,
+    };
+}
+
+function mapAuraDTO(dto: AuraDTO): AuraInfo {
+    return {
+        id: dto.id,
+        tokenId: dto.tokenId,
+        tableId: dto.tableId,
+        sceneId: dto.sceneId,
+        name: dto.name,
+        color: dto.color,
+        radiusMeters: dto.radiusMeters,
+        ownerId: dto.ownerId,
+        difficultTerrain: dto.difficultTerrain,
+    };
+}
 
 export const useTableStore = defineStore('table', () => {
     // STATE
@@ -15,6 +210,7 @@ export const useTableStore = defineStore('table', () => {
     const gridHeight: Ref<number> = ref(30); // Altura (linhas)
     const sessionStatus: Ref<'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'> = ref('PREPARING');
     const pauseUntil: Ref<Date | null> = ref(null);
+    const connectionStatus: Ref<ConnectionStatus> = ref('disconnected');
     // Transição curta antes do LIVE
     const transitionMs: Ref<number> = ref(0);
     const transitionAt: Ref<number> = ref(0);
@@ -42,18 +238,17 @@ export const useTableStore = defineStore('table', () => {
     const userMeasurementColors: Ref<Record<string, string>> = ref({}); // Preferência local de cor
 
         // Medições persistentes (lista) – não são limpas ao mudar de turno
-    const persistentMeasurements: Ref<Array<{
-            id: string;
-            userId: string;
-            username: string;
-            start: { x: number; y: number };
-            end: { x: number; y: number };
-            distance: string;
-            color: string;
-            type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
-            affectedSquares?: string[];
-            sceneId: string;
-        }>> = ref([]);
+    const persistentMeasurements: Ref<PersistentMeasurement[]> = ref([]);
+    const logs: Ref<LogEntry[]> = ref([]);
+    const diceAnimationHook: Ref<((payload: DiceRolledPayload) => void) | null> = ref(null);
+
+    function setScenesFromDTO(sceneDtos: SceneDTO[]) {
+        scenes.value = sceneDtos.map(mapSceneDTO);
+    }
+
+    function setInitiativeFromDTO(entries: InitiativeEntryDTO[]) {
+        initiativeList.value = entries.map(mapInitiativeDTO);
+    }
 
     // GETTERS
     const isDM: ComputedRef<boolean> = computed(() => {
@@ -99,33 +294,114 @@ export const useTableStore = defineStore('table', () => {
         squares.value = newSquares;
     }
 
-    function setInitialState(data: { tableInfo: ITable; activeScene: IScene | null; tokens: TokenInfo[]; allScenes: IScene[] }) {
-        currentTable.value = data.tableInfo;
-        scenes.value = data.allScenes;
-        activeSceneId.value = data.activeScene?._id || null;
-        currentMapUrl.value = data.activeScene?.imageUrl || null;
-        initiativeList.value = data.activeScene?.initiative || [];
-    sessionStatus.value = data.tableInfo.status as 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED';
-    pauseUntil.value = (data.tableInfo as any).pauseUntil ? new Date((data.tableInfo as any).pauseUntil) : null;
-    gridWidth.value = data.activeScene?.gridWidth ?? 30;
-    gridHeight.value = data.activeScene?.gridHeight ?? 30;
-    metersPerSquare.value = data.activeScene?.metersPerSquare ?? 1.5;
-    _rebuildGridRectangular(gridWidth.value, gridHeight.value, data.tokens);
-    auras.value = [];
+    function setPersistentsFromDTO(items: MeasurementDTO[], sceneId: string | null) {
+        if (!sceneId) {
+            persistentMeasurements.value = [];
+            return;
+        }
+        persistentMeasurements.value = items
+            .filter(item => item.sceneId === sceneId)
+            .map(mapMeasurementDTO);
     }
 
-    function updateSessionState(newState: { activeScene: IScene | null, tokens: TokenInfo[] }) {
-        activeSceneId.value = newState.activeScene?._id || null;
-        currentMapUrl.value = newState.activeScene?.imageUrl || null;
-        initiativeList.value = newState.activeScene?.initiative || [];
-    gridWidth.value = newState.activeScene?.gridWidth ?? 30;
-    gridHeight.value = newState.activeScene?.gridHeight ?? 30;
-    metersPerSquare.value = newState.activeScene?.metersPerSquare ?? metersPerSquare.value;
-        _rebuildGridRectangular(gridWidth.value, gridHeight.value, newState.tokens);
-    // Ao mudar de cena limpamos medições efêmeras (escopo por cena)
-    sharedMeasurements.value = {};
-    auras.value = [];
-    // Persistentes são substituídas via evento específico (evita condição de corrida)
+    function setAurasFromDTO(items: AuraDTO[], sceneId: string | null) {
+        if (!sceneId) {
+            auras.value = [];
+            return;
+        }
+        auras.value = items
+            .filter(item => item.sceneId === sceneId)
+            .map(mapAuraDTO);
+    }
+
+    function applySessionSnapshot(snapshot: SessionStateDTO) {
+        currentTable.value = mapTableDTO(snapshot.table);
+        scenes.value = snapshot.scenes.map(mapSceneDTO);
+        const nextActiveSceneId = snapshot.activeScene?._id || snapshot.table.activeSceneId || null;
+        activeSceneId.value = nextActiveSceneId;
+        currentMapUrl.value = snapshot.activeScene?.imageUrl || null;
+        const derivedGridWidth = snapshot.activeScene?.gridWidth ?? DEFAULT_GRID;
+        const derivedGridHeight = snapshot.activeScene?.gridHeight ?? DEFAULT_GRID;
+        gridWidth.value = derivedGridWidth;
+        gridHeight.value = derivedGridHeight;
+        metersPerSquare.value = snapshot.activeScene?.metersPerSquare ?? DEFAULT_METERS_PER_SQUARE;
+        sessionStatus.value = snapshot.table.status;
+        pauseUntil.value = snapshot.table.pauseUntil ? new Date(snapshot.table.pauseUntil) : null;
+        const mappedTokens = snapshot.tokens.map(mapTokenDTO);
+        _rebuildGridRectangular(derivedGridWidth, derivedGridHeight, mappedTokens);
+        initiativeList.value = snapshot.initiative.map(mapInitiativeDTO);
+        setPersistentsFromDTO(snapshot.measurements, nextActiveSceneId);
+        setAurasFromDTO(snapshot.auras, nextActiveSceneId);
+        return nextActiveSceneId;
+    }
+
+    function setInitialState(snapshot: SessionStateDTO) {
+        applySessionSnapshot(snapshot);
+        sharedMeasurements.value = {};
+        pings.value = [];
+    }
+
+    function setConnectionStatus(status: ConnectionStatus) {
+        connectionStatus.value = status;
+    }
+
+    function createLogId() {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+            return crypto.randomUUID();
+        }
+        return `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function addLogEntry(entry: LogEntry) {
+        const trimmed = logs.value.slice(- (LOG_CAP - 1));
+        logs.value = [...trimmed, entry];
+    }
+
+    function clearLogs() {
+        logs.value = [];
+    }
+
+    function buildRollLogEntry(payload: DiceRolledPayload): LogEntry {
+        const label = payload.metadata || payload.tags?.[0] || 'Rolagem';
+        const rollsDisplay = payload.rolls.length
+            ? payload.rolls.map(r => r.kept === 'kept' ? `${r.value}` : `(${r.value})`).join(', ')
+            : '—';
+        const modifierText = payload.modifier === 0
+            ? ''
+            : payload.modifier > 0
+                ? ` + ${payload.modifier}`
+                : ` - ${Math.abs(payload.modifier)}`;
+        const detail = `${payload.expression} → [${rollsDisplay}]${modifierText} = ${payload.total}`;
+        return {
+            id: createLogId(),
+            type: 'roll',
+            authorId: payload.userId,
+            authorName: payload.username,
+            createdAt: payload.createdAt,
+            content: `${label}: ${detail}`,
+            raw: payload,
+        };
+    }
+
+    function handleDiceRoll(payload: DiceRolledPayload) {
+        addLogEntry(buildRollLogEntry(payload));
+        if (payload.userId === currentUser.value?.id) {
+            diceAnimationHook.value?.(payload);
+        }
+    }
+
+    function registerDiceAnimationHook(handler: ((payload: DiceRolledPayload) => void) | null) {
+        diceAnimationHook.value = handler;
+    }
+
+    function updateSessionState(snapshot: SessionStateDTO) {
+        const previousSceneId = activeSceneId.value;
+        const newSceneId = applySessionSnapshot(snapshot);
+        if (previousSceneId !== newSceneId) {
+            sharedMeasurements.value = {};
+            pings.value = [];
+            logs.value = [];
+        }
     }
 
     function placeToken(newToken: TokenInfo) {
@@ -135,13 +411,25 @@ export const useTableStore = defineStore('table', () => {
         }
     }
 
-    function moveToken(movedTokenData: TokenInfo & { oldSquareId: string }) {
-        if (movedTokenData.sceneId === activeSceneId.value) {
-        const oldSquare = squares.value.find(sq => sq.id === movedTokenData.oldSquareId);
-        if (oldSquare) oldSquare.token = null;
-        
-        const newSquare = squares.value.find(sq => sq.id === movedTokenData.squareId);
-        if (newSquare) newSquare.token = movedTokenData;
+    function moveToken(moved: TokenMovePayload) {
+        if (moved.sceneId !== activeSceneId.value) return;
+        let oldSquare = squares.value.find((sq) => sq.id === moved.oldSquareId);
+        if (!oldSquare) {
+            oldSquare = squares.value.find((sq) => sq.token?._id === moved.tokenId);
+        }
+        const token = oldSquare?.token;
+        if (!token) return;
+        oldSquare!.token = null;
+        token.squareId = moved.squareId;
+        if (typeof moved.remainingMovement === 'number') {
+            token.remainingMovement = moved.remainingMovement;
+        }
+        if (typeof moved.movement === 'number') {
+            token.movement = moved.movement;
+        }
+        const newSquare = squares.value.find((sq) => sq.id === moved.squareId);
+        if (newSquare) {
+            newSquare.token = token;
         }
     }
 
@@ -159,11 +447,22 @@ export const useTableStore = defineStore('table', () => {
         }
     }
 
-    function applyTokenUpdate(updated: TokenInfo) {
-        const square = squares.value.find(sq => sq.token?._id === updated._id);
-        if (square && square.token) {
-            Object.assign(square.token, updated);
-        }
+    function applyTokenUpdate(payload: TokenPatchPayload) {
+        const square = squares.value.find((sq) => sq.token?._id === payload.tokenId);
+        if (!square || !square.token) return;
+        Object.assign(square.token, payload.patch);
+    }
+
+    function applyTokensMovementReset(payload: TokensMovementResetPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        payload.updates.forEach((item) => {
+            const tokenSquare = squares.value.find((sq) => sq.token?._id === item.tokenId);
+            if (!tokenSquare?.token) return;
+            tokenSquare.token.remainingMovement = item.remainingMovement;
+            if (typeof item.movement === 'number') {
+                tokenSquare.token.movement = item.movement;
+            }
+        });
     }
 
     // Ação para o evento de reset de rodada
@@ -213,7 +512,7 @@ export const useTableStore = defineStore('table', () => {
     }
 
         // Persistentes
-    function addPersistentMeasurement(m: { id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; sceneId: string; }) {
+    function addPersistentMeasurement(m: PersistentMeasurement) {
             // Garante vínculo à cena ativa
             if (m.sceneId === activeSceneId.value) {
                 persistentMeasurements.value = [...persistentMeasurements.value, m];
@@ -225,20 +524,95 @@ export const useTableStore = defineStore('table', () => {
         function clearPersistentMeasurementsForScene(sceneId: string) {
             persistentMeasurements.value = persistentMeasurements.value.filter(pm => pm.sceneId !== sceneId);
         }
-    function setPersistentMeasurementsForScene(sceneId: string, items: Array<{ id: string; userId: string; username: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; color: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; sceneId?: string; }>) {
+    function setPersistentMeasurementsForScene(sceneId: string, items: IncomingPersistentMeasurement[]) {
             // Normaliza sceneId ausente (defesa contra payload incompleto do servidor)
-            const normalized = items.map(i => ({ ...i, sceneId: i.sceneId || sceneId }));
+            const normalized: PersistentMeasurement[] = items.map(i => ({ ...i, sceneId: i.sceneId || sceneId }));
             const others = persistentMeasurements.value.filter(pm => pm.sceneId !== sceneId);
             const currentForScene = persistentMeasurements.value.filter(pm => pm.sceneId === sceneId);
             // Se lista recebida é vazia e já temos itens, não sobrescreve (evita wipe indevido por corrida)
             const replacement = normalized.filter(i => i.sceneId === sceneId);
             const finalForScene = (replacement.length === 0 && currentForScene.length > 0) ? currentForScene : replacement;
-            persistentMeasurements.value = [...others, ...finalForScene as any];
+            persistentMeasurements.value = [...others, ...finalForScene];
         }
+
+    function setCurrentTurnEntry(entryId?: string | null) {
+        if (entryId === undefined) return;
+        let changed = false;
+        initiativeList.value.forEach((entry) => {
+            const shouldBeCurrent = entryId !== null && entry._id === entryId;
+            if (entry.isCurrentTurn !== shouldBeCurrent) {
+                entry.isCurrentTurn = shouldBeCurrent;
+                changed = true;
+            }
+        });
+        if (changed) {
+            initiativeList.value = [...initiativeList.value];
+        }
+    }
+
+    function reorderInitiativeList(order: string[] | undefined | null, currentTurnId?: string | null) {
+        if (!order || order.length === 0) {
+            setCurrentTurnEntry(currentTurnId);
+            return;
+        }
+        const byId = new Map(initiativeList.value.map((entry) => [entry._id, entry]));
+        const reordered: IInitiativeEntry[] = [];
+        order.forEach((id) => {
+            const entry = byId.get(id);
+            if (entry) reordered.push(entry);
+        });
+        initiativeList.value.forEach((entry) => {
+            if (!order.includes(entry._id)) {
+                reordered.push(entry);
+            }
+        });
+        initiativeList.value = reordered;
+        setCurrentTurnEntry(currentTurnId);
+    }
+
+    function handleInitiativeEntryAdded(payload: InitiativeEntryAddedPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        const mapped = mapInitiativeDTO(payload.entry);
+        const withoutEntry = initiativeList.value.filter((entry) => entry._id !== mapped._id);
+        initiativeList.value = [...withoutEntry, mapped];
+        reorderInitiativeList(payload.order, mapped.isCurrentTurn ? mapped._id : undefined);
+    }
+
+    function handleInitiativeEntryRemoved(payload: InitiativeEntryRemovedPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        initiativeList.value = initiativeList.value.filter((entry) => entry._id !== payload.entryId);
+        reorderInitiativeList(payload.order);
+    }
+
+    function handleInitiativeEntryUpdated(payload: InitiativeEntryUpdatedPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        const entry = initiativeList.value.find((item) => item._id === payload.entryId);
+        if (!entry) return;
+        Object.assign(entry, payload.patch);
+        initiativeList.value = [...initiativeList.value];
+        if (payload.patch.isCurrentTurn !== undefined) {
+            setCurrentTurnEntry(payload.patch.isCurrentTurn ? entry._id : null);
+        }
+    }
+
+    function handleInitiativeOrderUpdated(payload: InitiativeOrderUpdatedPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        reorderInitiativeList(payload.order, payload.currentTurnId ?? undefined);
+    }
+
+    function handleInitiativeTurnAdvanced(payload: InitiativeTurnAdvancedPayload) {
+        if (payload.sceneId !== activeSceneId.value) return;
+        setCurrentTurnEntry(payload.currentEntryId);
+    }
+
+    function handleInitiativeReset(sceneId: string) {
+        if (sceneId !== activeSceneId.value) return;
+        initiativeList.value = [];
+    }
 
     function updateSceneScale(sceneId: string, newScale: number) {
         const scene = scenes.value.find(s => s._id === sceneId);
-        if (scene) (scene as any).metersPerSquare = newScale;
+        if (scene) scene.metersPerSquare = newScale;
         if (sceneId === activeSceneId.value) metersPerSquare.value = newScale;
     }
 
@@ -286,10 +660,17 @@ export const useTableStore = defineStore('table', () => {
         removeToken,
         updateTokenOwner,
     applyTokenUpdate,
+    applyTokensMovementReset,
         updateAllTokens,
         upsertSharedMeasurement,
         removeSharedMeasurement,
     clearSharedMeasurements,
+    logs,
+    addLogEntry,
+    clearLogs,
+    buildRollLogEntry,
+    handleDiceRoll,
+    registerDiceAnimationHook,
     setUserMeasurementColor,
     getUserMeasurementColor,
     updateSceneScale,
@@ -300,7 +681,18 @@ export const useTableStore = defineStore('table', () => {
     addPersistentMeasurement,
     removePersistentMeasurement,
     clearPersistentMeasurementsForScene,
-    setPersistentMeasurementsForScene
-    ,addPing, clearPings
+    setPersistentMeasurementsForScene,
+    addPing,
+    clearPings,
+    setScenesFromDTO,
+    setInitiativeFromDTO,
+    handleInitiativeEntryAdded,
+    handleInitiativeEntryRemoved,
+    handleInitiativeEntryUpdated,
+    handleInitiativeOrderUpdated,
+    handleInitiativeTurnAdvanced,
+    handleInitiativeReset,
+        connectionStatus,
+        setConnectionStatus,
     };
 });

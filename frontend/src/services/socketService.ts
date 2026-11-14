@@ -2,14 +2,87 @@ import { toast } from './toast';
 import { io, Socket } from 'socket.io-client';
 import { useTableStore } from '../stores/tableStore';
 import { authToken } from './authService';
-import type { TokenInfo, IScene, IInitiativeEntry, PlayerInfo, TokenSize } from '../types';
+import type {
+  TokenInfo,
+  IInitiativeEntry,
+  PlayerInfo,
+  TokenSize,
+  SessionStateDTO,
+  SceneDTO,
+  InitiativeEntryDTO,
+  RollDiceParams,
+  DiceRolledPayload,
+} from '../types';
+
+type TokenMoveEvent = {
+  tableId?: string;
+  sceneId: string;
+  tokenId: string;
+  oldSquareId: string;
+  squareId: string;
+  remainingMovement?: number;
+  movement?: number;
+};
+
+type TokenUpdateEvent = {
+  tableId?: string;
+  sceneId?: string;
+  tokenId: string;
+  patch: Partial<TokenInfo>;
+};
+
+type TokensMovementResetEvent = {
+  tableId?: string;
+  sceneId: string;
+  updates: Array<{ tokenId: string; remainingMovement: number; movement?: number }>;
+};
+
+type InitiativeEntryAddedEvent = {
+  tableId?: string;
+  sceneId: string;
+  entry: InitiativeEntryDTO;
+  order: string[];
+};
+
+type InitiativeEntryRemovedEvent = {
+  tableId?: string;
+  sceneId: string;
+  entryId: string;
+  order: string[];
+};
+
+type InitiativeEntryUpdatedEvent = {
+  tableId?: string;
+  sceneId: string;
+  entryId: string;
+  patch: Partial<IInitiativeEntry>;
+};
+
+type InitiativeOrderUpdatedEvent = {
+  tableId?: string;
+  sceneId: string;
+  order: string[];
+  currentTurnId?: string | null;
+};
+
+type InitiativeTurnAdvancedEvent = {
+  tableId?: string;
+  sceneId: string;
+  currentEntryId: string;
+  previousEntryId?: string;
+  currentTokenId?: string;
+  newRound?: boolean;
+};
 
 class SocketService {
   private socket: Socket | null = null;
   private store = useTableStore();
+  private currentTableId: string | null = null;
 
   connect(tableId: string) {
     if (this.socket) return; // Evita duplicar conexão
+    this.currentTableId = tableId;
+    this.store.setConnectionStatus('connecting');
 
     const socketURL = import.meta.env.VITE_API_URL || 'ws://localhost:3001';
 
@@ -20,23 +93,47 @@ class SocketService {
 
     this.socket.on('connect', () => {
       console.log('CONECTADO via SocketService! ID:', this.socket?.id);
-      this.socket?.emit('joinTable', tableId);
+      this.store.setConnectionStatus('connected');
+      if (this.currentTableId) {
+        this.socket?.emit('joinTable', this.currentTableId);
+      }
+    });
+
+    this.socket.io.on('reconnect_attempt', () => {
+      this.store.setConnectionStatus('reconnecting');
+    });
+
+    this.socket.on('reconnect', () => {
+      this.store.setConnectionStatus('connected');
+      if (this.currentTableId) {
+        this.socket?.emit('joinTable', this.currentTableId);
+      }
+    });
+
+    this.socket.on('disconnect', () => {
+      this.store.setConnectionStatus('disconnected');
     });
 
   // ---- Recepção de eventos do servidor ----
-    this.socket.on('initialSessionState', (data) => this.store.setInitialState(data));
-    this.socket.on('sessionStateUpdated', (data) => this.store.updateSessionState(data));
+    this.socket.on('initialSessionState', (data: SessionStateDTO) => this.store.setInitialState(data));
+    this.socket.on('sessionStateUpdated', (data: SessionStateDTO) => this.store.updateSessionState(data));
     this.socket.on('tokenPlaced', (data: TokenInfo) => this.store.placeToken(data));
-    this.socket.on('tokenMoved', (data: TokenInfo & { oldSquareId: string }) => this.store.moveToken(data));
+    this.socket.on('tokenMoved', (data: TokenMoveEvent) => this.store.moveToken(data));
     this.socket.on('tokenRemoved', (data: { tokenId: string }) => { 
       this.store.removeToken(data.tokenId);
       try { toast.success('Token removido.'); } catch {}
     });
     this.socket.on('tokenOwnerUpdated', (data: { tokenId: string, newOwner: PlayerInfo }) => this.store.updateTokenOwner(data.tokenId, data.newOwner));
-  this.socket.on('tokenUpdated', (data: TokenInfo) => this.store.applyTokenUpdate(data));
+    this.socket.on('tokenUpdated', (data: TokenUpdateEvent) => this.store.applyTokenUpdate(data));
+    this.socket.on('tokensMovementReset', (data: TokensMovementResetEvent) => this.store.applyTokensMovementReset(data));
     this.socket.on('tokensUpdated', (data: TokenInfo[]) => this.store.updateAllTokens(data));
-  this.socket.on('initiativeUpdated', (data: IInitiativeEntry[]) => { this.store.initiativeList = data; });
-    this.socket.on('sceneListUpdated', (data: IScene[]) => { this.store.scenes = data; });
+    this.socket.on('initiativeEntryAdded', (payload: InitiativeEntryAddedEvent) => this.store.handleInitiativeEntryAdded(payload));
+    this.socket.on('initiativeEntryRemoved', (payload: InitiativeEntryRemovedEvent) => this.store.handleInitiativeEntryRemoved(payload));
+    this.socket.on('initiativeEntryUpdated', (payload: InitiativeEntryUpdatedEvent) => this.store.handleInitiativeEntryUpdated(payload));
+    this.socket.on('initiativeOrderUpdated', (payload: InitiativeOrderUpdatedEvent) => this.store.handleInitiativeOrderUpdated(payload));
+    this.socket.on('initiativeTurnAdvanced', (payload: InitiativeTurnAdvancedEvent) => this.store.handleInitiativeTurnAdvanced(payload));
+    this.socket.on('initiativeReset', (payload: { tableId?: string; sceneId: string }) => this.store.handleInitiativeReset(payload.sceneId));
+    this.socket.on('sceneListUpdated', (data: SceneDTO[]) => { this.store.setScenesFromDTO(data); });
     this.socket.on('sessionStatusUpdated', (data: { status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'; pauseUntil?: string | null; serverNowMs?: number }) => {
       this.store.sessionStatus = data.status;
       this.store.pauseUntil = data.pauseUntil ? new Date(data.pauseUntil) : null;
@@ -47,6 +144,7 @@ class SocketService {
     });
     this.socket.on('sessionTransition', (data: { durationMs: number }) => { this.store.transitionMs = data.durationMs || 3000; this.store.transitionAt = Date.now(); });
     this.socket.on('mapUpdated', (data: { mapUrl: string }) => { this.store.currentMapUrl = data.mapUrl; });
+    this.socket.on('diceRolled', this.handleDiceRolled);
     // Medições efêmeras / compartilhadas
   this.socket.on('measurementShared', (m) => this.store.upsertSharedMeasurement(m));
   this.socket.on('measurementRemoved', (data: { userId: string }) => this.store.removeSharedMeasurement(data.userId));
@@ -91,8 +189,15 @@ class SocketService {
     });
 
   // Erros de conexão / feedback simples
-    this.socket.on('connect_error', (error) => console.error('SocketService - Erro de conexão:', error.message));
-      this.socket.on('tokenPlacementError', (error) => toast.error(`Erro ao colocar token: ${error.message}`));
+    this.socket.on('connect_error', (error) => {
+      console.error('SocketService - Erro de conexão:', error.message);
+      this.store.setConnectionStatus('error');
+      try {
+        toast.error('Erro de conexão. Tentando novamente...');
+      } catch {}
+    });
+        this.socket.on('tokenPlacementError', (error) => toast.error(`Erro ao colocar token: ${error.message}`));
+        this.socket.on('diceRollError', this.handleDiceRollError);
   }
   // ---- Emissores de requisições ----
   // Medições persistentes
@@ -107,6 +212,8 @@ class SocketService {
   disconnect() {
     this.socket?.disconnect();
     this.socket = null;
+    this.currentTableId = null;
+    this.store.setConnectionStatus('disconnected');
     console.log('SocketService - Desconectado.');
   }
 
@@ -190,6 +297,10 @@ class SocketService {
     this.socket?.emit('requestRemoveMeasurement', payload);
   }
 
+  rollDice(params: RollDiceParams) {
+    this.socket?.emit('requestRollDice', params);
+  }
+
   clearAllMeasurements(tableId: string, sceneId: string) {
     this.socket?.emit('requestClearAllMeasurements', { tableId, sceneId });
   }
@@ -206,6 +317,15 @@ class SocketService {
   sendPing(payload: { tableId: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string }) {
     this.socket?.emit('requestPing', payload);
   }
+
+  private handleDiceRolled = (payload: DiceRolledPayload) => {
+    this.store.handleDiceRoll(payload);
+  };
+
+  private handleDiceRollError = (error: { message?: string }) => {
+    const message = error?.message || 'Erro ao executar rolagem.';
+    toast.error(message);
+  };
 }
 
 // Instância singleton

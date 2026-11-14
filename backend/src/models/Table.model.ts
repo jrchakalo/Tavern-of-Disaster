@@ -12,6 +12,7 @@ export interface ITable extends Document {
   scenes: Types.ObjectId[];
   status: string;
   pauseUntil?: Date | null;
+  systemId?: Types.ObjectId | null;
 }
 
 const TableSchema: Schema<ITable> = new Schema({
@@ -27,6 +28,7 @@ const TableSchema: Schema<ITable> = new Schema({
     default: 'PREPARING', // Toda nova mesa começa em modo de preparação
   },
   pauseUntil: { type: Date, required: false, default: null },
+  systemId: { type: Schema.Types.ObjectId, ref: 'System', default: null },
 }, {
   timestamps: true
 });

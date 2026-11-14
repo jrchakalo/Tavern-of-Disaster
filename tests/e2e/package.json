@@ -1,0 +1,18 @@
+{
+  "name": "tavernofdisaster-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed --project=chromium",
+    "codegen": "playwright codegen"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2",
+    "@types/node": "^22.15.21",
+    "@types/wait-on": "^5.3.4",
+    "mongodb-memory-server": "^10.1.4",
+    "socket.io-client": "^4.8.1",
+    "wait-on": "^7.2.0"
+  }
+}
