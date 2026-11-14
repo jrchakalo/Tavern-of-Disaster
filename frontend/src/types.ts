@@ -303,3 +303,110 @@ export interface LogEntry {
   content: string;
   raw?: unknown;
 }
+
+// ---------------------------------------------------------------------------
+// Contrato realtime (docs/REALTIME_PROTOCOL.md, protocolVersion: 1)
+// ---------------------------------------------------------------------------
+
+export type SessionRole = 'DM' | 'PLAYER' | 'DISPLAY' | 'SPECTATOR';
+
+export interface SessionYou {
+  userId: string;
+  username: string;
+  role: SessionRole;
+  permissions: string[];
+}
+
+export interface PresenceEntry {
+  userId: string;
+  username: string;
+  role: SessionRole;
+  socketCount: number;
+}
+
+export type ErrorCode =
+  | 'UNAUTHENTICATED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'VALIDATION'
+  | 'CONFLICT'
+  | 'RATE_LIMITED'
+  | 'INTERNAL';
+
+export interface AckOk {
+  ok: true;
+  revision: number;
+  serverNowMs: number;
+}
+
+export interface AckError {
+  ok: false;
+  error: {
+    code: ErrorCode;
+    /** pt-BR, pronta para toast. */
+    message: string;
+    /** Nunca inclui segredo. */
+    details?: unknown;
+  };
+  revision: number;
+  serverNowMs: number;
+}
+
+export type Ack = AckOk | AckError;
+
+export interface SessionSnapshot {
+  protocolVersion: 1;
+  tableId: string;
+  revision: number;
+  serverNowMs: number;
+  you: SessionYou;
+  presence: PresenceEntry[];
+  table: TableInfoDTO;
+  activeScene: SceneDTO | null;
+  scenes: SceneDTO[];
+  tokens: TokenDTO[];
+  initiative: InitiativeEntryDTO[];
+  measurements: MeasurementDTO[];
+  auras: AuraDTO[];
+}
+
+export interface TokenUpdateDTO {
+  tokenId: string;
+  patch: Partial<TokenDTO>;
+}
+
+export interface SessionStatusChangeDTO {
+  status: string;
+  pauseUntil: string | null;
+  serverNowMs: number;
+}
+
+export interface SessionPatchChanges {
+  table?: Partial<TableInfoDTO>;
+  activeScene?: SceneDTO | null;
+  scenes?: SceneDTO[];
+  /** Substitui a lista inteira. */
+  tokens?: TokenDTO[];
+  /** Merge por tokenId. */
+  tokenUpdates?: TokenUpdateDTO[];
+  /** Remove por tokenId. */
+  tokensRemoved?: string[];
+  /** Substitui a lista inteira. */
+  initiative?: InitiativeEntryDTO[];
+  /** Substitui a lista inteira. */
+  measurements?: MeasurementDTO[];
+  /** Substitui a lista inteira. */
+  auras?: AuraDTO[];
+  sessionStatus?: SessionStatusChangeDTO;
+}
+
+export interface SessionPatch {
+  protocolVersion: 1;
+  tableId: string;
+  /** Revisão depois da mudança. */
+  revision: number;
+  /** Revisão antes da mudança. */
+  baseRevision: number;
+  serverNowMs: number;
+  changes: SessionPatchChanges;
+}

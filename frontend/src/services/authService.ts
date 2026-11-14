@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import { jwtDecode } from 'jwt-decode';
+import { API_BASE_URL } from './apiBase';
 
 export interface UserPayload {
   id: string;
@@ -51,4 +52,32 @@ export function setAuthToken(token: string) {
 // Função para remover o token (fazer logout)
 export function clearAuthToken() {
   updateUserState(null);
+}
+
+/**
+ * Renova a sessão via POST /api/auth/refresh com o token atual.
+ * Retorna o novo token (já persistido) ou null quando não foi possível renovar.
+ * Nunca loga o token.
+ */
+export async function refreshToken(): Promise<string | null> {
+  const current = authToken.value;
+  if (!current) return null;
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${current}`,
+      },
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { token?: unknown };
+    const next = typeof data?.token === 'string' ? data.token : null;
+    if (!next) return null;
+    setAuthToken(next);
+    return next;
+  } catch {
+    // Falha de rede/parse: apenas sinaliza que não renovou.
+    return null;
+  }
 }
