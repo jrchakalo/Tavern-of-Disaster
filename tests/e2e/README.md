@@ -33,3 +33,25 @@ Useful env vars:
 
 Artifacts (screenshots, traces, videos) go to `test-results/` and
 `playwright-report/`, both ignored by Git.
+
+## Realtime protocol tests (Phase 1)
+
+`specs/realtime-authz.spec.ts` checks the authorization and ack contract of
+`docs/REALTIME_PROTOCOL.md` (join rules, `FORBIDDEN` on DM-only mutations,
+cross-table IDOR, `actionError` without an ack callback, monotonic `revision`).
+It drives REST + `socket.io-client` only — no browser needed.
+
+```bash
+npx playwright test specs/realtime-authz.spec.ts --reporter=list
+```
+
+The 6-client chaos harness is standalone (it boots its own backend and an
+in-memory MongoDB) and lives in `chaos/`:
+
+```bash
+cd tests/e2e
+node chaos/run.mjs
+```
+
+See `chaos/README.md` for the checklist and how to read its JSON report.
+
