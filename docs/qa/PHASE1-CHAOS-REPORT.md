@@ -162,20 +162,25 @@ Saída do harness de caos contra o backend integrado:
 [chaos] PASS: todos os itens do contrato de caos foram satisfeitos.
 ```
 
-### 4.3 Registro de execução final (a confirmar pelo PO)
+### 4.3 Registro de execução final (PO, 2026-11-14)
 
 | Campo | Valor |
 |---|---|
-| Data/hora da execução | 2026-11-14 (execuções de validação); *(reexecutar pelo PO)* |
-| Commit do backend validado | `0f39f34` (`restore/phase-1-realtime`, backend integrado) |
-| `npx playwright test specs/realtime-authz.spec.ts` | **7 passed** |
-| `node chaos/run.mjs` → `result` | **PASS** (saída 0) |
+| Data/hora da execução | 2026-11-14 18:00 UTC |
+| Commit da integração validado | `ef44594` (`restore/phase-1-realtime`; backend integrado em `0f39f34`, correções em `f6ac357`) |
+| `npx playwright test specs/realtime-authz.spec.ts --workers=1` | **7 passed** (15,5 s) |
+| `npx playwright test` (suíte completa, paralela) | **8 passed** (33,9 s) — inclui `happy-path.spec.ts` |
+| `node chaos/run.mjs` → `result` | **PASS** (saída 0, 14 checks) |
 | `revision` convergida | **4** |
-| `tokenHash` convergido | **b29128b88545b4ae** |
-| `initiativeHash` convergido | **d11c3ca4c400bda6** |
+| `tokenHash` convergido | **d8565ae406b8e431** (desta execução) |
+| `initiativeHash` convergido | **322e2b63376f4487** (desta execução) |
 | Clientes no caos | 7 (6 da mesa + 1 socket extra do DM para a corrida) |
 | `actionError` inesperados | **0** |
-| Veredito do PO | *(preencher)* |
+| Veredito do PO | **APROVADO** |
+
+Ambiente local: `MONGOMS_SYSTEM_BINARY` apontando para o binário já em cache em
+`backend/node_modules/.cache/mongodb-memory-server/mongod-x64-fedora-7.0.24`
+(evita download). CI pode baixar o binário normalmente ou usar o cache do runner.
 
 ## 5. Evidência do caos (execução aprovada)
 
