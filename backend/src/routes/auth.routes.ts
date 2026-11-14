@@ -1,7 +1,8 @@
 import { Router, RequestHandler } from 'express';
 import User from '../models/User.model';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
+import { signUserToken } from '../utils/jwt';
 import { createLogger } from '../logger';
 import { recordAuthFailure } from '../metrics';
 import { validate } from '../validation/validate';
@@ -90,33 +91,12 @@ const loginUserHandler: RequestHandler = async (req, res) => {
     }
 
     // Senha correta! Criar e assinar o JWT
-    const payload = {
-      user: {
-        id: user.id,
-        username: user.username
-      }
-    };
-
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) {
-      throw new Error('Chave secreta JWT não definida no .env');
-    }
-
-    jwt.sign(
-      payload,
-      jwtSecret,
-      { expiresIn: '6h' }, // O token expirará em 6 horas
-      (err, token) => {
-        if (err) throw err;
-        // 4. Enviar o token de volta para o frontend
-        requestLog.info({ userId: user._id }, 'Login bem-sucedido');
-        res.json({
-          message: 'Login bem-sucedido!',
-          token: token // O frontend precisa salvar isso
-        });
-      }
-    );
-
+    const token = await signUserToken({ id: user.id, username: user.username });
+    requestLog.info({ userId: user._id }, 'Login bem-sucedido');
+    res.json({
+      message: 'Login bem-sucedido!',
+      token,
+    });
   } catch (error) {
     if (error instanceof ServiceError) {
       recordAuthFailure();
@@ -130,7 +110,24 @@ const loginUserHandler: RequestHandler = async (req, res) => {
   }
 };
 
+// Renova o token mantendo o mesmo segredo/expiração do login.
+const refreshTokenHandler: RequestHandler = async (req, res) => {
+  try {
+    const user = (req as AuthRequest).user;
+    if (!user?.id) {
+      res.status(401).json({ message: 'Usuário não autenticado.' });
+      return;
+    }
+    const token = await signUserToken({ id: user.id, username: user.username });
+    res.json({ token });
+  } catch (error) {
+    log.error({ err: error, route: 'refresh' }, 'Erro ao renovar token');
+    res.status(500).json({ message: 'Erro interno do servidor.' });
+  }
+};
+
 router.post('/register', limitCreate, registerUserHandler);
 router.post('/login', limitLogin, loginUserHandler);
+router.post('/refresh', authMiddleware, limitLogin, refreshTokenHandler);
 
 export default router;

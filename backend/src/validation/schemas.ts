@@ -52,6 +52,59 @@ export const zRegisterRequest = z.object({
   password: z.string().min(6).max(128),
 });
 
+// Realtime session ---------------------------------------------------------
+// Compatibilidade: o cliente antigo enviava apenas a string do tableId.
+export const zJoinTablePayload = z
+  .union([z.object({ tableId }), z.string().trim().min(1).max(48)])
+  .transform((value) => (typeof value === 'string' ? { tableId: value } : value));
+
+export const zRequestResyncPayload = z.object({
+  tableId,
+  sinceRevision: z.number().int().min(0).optional(),
+});
+
+const expectedRevisionField = z.number().int().min(0).optional();
+
+export const zSetActiveScenePayload = z.object({
+  tableId,
+  sceneId,
+  expectedRevision: expectedRevisionField,
+});
+
+export const zUpdateSessionStatusPayload = z.object({
+  tableId,
+  newStatus: z.enum(['PREPARING', 'LIVE', 'PAUSED', 'ENDED']),
+  pauseSeconds: z.number().int().min(0).max(86400).optional(),
+});
+
+export const zStartTransitionPayload = z.object({
+  tableId,
+  durationMs: z.number().int().min(0).max(60000).optional(),
+});
+
+export const zSetMapPayload = z.object({
+  tableId,
+  mapUrl: sanitizeText(z.string().trim().min(1).max(2048)),
+});
+
+export const zReorderScenesPayload = z.object({
+  tableId,
+  orderedSceneIds: z.array(objectId).min(1).max(200),
+});
+
+export const zUpdateGridDimensionsPayload = z.object({
+  tableId,
+  sceneId,
+  newGridWidth: z.number().int().min(1).max(5000),
+  newGridHeight: z.number().int().min(1).max(5000),
+});
+
+export const zUpdateSceneScalePayload = z.object({
+  tableId,
+  sceneId,
+  metersPerSquare: z.number().positive().max(10000),
+});
+
 // Tokens -------------------------------------------------------------------
 export const zPlaceTokenPayload = z.object({
   tableId,
@@ -71,6 +124,7 @@ export const zMoveTokenPayload = z.object({
   tableId,
   tokenId: objectId,
   targetSquareId: z.string().trim().min(1).max(64),
+  expectedRevision: expectedRevisionField,
 });
 
 export const zAssignTokenPayload = z.object({
@@ -135,6 +189,14 @@ export const zReorderInitiativePayload = z.object({
 export const zNextTurnPayload = z.object({
   tableId,
   sceneId,
+  expectedRevision: expectedRevisionField,
+});
+
+export const zEditInitiativeEntryPayload = z.object({
+  tableId,
+  sceneId,
+  initiativeEntryId: objectId,
+  newName: nameString,
 });
 
 // Measurements -------------------------------------------------------------
@@ -166,6 +228,38 @@ export const zRemovePersistentMeasurementPayload = z.object({
 export const zClearAllMeasurementsPayload = z.object({
   tableId,
   sceneId,
+});
+
+export const zRemoveMeasurementPayload = z.object({
+  tableId,
+  sceneId,
+});
+
+// Auras --------------------------------------------------------------------
+export const zUpsertAuraPayload = z.object({
+  tableId,
+  sceneId,
+  tokenId: objectId,
+  name: z.string().trim().min(1).max(100),
+  color: hexColor,
+  radiusMeters: z.number().min(0).max(10000),
+  difficultTerrain: z.boolean().optional(),
+});
+
+export const zRemoveAuraPayload = z.object({
+  tableId,
+  sceneId,
+  tokenId: objectId,
+});
+
+// Ping (efêmero) -----------------------------------------------------------
+export const zPingPayload = z.object({
+  tableId,
+  sceneId,
+  squareId: z.string().trim().min(1).max(64).optional(),
+  x: z.number().finite().optional(),
+  y: z.number().finite().optional(),
+  color: z.string().trim().min(1).max(32).optional(),
 });
 
 // Dice ---------------------------------------------------------------------
@@ -365,6 +459,20 @@ export const zSystemIdParams = z.object({
 // Types --------------------------------------------------------------------
 export type LoginRequest = z.infer<typeof zLoginRequest>;
 export type RegisterRequest = z.infer<typeof zRegisterRequest>;
+export type JoinTablePayload = z.infer<typeof zJoinTablePayload>;
+export type RequestResyncPayload = z.infer<typeof zRequestResyncPayload>;
+export type SetActiveScenePayload = z.infer<typeof zSetActiveScenePayload>;
+export type UpdateSessionStatusPayload = z.infer<typeof zUpdateSessionStatusPayload>;
+export type StartTransitionPayload = z.infer<typeof zStartTransitionPayload>;
+export type SetMapPayload = z.infer<typeof zSetMapPayload>;
+export type ReorderScenesPayload = z.infer<typeof zReorderScenesPayload>;
+export type UpdateGridDimensionsPayload = z.infer<typeof zUpdateGridDimensionsPayload>;
+export type UpdateSceneScalePayload = z.infer<typeof zUpdateSceneScalePayload>;
+export type EditInitiativeEntryPayload = z.infer<typeof zEditInitiativeEntryPayload>;
+export type RemoveMeasurementPayload = z.infer<typeof zRemoveMeasurementPayload>;
+export type UpsertAuraPayload = z.infer<typeof zUpsertAuraPayload>;
+export type RemoveAuraPayload = z.infer<typeof zRemoveAuraPayload>;
+export type PingPayload = z.infer<typeof zPingPayload>;
 export type PlaceTokenPayloadInput = z.infer<typeof zPlaceTokenPayload>;
 export type MoveTokenPayload = z.infer<typeof zMoveTokenPayload>;
 export type AssignTokenPayload = z.infer<typeof zAssignTokenPayload>;
@@ -397,6 +505,20 @@ export type RollHistoryQuery = z.infer<typeof zRollHistoryQuery>;
 export const schemas = {
   zLoginRequest,
   zRegisterRequest,
+  zJoinTablePayload,
+  zRequestResyncPayload,
+  zSetActiveScenePayload,
+  zUpdateSessionStatusPayload,
+  zStartTransitionPayload,
+  zSetMapPayload,
+  zReorderScenesPayload,
+  zUpdateGridDimensionsPayload,
+  zUpdateSceneScalePayload,
+  zEditInitiativeEntryPayload,
+  zRemoveMeasurementPayload,
+  zUpsertAuraPayload,
+  zRemoveAuraPayload,
+  zPingPayload,
   zPlaceTokenPayload,
   zMoveTokenPayload,
   zAssignTokenPayload,
