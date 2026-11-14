@@ -329,6 +329,176 @@ describe('tableStore — protocolo realtime', () => {
     expect(store.auras).toHaveLength(1);
   });
 
+  it('applyPatch move token via tokenUpdates com squareId', () => {
+    const store = useTableStore();
+    store.applySnapshot(
+      makeSnapshot({ tokens: [makeToken({ _id: 'tk-1', squareId: 'sq-1', remainingMovement: 6 })] }),
+    );
+    expect(store.squares.find((sq) => sq.id === 'sq-1')?.token?._id).toBe('tk-1');
+
+    const applied = store.applyPatch(
+      makePatch({}, {
+        tokenUpdates: [{ tokenId: 'tk-1', patch: { squareId: 'sq-2', remainingMovement: 3 } }],
+      }),
+    );
+
+    expect(applied).toBe(true);
+    expect(store.revision).toBe(6);
+    expect(store.squares.find((sq) => sq.id === 'sq-1')?.token).toBeNull();
+    const moved = store.squares.find((sq) => sq.id === 'sq-2')?.token;
+    expect(moved?._id).toBe('tk-1');
+    expect(moved?.squareId).toBe('sq-2');
+    expect(moved?.remainingMovement).toBe(3);
+  });
+
+  it('applyPatch com tokenUpdates sem squareId mantém merge local', () => {
+    const store = useTableStore();
+    store.applySnapshot(
+      makeSnapshot({ tokens: [makeToken({ _id: 'tk-1', squareId: 'sq-1' })] }),
+    );
+
+    store.applyPatch(
+      makePatch({}, {
+        tokenUpdates: [{ tokenId: 'tk-1', patch: { remainingMovement: 1 } }],
+      }),
+    );
+
+    const token = store.squares.find((sq) => sq.id === 'sq-1')?.token;
+    expect(token?.remainingMovement).toBe(1);
+    expect(token?.squareId).toBe('sq-1');
+  });
+
+  it('applyPatch reconstrói o grid quando activeScene muda as dimensões', () => {
+    const store = useTableStore();
+    store.applySnapshot(
+      makeSnapshot({
+        activeScene: {
+          _id: 'scene-1',
+          tableId: 'table-1',
+          name: 'Caverna',
+          gridWidth: 2,
+          gridHeight: 2,
+          type: 'battlemap',
+          metersPerSquare: 1.5,
+        },
+        scenes: [
+          {
+            _id: 'scene-1',
+            tableId: 'table-1',
+            name: 'Caverna',
+            gridWidth: 2,
+            gridHeight: 2,
+            type: 'battlemap',
+            metersPerSquare: 1.5,
+          },
+        ],
+        tokens: [makeToken({ _id: 'tk-1', squareId: 'sq-0' })],
+      }),
+    );
+    expect(store.squares).toHaveLength(4);
+
+    const applied = store.applyPatch(
+      makePatch({}, {
+        activeScene: {
+          _id: 'scene-1',
+          tableId: 'table-1',
+          name: 'Caverna',
+          gridWidth: 3,
+          gridHeight: 3,
+          type: 'battlemap',
+          metersPerSquare: 1.5,
+        },
+      }),
+    );
+
+    expect(applied).toBe(true);
+    expect(store.gridWidth).toBe(3);
+    expect(store.gridHeight).toBe(3);
+    expect(store.squares).toHaveLength(9);
+    // Token dentro dos novos limites é preservado no seu squareId.
+    const kept = store.squares.find((sq) => sq.id === 'sq-0')?.token;
+    expect(kept?._id).toBe('tk-1');
+    expect(kept?.squareId).toBe('sq-0');
+  });
+
+  it('applyPatch descarta token fora dos novos limites ao reduzir o grid', () => {
+    const store = useTableStore();
+    store.applySnapshot(
+      makeSnapshot({
+        activeScene: {
+          _id: 'scene-1',
+          tableId: 'table-1',
+          name: 'Caverna',
+          gridWidth: 3,
+          gridHeight: 3,
+          type: 'battlemap',
+          metersPerSquare: 1.5,
+        },
+        scenes: [
+          {
+            _id: 'scene-1',
+            tableId: 'table-1',
+            name: 'Caverna',
+            gridWidth: 3,
+            gridHeight: 3,
+            type: 'battlemap',
+            metersPerSquare: 1.5,
+          },
+        ],
+        tokens: [makeToken({ _id: 'tk-1', squareId: 'sq-8' })],
+      }),
+    );
+    expect(store.squares).toHaveLength(9);
+
+    const applied = store.applyPatch(
+      makePatch({}, {
+        activeScene: {
+          _id: 'scene-1',
+          tableId: 'table-1',
+          name: 'Caverna',
+          gridWidth: 2,
+          gridHeight: 2,
+          type: 'battlemap',
+          metersPerSquare: 1.5,
+        },
+      }),
+    );
+
+    expect(applied).toBe(true);
+    expect(store.squares).toHaveLength(4);
+    // Comportamento escolhido: token cujo squareId ficou fora do novo grid é
+    // descartado da board local; um snapshot (resync) restaura o canônico.
+    expect(store.squares.some((sq) => sq.token?._id === 'tk-1')).toBe(false);
+  });
+
+  it('applyPatch limpa o grid ao trocar de cena via activeScene', () => {
+    const store = useTableStore();
+    store.applySnapshot(
+      makeSnapshot({
+        tokens: [makeToken({ _id: 'tk-1', squareId: 'sq-0' })],
+      }),
+    );
+    expect(store.squares.some((sq) => sq.token?._id === 'tk-1')).toBe(true);
+
+    store.applyPatch(
+      makePatch({}, {
+        activeScene: {
+          _id: 'scene-2',
+          tableId: 'table-1',
+          name: 'Floresta',
+          gridWidth: 10,
+          gridHeight: 10,
+          type: 'battlemap',
+          metersPerSquare: 1.5,
+        },
+      }),
+    );
+
+    expect(store.activeSceneId).toBe('scene-2');
+    // Tokens da cena antiga não vazam para o grid da nova cena.
+    expect(store.squares.some((sq) => sq.token?._id === 'tk-1')).toBe(false);
+  });
+
   it('applyPatch aplica quando baseRevision é igual à revisão atual', () => {
     const store = useTableStore();
     store.applySnapshot(makeSnapshot()); // revision 5

@@ -513,11 +513,23 @@ export const useTableStore = defineStore('table', () => {
                     } else {
                         scenes.value = [...scenes.value, mapped];
                     }
+                    const isSceneSwitch = activeSceneId.value !== mapped._id;
+                    const newWidth = mapped.gridWidth ?? DEFAULT_GRID;
+                    const newHeight = mapped.gridHeight ?? DEFAULT_GRID;
                     activeSceneId.value = mapped._id;
                     currentMapUrl.value = mapped.imageUrl ?? null;
-                    gridWidth.value = mapped.gridWidth ?? DEFAULT_GRID;
-                    gridHeight.value = mapped.gridHeight ?? DEFAULT_GRID;
+                    const dimensionsChanged = newWidth !== gridWidth.value || newHeight !== gridHeight.value;
+                    gridWidth.value = newWidth;
+                    gridHeight.value = newHeight;
                     metersPerSquare.value = mapped.metersPerSquare ?? DEFAULT_METERS_PER_SQUARE;
+                    if (isSceneSwitch) {
+                        // Tokens da cena antiga não pertencem ao novo grid.
+                        _rebuildGridRectangular(newWidth, newHeight, []);
+                    } else if (dimensionsChanged) {
+                        // Resize da mesma cena: preserva os tokens atuais
+                        // (tokens fora dos novos limites caem fora do grid).
+                        _rebuildGridRectangular(newWidth, newHeight, tokensOnMap.value);
+                    }
                 } else {
                     activeSceneId.value = null;
                     currentMapUrl.value = null;
@@ -532,7 +544,19 @@ export const useTableStore = defineStore('table', () => {
             if (changes.tokenUpdates) {
                 changes.tokenUpdates.forEach((update) => {
                     const square = squares.value.find((sq) => sq.token?._id === update.tokenId);
-                    if (square?.token) mergeTokenDTO(square.token, update.patch);
+                    const token = square?.token;
+                    if (!token) return;
+                    const targetSquareId = update.patch.squareId;
+                    const isMove = typeof targetSquareId === 'string' && targetSquareId !== token.squareId;
+                    mergeTokenDTO(token, update.patch);
+                    if (isMove && square) {
+                        // Desapega do quadrado antigo e reaparece no novo (se existir).
+                        // Token sem quadrado válido cai fora do grid; um snapshot
+                        // posterior (resync) restaura o estado canônico.
+                        square.token = null;
+                        const target = squares.value.find((sq) => sq.id === token.squareId);
+                        if (target) target.token = token;
+                    }
                 });
             }
             if (changes.tokensRemoved) {
