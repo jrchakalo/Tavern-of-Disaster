@@ -204,6 +204,7 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 
 | Data | Coder | Defeito | Correção pedida | Rodada | Status |
 |---|---|---|---|---|---|
+| 2026-11-14 | Frontend (GLM-5.3-Flash) | `applyPatch` aplicava patch com `baseRevision` antigo quando `revision === local + 1` | Ressincronizar sempre que `baseRevision !== revision`; teste com local 5, base 3, revision 6 | 1 | devolvido |
 | — | — | — | — | — | — |
 
 ## 11. Riscos e limites
