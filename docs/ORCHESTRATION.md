@@ -254,7 +254,7 @@ Contrato: `docs/TABLE_MODE.md`. Branch de integração:
 | `coder-backend` | token de display, auth socket DISPLAY, geometria de ping, validação | `restore/phase-2-backend` | `opencode-go/deepseek-v4.1-flash` |
 | `coder-frontend` | conexão display, store/role, join por convite, REST de display token | `restore/phase-2-frontend` | `opencode-go/glm-5.3-flash` |
 | `coder-ux` | `/play` ficha resumida/PV, `/display` TV, QR `TableSharePanel`, mobile | `restore/phase-2-ux` | `opencode-go/mimo-v2.6-flash` |
-| `coder-qa` | E2E 1 TV + 5 celulares, read-only, geometria e caos de mesa | `restore/phase-2-qa` | `opencode-go/minimax-m3.1-flash` |
+| `coder-qa` | E2E 1 TV + 5 celulares, read-only, geometria e caos de mesa | `restore/phase-2-qa` | `opencode-go/deepseek-v4.1-flash` (retry; MiniMax retornou vazio) |
 
 PO: `opencode-go/deepseek-v4.1-flash` (1017).
 
@@ -269,6 +269,8 @@ PO: `opencode-go/deepseek-v4.1-flash` (1017).
   LongCat 2.5 Free e do foco visual (Visual Coding 71,5 / OSWorld 80,8).
 - Deploy (Supabase/Render/Vercel) continua fora do escopo até a Fase 5; a Fase 2
   roda local com Mongo em memória/Docker e storage local.
+- QA foi reexecutado em DeepSeek V4.1 Flash 1017 porque a primeira sessão
+  MiniMax terminou sem commits nem relatório; o worktree estava limpo.
 
 ### 13.3 Quadro
 
