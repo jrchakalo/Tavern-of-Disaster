@@ -198,7 +198,8 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | Data | Coder | Branch/commit | Veredito | Evidência | Observações |
 |---|---|---|---|---|---|
 | 2026-11-14 | UX (LongCat 2.5 Free) | `restore/phase-1-ux` / `aaaa83b` + `965d32c` | **Aprovado com ressalvas** | `npm run type-check` OK; `npm run test:unit` 17/17; `npm run build` OK; integração: 38/38; rotas `/play`, `/display` emitidas | Toast duplicado de `actionError` corrigido em `965d32c`; falta validação visual em navegador real; `revision/you/presence` lidos defensivamente. |
-| 2026-11-14 | Frontend (GLM-5.3-Flash) | `restore/phase-1-frontend` / `3c0eed1` + `8db2177` | **Aprovado** | `npm run type-check` OK; `npm run test:unit` 30/30; `npm run build` OK; integração com UX: 38/38 testes | Defeito de `baseRevision` corrigido e testado; `joinTable` usa string crua (backend aceitará string e objeto). |
+| 2026-11-14 | Frontend (GLM-5.3-Flash) | `restore/phase-1-frontend` / `3c0eed1` + `8db2177` | **Aprovado com ressalvas** | `npm run type-check` OK; `npm run test:unit` 30/30; `npm run build` OK; integração com UX: 38/38 testes | `baseRevision` corrigido; patches de movimento/grid em correção (rodada 2). |
+| 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | `restore/phase-1-backend` / `f8df20a` | **Aprovado com ressalvas** | `npm test` 52/52; `npm run build` OK; 12 testes de integração 2+ clientes | Authz por entidade, ack, revisão e CAS de turno implementados; 4 correções de integração devolvidas. |
 | — | — | — | — | — | (preencher a cada PR) |
 
 ## 10. Registro de correções
@@ -207,6 +208,12 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 |---|---|---|---|---|---|
 | 2026-11-14 | Frontend (GLM-5.3-Flash) | `applyPatch` aplicava patch com `baseRevision` antigo quando `revision === local + 1` | Ressincronizar sempre que `baseRevision !== revision`; teste com local 5, base 3, revision 6 | 1 | corrigido em `8db2177` |
 | 2026-11-14 | UX (LongCat 2.5 Free) | `PlayView` duplicava o toast de `actionError` já centralizado no `socketService` | Remover `toast.error` da view; manter só o banner | 1 | corrigido em `965d32c` |
+| 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | `diceRollError` legado + ack de erro geravam dois toasts | Emitir o legado só quando não houver callback de ack | 1 | devolvido |
+| 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | Nova rodada limpava medições persistentes no cliente, mas não no servidor | Limpar persistentes da cena no servidor e manter auras | 1 | devolvido |
+| 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | `requestReorderInitiative` aceitava entradas arbitrárias do cliente (token de outra mesa) | Validar IDs contra a iniciativa existente e reconstruir a partir do servidor | 1 | devolvido |
+| 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | Patch de edição de token não incluía mudança de dono | Incluir `owner` no `tokenUpdates` | 1 | devolvido |
+| 2026-11-14 | Frontend (GLM-5.3-Flash) | `tokenUpdates` com `squareId` não movia o token entre quadrados no store | Mover o token no grid ao aplicar o patch | 1 | devolvido |
+| 2026-11-14 | Frontend (GLM-5.3-Flash) | Patch de `activeScene` com novo grid não reconstruía `squares` | Reconstruir o grid preservando tokens | 1 | devolvido |
 | — | — | — | — | — | — |
 
 ## 11. Riscos e limites
