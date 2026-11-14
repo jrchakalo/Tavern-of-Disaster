@@ -69,27 +69,47 @@ Tooling & Misc:
 
 ---
 
+## Quick start (Docker)
+
+Everything (MongoDB + backend + frontend) in one command, no local dependencies:
+
+```bash
+docker compose up --build
+```
+
+Then open `http://localhost:8080`. Cameras/phones on the same Wi-Fi can use
+`http://<your-computer-ip>:8080` — the frontend proxies `/api`, `/socket.io` and
+`/uploads`, so the whole table shares one origin.
+
+Data persists in the `mongo-data` and `uploads` Docker volumes. Set `JWT_SECRET`
+in the environment (or a root `.env`) for anything beyond a local test.
+
+---
+
 ## Running Locally (dev)
 
 Backend:
 ```bash
 cd backend
-npm install
+npm ci
+cp ../.env.example .env   # fill MONGO_URI and JWT_SECRET
 npm run dev
 ```
 
 Frontend (in a second terminal):
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
 Default dev endpoints:
 * Backend API / Socket: `http://localhost:3001`
-* Frontend: `http://localhost:5173`
+* Frontend: `http://localhost:5173` (proxies `/api`, `/socket.io` and `/uploads`)
 
-Environment variables: copy `.env.example` to `.env` in the backend folder and set values.
+Environment variables: copy `.env.example` to `backend/.env` and set values.
+`frontend/.env.local` is optional — leave `VITE_API_URL` empty to use the same
+origin. See `docs/RESTORATION.md` for the current restoration plan.
 
 ---
 

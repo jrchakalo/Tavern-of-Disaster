@@ -4,10 +4,6 @@ import Table from '../../models/Table.model';
 import Scene from '../../models/Scene.model';
 import Token from '../../models/Token.model';
 
-jest.mock('nanoid', () => ({
-  nanoid: () => 'mock-measurement-id',
-}));
-
 jest.mock('../../socketHandlers/measurementStore', () => ({
   setMeasurement: jest.fn(),
   removeMeasurement: jest.fn(),

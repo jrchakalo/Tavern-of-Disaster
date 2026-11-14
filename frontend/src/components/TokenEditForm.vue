@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import { PlayerInfo, TokenInfo, tokenSizes, TokenSize, Character } from '../types';
+import type { PlayerInfo, TokenInfo, TokenSize, Character } from '../types';
+import { tokenSizes } from '../types';
 import { toast } from '../services/toast';
 import { uploadTokenImage } from '../services/storageService';
 

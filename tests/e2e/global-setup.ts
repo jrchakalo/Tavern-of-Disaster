@@ -60,8 +60,9 @@ export default async function globalSetup(_config: FullConfig) {
 
   const frontendEnv = {
     ...process.env,
-    VITE_API_URL: backendUrl,
-    VITE_SOCKET_URL: backendUrl,
+    // Mesma origem: o proxy do Vite encaminha /api, /socket.io e /uploads.
+    VITE_API_URL: '',
+    VITE_PROXY_TARGET: backendUrl,
     NODE_ENV: 'development',
   };
   processes.push(spawnProcess('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(frontendPort)], frontendDir, frontendEnv, 'frontend'));
@@ -71,7 +72,6 @@ export default async function globalSetup(_config: FullConfig) {
   process.env.E2E_BACKEND_URL = backendUrl;
 
   return async () => {
-    await mongo.stop();
     await Promise.all(
       processes.map(async (child) => {
         if (!child.killed) {
@@ -85,5 +85,6 @@ export default async function globalSetup(_config: FullConfig) {
         }
       })
     );
+    await mongo.stop();
   };
 }

@@ -1,6 +1,5 @@
 import type { SystemDTO } from '../types';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { API_BASE_URL } from './apiBase';
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (response.ok) {

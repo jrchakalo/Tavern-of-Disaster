@@ -6,6 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const frontendPort = Number(process.env.E2E_FRONTEND_PORT ?? 4173);
+const channel = process.env.E2E_CHANNEL as 'chrome' | 'msedge' | undefined;
 
 export default defineConfig({
   testDir: path.resolve(__dirname, 'specs'),
@@ -27,7 +28,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], ...(channel ? { channel } : {}) },
     },
   ],
 });

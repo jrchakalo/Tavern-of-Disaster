@@ -10,7 +10,7 @@ import {
   upsertTokenAura,
   removeTokenAura,
 } from '../services/measurementService';
-import { nanoid } from 'nanoid';
+import { randomId } from '../utils/id';
 import { createLogger } from '../logger';
 import { validate } from '../validation/validate';
 import {
@@ -167,7 +167,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
       const table = await Table.findById(tableId).populate('activeScene','_id');
       if (!table) return;
       if (!table.activeScene || table.activeScene._id.toString() !== sceneId) return;
-      const payload = { id: nanoid(6), userId: user.id, username: user.username, sceneId, squareId, x, y, color, ts: Date.now() };
+      const payload = { id: randomId(6), userId: user.id, username: user.username, sceneId, squareId, x, y, color, ts: Date.now() };
       io.to(tableId).emit('pingBroadcast', payload);
     } catch (e) { log.error({ err: e, tableId: data?.tableId, sceneId: data?.sceneId }, 'requestPing'); }
   });

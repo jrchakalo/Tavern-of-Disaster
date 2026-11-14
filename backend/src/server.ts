@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import http from 'http';
+import path from 'path';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
@@ -57,8 +58,21 @@ const port = process.env.PORT || 3001;
 const measurementIdleTtlMs = Number(process.env.MEASUREMENT_IDLE_TTL_MS ?? 30 * 60 * 1000);
 const measurementCleanupIntervalMs = Number(process.env.MEASUREMENT_CLEANUP_INTERVAL_MS ?? 5 * 60 * 1000);
 
+// Uploads locais (STORAGE_DRIVER=local). Em produção com object storage, o
+// arquivo é servido pelo CDN/bucket e esta rota fica apenas como fallback.
+const localUploadDir = process.env.LOCAL_UPLOAD_DIR
+  ? path.resolve(process.env.LOCAL_UPLOAD_DIR)
+  : path.resolve(__dirname, '..', 'uploads');
+
 app.use(cors(corsOptions));
 app.use(express.json());
+app.use(
+  '/uploads',
+  express.static(localUploadDir, {
+    maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+    fallthrough: true,
+  })
+);
 app.use('/api/auth', authRouter);
 app.use('/api/tables', tableRouter);
 app.use('/api', characterRouter);

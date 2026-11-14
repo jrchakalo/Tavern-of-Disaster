@@ -1,4 +1,4 @@
-import { nanoid } from 'nanoid';
+import { randomId } from '../utils/id';
 import Table from '../models/Table.model';
 import Scene, { IInitiativeEntry } from '../models/Scene.model';
 import Token from '../models/Token.model';
@@ -111,7 +111,7 @@ export async function addPersistentMeasurement(
   const allowed = isDM || (await isUserTurnOwner(user.id, sceneId));
   assertCondition(allowed, 'Sem permissão para adicionar medição persistente.', 403);
   const color = isDM ? '#3c096c' : payload.color || '#ff8c00';
-  const id = payload.id || nanoid(8);
+  const id = payload.id || randomId(8);
   const persistent: PersistentMeasurement = {
     ...payload,
     id,

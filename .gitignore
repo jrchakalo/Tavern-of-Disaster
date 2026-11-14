@@ -1,9 +1,44 @@
-# IDE specific
+# IDE
 .vscode/
+.idea/
 
-# OS specific
+# OS
 .DS_Store
 Thumbs.db
 
-# Node modules
-tests/e2e/node_modules/
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+coverage/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Local uploads (dev storage driver)
+backend/uploads/
+
+# Test artifacts
+playwright-report/
+test-results/
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+
+# Generated config artifacts (source of truth: *.ts)
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/eslint.config.js
+frontend/eslint.config.d.ts
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*

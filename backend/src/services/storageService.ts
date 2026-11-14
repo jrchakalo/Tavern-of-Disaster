@@ -1,11 +1,14 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import sharp from 'sharp';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { nanoid } from 'nanoid';
+import { randomId } from '../utils/id';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 type UploadTarget = 'map' | 'token' | 'avatar';
+type StorageDriver = 'local' | 'supabase';
 
 type AssetProfile = {
   maxWidth: number;
@@ -19,25 +22,12 @@ export type StorageUploadResult = { publicUrl: string; objectPath: string };
 
 const MB = 1024 * 1024;
 
-const requiredEnv = (key: string): string => {
-  const value = process.env[key];
-  if (!value) {
-    throw new Error(`[storage] Missing required env var: ${key}`);
-  }
-  return value;
-};
-
 const numberFromEnv = (key: string): number | undefined => {
   const value = process.env[key];
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 };
-
-const supabaseUrl = requiredEnv('SUPABASE_URL');
-const supabaseKey = requiredEnv('SUPABASE_SERVICE_ROLE_KEY');
-const supabaseBucket = requiredEnv('SUPABASE_BUCKET');
-const assetBaseUrl = process.env.ASSET_BASE_URL?.replace(/\/+$/, '') || null;
 
 const resolveLimits = (prefix: string, defaults: AssetProfile): AssetProfile => {
   const globalWidth = numberFromEnv('ASSET_MAX_WIDTH');
@@ -65,9 +55,62 @@ export const storageLimits = {
   avatar: (({ maxBytes, maxWidth, maxHeight }) => ({ maxBytes, maxWidth, maxHeight }))(assetProfiles.avatar),
 };
 
-const supabaseClient: SupabaseClient = createClient(supabaseUrl, supabaseKey, {
-  auth: { persistSession: false },
-});
+/**
+ * Local disk driver is the default for development and for deployments without
+ * object storage. Supabase is used when explicitly configured (or when all of
+ * its env vars are present).
+ */
+function resolveDriver(): StorageDriver {
+  const explicit = process.env.STORAGE_DRIVER?.toLowerCase();
+  if (explicit === 'local' || explicit === 'supabase') return explicit;
+
+  const hasSupabaseEnv = Boolean(
+    process.env.SUPABASE_URL &&
+      process.env.SUPABASE_SERVICE_ROLE_KEY &&
+      process.env.SUPABASE_BUCKET
+  );
+  return hasSupabaseEnv ? 'supabase' : 'local';
+}
+
+let cachedSupabaseClient: SupabaseClient | null = null;
+
+function getSupabaseClient(): SupabaseClient {
+  if (cachedSupabaseClient) return cachedSupabaseClient;
+
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error(
+      'Supabase storage selecionado, mas SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY não estão configurados.'
+    );
+  }
+
+  cachedSupabaseClient = createClient(url, key, {
+    auth: { persistSession: false },
+  });
+  return cachedSupabaseClient;
+}
+
+function getSupabaseBucket(): string {
+  const bucket = process.env.SUPABASE_BUCKET;
+  if (!bucket) {
+    throw new Error('Supabase storage selecionado, mas SUPABASE_BUCKET não está configurado.');
+  }
+  return bucket;
+}
+
+function getLocalRoot(): string {
+  return process.env.LOCAL_UPLOAD_DIR
+    ? path.resolve(process.env.LOCAL_UPLOAD_DIR)
+    : path.resolve(__dirname, '..', '..', 'uploads');
+}
+
+function getAssetBaseUrl(): string {
+  // Padrão: URL relativa (`/uploads/...`), que funciona no notebook, na TV e
+  // nos celulares atrás do mesmo proxy. Defina ASSET_BASE_URL apenas quando os
+  // assets forem servidos por outra origem (CDN, bucket, API separada).
+  return (process.env.ASSET_BASE_URL ?? '').trim().replace(/\/+$/, '');
+}
 
 function ensureImageMime(mime: string) {
   if (!mime?.startsWith('image/')) {
@@ -98,10 +141,16 @@ async function processImage(buffer: Buffer, profile: AssetProfile): Promise<Buff
   return processed;
 }
 
-async function pushToStorage(objectPath: string, buffer: Buffer): Promise<void> {
-  const { error } = await supabaseClient
+async function pushToLocalStorage(objectPath: string, buffer: Buffer): Promise<void> {
+  const absolutePath = path.join(getLocalRoot(), objectPath);
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  await fs.writeFile(absolutePath, buffer);
+}
+
+async function pushToSupabase(objectPath: string, buffer: Buffer): Promise<void> {
+  const { error } = await getSupabaseClient()
     .storage
-    .from(supabaseBucket)
+    .from(getSupabaseBucket())
     .upload(objectPath, buffer, {
       contentType: 'image/webp',
       upsert: true,
@@ -112,12 +161,17 @@ async function pushToStorage(objectPath: string, buffer: Buffer): Promise<void> 
   }
 }
 
-function buildPublicUrl(objectPath: string): string {
-  if (assetBaseUrl) {
-    return `${assetBaseUrl}/${objectPath}`;
+function buildPublicUrl(driver: StorageDriver, objectPath: string): string {
+  if (driver === 'local') {
+    return `${getAssetBaseUrl()}/uploads/${objectPath}`;
   }
 
-  const { data } = supabaseClient.storage.from(supabaseBucket).getPublicUrl(objectPath);
+  const configuredBase = process.env.ASSET_BASE_URL?.replace(/\/+$/, '');
+  if (configuredBase) {
+    return `${configuredBase}/${objectPath}`;
+  }
+
+  const { data } = getSupabaseClient().storage.from(getSupabaseBucket()).getPublicUrl(objectPath);
   if (!data?.publicUrl) {
     throw new Error('Não foi possível gerar a URL pública do arquivo.');
   }
@@ -126,7 +180,7 @@ function buildPublicUrl(objectPath: string): string {
 
 function buildPath(kind: UploadTarget, identifiers: { tableId?: string; ownerId?: string; userId?: string }): string {
   const stamp = new Date().toISOString().replace(/[:.TZ-]/g, '');
-  const random = nanoid(8);
+  const random = randomId(8);
   if (kind === 'avatar') {
     const userSegment = sanitizeSegment(identifiers.userId, 'user');
     return `${assetProfiles.avatar.folder}/${userSegment}/${stamp}-${random}.webp`;
@@ -138,7 +192,10 @@ function buildPath(kind: UploadTarget, identifiers: { tableId?: string; ownerId?
   return `tables/${tableSegment}/${folder}/${ownerSegment}/${stamp}-${random}.webp`;
 }
 
-async function uploadWithProfile(target: UploadTarget, params: { buffer: Buffer; mimeType: string; tableId?: string; ownerId?: string; userId?: string; }): Promise<StorageUploadResult> {
+async function uploadWithProfile(
+  target: UploadTarget,
+  params: { buffer: Buffer; mimeType: string; tableId?: string; ownerId?: string; userId?: string }
+): Promise<StorageUploadResult> {
   const profile = assetProfiles[target];
   if (!profile) {
     throw new Error(`Perfil de upload desconhecido: ${target}`);
@@ -149,11 +206,17 @@ async function uploadWithProfile(target: UploadTarget, params: { buffer: Buffer;
     throw new Error('Arquivo enviado é muito grande para ser processado.');
   }
 
+  const driver = resolveDriver();
   const processed = await processImage(params.buffer, profile);
   const objectPath = buildPath(target, params);
-  await pushToStorage(objectPath, processed);
-  const publicUrl = buildPublicUrl(objectPath);
-  return { publicUrl, objectPath };
+
+  if (driver === 'local') {
+    await pushToLocalStorage(objectPath, processed);
+  } else {
+    await pushToSupabase(objectPath, processed);
+  }
+
+  return { publicUrl: buildPublicUrl(driver, objectPath), objectPath };
 }
 
 export function uploadMapImage(params: { tableId: string; ownerId: string; buffer: Buffer; mimeType: string }): Promise<StorageUploadResult> {
@@ -167,3 +230,8 @@ export function uploadTokenImage(params: { tableId: string; ownerId: string; buf
 export function uploadAvatarImage(params: { userId: string; buffer: Buffer; mimeType: string }): Promise<StorageUploadResult> {
   return uploadWithProfile('avatar', params);
 }
+
+export const storageInfo = {
+  driver: resolveDriver,
+  localRoot: getLocalRoot,
+};
