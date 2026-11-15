@@ -290,6 +290,9 @@ PO: `opencode-go/deepseek-v4.1-flash` (1017).
   roda local com Mongo em memória/Docker e storage local.
 - QA foi reexecutado em DeepSeek V4.1 Flash 1017 porque a primeira sessão
   MiniMax terminou sem commits nem relatório; o worktree estava limpo.
+- UX da Fase 3 foi retomada em `mimo-v2.6-flash-free` porque a sessão Go
+  atingiu o limite de 5h. Os componentes parciais em `components/character/`
+  foram preservados; o worktree recebeu o merge da integração antes do retry.
 - A suíte E2E completa compartilha um único backend/IP; `LOGIN_RATE_LIMIT_POINTS`
   e `CREATE_RATE_LIMIT_POINTS` sobem para 1000 apenas no `global-setup.ts`.
   Produção mantém 5/20 por 5 min.
