@@ -73,7 +73,7 @@ Both specs use `test.describe.configure({ mode: 'serial' })` because they share
 a table/token/page world. Run them with `--workers=1` and do not enable retries:
 the scenario already consumes the `limitCreate` bucket (20 req / 5 min).
 
-> Phase 2 status: the specs are written against the contract but are **blocked**
-> until the Phase 2 backend/frontend/UX branches are integrated. See
-> `docs/qa/PHASE2-TABLE-MODE-REPORT.md` for the exact failures and the PO
-> execution fields.
+> Phase 2 status: validated against `restore/phase-2-table-mode` (`e67e730`) —
+> **14/14 passed** (`table-mode` 9/9 + `display-security` 5/5) in 38.7 s.
+> See `docs/qa/PHASE2-TABLE-MODE-REPORT.md` for evidence, execution commands and
+> the PO verdict fields.

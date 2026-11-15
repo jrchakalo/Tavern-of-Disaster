@@ -497,8 +497,10 @@ test('TV 1920×1080 entra por token, renderiza mesa/cena/iniciativa e não escre
   openContexts.push(context);
   tvPage = await context.newPage();
 
-  const displayUrl = new URL(w.displayUrl);
-  await tvPage.goto(`${getBaseUrl()}${displayUrl.pathname}${displayUrl.hash}`);
+  // O backend pode devolver `displayUrl` relativo (`/display/:id#token=...`)
+  // quando PUBLIC_APP_URL/CORS_ORIGIN não estão definidos; aceitamos os dois.
+  const displayUrl = new URL(w.displayUrl, getBaseUrl());
+  await tvPage.goto(`${displayUrl.pathname}${displayUrl.hash}`);
 
   await expect(tvPage.locator('.display-header__title')).toHaveText(w.table.name, { timeout: UI_TIMEOUT_MS });
   await expect(tvPage.locator('.display-header__scene')).toContainText(w.scene.name);
@@ -631,6 +633,9 @@ test('movimento do Mestre atualiza todos os clientes', async () => {
   const token = before.tokens.find((entry) => entry.name === w.tokenNames[0]);
   expect(token, 'Token do jogador 1 não encontrado.').toBeTruthy();
 
+  const tvToken = tvPage!.locator(`.display-board__token[title="${w.tokenNames[0]}"]`);
+  const styleBefore = await tvToken.getAttribute('style');
+
   const target = nextFreeSquare(before, token!.squareId);
   expectAckOk(
     await emitWithAck(w.dmSocket, 'requestMoveToken', {
@@ -646,15 +651,9 @@ test('movimento do Mestre atualiza todos os clientes', async () => {
   expect(after.revision).toBeGreaterThan(before.revision);
   expect(after.tokens.find((entry) => entry._id === token!._id)?.squareId).toBe(target);
 
-  const styleBefore = await tvPage!
-    .locator(`.display-board__token[title="${w.tokenNames[0]}"]`)
-    .getAttribute('style');
   await expectAllPlayerRevisions(after.revision);
   await expect
-    .poll(
-      () => tvPage!.locator(`.display-board__token[title="${w.tokenNames[0]}"]`).getAttribute('style'),
-      { timeout: UI_TIMEOUT_MS },
-    )
+    .poll(() => tvToken.getAttribute('style'), { timeout: UI_TIMEOUT_MS })
     .not.toBe(styleBefore);
 });
 
@@ -676,7 +675,7 @@ test('iniciativa: cada jogador move no próprio turno; fora do turno é rejeitad
     const currentToken = snapshot.tokens.find((token) => token._id === current!.tokenId);
     expect(currentToken?.owner?._id, `O turno atual não pertence ao jogador ${i + 1}.`).toBe(w.players[i].id);
 
-    await expect(page.locator('.token-card__status')).toHaveText('Sua vez', { timeout: UI_TIMEOUT_MS });
+    await expect(page.locator('.token-card__status')).toHaveText('Seu turno', { timeout: UI_TIMEOUT_MS });
     await expect(page.getByRole('button', { name: 'Mover', exact: true })).toBeEnabled();
     await expect(page.locator('.token-card__name')).toHaveText(w.tokenNames[i]);
 
