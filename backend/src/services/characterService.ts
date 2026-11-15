@@ -226,6 +226,29 @@ function mergeWithSystemDefaultAttributes(system: ISystem | null, provided?: Rec
 const OP2_SYSTEM_KEY = 'ordem-paranormal-2';
 const OPSH_SYSTEM_KEY = 'ordem-paranormal-sobrevivendo-ao-horror';
 const OP2_SKILL_DICE = new Set([4, 6, 8, 10, 12, 20]);
+/** As 20 perícias do Beta; chaves fora desta lista são legado e ficam intactas. */
+const OP2_SKILL_KEYS = new Set([
+  'acrobacia',
+  'animais',
+  'aptidao',
+  'atletismo',
+  'bruxaria',
+  'crime',
+  'disciplina',
+  'enganacao',
+  'furtividade',
+  'intimidar',
+  'intuicao',
+  'inspecionar',
+  'luta',
+  'medicina',
+  'metalurgia',
+  'percepcao',
+  'persuasao',
+  'pontaria',
+  'sobrevivencia',
+  'vigor',
+]);
 
 /** Atributos iniciais por sistema (apenas quando o cliente não enviou o valor). */
 const SYSTEM_ATTRIBUTE_DEFAULTS: Record<string, Record<string, number>> = {
@@ -262,6 +285,8 @@ function assertSkillDiceForSystem(
 ) {
   if (systemKey !== OP2_SYSTEM_KEY || !skills) return;
   Object.entries(skills).forEach(([key, value]) => {
+    // Perícias de legado (ex.: nomes do Alpha) são preservadas como vieram.
+    if (!OP2_SKILL_KEYS.has(key.trim().toLowerCase())) return;
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       throw new ServiceError(
         `A perícia "${key}" precisa de um dado (4, 6, 8, 10, 12 ou 20).`
