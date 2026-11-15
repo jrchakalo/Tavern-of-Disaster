@@ -4,12 +4,11 @@
 > skill, designação, branch, revisão, correção e merge entra aqui. Se o contexto
 > da conversa se perder, este arquivo é a fonte da verdade do processo.
 >
-> Última atualização: 2026-11-15. **Fases 1 e 2 concluídas e aprovadas**:
-> `v0.9.2-phase1` (backend 64/64, frontend 43/43, E2E 8/8, caos 14/14) e
-> `v0.9.3-phase2` (backend 76/76, frontend 113/113, E2E 22/22, table mode 9/9,
-> display security 5/5, caos 14/14). Próxima: Fase 3 (fichas, dados, sistemas).
-> A frente **online** (voz/vídeo/chat sem Discord) foi incorporada ao plano como
-> Fase 5 em `docs/ONLINE_MODE.md`.
+> Última atualização: 2026-11-15. **Fases 1, 2 e 3 concluídas e aprovadas**:
+> `v0.9.2-phase1`, `v0.9.3-phase2` e `v0.9.4-phase3` (backend 103/103,
+> frontend 185/185, E2E 34/34, caos 14/14). Próxima: Fase 4 (mídia e cenas).
+> A frente **online** (voz/vídeo/chat sem Discord) é a Fase 5 em
+> `docs/ONLINE_MODE.md`; o deploy/beta é a Fase 6.
 
 ## 1. Modelo de trabalho
 
@@ -203,6 +202,10 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-15 | Mesh WebRTC + TURN free antes de SFU | 1 DM + 4 jogadores cabem em mesh; áudio-first evita estourar upload/cota. |
 | 2026-11-15 | LiveKit Cloud free como fallback SFU | 5.000 min/mês cobrem ~13 sessões de 6 pessoas; UI continua própria. |
 | 2026-11-15 | E2E online com fake media | Playwright/Chromium permite testar tracks, mute/deafen e reconexão sem hardware. |
+| 2026-11-15 | Ficha completa só dono/DM; resumo para os demais | Evita vazar notas/atributos privados e mantém a TV leve. |
+| 2026-11-15 | Mutação de ficha via socket | Garante ack/revisão e PV sincronizado em todos os tokens. |
+| 2026-11-15 | Dados com `!` explosivo e limites | Cyberpunk RED exige d10 explosivo; limites evitam DoS no servidor. |
+| 2026-11-15 | Log de rolagens com TTL de 7 dias | Cabe no Atlas M0 e ainda cobre a sessão + revisão. |
 
 ## 9. Registro de resultados
 
@@ -232,6 +235,13 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | Patch de edição de token não incluía mudança de dono | Incluir `owner` no `tokenUpdates` | 1 | corrigido em `f6ac357` |
 | 2026-11-14 | Frontend (GLM-5.3-Flash) | `tokenUpdates` com `squareId` não movia o token entre quadrados no store | Mover o token no grid ao aplicar o patch | 1 | corrigido em `8e66d8d` |
 | 2026-11-14 | Frontend (GLM-5.3-Flash) | Patch de `activeScene` com novo grid não reconstruía `squares` | Reconstruir o grid preservando tokens | 1 | corrigido em `8e66d8d` |
+| 2026-11-15 | Frontend P3 (GLM-5.3-Flash) | `restore/phase-3-frontend` / `8fbc829` + `98ae8d6` | **Aprovado** | `type-check` OK; 170/170; build OK | Store/socket de ficha, HP, roll log e dice local; ordem de `recentRolls` e `characterId: null` alinhados. |
+| 2026-11-15 | QA P3 (DeepSeek V4.1 Flash 1017) | `restore/phase-3-qa` / `936db06` | **Aprovado com ressalvas** | Type-check OK; specs prontos; execução bloqueada pré-integração | E2E ficha/PV/dados/sistema + 2 contextos online; rodar após backend/UX. |
+| 2026-11-15 | Backend P3 (DeepSeek V4.1 Flash 1017) | `restore/phase-3-backend` / `ed77a93` | **Aprovado** | `npm test` 103/103; build OK; 14 testes novos de integração | Ficha realtime, PV↔token, dados com `!`, rate limit, log/TTL e seed D&D/Cyberpunk. |
+| 2026-11-15 | UX P3 (MiMo-V2.6-Flash) | `restore/phase-3-ux` / `74af03d`..`a0b6a5c` | **Aprovado** | `type-check` OK; 185/185; build OK; table-mode 9/9 | Ficha D&D 5e/Cyberpunk, token↔ficha, PV no card/TV, dados/log, seletor de sistema. |
+| 2026-11-15 | Integração P3 final | `restore/phase-3-sheets-dice` / `991744a` | **Aprovado** | E2E completo **34/34**; sheets-dice 8/8; online 4/4; caos PASS | Correções do PO: auth de `/api/systems` por rota e probe de HP online como DM. |
+| 2026-11-15 | Backend/PO | `characterRouter` com auth global em `/api` derrubava `/api/systems` com 401 | Auth por rota no character router; teste de regressão com a ordem real do server | 1 | corrigido em `1abcedb` |
+| 2026-11-15 | QA/PO | Spec online sondava HP de ficha do DM com socket do jogador | Usar socket do DM (dono/DM apenas, §3.2) | 1 | corrigido em `991744a` |
 | — | — | — | — | — | — |
 
 ## 11. Riscos e limites
@@ -283,6 +293,11 @@ PO: `opencode-go/deepseek-v4.1-flash` (1017).
   roda local com Mongo em memória/Docker e storage local.
 - QA foi reexecutado em DeepSeek V4.1 Flash 1017 porque a primeira sessão
   MiniMax terminou sem commits nem relatório; o worktree estava limpo.
+- UX da Fase 3 foi retomada em `mimo-v2.6-flash-free` porque a sessão Go
+  atingiu o limite de 5h. Os componentes parciais em `components/character/`
+  foram preservados; o worktree recebeu o merge da integração antes do retry.
+- O limite Go resetou; a UX voltou para `opencode-go/mimo-v2.6-flash` sem
+  reiniciar a tarefa. LongCat free foi apenas ponte durante o bloqueio.
 - A suíte E2E completa compartilha um único backend/IP; `LOGIN_RATE_LIMIT_POINTS`
   e `CREATE_RATE_LIMIT_POINTS` sobem para 1000 apenas no `global-setup.ts`.
   Produção mantém 5/20 por 5 min.
@@ -361,3 +376,42 @@ Substitui a numeração antiga de beta ops, que passa a Fase 6.
 4. TURN: Metered free ou coturn self-host? (recomendado Metered no beta)
 5. SFU: aceitar LiveKit Cloud free como fallback? (recomendado sim)
 6. Compartilhamento de tela no beta? (recomendado 5C)
+
+## 15. Fase 3 — Fichas, dados e sistemas
+
+Contrato: `docs/SHEETS_DICE.md`. Branch de integração:
+`restore/phase-3-sheets-dice`. Base: `main` em `efce6e3`.
+
+### 15.1 Time
+
+| Coder | Escopo | Branch | Modelo |
+|---|---|---|---|
+| backend | modelo/DTO, ficha realtime, PV↔token, dados/explosão, log, seed | `restore/phase-3-backend` | `opencode-go/deepseek-v4.1-flash` |
+| frontend | store de resumos, socket de ficha/PV, roll log, dice local | `restore/phase-3-frontend` | `opencode-go/glm-5.3-flash` |
+| UX | ficha D&D/Cyberpunk, token↔ficha, PV no card/TV, dados/log | `restore/phase-3-ux` | `opencode-go/mimo-v2.6-flash` |
+| QA | E2E ficha/PV/dados/sistema + 2 clientes online | `restore/phase-3-qa` | `opencode-go/deepseek-v4.1-flash` |
+
+PO: `opencode-go/deepseek-v4.1-flash` (1017).
+
+### 15.2 Decisões
+
+- Ficha completa é dona/DM; outros recebem só resumo (nome/PV/CA/nível).
+- Mutação de ficha via socket com ack/revisão; REST continua para leitura/fallback.
+- PV propaga para todos os tokens vinculados via `tokenUpdates.character`.
+- Dados server-authoritative; `!` explosivo para Cyberpunk; limites 100 dados/1000 faces.
+- Log de rolagens com TTL de 7 dias e `recentRolls` no snapshot.
+- Sistema inicial D&D 5e; Cyberpunk RED como segundo, sem automação completa de regras.
+- `characterMath.ts` escrito pelo PO antes das branches para evitar divergência.
+- Online-aware: ficha/PV/dados são testados com 2 contextos remotos já na Fase 3.
+
+### 15.3 Quadro
+
+| ID | Entrega | Coder |
+|---|---|---|
+| P3-BE-1..3 | modelo, DTO/snapshot/patch, ficha realtime/PV | backend |
+| P3-BE-4..6 | dados/explosão, rate limit, log | backend |
+| P3-BE-7..8 | seed D&D/Cyberpunk + testes | backend |
+| P3-FE-1..4 | store, socket ficha/PV, characterStore, roll log | frontend |
+| P3-FE-5..6 | dice local, testes | frontend |
+| P3-UX-1..4 | ficha, token↔ficha, dados/log, sistema | UX |
+| P3-QA-1..3 | E2E presencial + online, relatório | QA |

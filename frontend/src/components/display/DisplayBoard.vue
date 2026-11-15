@@ -150,7 +150,16 @@ const pingList = computed(() => {
         <span v-else class="display-board__initial" aria-hidden="true">
           {{ entry.token.name.charAt(0).toUpperCase() }}
         </span>
-        <span class="display-board__label">{{ entry.token.name }}</span>
+        <span class="display-board__label">
+          {{ entry.token.name }}<template
+            v-if="entry.token.character && entry.token.character.maxHP != null"
+          >
+            · PV {{ entry.token.character.currentHP ?? 0 }}/{{ entry.token.character.maxHP }}
+            <template v-if="entry.token.character.defense != null">
+              · CA {{ entry.token.character.defense }}
+            </template>
+          </template>
+        </span>
       </div>
     </div>
   </div>

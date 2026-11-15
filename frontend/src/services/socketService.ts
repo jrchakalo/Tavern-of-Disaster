@@ -21,6 +21,8 @@ import type {
   PresenceEntry,
   SessionSnapshot,
   SessionPatch,
+  CharacterDTO,
+  CharacterSummaryDTO,
 } from '../types';
 
 const ACK_TIMEOUT_MS = 5000;
@@ -28,6 +30,13 @@ const RESYNC_DEBOUNCE_MS = 500;
 const RESYNC_STALE_MS = 15_000;
 const TOKEN_REFRESH_AT = 0.8; // renova quando faltar 20% da validade
 const MAX_TIMEOUT_DELAY_MS = 2_147_483_647;
+
+/** Opções de ack: timeout em ms e `silent` para o chamador dono do feedback. */
+export interface EmitWithAckOptions {
+  timeoutMs?: number;
+  /** Não mostra toast: quem chama trata o erro (ex.: characterStore com fallback REST). */
+  silent?: boolean;
+}
 
 /** Erro quando o servidor não confirma a ação (timeout ou socket ausente). */
 export class SocketAckError extends Error {
@@ -136,6 +145,22 @@ type InitiativeTurnAdvancedEvent = {
   newRound?: boolean;
 };
 
+// Fichas: eventos legados podem chegar como ficha completa (CharacterDTO) ou
+// como resumo; ambos têm `_id`. O caminho canônico é `sessionPatch`.
+type CharacterLegacyUpdatedEvent = Partial<CharacterDTO> & { _id?: string };
+type CharacterLegacyRemovedEvent = { _id?: string; characterId?: string } | string;
+
+export type CharacterSyncEvent =
+  | { type: 'updated'; character: CharacterLegacyUpdatedEvent }
+  | { type: 'removed'; characterId: string };
+
+// Registrado pelo characterStore para manter fichas completas em cache sem
+// ciclo de dependência (socketService não conhece o store de fichas).
+let characterSyncHandler: ((event: CharacterSyncEvent) => void) | null = null;
+export function registerCharacterSyncHandler(fn: ((event: CharacterSyncEvent) => void) | null) {
+  characterSyncHandler = fn;
+}
+
 class SocketService {
   private socket: Socket | null = null;
   private store = useTableStore();
@@ -161,14 +186,17 @@ class SocketService {
   // ------------------------------------------------------------------
 
   /**
-   * Emite `event` esperando ack do servidor. Rejeita no timeout (com toast) e
-   * resolve sempre com o `Ack` do servidor; erro de aplicação vira toast aqui
-   * e o chamador decide o que fazer com `ack.ok === false`.
+   * Emite `event` esperando ack do servidor. Rejeita no timeout (com toast,
+   * salvo `silent`) e resolve sempre com o `Ack` do servidor; erro de
+   * aplicação vira toast aqui e o chamador decide o que fazer com
+   * `ack.ok === false`.
    */
-  emitWithAck<TPayload>(event: string, payload: TPayload, timeoutMs = ACK_TIMEOUT_MS): Promise<Ack> {
+  emitWithAck<TPayload>(event: string, payload: TPayload, options: EmitWithAckOptions = {}): Promise<Ack> {
+    const timeoutMs = options.timeoutMs ?? ACK_TIMEOUT_MS;
+    const silent = options.silent === true;
     return new Promise<Ack>((resolve, reject) => {
       if (!this.socket) {
-        toast.error('Sem conexão com o servidor.');
+        if (!silent) toast.error('Sem conexão com o servidor.');
         reject(new SocketAckError(event, 'disconnected'));
         return;
       }
@@ -176,14 +204,14 @@ class SocketService {
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        toast.error('O servidor não confirmou a ação. Tente novamente.');
+        if (!silent) toast.error('O servidor não confirmou a ação. Tente novamente.');
         reject(new SocketAckError(event, 'timeout'));
       }, timeoutMs);
       this.socket.emit(event, payload, (ack: Ack) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        if (ack && ack.ok === false) {
+        if (ack && ack.ok === false && !silent) {
           toast.error(ack.error?.message || 'A ação foi recusada pelo servidor.');
         }
         resolve(ack);
@@ -259,6 +287,14 @@ class SocketService {
   /** Indica se o socket atual é uma conexão de display (TV). */
   isDisplayMode(): boolean {
     return this.displayMode;
+  }
+
+  /**
+   * Há socket autenticado (não-display) conectado? O characterStore usa isto
+   * para preferir o caminho socket e cair para REST quando falso.
+   */
+  isConnected(): boolean {
+    return !this.displayMode && this.socket?.connected === true;
   }
 
   /**
@@ -408,6 +444,11 @@ class SocketService {
     socket.on('sessionTransition', (data: { durationMs: number }) => { this.store.transitionMs = data.durationMs || 3000; this.store.transitionAt = Date.now(); });
     socket.on('mapUpdated', (data: { mapUrl: string }) => { this.store.currentMapUrl = data.mapUrl; });
     socket.on('diceRolled', this.handleDiceRolled);
+    // Fichas: eventos legados (o canônico é `sessionPatch.changes.characters*`).
+    // Atualizam o resumo no tableStore e avisam o characterStore para manter a
+    // ficha completa em cache quando o payload trouxer a ficha inteira.
+    socket.on('characterUpdated', this.handleCharacterUpdated);
+    socket.on('characterRemoved', this.handleCharacterRemoved);
     // Medições efêmeras / compartilhadas
   socket.on('measurementShared', (m: SharedMeasurementEvent) => this.store.upsertSharedMeasurement(m));
   socket.on('measurementRemoved', (data: { userId: string }) => this.store.removeSharedMeasurement(data.userId));
@@ -790,6 +831,92 @@ class SocketService {
     const message = error?.message || 'Erro ao executar rolagem.';
     toast.error(message);
   };
+
+  // ------------------------------------------------------------------
+  // Fichas: eventos legados e mutações com ack
+  // ------------------------------------------------------------------
+
+  /**
+   * Extrai o resumo canônico do payload legado (ficha completa OU resumo).
+   * `ownerId` pode vir populado (objeto) ou cru (string).
+   */
+  private summaryFromCharacterPayload(payload: CharacterLegacyUpdatedEvent): CharacterSummaryDTO | null {
+    const id = payload?._id;
+    if (!id) return null;
+    const ownerId = typeof payload.ownerId === 'string'
+      ? payload.ownerId
+      : ((payload.ownerId as { _id?: string } | null | undefined)?._id ?? '');
+    return {
+      _id: id,
+      name: payload.name ?? '',
+      ownerId,
+      systemKey: payload.systemKey,
+      level: payload.profile?.level,
+      currentHP: payload.stats?.currentHP,
+      maxHP: payload.stats?.maxHP,
+      defense: payload.stats?.defense,
+      tokenId: undefined,
+    };
+  }
+
+  private handleCharacterUpdated = (payload: CharacterLegacyUpdatedEvent) => {
+    const summary = this.summaryFromCharacterPayload(payload);
+    if (summary) {
+      this.store.upsertCharacterSummary(summary);
+    }
+    try {
+      characterSyncHandler?.({ type: 'updated', character: payload });
+    } catch {
+      // Cache de fichas é best-effort; nunca quebra o handler de socket.
+    }
+  };
+
+  private handleCharacterRemoved = (payload: CharacterLegacyRemovedEvent) => {
+    const characterId = typeof payload === 'string'
+      ? payload
+      : payload?._id ?? payload?.characterId;
+    if (!characterId) return;
+    this.store.removeCharacterSummaries([characterId]);
+    try {
+      characterSyncHandler?.({ type: 'removed', characterId });
+    } catch {
+      // Cache de fichas é best-effort; nunca quebra o handler de socket.
+    }
+  };
+
+  /**
+   * Caminho das mutações de ficha. A TV (modo display) é somente leitura:
+   * devolve ack de falha sem emitir nada (contrato: docs/TABLE_MODE.md).
+   */
+  private emitCharacterRequest<TPayload>(event: string, payload: TPayload, ack?: (a: Ack) => void): Promise<Ack> {
+    if (this.displayMode) {
+      const failure: AckError = {
+        ok: false,
+        error: { code: 'FORBIDDEN', message: 'A TV é somente leitura.' },
+        revision: this.store.revision,
+        serverNowMs: Date.now() + this.store.clockSkewMs,
+      };
+      if (ack) ack(failure);
+      return Promise.resolve(failure);
+    }
+    return this.emitRequest(event, payload, ack);
+  }
+
+  createCharacter(payload: { tableId: string; character: Partial<CharacterDTO> }, ack?: (a: Ack) => void) {
+    return this.emitCharacterRequest('requestCreateCharacter', payload, ack);
+  }
+
+  updateCharacter(payload: { tableId: string; characterId: string; patch: Partial<CharacterDTO> }, ack?: (a: Ack) => void) {
+    return this.emitCharacterRequest('requestUpdateCharacter', payload, ack);
+  }
+
+  deleteCharacter(payload: { tableId: string; characterId: string }, ack?: (a: Ack) => void) {
+    return this.emitCharacterRequest('requestDeleteCharacter', payload, ack);
+  }
+
+  updateCharacterHp(payload: { tableId: string; characterId: string; currentHP: number }, ack?: (a: Ack) => void) {
+    return this.emitCharacterRequest('requestUpdateCharacterHp', payload, ack);
+  }
 }
 
 // Instância singleton

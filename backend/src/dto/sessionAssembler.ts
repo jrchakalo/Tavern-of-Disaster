@@ -1,9 +1,12 @@
 import { ITable } from '../models/Table.model';
 import { IInitiativeEntry, IScene } from '../models/Scene.model';
 import { IToken } from '../models/Token.model';
+import { ICharacter } from '../models/Character.model';
 import { Measurement, PersistentMeasurement, Aura } from '../socketHandlers/measurementStore';
 import {
   AuraDTO,
+  CharacterSummaryDTO,
+  CharacterSummaryLite,
   InitiativeEntryDTO,
   MeasurementDTO,
   SceneDTO,
@@ -12,6 +15,7 @@ import {
   TokenDTO,
   UserSummaryDTO,
 } from './session.dto';
+import type { DiceRolledPayload } from './roll.dto';
 
 export function mapUser(user: any): UserSummaryDTO | null {
   if (!user) return null;
@@ -22,7 +26,12 @@ export function mapUser(user: any): UserSummaryDTO | null {
 }
 
 export function mapTable(table: ITable): TableInfoDTO {
-  const dmUser = mapUser((table as any).dm) ?? { _id: table.dm.toString(), username: '' };
+  // `dm` pode vir populado como null se o usuário foi removido (ex.: limpeza de
+  // teste/offboarding); não deixar a emissão de presença explodir por isso.
+  const dmUser = mapUser((table as any).dm) ?? {
+    _id: table.dm?.toString?.() ?? '',
+    username: '',
+  };
   const players = ((table as any).players ?? [])
     .map((player: any) => mapUser(player))
     .filter((player: UserSummaryDTO | null): player is UserSummaryDTO => !!player);
@@ -59,7 +68,37 @@ export function mapScene(scene: IScene | (IScene & { toObject?: () => IScene }))
   };
 }
 
-export function mapToken(token: IToken & { ownerId?: any }): TokenDTO {
+export function mapCharacterSummary(
+  character: ICharacter,
+  tokenId?: string | null
+): CharacterSummaryDTO {
+  return {
+    _id: character._id.toString(),
+    name: character.name,
+    ownerId: character.ownerId.toString(),
+    systemKey: character.systemKey,
+    level: character.profile?.level,
+    currentHP: character.stats?.currentHP,
+    maxHP: character.stats?.maxHP,
+    defense: character.stats?.defense,
+    tokenId: tokenId ?? null,
+  };
+}
+
+export function mapCharacterSummaryLite(character: ICharacter): CharacterSummaryLite {
+  return {
+    _id: character._id.toString(),
+    name: character.name,
+    currentHP: character.stats?.currentHP,
+    maxHP: character.stats?.maxHP,
+    defense: character.stats?.defense,
+  };
+}
+
+export function mapToken(
+  token: IToken & { ownerId?: any },
+  character?: ICharacter | null
+): TokenDTO {
   const owner = mapUser(token.ownerId);
   return {
     _id: token._id.toString(),
@@ -74,7 +113,8 @@ export function mapToken(token: IToken & { ownerId?: any }): TokenDTO {
     remainingMovement: token.remainingMovement,
     size: token.size,
     canOverlap: token.canOverlap,
-    characterId: token.characterId ? token.characterId.toString() : undefined,
+    characterId: token.characterId ? token.characterId.toString() : null,
+    character: character ? mapCharacterSummaryLite(character) : null,
   };
 }
 
@@ -125,14 +165,19 @@ export function buildSessionState(
   initiative: IInitiativeEntry[],
   measurements: Array<Measurement | PersistentMeasurement>,
   auras: Aura[],
+  characters: CharacterSummaryDTO[] = [],
+  recentRolls: DiceRolledPayload[] = [],
+  characterByTokenId: Map<string, ICharacter> = new Map(),
 ): SessionStateDTO {
   return {
     table: mapTable(table),
     activeScene: activeScene ? mapScene(activeScene) : null,
     scenes: scenes.map(mapScene),
-    tokens: tokens.map(mapToken),
+    tokens: tokens.map((token) => mapToken(token, characterByTokenId.get(token._id.toString()) ?? null)),
     initiative: initiative.map(mapInitiativeEntry),
     measurements: measurements.map(mapMeasurement),
     auras: auras.map(mapAura),
+    characters,
+    recentRolls,
   };
 }

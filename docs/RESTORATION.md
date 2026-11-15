@@ -1,7 +1,8 @@
 # Plano de Restauração — Tavern of Disaster
 
-> Status: em execução. Fases 0, 1 e 2 concluídas e integradas; próxima: Fase 3.
-> Última atualização: 2026-11-15. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`.
+> Status: em execução. Fases 0, 1, 2 e 3 concluídas e integradas; próxima: Fase 4.
+> Última atualização: 2026-11-15. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
+> `v0.9.4-phase3`.
 
 ## 1. Diagnóstico em uma frase
 
@@ -36,7 +37,7 @@ main
 │   ├── restore/phase-2-frontend   connectDisplay, canWrite, join por convite
 │   ├── restore/phase-2-ux         ficha resumida, TV real, QR, mobile
 │   └── restore/phase-2-qa         1 TV + 5 celulares + display security
-├── restore/phase-3-sheets-dice    fichas, dados, sistemas
+├── restore/phase-3-sheets-dice    fichas, dados, sistemas (v0.9.4-phase3)
 ├── restore/phase-4-media-scenes   uploads, cenas, persistência
 ├── restore/phase-5-online         WebRTC, áudio/vídeo, chat, TURN (online real)
 └── restore/phase-6-beta-ops       deploy free, observabilidade, playtest simulado
@@ -144,14 +145,40 @@ decisões. Tags: `v0.9.0-restore` (marco zero), `v0.9.x` por fase, `v1.0.0-beta`
 - `tests/e2e/global-setup.ts` ainda pode deixar processos filhos em alguns
   ambientes; CI limpa o runner. Os rate limits de teste sobem via env.
 
-### Fase 3 — Fichas, dados e sistemas (1 semana)
+### Fase 3 — Fichas, dados e sistemas (1 semana) — CONCLUÍDA
 
-- Criar/editar ficha; vínculo ficha ↔ token; PV sincronizado.
-- Dados server-authoritative, presets por sistema, limite de dados.
-- D&D 5e completo para o beta; Cyberpunk RED como segundo sistema (d10 explosivo).
-- Log de rolagens persistido.
-- **Online-aware:** ficha, PV e rolagens sincronizam via `revision` e funcionam
-  para jogadores remotos; o log é a fonte para a TV e para o chat.
+- [x] Criar/editar ficha; vínculo ficha ↔ token; PV sincronizado.
+- [x] Dados server-authoritative, presets por sistema, limite de dados.
+- [x] D&D 5e completo para o beta; Cyberpunk RED como segundo sistema (d10 explosivo).
+- [x] Log de rolagens persistido (TTL 7 dias, cursor, `recentRolls`).
+- [x] Ficha completa dono/DM; resumo (PV/CA) para TV/jogadores.
+- [x] Ficha D&D 5e com atributos/perícias/saves/ataques/inventário/magias.
+- [x] System seed idempotente de D&D 5e e Cyberpunk RED.
+- [x] **Online-aware:** ficha, PV e rolagens sincronizam via `revision` e
+  funcionam para jogadores remotos; o log é a fonte para a TV e para o chat.
+
+**Evidência (2026-11-15, integração `991744a`, tag `v0.9.4-phase3`):**
+
+| Gate | Resultado |
+|---|---|
+| Backend `npm test` | **103/103**, 17 suítes |
+| Backend `npm run build` | OK |
+| Frontend `type-check` | OK |
+| Frontend `npm run test:unit` | **185/185** |
+| Frontend `npm run build` | OK |
+| Playwright sheets-dice | **8/8** |
+| Playwright sheets-dice-online | **4/4** |
+| Suíte E2E completa | **34/34** |
+| Caos P1 | **14/14 PASS** |
+
+**Gaps conhecidos da Fase 3:**
+
+- Automação de regras (ataques vs CA, condições, magias) fica para depois do beta.
+- HP ± na ficha só é persistido no “Salvar”; no card o ± já vai por socket.
+- `systemKey` é copiado do sistema da mesa; troca de sistema não migra fichas
+  antigas automaticamente.
+- Log de rolagens tem TTL de 7 dias (sem exportação).
+- D&D 5e tem ficha completa, mas não compêndio de magias/itens.
 
 ### Fase 4 — Mídia e cenas (1 semana)
 

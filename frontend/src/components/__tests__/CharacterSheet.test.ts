@@ -16,11 +16,11 @@ const baseCharacter: Character = {
 };
 
 describe('CharacterSheet', () => {
-  it('renders system default attributes when provided', () => {
+  it('renders system default attributes when provided', async () => {
     const system: SystemDTO = {
       _id: 'sys-1',
-      key: 'dnd5e',
-      name: 'D&D',
+      key: 'generic-rules',
+      name: 'Sistema Genérico',
       defaultAttributes: [{ key: 'str', label: 'Força', type: 'number' }],
     } as SystemDTO;
 
@@ -37,10 +37,55 @@ describe('CharacterSheet', () => {
       },
     });
 
+    // Atributos do sistema vivem na aba "Atributos & Perícias".
+    const atributosTab = wrapper
+      .findAll('.sheet-tabs__tab')
+      .find((tab) => tab.text().includes('Atributos'));
+    expect(atributosTab, 'A ficha precisa expor a aba de atributos.').toBeTruthy();
+    await atributosTab!.trigger('click');
+
     const systemSection = wrapper.find('.system-attributes');
     expect(systemSection.exists()).toBe(true);
     const attrInput = systemSection.get('input');
     expect((attrInput.element as HTMLInputElement).value).toBe('3');
+  });
+
+  it('shows the D&D 5e tab structure with vitals and dialog hooks', async () => {
+    const wrapper = mount(CharacterSheet, {
+      props: {
+        open: true,
+        character: { ...baseCharacter, systemKey: 'dnd5e' },
+        isDM: true,
+        isOwner: true,
+        system: null,
+      },
+      global: {
+        stubs: { teleport: true },
+      },
+    });
+
+    expect(wrapper.find('.character-sheet').exists()).toBe(true);
+    expect(wrapper.get('.character-sheet h2').text()).toBe('Aerin');
+    expect(wrapper.find('button[aria-label="Fechar"]').exists()).toBe(true);
+    expect(wrapper.find('.vitals').exists()).toBe(true);
+
+    const labels = wrapper.findAll('.sheet-tabs__tab').map((tab) => tab.text());
+    expect(labels).toEqual([
+      'Identidade',
+      'Atributos & Perícias',
+      'Combate',
+      'Ataques',
+      'Características',
+      'Inventário',
+      'Magias',
+      'Notas',
+    ]);
+
+    // D&D 5e: atributos e perícias calculados aparecem na aba correspondente.
+    const atributosTab = wrapper.findAll('.sheet-tabs__tab')[1];
+    await atributosTab.trigger('click');
+    expect(wrapper.find('.ability-grid').exists()).toBe(true);
+    expect(wrapper.find('.skill-list').exists()).toBe(true);
   });
 
   it('prevents editing when user is neither DM nor owner', () => {

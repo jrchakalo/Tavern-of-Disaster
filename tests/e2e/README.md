@@ -77,3 +77,23 @@ the scenario already consumes the `limitCreate` bucket (20 req / 5 min).
 > **14/14 passed** (`table-mode` 9/9 + `display-security` 5/5) in 38.7 s.
 > See `docs/qa/PHASE2-TABLE-MODE-REPORT.md` for evidence, execution commands and
 > the PO verdict fields.
+
+## Sheets, dice and systems tests (Phase 3)
+
+`specs/sheets-dice.spec.ts` drives a DM (desktop), 2 players and a TV through
+`docs/SHEETS_DICE.md`: sheet creation/linking, HP propagation, HP validation,
+`2d6+3` log persistence, Cyberpunk RED `1d10!` preset/explosion, reconnect and
+cross-table character authorization.
+`specs/sheets-dice-online.spec.ts` repeats the core flow with two remote browser
+contexts and no TV (online-aware smoke; voice/video is Phase 5).
+
+```bash
+# Chrome do sistema, Mongo em memória e um worker (describes são serial)
+E2E_CHANNEL=chrome npx playwright test \
+  specs/sheets-dice.spec.ts specs/sheets-dice-online.spec.ts --workers=1
+```
+
+Both specs detect missing Phase 3 surfaces up front and fail with the contract
+items that are absent instead of reporting false passes. See
+`docs/qa/PHASE3-SHEETS-DICE-REPORT.md` for the current (pre-integration) status,
+known selector risks and the PO fields to fill after the integration.

@@ -14,8 +14,9 @@ Vue 3 + Vite + TypeScript + Pinia no frontend.
 
 - `main` contém a antiga branch `expand`, que já incorpora `character`, `rolling`,
   `system`, `polishing` e `fix`.
-- A restauração está organizada em fases. Fases 0, 1 e 2 concluídas; a próxima é
-  `restore/phase-3-sheets-dice`. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`.
+- A restauração está organizada em fases. Fases 0–3 concluídas; a próxima é
+  `restore/phase-4-media-scenes`. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
+  `v0.9.4-phase3`.
 - Contratos: `docs/REALTIME_PROTOCOL.md` (tempo real), `docs/TABLE_MODE.md`
   (TV + celulares, display token, QR, geometria de grade) e
   `docs/ONLINE_MODE.md` (jogo remoto + voz/vídeo/chat). O diário de

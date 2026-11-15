@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { onBeforeUnmount, onMounted, ref, computed, watch } from 'vue';
 import type { Character, DiceRolledPayload, SystemDTO } from '../types';
 import { socketService } from '../services/socketService';
 import { toast } from '../services/toast';
 import { currentUser } from '../services/authService';
 import { rollLocalDice } from '../services/localDiceEngine';
+import { useTableStore } from '../stores/tableStore';
+import { useSystemStore } from '../stores/systemStore';
 
 const props = withDefaults(defineProps<{
   tableId: string;
@@ -33,14 +35,62 @@ const emit = defineEmits<{
 
 type BindingState = { type: 'none' | 'token' | 'character'; id?: string };
 type DicePreset = { id: string; name: string; expression: string; tags?: string[]; metadata?: string };
+type DiceStatus = { kind: 'idle' | 'pending' | 'success' | 'error'; text: string };
 
 const expression = ref(props.defaultExpression ?? '1d20');
 const savedPresets = ref<DicePreset[]>([]);
 const selectedPresetId = ref<string | null>(null);
 const selectedBindingKey = ref('none');
+const status = ref<DiceStatus>({ kind: 'idle', text: '' });
 
 const QUICK_DICE = [4, 6, 8, 10, 12, 20, 100];
-const systemDicePresets = computed(() => props.system?.dicePresets ?? []);
+
+// --- Sistema da mesa (presets) ---------------------------------------------
+// Sem `system` explícito (ex.: /play), resolve pelo tableStore: o mesmo
+// DiceRoller passa a servir /table, /play e o sandbox sem mudar de API.
+
+function tableSnapshot() {
+  try {
+    const table = useTableStore().currentTable;
+    if (!table || table._id !== props.tableId) return null;
+    return table;
+  } catch {
+    // Pinia indisponível (sandbox/teste sem app): sem sistema resolvido.
+    return null;
+  }
+}
+
+const resolvedSystem = computed<SystemDTO | null>(() => {
+  if (props.system) return props.system;
+  try {
+    const table = tableSnapshot();
+    if (!table) return null;
+    return useSystemStore().currentSystemForTable(table);
+  } catch {
+    return null;
+  }
+});
+
+const systemDicePresets = computed(() => resolvedSystem.value?.dicePresets ?? []);
+
+watch(
+  () => {
+    const table = tableSnapshot();
+    return table ? `${table.systemId ?? ''}|${table.systemKey ?? ''}` : '';
+  },
+  (key) => {
+    if (!key || props.system) return;
+    try {
+      void useSystemStore().fetchAll().catch(() => undefined);
+    } catch {
+      // Sem pinia: presets ficam para a próxima carga.
+    }
+  },
+  { immediate: true },
+);
+
+/** Indicador de dados explosivos (`!`, Cyberpunk RED) — §6.2. */
+const isExplosive = computed(() => expression.value.includes('!'));
 
 watch(
   () => props.defaultExpression,
@@ -188,6 +238,75 @@ function resolveBindingIds(binding: BindingState) {
   return {};
 }
 
+// --- Confirmação/erro da rolagem (ack) --------------------------------------
+// O socketService já faz toast de erro/timeout; aqui o estado fica visível
+// inline no painel (§8.3 "ack/erro visível") sem duplicar os toasts.
+
+const ACK_TIMEOUT_MS = 4000;
+let pendingExpression: string | null = null;
+let ackTimer: ReturnType<typeof setTimeout> | null = null;
+let disposed = false;
+
+type SocketLike = {
+  on: (event: string, listener: (payload: unknown) => void) => unknown;
+  off: (event: string, listener: (payload: unknown) => void) => unknown;
+};
+
+function isSocketLike(value: unknown): value is SocketLike {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as { on?: unknown; off?: unknown };
+  return typeof candidate.on === 'function' && typeof candidate.off === 'function';
+}
+
+function readSocket(): SocketLike | null {
+  const candidate = (socketService as unknown as { socket?: unknown }).socket;
+  return isSocketLike(candidate) ? candidate : null;
+}
+
+function clearAckTimeout() {
+  if (ackTimer !== null) {
+    clearTimeout(ackTimer);
+    ackTimer = null;
+  }
+}
+
+function handleDiceRolledEvent(payload: unknown) {
+  if (!pendingExpression || disposed) return;
+  const roll = payload as Partial<DiceRolledPayload> | null;
+  if (!roll || roll.expression !== pendingExpression) return;
+  if (roll.userId && currentUser.value?.id && roll.userId !== currentUser.value.id) return;
+  clearAckTimeout();
+  pendingExpression = null;
+  status.value = { kind: 'success', text: `${roll.expression} → ${roll.total}` };
+}
+
+function handleDiceRollErrorEvent(payload: unknown) {
+  if (!pendingExpression || disposed) return;
+  const message =
+    payload && typeof payload === 'object' && 'message' in payload
+      ? String((payload as { message?: unknown }).message ?? '')
+      : '';
+  clearAckTimeout();
+  pendingExpression = null;
+  status.value = { kind: 'error', text: message || 'Erro ao executar a rolagem.' };
+}
+
+onMounted(() => {
+  const socket = readSocket();
+  if (!socket) return;
+  socket.on('diceRolled', handleDiceRolledEvent);
+  socket.on('diceRollError', handleDiceRollErrorEvent);
+});
+
+onBeforeUnmount(() => {
+  disposed = true;
+  clearAckTimeout();
+  const socket = readSocket();
+  if (!socket) return;
+  socket.off('diceRolled', handleDiceRolledEvent);
+  socket.off('diceRollError', handleDiceRollErrorEvent);
+});
+
 function roll() {
   const expr = expression.value.trim();
   if (!expr) {
@@ -213,15 +332,20 @@ function roll() {
         createdAt: new Date().toISOString(),
         ...binding,
       };
+      status.value = { kind: 'success', text: `${result.expression} → ${result.total}` };
       emit('local-roll', payload);
       toast.success('Rolagem concluída.');
     } catch (error) {
       console.error('[dice] erro ao rolar localmente', error);
+      status.value = { kind: 'error', text: 'Falha ao executar a rolagem.' };
       toast.error(error instanceof Error ? error.message : 'Falha ao executar a rolagem.');
     }
     return;
   }
   try {
+    clearAckTimeout();
+    pendingExpression = expr;
+    status.value = { kind: 'pending', text: 'Rolagem enviada — aguardando o servidor…' };
     socketService.rollDice({
       tableId: props.tableId,
       expression: expr,
@@ -230,8 +354,18 @@ function roll() {
       tags: preset?.tags,
     });
     toast.success('Rolagem enviada.');
+    ackTimer = setTimeout(() => {
+      if (disposed || !pendingExpression) return;
+      pendingExpression = null;
+      status.value = {
+        kind: 'error',
+        text: 'O servidor não confirmou a rolagem. Tente novamente.',
+      };
+    }, ACK_TIMEOUT_MS);
   } catch (error) {
     console.error('[dice] erro ao rolar', error);
+    pendingExpression = null;
+    status.value = { kind: 'error', text: 'Não foi possível enviar a rolagem.' };
     toast.error('Não foi possível enviar a rolagem.');
   }
 }
@@ -263,6 +397,27 @@ function roll() {
       </select>
     </div>
 
+    <p v-if="isExplosive" class="explosive-hint" role="status">
+      Dados explosivos (<code>!</code>): cada dado no máximo rola de novo e soma.
+    </p>
+
+    <div v-if="systemDicePresets.length" class="system-presets">
+      <p class="field-label">Presets do sistema</p>
+      <div class="system-presets__grid">
+        <button
+          v-for="preset in systemDicePresets"
+          :key="preset.key"
+          type="button"
+          class="system-preset-btn"
+          :aria-label="`Preset ${preset.label}: ${preset.expression}`"
+          @click="applySystemPreset(preset)"
+        >
+          <span>{{ preset.label }}</span>
+          <small>{{ preset.expression }}</small>
+        </button>
+      </div>
+    </div>
+
     <div class="shortcut-row">
       <span>Atalhos:</span>
       <button
@@ -281,21 +436,15 @@ function roll() {
       <button type="button" class="ghost" @click="savePreset">+ Salvar</button>
     </div>
 
-    <div v-if="systemDicePresets.length" class="system-presets">
-      <p class="field-label">Presets do sistema</p>
-      <div class="system-presets__grid">
-        <button
-          v-for="preset in systemDicePresets"
-          :key="preset.key"
-          type="button"
-          class="system-preset-btn"
-          @click="applySystemPreset(preset)"
-        >
-          <span>{{ preset.label }}</span>
-          <small>{{ preset.expression }}</small>
-        </button>
-      </div>
-    </div>
+    <p
+      v-if="status.text"
+      class="dice-status"
+      :class="`dice-status--${status.kind}`"
+      role="status"
+      aria-live="polite"
+    >
+      {{ status.text }}
+    </p>
 
     <div v-if="savedPresets.length" class="presets">
       <p class="field-label">Presets salvos</p>
@@ -383,6 +532,39 @@ function roll() {
   flex-wrap: wrap;
   font-size: 0.85rem;
   color: var(--color-text-muted);
+}
+.explosive-hint {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(210, 156, 68, 0.5);
+  border-radius: 8px;
+  background: rgba(210, 156, 68, 0.12);
+  font-size: 0.78rem;
+  color: var(--color-text);
+}
+.explosive-hint code {
+  font-weight: 700;
+  color: var(--color-warning);
+}
+.dice-status {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+.dice-status--pending {
+  border-color: rgba(59, 130, 246, 0.45);
+}
+.dice-status--success {
+  border-color: rgba(34, 197, 94, 0.5);
+  color: var(--color-text);
+  font-weight: 600;
+}
+.dice-status--error {
+  border-color: rgba(239, 68, 68, 0.55);
+  color: var(--color-danger, #f87171);
 }
 .shortcut-btn {
   border-radius: 999px;

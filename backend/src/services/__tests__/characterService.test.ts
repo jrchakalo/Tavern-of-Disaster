@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import System from '../../models/System.model';
 import Table from '../../models/Table.model';
+import Character from '../../models/Character.model';
 import { createCharacter, updateCharacter } from '../characterService';
 import { connectMongoMemory, disconnectMongoMemory, clearMongoMemory } from '../../test-utils/mongoMemory';
 
@@ -90,5 +91,62 @@ describe('characterService.createCharacter', () => {
       notes: 'Atualização final do dono',
     });
     expect(ownerUpdated.notes).toBe('Atualização final do dono');
+  });
+
+  it('copies the table system key and falls back to dnd5e', async () => {
+    const system = await System.create({ key: 'cyberpunk-red', name: 'Cyberpunk RED' });
+    const table = await Table.create({
+      name: 'Mesa Cyberpunk',
+      dm: dmId,
+      players: [playerId],
+      inviteCode: 'INV-SYS',
+      scenes: [],
+      systemId: system._id,
+    });
+    const withSystem = await createCharacter(playerId.toString(), table._id.toString(), {
+      name: 'V',
+    });
+    expect(withSystem.systemKey).toBe('cyberpunk-red');
+
+    const tableWithoutSystem = await Table.create({
+      name: 'Mesa sem sistema',
+      dm: dmId,
+      players: [playerId],
+      inviteCode: 'INV-NOSYS',
+      scenes: [],
+    });
+    const fallback = await createCharacter(playerId.toString(), tableWithoutSystem._id.toString(), {
+      name: 'Sem sistema',
+    });
+    expect(fallback.systemKey).toBe('dnd5e');
+  });
+
+  it('merges partial stats and validates HP against maxHP', async () => {
+    const table = await Table.create({
+      name: 'Mesa Stats',
+      dm: dmId,
+      players: [playerId],
+      inviteCode: 'INV-STATS',
+      scenes: [],
+    });
+    const created = await createCharacter(playerId.toString(), table._id.toString(), {
+      name: 'Borin',
+      stats: { currentHP: 10, maxHP: 10, defense: 12 },
+    });
+    const characterId = created._id.toString();
+
+    const updated = await updateCharacter(playerId.toString(), table._id.toString(), characterId, {
+      stats: { currentHP: 5 },
+    });
+    expect(updated.stats?.currentHP).toBe(5);
+    expect(updated.stats?.maxHP).toBe(10);
+    expect(updated.stats?.defense).toBe(12);
+
+    await expect(
+      updateCharacter(playerId.toString(), table._id.toString(), characterId, {
+        stats: { currentHP: 99 },
+      })
+    ).rejects.toThrow('HP atual não pode exceder o máximo.');
+    expect((await Character.findById(characterId))?.stats?.currentHP).toBe(5);
   });
 });

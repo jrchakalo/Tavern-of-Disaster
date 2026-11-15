@@ -14,9 +14,7 @@ import { limitCreate } from '../middleware/rateLimit';
 
 const router = Router();
 
-router.use(authMiddleware);
-
-router.get('/tables/:tableId/characters/my', async (req: AuthRequest, res) => {
+router.get('/tables/:tableId/characters/my', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const { tableId } = req.params;
     const userId = req.user?.id as string;
@@ -27,7 +25,7 @@ router.get('/tables/:tableId/characters/my', async (req: AuthRequest, res) => {
   }
 });
 
-router.get('/tables/:tableId/characters', async (req: AuthRequest, res) => {
+router.get('/tables/:tableId/characters', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const { tableId } = req.params;
     const userId = req.user?.id as string;
@@ -38,7 +36,7 @@ router.get('/tables/:tableId/characters', async (req: AuthRequest, res) => {
   }
 });
 
-router.post('/tables/:tableId/characters', limitCreate, async (req: AuthRequest, res) => {
+router.post('/tables/:tableId/characters', authMiddleware, limitCreate, async (req: AuthRequest, res) => {
   try {
     const { tableId } = req.params;
     const userId = req.user?.id as string;
@@ -50,7 +48,7 @@ router.post('/tables/:tableId/characters', limitCreate, async (req: AuthRequest,
   }
 });
 
-router.put('/tables/:tableId/characters/:characterId', async (req: AuthRequest, res) => {
+router.put('/tables/:tableId/characters/:characterId', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const { tableId, characterId } = req.params;
     const userId = req.user?.id as string;
@@ -62,7 +60,7 @@ router.put('/tables/:tableId/characters/:characterId', async (req: AuthRequest, 
   }
 });
 
-router.delete('/tables/:tableId/characters/:characterId', async (req: AuthRequest, res) => {
+router.delete('/tables/:tableId/characters/:characterId', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const { tableId, characterId } = req.params;
     const userId = req.user?.id as string;
