@@ -121,18 +121,85 @@ export interface CharacterStats {
   baseInitiative?: number;
 }
 
+export interface CharacterProfile {
+  className?: string;
+  level?: number;
+  race?: string;
+  background?: string;
+  alignment?: string;
+  speed?: number;
+  hitDice?: string;
+}
+
+export interface CharacterAttack {
+  name: string;
+  bonus?: string;
+  damage?: string;
+  notes?: string;
+}
+
+export interface CharacterFeature {
+  name: string;
+  description?: string;
+}
+
+export interface CharacterInventoryItem {
+  name: string;
+  quantity?: number;
+  notes?: string;
+}
+
+export interface CharacterSpellSlot {
+  used?: number;
+  max?: number;
+}
+
 export interface CharacterDTO {
   _id: string;
   ownerId: string;
   tableId: string;
   name: string;
   avatarUrl?: string;
+  systemKey?: string;
+  profile?: CharacterProfile;
   attributes?: Record<string, number>;
   stats?: CharacterStats;
   skills?: Record<string, number | string>;
+  proficientSaves?: string[];
+  proficientSkills?: string[];
+  expertiseSkills?: string[];
+  attacks?: CharacterAttack[];
+  features?: CharacterFeature[];
+  inventory?: CharacterInventoryItem[];
+  spellSlots?: Record<string, CharacterSpellSlot>;
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface CharacterSummaryDTO {
+  _id: string;
+  name: string;
+  ownerId: string;
+  systemKey?: string;
+  level?: number;
+  currentHP?: number;
+  maxHP?: number;
+  defense?: number;
+  tokenId?: string | null;
+}
+
+export interface CharacterSummaryLite {
+  _id: string;
+  name: string;
+  currentHP?: number;
+  maxHP?: number;
+  defense?: number;
+}
+
+export interface CharacterUpdateDTO {
+  characterId: string;
+  patch: Partial<CharacterSummaryDTO>;
 }
 
 export type Character = CharacterDTO;
@@ -203,6 +270,7 @@ export interface TokenDTO {
   size: TokenSize;
   canOverlap: boolean;
   characterId?: string;
+  character?: CharacterSummaryLite | null;
 }
 
 export interface TokenTemplateDTO {
@@ -290,7 +358,10 @@ export interface DiceRolledPayload {
   characterId?: string;
   tags?: string[];
   createdAt: string;
+  revision?: number;
 }
+
+export type RollLogEntryDTO = DiceRolledPayload;
 
 export type LogEntryType = 'roll' | 'system' | 'movement' | 'chat';
 
@@ -368,6 +439,8 @@ export interface SessionSnapshot {
   initiative: InitiativeEntryDTO[];
   measurements: MeasurementDTO[];
   auras: AuraDTO[];
+  characters?: CharacterSummaryDTO[];
+  recentRolls?: RollLogEntryDTO[];
 }
 
 export interface TokenUpdateDTO {
@@ -398,6 +471,14 @@ export interface SessionPatchChanges {
   /** Substitui a lista inteira. */
   auras?: AuraDTO[];
   sessionStatus?: SessionStatusChangeDTO;
+  /** Substitui a lista inteira. */
+  characters?: CharacterSummaryDTO[];
+  /** Merge por characterId. */
+  characterUpdates?: CharacterUpdateDTO[];
+  /** Remove por characterId. */
+  charactersRemoved?: string[];
+  /** Substitui a lista inteira (máx. 50). */
+  recentRolls?: RollLogEntryDTO[];
 }
 
 export interface SessionPatch {
