@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia';
 
 import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
+import { connectDisplay, disconnectDisplay } from '../services/displaySession';
 import { useTableStore } from '../stores/tableStore';
 
 import DisplayBoard from '../components/display/DisplayBoard.vue';
@@ -32,8 +33,108 @@ const {
   gridHeight,
   metersPerSquare,
   auras,
+  pings,
   isDM,
 } = storeToRefs(store);
+
+// ---------------------------------------------------------------------------
+// Token da TV: fragmento da URL > sessionStorage. Sem token, não conecta.
+// ---------------------------------------------------------------------------
+
+const TOKEN_STORAGE_KEY = `tod:displayToken:${tableId}`;
+
+const displayToken = ref<string | null>(null);
+const tokenMissing = ref(false);
+const tokenInvalid = ref(false);
+const unavailableMessage = ref('');
+
+type SocketLike = {
+  on: (event: string, listener: (payload: unknown) => void) => unknown;
+  off: (event: string, listener: (payload: unknown) => void) => unknown;
+};
+
+function isSocketLike(value: unknown): value is SocketLike {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as { on?: unknown; off?: unknown };
+  return typeof candidate.on === 'function' && typeof candidate.off === 'function';
+}
+
+function readSocket(): SocketLike | null {
+  const candidate = (socketService as unknown as { socket?: unknown }).socket;
+  return isSocketLike(candidate) ? candidate : null;
+}
+
+function readTokenFromHash(): string | null {
+  const raw = window.location.hash.replace(/^#/, '');
+  if (!raw) return null;
+  return new URLSearchParams(raw).get('token');
+}
+
+function resolveDisplayToken(): string | null {
+  const fromHash = readTokenFromHash();
+  if (fromHash) {
+    try {
+      // Guarda para sobreviver a reload da TV sem repetir o QR (§4.2).
+      window.sessionStorage.setItem(TOKEN_STORAGE_KEY, fromHash);
+    } catch {
+      // Sem storage disponível: o fragmento basta nesta carga.
+    }
+    return fromHash;
+  }
+  try {
+    return window.sessionStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+let connectErrorListener: ((payload: unknown) => void) | null = null;
+
+function handleConnectError(payload: unknown) {
+  const code = (payload as { data?: { code?: string } } | null)?.data?.code;
+  if (code !== 'UNAUTHENTICATED') return;
+  tokenInvalid.value = true;
+  detachConnectErrorListener();
+  disconnectDisplay();
+}
+
+function attachConnectErrorListener() {
+  const socket = readSocket();
+  if (!socket || connectErrorListener) return;
+  connectErrorListener = handleConnectError;
+  socket.on('connect_error', connectErrorListener);
+}
+
+function detachConnectErrorListener() {
+  const socket = readSocket();
+  if (socket && connectErrorListener) socket.off('connect_error', connectErrorListener);
+  connectErrorListener = null;
+}
+
+function startDisplayConnection() {
+  try {
+    connectDisplay({ tableId, token: displayToken.value as string });
+  } catch (error) {
+    unavailableMessage.value =
+      error instanceof Error && error.message ? error.message : 'Conexão da TV indisponível.';
+    return;
+  }
+  attachConnectErrorListener();
+}
+
+function retryWithStoredToken() {
+  tokenInvalid.value = false;
+  unavailableMessage.value = '';
+  const token = resolveDisplayToken();
+  if (!token) {
+    tokenMissing.value = true;
+    disconnectDisplay();
+    return;
+  }
+  tokenMissing.value = false;
+  displayToken.value = token;
+  startDisplayConnection();
+}
 
 const extras = computed(() => readSessionExtras(store));
 const revision = computed(() => extras.value.revision ?? 0);
@@ -78,7 +179,36 @@ watch(connectionStatus, (status, previous) => {
   }
 });
 
+// O socket pode nascer de forma assíncrona dentro do `connectDisplay`; ao
+// mudar de estado garantimos que o listener de token inválido está anexado.
+watch(connectionStatus, (status) => {
+  if (tokenInvalid.value || !displayToken.value) return;
+  if (status === 'connecting' || status === 'connected') attachConnectErrorListener();
+});
+
 const isFullscreen = ref(false);
+
+const sessionStatusLabel = computed(() => {
+  switch (sessionStatus.value) {
+    case 'LIVE':
+      return 'Ao vivo';
+    case 'PREPARING':
+      return 'Preparando';
+    case 'PAUSED':
+      return 'Pausada';
+    case 'ENDED':
+      return 'Encerrada';
+    default:
+      return '';
+  }
+});
+
+const fullscreenSupported = computed(() => {
+  const doc = document as Document & { fullscreenEnabled?: boolean };
+  if (typeof doc.fullscreenEnabled === 'boolean') return doc.fullscreenEnabled;
+  const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: unknown };
+  return typeof el.requestFullscreen === 'function' || typeof el.webkitRequestFullscreen === 'function';
+});
 
 function handleFullscreenChange() {
   isFullscreen.value = Boolean(document.fullscreenElement);
@@ -106,74 +236,134 @@ async function toggleFullscreen() {
 }
 
 onMounted(() => {
-  socketService.connect(tableId);
   document.addEventListener('fullscreenchange', handleFullscreenChange);
+  const token = resolveDisplayToken();
+  if (!token) {
+    tokenMissing.value = true;
+    return;
+  }
+  displayToken.value = token;
+  startDisplayConnection();
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  socketService.disconnect();
+  detachConnectErrorListener();
+  disconnectDisplay();
 });
 </script>
 
 <template>
   <div class="display-shell">
-    <header class="display-header">
-      <div class="display-header__identity">
-        <h1 class="display-header__title">{{ tableName }}</h1>
-        <p class="display-header__scene">{{ sceneName }}</p>
-      </div>
-      <div class="display-header__meta">
-        <ConnectionPill :status="connectionStatus" />
-        <span class="display-header__revision" :title="`Revisão ${revision}`">rev {{ revision }}</span>
-        <span class="display-header__role">{{ roleLabel(role) }}</span>
-        <button
-          type="button"
-          class="fullscreen-btn"
-          :aria-label="isFullscreen ? 'Sair da tela cheia' : 'Entrar em tela cheia'"
-          @click="toggleFullscreen"
-        >
-          {{ isFullscreen ? 'Sair da tela cheia' : 'Tela cheia' }}
+    <!-- Estado 1: TV aberta sem token de display -->
+    <div v-if="tokenMissing" class="display-setup" role="alert">
+      <div class="display-setup__card">
+        <span class="display-setup__mark" aria-hidden="true"></span>
+        <h1>TV não configurada</h1>
+        <p>
+          No painel do Mestre, abra <strong>Convites</strong> e gere o link da TV.
+          Escaneie o QR na televisão ou abra o link — ele termina em
+          <code>#token=…</code>.
+        </p>
+        <button type="button" class="fullscreen-btn" @click="retryWithStoredToken">
+          Verificar novamente
         </button>
       </div>
-    </header>
-
-    <div class="display-body">
-      <main class="display-board-area">
-        <DisplayBoard
-          :squares="squares"
-          :grid-width="gridWidth"
-          :grid-height="gridHeight"
-          :map-url="currentMapUrl"
-          :tokens="tokensOnMap"
-          :current-turn-token-id="currentTurnTokenId"
-          :meters-per-square="metersPerSquare"
-          :auras="auras"
-        />
-        <div v-if="!isLive" class="display-waiting" role="status">
-          <div class="display-waiting__card">
-            <span class="display-waiting__mark" aria-hidden="true"></span>
-            <h2>{{ waitingTitle }}</h2>
-            <p>{{ waitingText }}</p>
-          </div>
-        </div>
-      </main>
-
-      <aside class="display-rail" aria-label="Iniciativa">
-        <h2 class="display-rail__title">Iniciativa</h2>
-        <InitiativeStrip
-          :entries="initiativeList"
-          :tokens="tokensOnMap"
-          :meters-per-square="metersPerSquare"
-          orientation="vertical"
-        />
-      </aside>
-
-      <section class="display-log" aria-label="Rolagens recentes">
-        <h2 class="display-rail__title">Rolagens</h2>
-        <RollLog :logs="logs" />
-      </section>
     </div>
+
+    <!-- Estado 2: token rejeitado pelo servidor -->
+    <div v-else-if="tokenInvalid" class="display-setup" role="alert">
+      <div class="display-setup__card">
+        <span class="display-setup__mark display-setup__mark--error" aria-hidden="true"></span>
+        <h1>Token da TV inválido</h1>
+        <p>
+          Este token foi revogado ou rotacionado. Peça ao Mestre um novo QR da TV
+          e abra o link novamente.
+        </p>
+        <button type="button" class="fullscreen-btn" @click="retryWithStoredToken">
+          Tentar novamente
+        </button>
+      </div>
+    </div>
+
+    <!-- Estado 3: conexão de display indisponível -->
+    <div v-else-if="unavailableMessage" class="display-setup" role="alert">
+      <div class="display-setup__card">
+        <h1>TV sem conexão</h1>
+        <p>{{ unavailableMessage }}</p>
+        <button type="button" class="fullscreen-btn" @click="retryWithStoredToken">
+          Tentar novamente
+        </button>
+      </div>
+    </div>
+
+    <template v-else>
+      <header class="display-header">
+        <div class="display-header__identity">
+          <h1 class="display-header__title">{{ tableName }}</h1>
+          <p class="display-header__scene">{{ sceneName }}</p>
+        </div>
+        <div class="display-header__meta">
+          <ConnectionPill :status="connectionStatus" />
+          <span
+            v-if="sessionStatusLabel"
+            class="display-header__status"
+            :class="{ 'is-live': sessionStatus === 'LIVE' }"
+          >
+            {{ sessionStatusLabel }}
+          </span>
+          <span class="display-header__revision" :title="`Revisão ${revision}`">rev {{ revision }}</span>
+          <span class="display-header__role">{{ roleLabel(role) }}</span>
+          <button
+            v-if="fullscreenSupported"
+            type="button"
+            class="fullscreen-btn"
+            :aria-label="isFullscreen ? 'Sair da tela cheia' : 'Entrar em tela cheia'"
+            @click="toggleFullscreen"
+          >
+            {{ isFullscreen ? 'Sair da tela cheia' : 'Tela cheia' }}
+          </button>
+        </div>
+      </header>
+
+      <div class="display-body">
+        <main class="display-board-area">
+          <DisplayBoard
+            :squares="squares"
+            :grid-width="gridWidth"
+            :grid-height="gridHeight"
+            :map-url="currentMapUrl"
+            :tokens="tokensOnMap"
+            :current-turn-token-id="currentTurnTokenId"
+            :meters-per-square="metersPerSquare"
+            :auras="auras"
+            :pings="pings"
+          />
+          <div v-if="!isLive" class="display-waiting" role="status">
+            <div class="display-waiting__card">
+              <span class="display-waiting__mark" aria-hidden="true"></span>
+              <h2>{{ waitingTitle }}</h2>
+              <p>{{ waitingText }}</p>
+            </div>
+          </div>
+        </main>
+
+        <aside class="display-rail" aria-label="Iniciativa">
+          <h2 class="display-rail__title">Iniciativa</h2>
+          <InitiativeStrip
+            :entries="initiativeList"
+            :tokens="tokensOnMap"
+            :meters-per-square="metersPerSquare"
+            orientation="vertical"
+          />
+        </aside>
+
+        <section class="display-log" aria-label="Rolagens recentes">
+          <h2 class="display-rail__title">Rolagens</h2>
+          <RollLog :logs="logs" />
+        </section>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -248,6 +438,69 @@ onBeforeUnmount(() => {
 .display-header__role {
   font-weight: 600;
   color: var(--color-accent-alt);
+}
+
+.display-header__status {
+  padding: 4px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-alt);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.display-header__status.is-live {
+  border-color: var(--color-success, #4f9f6d);
+  color: var(--color-success, #4f9f6d);
+}
+
+.display-setup {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.display-setup__card {
+  max-width: 640px;
+  text-align: center;
+}
+
+.display-setup__mark {
+  display: inline-block;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 20px;
+  border: 2px solid var(--color-accent-alt);
+  border-radius: 50%;
+  box-shadow: 0 0 0 8px rgba(152, 115, 79, 0.12);
+}
+
+.display-setup__mark--error {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 8px rgba(196, 71, 71, 0.14);
+}
+
+.display-setup__card h1 {
+  margin-top: 0;
+  font-size: clamp(1.8rem, 2.4vw, 2.6rem);
+}
+
+.display-setup__card p {
+  margin: 0 auto 24px;
+  max-width: 52ch;
+  font-size: clamp(1rem, 1.2vw, 1.25rem);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.display-setup__card code {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--color-surface-alt);
+  font-size: 0.9em;
 }
 
 .fullscreen-btn {

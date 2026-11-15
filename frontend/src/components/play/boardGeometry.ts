@@ -66,6 +66,46 @@ export interface AuraElement {
   style: Record<string, string>;
 }
 
+export interface BoardPing {
+  id: string;
+  squareId?: string;
+  x?: number;
+  y?: number;
+  color?: string;
+}
+
+/**
+ * Centro do ping em pixels locais do tabuleiro.
+ *
+ * O protocolo (Fase 2) envia `x/y` em unidades de grade. Enquanto houver
+ * clientes antigos mandando pixels, vale o mesmo heurístico do
+ * `GridMeasurementLayer`: valor menor que a largura da grade + 1 é grade,
+ * maior é pixel legado.
+ */
+export function pingCenterPixels(
+  ping: BoardPing,
+  gridWidth: number,
+  gridHeight: number,
+  squareSize: number,
+): { x: number; y: number } | null {
+  const size = Number.isFinite(squareSize) && squareSize > 0 ? squareSize : 0;
+  if (ping.squareId) {
+    const index = squareIndex(ping.squareId);
+    if (index >= 0 && size > 0) {
+      const cols = Math.max(1, gridWidth);
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      return { x: (col + 0.5) * size, y: (row + 0.5) * size };
+    }
+  }
+  if (ping.x == null || ping.y == null || size <= 0) return null;
+  const cols = Math.max(1, gridWidth);
+  const rows = Math.max(1, gridHeight);
+  const x = ping.x <= cols + 1 ? ping.x * size : ping.x;
+  const y = ping.y <= rows + 1 ? ping.y * size : ping.y;
+  return { x, y };
+}
+
 /**
  * Auras usam a mesma geometria do tabuleiro: o raio em metros vira pixels a
  * partir do tamanho do quadrado, e o centro é ancorado no token em coordenadas

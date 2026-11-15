@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import GridLayer from '../GridLayer.vue';
 import type { AuraInfo, GridSquare, TokenInfo } from '../../types';
-import { auraElements, tokenEntries, tokenStyle } from '../play/boardGeometry';
+import { auraElements, pingCenterPixels, tokenEntries, tokenStyle, type BoardPing } from '../play/boardGeometry';
 
 const props = withDefaults(
   defineProps<{
@@ -14,6 +14,7 @@ const props = withDefaults(
     currentTurnTokenId?: string | null;
     metersPerSquare?: number;
     auras?: AuraInfo[];
+    pings?: BoardPing[];
   }>(),
   {
     squares: () => [],
@@ -24,6 +25,7 @@ const props = withDefaults(
     currentTurnTokenId: null,
     metersPerSquare: 1.5,
     auras: () => [],
+    pings: () => [],
   },
 );
 
@@ -65,6 +67,27 @@ const entries = computed(() => tokenEntries(props.tokens ?? [], props.gridWidth)
 const auraList = computed(() =>
   auraElements(props.auras ?? [], entries.value, boardSize.value.squareSize, props.metersPerSquare),
 );
+
+const pingList = computed(() => {
+  const size = boardSize.value.squareSize;
+  if (!(size > 0)) return [];
+  const result: Array<{ id: string; style: Record<string, string> }> = [];
+  for (const ping of props.pings ?? []) {
+    const center = pingCenterPixels(ping, props.gridWidth, props.gridHeight, size);
+    if (!center) continue;
+    result.push({
+      id: ping.id,
+      style: {
+        left: `${center.x - size / 2}px`,
+        top: `${center.y - size / 2}px`,
+        width: `${size}px`,
+        height: `${size}px`,
+        '--ping-color': ping.color || '#ffeb3b',
+      },
+    });
+  }
+  return result;
+});
 </script>
 
 <template>
@@ -74,6 +97,7 @@ const auraList = computed(() =>
       :style="{ width: `${boardSize.width}px`, height: `${boardSize.height}px` }"
       role="img"
       :aria-label="`Tabuleiro ${gridWidth} por ${gridHeight}, somente leitura`"
+      @contextmenu.prevent
     >
       <img v-if="mapUrl" class="display-board__map" :src="mapUrl" alt="" draggable="false" />
       <div v-else class="display-board__placeholder">
@@ -98,6 +122,14 @@ const auraList = computed(() =>
         :key="aura.id"
         class="display-board__aura"
         :style="aura.style"
+        aria-hidden="true"
+      ></div>
+
+      <div
+        v-for="ping in pingList"
+        :key="`ping-${ping.id}`"
+        class="display-board__ping"
+        :style="ping.style"
         aria-hidden="true"
       ></div>
 
@@ -187,6 +219,27 @@ const auraList = computed(() =>
   z-index: 2;
 }
 
+.display-board__ping {
+  position: absolute;
+  box-sizing: border-box;
+  border: 3px solid var(--ping-color, #ffeb3b);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 5;
+  animation: displayPingRipple 1.1s ease-out forwards;
+}
+
+@keyframes displayPingRipple {
+  0% {
+    transform: scale(0.35);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
 .display-board__token {
   position: absolute;
   box-sizing: border-box;
@@ -240,6 +293,11 @@ const auraList = computed(() =>
 @media (prefers-reduced-motion: reduce) {
   .display-board__token {
     transition: none;
+  }
+
+  .display-board__ping {
+    animation: none;
+    opacity: 0.85;
   }
 }
 </style>
