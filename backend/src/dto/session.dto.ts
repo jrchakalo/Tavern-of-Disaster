@@ -49,6 +49,15 @@ export interface CharacterSummaryDTO {
   currentHP?: number;
   maxHP?: number;
   defense?: number;
+  /** Ordem Paranormal 2 / Sobrevivendo ao Horror (ausente em D&D/Cyberpunk). */
+  currentPD?: number;
+  maxPD?: number;
+  armorPoints?: number;
+  armorPointsMax?: number;
+  currentPE?: number;
+  maxPE?: number;
+  currentSAN?: number;
+  maxSAN?: number;
   /** Token vinculado na mesa (se houver). */
   tokenId?: string | null;
 }
@@ -60,6 +69,14 @@ export interface CharacterSummaryLite {
   currentHP?: number;
   maxHP?: number;
   defense?: number;
+  currentPD?: number;
+  maxPD?: number;
+  armorPoints?: number;
+  armorPointsMax?: number;
+  currentPE?: number;
+  maxPE?: number;
+  currentSAN?: number;
+  maxSAN?: number;
 }
 
 export interface CharacterUpdateDTO {

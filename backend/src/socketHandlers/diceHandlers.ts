@@ -1,5 +1,8 @@
 import { Server, Socket } from 'socket.io';
 import { roll } from '../services/diceService';
+import { rollStep } from '../services/stepDiceService';
+import { rollTable } from '../services/opTableService';
+import type { TableRollResult } from '../services/opTableService';
 import { getTableById, assertUserInTable, isUserDM } from '../services/tableService';
 import Token from '../models/Token.model';
 import Character from '../models/Character.model';
@@ -78,10 +81,45 @@ export function registerDiceHandlers(io: Server, socket: Socket) {
             }
           }
 
-          const result = roll(data.expression, { metadata: data.metadata });
+          // Três motores no mesmo evento: expressão livre (D&D/Cyberpunk),
+          // teste de passo (OP2) e tabelas de lesão/trauma/falha crítica.
+          const kind: DiceRolledPayload['kind'] = data.step
+            ? 'step'
+            : data.table
+              ? 'table'
+              : 'expression';
+          let expression: string;
+          let rolls: DiceRolledPayload['rolls'];
+          let modifier = 0;
+          let total = 0;
+          let stepDetails: DiceRolledPayload['step'];
+          let tableResult: TableRollResult | undefined;
+
+          if (data.step) {
+            const stepRoll = rollStep(data.step);
+            ({ expression, rolls, modifier, total } = stepRoll);
+            stepDetails = stepRoll.step;
+          } else if (data.table) {
+            const tableRoll = rollTable({ table: data.table, modifier: data.modifier });
+            tableResult = tableRoll;
+            expression = tableRoll.expression;
+            rolls = [{ die: tableRoll.die, value: tableRoll.roll, kept: 'kept' }];
+            total = tableRoll.roll;
+          } else {
+            const freeRoll = roll(data.expression as string, { metadata: data.metadata });
+            ({ expression, rolls, modifier, total } = freeRoll);
+          }
+
           const revision = await getRevision(data.tableId);
           const response: DiceRolledPayload = {
-            ...result,
+            expression,
+            rolls,
+            modifier,
+            total,
+            metadata: data.metadata,
+            kind,
+            ...(stepDetails ? { step: stepDetails } : {}),
+            ...(tableResult ? { tableResult } : {}),
             tableId: data.tableId,
             userId: user!.id,
             username: user!.username,
@@ -95,15 +133,19 @@ export function registerDiceHandlers(io: Server, socket: Socket) {
             await Roll.create({
               userId: user!.id,
               tableId: data.tableId,
-              expression: result.expression,
-              total: result.total,
-              modifier: result.modifier,
-              rolls: result.rolls.map((r) => ({
+              expression,
+              total,
+              modifier,
+              kind,
+              rolls: rolls.map((r) => ({
                 die: r.die,
                 value: r.value,
                 kept: r.kept,
                 ...(r.explosions ? { explosions: r.explosions } : {}),
+                ...(r.role ? { role: r.role } : {}),
               })),
+              ...(stepDetails ? { step: stepDetails } : {}),
+              ...(tableResult ? { tableResult } : {}),
               metadata: data.metadata,
               tags: data.tags,
               characterId: data.characterId || undefined,

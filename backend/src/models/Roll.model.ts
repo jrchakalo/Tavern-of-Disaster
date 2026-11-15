@@ -1,12 +1,27 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
+export type RollKind = 'expression' | 'step' | 'table';
+export type RollDieRole = 'attribute' | 'skill' | 'bonus' | 'dread';
+
 export interface IRoll extends Document {
   userId: Types.ObjectId;
   tableId: Types.ObjectId;
   expression: string;
   total: number;
   modifier: number;
-  rolls: Array<{ die: number; value: number; kept: 'kept' | 'dropped'; explosions?: number }>;
+  rolls: Array<{
+    die: number;
+    value: number;
+    kept: 'kept' | 'dropped';
+    explosions?: number;
+    role?: RollDieRole;
+  }>;
+  /** Motor usado: expressão livre, passo (OP2) ou tabela (OP2). */
+  kind?: RollKind;
+  /** Detalhes do teste de passo (`StepRollDetails`). */
+  step?: unknown;
+  /** Resultado de tabela (`TableRollResult`). */
+  tableResult?: unknown;
   metadata?: string;
   tags?: string[];
   characterId?: Types.ObjectId;
@@ -30,8 +45,12 @@ const RollSchema = new Schema<IRoll>(
         value: { type: Number, required: true },
         kept: { type: String, enum: ['kept', 'dropped'], default: 'kept' },
         explosions: { type: Number, min: 0, default: undefined },
+        role: { type: String, enum: ['attribute', 'skill', 'bonus', 'dread'], default: undefined },
       },
     ],
+    kind: { type: String, enum: ['expression', 'step', 'table'], default: 'expression' },
+    step: { type: Schema.Types.Mixed },
+    tableResult: { type: Schema.Types.Mixed },
     metadata: { type: String },
     tags: [{ type: String }],
     characterId: { type: Schema.Types.ObjectId, ref: 'Character' },

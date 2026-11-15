@@ -219,9 +219,9 @@ plataforma; OP2 e OPSH têm o mesmo peso.
 - [ ] Testes `Nd20kh1 + bônus` usando o motor de expressão existente.
 - [ ] E2E OPSH mínimo (ficha, teste, PD/SAN, ferimento).
 
-> **Lacuna:** o PDF do OP1 core não está na pasta. A base pública do OP1
-> (atributos, classes, NEX, perícias, d20 pool) está documentada no contrato e
-> precisa ser validada contra o livro core antes do playtest de OPSH.
+> **OP1 core:** lido e validado (`ordem-paranormal-rpg.pdf`, v1.1). A base do
+> OPSH está em `docs/ORDEM_PARANORMAL.md` §5 (28 perícias, classes, NEX,
+> Defesa, medo).
 
 **Saída:** one-shot de OP2 jogável de ponta a ponta e OPSH funcional com o
 suplemento, antes de retomar a Fase 4.
