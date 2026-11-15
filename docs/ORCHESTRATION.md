@@ -8,6 +8,8 @@
 > `v0.9.2-phase1` (backend 64/64, frontend 43/43, E2E 8/8, caos 14/14) e
 > `v0.9.3-phase2` (backend 76/76, frontend 113/113, E2E 22/22, table mode 9/9,
 > display security 5/5, caos 14/14). Próxima: Fase 3 (fichas, dados, sistemas).
+> A frente **online** (voz/vídeo/chat sem Discord) foi incorporada ao plano como
+> Fase 5 em `docs/ONLINE_MODE.md`.
 
 ## 1. Modelo de trabalho
 
@@ -197,6 +199,10 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-14 | Muse Spark 1.3 Contributor como reserva | Maior cota do print (226k/mês), mas região limitada e termos de treinamento. |
 | 2026-11-14 | E2E local usa `MONGOMS_SYSTEM_BINARY` do cache do backend | Evita download do binário do Mongo; CI pode baixar ou usar cache do runner. |
 | 2026-11-14 | Fase 1 aprovada com gaps documentados | Movimento de token sem CAS e mutações fora do turno continuam last-write-wins; ficam para a Fase 2. |
+| 2026-11-15 | Online entra no plano como Fase 5 | Mesa remota é requisito real; voz/vídeo/chat devem viver no app, sem Discord. |
+| 2026-11-15 | Mesh WebRTC + TURN free antes de SFU | 1 DM + 4 jogadores cabem em mesh; áudio-first evita estourar upload/cota. |
+| 2026-11-15 | LiveKit Cloud free como fallback SFU | 5.000 min/mês cobrem ~13 sessões de 6 pessoas; UI continua própria. |
+| 2026-11-15 | E2E online com fake media | Playwright/Chromium permite testar tracks, mute/deafen e reconexão sem hardware. |
 
 ## 9. Registro de resultados
 
@@ -309,3 +315,49 @@ PO: `opencode-go/deepseek-v4.1-flash` (1017).
 3. UX play/display/QR.
 4. QA E2E + caos.
 5. Gates completos, merge `--no-ff` em `main`, tag `v0.9.3-phase2`.
+
+## 14. Fase 5 — Online e comunicação (planejada)
+
+Contrato: `docs/ONLINE_MODE.md`. Branch futura: `restore/phase-5-online`.
+Substitui a numeração antiga de beta ops, que passa a Fase 6.
+
+### 14.1 Decisões de arquitetura
+
+- **Mesh WebRTC primeiro** para 1 DM + até 4 jogadores, áudio-first.
+- **Socket.IO como sinalização**; mídia nunca passa pelo backend Node.
+- **TURN Metered Open Relay** (20 GB/mês free) configurável por env; STUN
+  público; coturn self-host opcional.
+- **LiveKit Cloud free** (5.000 min/mês) ou self-host como fallback SFU se o
+  mesh não bastar; UI continua própria, sem abrir plataforma externa.
+- **Câmera opcional** (360p/15fps); TV/display não entra na mídia.
+- **Chat de texto** por mesa com histórico TTL; mensagens de sistema para
+  rolagens/turnos.
+- **Sem gravação** de áudio/vídeo; credenciais TURN curtas; sem log de SDP.
+- **Online E2E** com Chromium fake media (`--use-fake-device-for-media-stream`).
+
+### 14.2 Subfases
+
+| Subfase | Entrega |
+|---|---|
+| 5A | sinalização, presença de mídia, áudio mesh, mute/deafen |
+| 5B | vídeo, câmera, dispositivos, indicador de fala |
+| 5C | compartilhamento de tela, chat, moderação |
+| 5D | TURN/ICE restart, E2E online, teste em redes diferentes |
+
+### 14.3 Time previsto
+
+| Coder | Modelo | Escopo |
+|---|---|---|
+| backend | `opencode-go/deepseek-v4.1-flash` | mediaHandlers, ICE servers, presença de mídia, testes |
+| frontend | `opencode-go/glm-5.3-flash` | mediaService, peers, mute/deafen, reconexão |
+| UX | `opencode-go/mimo-v2.6-flash` | dock, grade de participantes, chat, mobile |
+| QA | `opencode-go/deepseek-v4.1-flash` | E2E fake media, TURN/relay, reconexão |
+
+### 14.4 Perguntas pendentes para o usuário
+
+1. Quantos jogadores remotos no beta? (recomendado 1 DM + 4)
+2. Vídeo padrão ligado ou desligado? (recomendado desligado)
+3. Chat persistido por quanto tempo? (recomendado 7 dias)
+4. TURN: Metered free ou coturn self-host? (recomendado Metered no beta)
+5. SFU: aceitar LiveKit Cloud free como fallback? (recomendado sim)
+6. Compartilhamento de tela no beta? (recomendado 5C)
