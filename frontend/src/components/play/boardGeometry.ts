@@ -77,10 +77,10 @@ export interface BoardPing {
 /**
  * Centro do ping em pixels locais do tabuleiro.
  *
- * O protocolo (Fase 2) envia `x/y` em unidades de grade. Enquanto houver
- * clientes antigos mandando pixels, vale o mesmo heurístico do
- * `GridMeasurementLayer`: valor menor que a largura da grade + 1 é grade,
- * maior é pixel legado.
+ * Pings são **sempre** unidades de grade (`docs/TABLE_MODE.md` §5.3): `x/y`
+ * multiplicam o tamanho do quadrado. Não existe fallback de pixel legado para
+ * ping — o servidor valida `0..gridWidth/height` antes de emitir.
+ * O ramo `squareId` ancora no centro da célula.
  */
 export function pingCenterPixels(
   ping: BoardPing,
@@ -99,11 +99,7 @@ export function pingCenterPixels(
     }
   }
   if (ping.x == null || ping.y == null || size <= 0) return null;
-  const cols = Math.max(1, gridWidth);
-  const rows = Math.max(1, gridHeight);
-  const x = ping.x <= cols + 1 ? ping.x * size : ping.x;
-  const y = ping.y <= rows + 1 ? ping.y * size : ping.y;
-  return { x, y };
+  return { x: ping.x * size, y: ping.y * size };
 }
 
 /**
