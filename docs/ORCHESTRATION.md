@@ -236,7 +236,7 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | Patch de edição de token não incluía mudança de dono | Incluir `owner` no `tokenUpdates` | 1 | corrigido em `f6ac357` |
 | 2026-11-14 | Frontend (GLM-5.3-Flash) | `tokenUpdates` com `squareId` não movia o token entre quadrados no store | Mover o token no grid ao aplicar o patch | 1 | corrigido em `8e66d8d` |
 | 2026-11-14 | Frontend (GLM-5.3-Flash) | Patch de `activeScene` com novo grid não reconstruía `squares` | Reconstruir o grid preservando tokens | 1 | corrigido em `8e66d8d` |
-| 2026-11-15 | Frontend P3 (GLM-5.3-Flash) | `restore/phase-3-frontend` / `8fbc829` | **Aprovado com ressalvas** | `type-check` OK; 167/167; build OK | Store/socket de ficha, HP, roll log e dice local; falta validar contrato com backend/UX. |
+| 2026-11-15 | Frontend P3 (GLM-5.3-Flash) | `restore/phase-3-frontend` / `8fbc829` + `98ae8d6` | **Aprovado** | `type-check` OK; 170/170; build OK | Store/socket de ficha, HP, roll log e dice local; ordem de `recentRolls` e `characterId: null` alinhados. |
 | 2026-11-15 | QA P3 (DeepSeek V4.1 Flash 1017) | `restore/phase-3-qa` / `936db06` | **Aprovado com ressalvas** | Type-check OK; specs prontos; execução bloqueada pré-integração | E2E ficha/PV/dados/sistema + 2 contextos online; rodar após backend/UX. |
 | 2026-11-15 | Backend P3 (DeepSeek V4.1 Flash 1017) | `restore/phase-3-backend` / `ed77a93` | **Aprovado** | `npm test` 103/103; build OK; 14 testes novos de integração | Ficha realtime, PV↔token, dados com `!`, rate limit, log/TTL e seed D&D/Cyberpunk. |
 | — | — | — | — | — | — |
