@@ -8,6 +8,7 @@ import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
 import { uploadMap } from '../services/storageService';
 import { API_BASE_URL } from '../services/apiBase';
+import { clampGridPoint, pixelToGrid } from '../services/gridGeometry';
 import { useTableStore } from '../stores/tableStore';
 import { useCharacterStore } from '../stores/characterStore';
 import { useSystemStore } from '../stores/systemStore';
@@ -26,6 +27,8 @@ import DiceRoller from '../components/DiceRoller.vue';
 import DiceAnimation from '../components/DiceAnimation.vue';
 import DMSessionControls from '../components/DMSessionControls.vue';
 import SceneManager from '../components/SceneManager.vue';
+import TableSharePanel from '../components/table/TableSharePanel.vue';
+import { readSessionExtras } from '../components/play/sessionMeta';
 
 import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character, DiceRolledPayload } from '../types';
 
@@ -174,6 +177,12 @@ const diceAnimationId = ref(0);
 const DICE_ANIMATION_DURATION = 4600;
 
 const charactersForTable = computed(() => (tableId ? characterStore.charactersForTable(tableId) : []));
+
+// Presença lida de forma defensiva (a store pode não expor `presence` em mocks).
+const sessionExtras = computed(() => readSessionExtras(tableStore));
+const displayConnected = computed(
+  () => sessionExtras.value.presence?.some((entry) => entry.role === 'DISPLAY') ?? false,
+);
 const activeCharacter = computed(() => {
   if (activeCharacterId.value) {
     return charactersForTable.value.find((char) => char._id === activeCharacterId.value) || null;
@@ -625,15 +634,21 @@ const handleMiddleClickFree: MiddleClickHandler = (event) => {
   // Rate limit ping
   if (handleMiddleClickFree.lastTriggerTs && Date.now() - handleMiddleClickFree.lastTriggerTs < 300) return;
   handleMiddleClickFree.lastTriggerTs = Date.now();
-  // Coordenadas relativas ao grid interno
+  // O payload do ping é sempre unidade de grade (Fase 2): o pixel local é
+  // convertido com `gridGeometry` antes de sair daqui.
   const mapStage = event.currentTarget as HTMLElement;
-  let viewportEl: HTMLElement | null = mapStage.querySelector('.grid-overlay .grid-viewport');
-  if (!viewportEl) viewportEl = mapStage.querySelector('.grid-overlay') as HTMLElement | null;
-  const rect = (viewportEl || mapStage).getBoundingClientRect();
+  const gridEl =
+    (mapStage.querySelector('.grid-overlay .grid-viewport') as HTMLElement | null) ||
+    (mapStage.querySelector('.grid-overlay') as HTMLElement | null);
+  if (!gridEl) return; // sem grade mensurável: não envia coordenada inválida
+  const rect = gridEl.getBoundingClientRect();
   const scale = viewTransform.value.scale || 1;
-  const x = (event.clientX - rect.left) / scale;
-  const y = (event.clientY - rect.top) / scale;
-  socketService.sendPing({ tableId, sceneId: activeSceneId.value, x, y, color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00') });
+  const cols = Math.max(1, gridWidth.value);
+  const squareSize = rect.width / scale / cols;
+  if (!Number.isFinite(squareSize) || squareSize <= 0) return;
+  const local = { x: (event.clientX - rect.left) / scale, y: (event.clientY - rect.top) / scale };
+  const gridPoint = clampGridPoint(pixelToGrid(local, squareSize), gridWidth.value, gridHeight.value);
+  socketService.sendPing({ tableId, sceneId: activeSceneId.value, x: gridPoint.x, y: gridPoint.y, color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00') });
 };
 
 // Mestre altera escala; jogadores recebem
@@ -1730,6 +1745,14 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           @update-status="handleUpdateSessionStatus"
           @start-session="startSessionWithTransition"
         />
+
+        <div class="panel-section">
+          <TableSharePanel
+            :table-id="tableId"
+            :invite-code="currentTable?.inviteCode ?? ''"
+            :display-connected="displayConnected"
+          />
+        </div>
         
         <SceneManager
           :scenes="scenes"

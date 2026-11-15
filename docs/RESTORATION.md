@@ -1,7 +1,7 @@
 # Plano de Restauração — Tavern of Disaster
 
-> Status: em execução. Fases 0 e 1 concluídas e integradas; próxima: Fase 2.
-> Última atualização: 2026-11-14. Tag da Fase 1: `v0.9.2-phase1`.
+> Status: em execução. Fases 0, 1 e 2 concluídas e integradas; próxima: Fase 3.
+> Última atualização: 2026-11-15. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`.
 
 ## 1. Diagnóstico em uma frase
 
@@ -31,7 +31,11 @@ main
 │   ├── restore/phase-1-frontend   store revision-aware, resync, transporte, refresh
 │   ├── restore/phase-1-ux         /play e /display, mobile/TV read-only
 │   └── restore/phase-1-qa         authz cross-table + caos de 6 clientes
-├── restore/phase-2-table-mode     /display, /play, QR, geometria canônica
+├── restore/phase-2-table-mode     /display, /play, QR, geometria canônica (v0.9.3-phase2)
+│   ├── restore/phase-2-backend    display token, auth DISPLAY, ping em grade
+│   ├── restore/phase-2-frontend   connectDisplay, canWrite, join por convite
+│   ├── restore/phase-2-ux         ficha resumida, TV real, QR, mobile
+│   └── restore/phase-2-qa         1 TV + 5 celulares + display security
 ├── restore/phase-3-sheets-dice    fichas, dados, sistemas
 ├── restore/phase-4-media-scenes   uploads, cenas, persistência
 └── restore/phase-5-beta-ops       deploy free, observabilidade, playtest simulado
@@ -101,15 +105,43 @@ decisões. Tags: `v0.9.0-restore` (marco zero), `v0.9.x` por fase, `v1.0.0-beta`
   ambientes; CI limpa o runner, mas a correção de grupo de processos fica para
   a Fase 5.
 
-### Fase 2 — Modo Mesa Presencial (1,5–2 semanas)
+### Fase 2 — Modo Mesa Presencial (1,5–2 semanas) — CONCLUÍDA
 
-- `/display/:tableId`: TV read-only, fullscreen, fit-to-screen, iniciativa e rolagens.
-- `/play/:tableId`: controle mobile do jogador (ficha resumida, PV, dados, movimento).
-- QR code para entrar; token de display separado da conta do Mestre.
-- Geometria canônica: grid/SVG, pings e medições em coordenadas de grid.
-- Mobile: safe areas, `pointercancel`, long-press, alvos de toque, fontes legíveis.
+- [x] `/display/:tableId`: TV read-only, fullscreen, fit-to-screen, iniciativa e rolagens.
+- [x] `/play/:tableId`: controle mobile do jogador (ficha resumida, PV, dados, movimento).
+- [x] QR code para entrar; token de display separado da conta do Mestre.
+- [x] Geometria canônica: pings e medições em coordenadas de grid.
+- [x] Mobile: safe areas, `pointercancel`, long-press, alvos de toque, fontes legíveis.
+- [x] Redirect pós-login preserva `/play/:id?invite=...`.
+- [x] Contrato em `docs/TABLE_MODE.md`; helper `gridGeometry.ts`.
 
-**Saída:** 1 TV + 5 celulares virtuais, 60 min, board idêntico, turnos funcionando.
+**Saída:** 1 TV + 5 celulares virtuais, 60 min simulados, board idêntico, turnos funcionando.
+
+**Evidência (2026-11-15, integração `2de7f14`, tag `v0.9.3-phase2`):**
+
+| Gate | Resultado |
+|---|---|
+| Backend `npm test` | **76/76**, 13 suítes (12 testes de display) |
+| Backend `npm run build` | OK |
+| Frontend `type-check` | OK |
+| Frontend `npm run test:unit` | **113/113** |
+| Frontend `npm run build` | OK |
+| E2E completo | **22/22** (happy path + authz + display security + table mode) |
+| Table mode | **9/9** (TV 1920×1080 + 5 celulares 390×844 + 24 iterações) |
+| Display security | **5/5** (token, read-only, rotação/revogação, pings) |
+| Caos P1 | **14/14 PASS**, 0 `actionError` |
+
+**Gaps conhecidos da Fase 2 (para a Fase 3):**
+
+- Movimento de token e outras mutações fora do turno continuam last-write-wins
+  (sem CAS por token); o avanço de turno tem CAS forte.
+- Rotação/revogação do token da TV derruba a TV apenas na próxima reconexão.
+- Sem screenshots versionados de 1920×1080 / 390×844; E2E valida DOM e estado.
+- `LoginView`/`RegisterView` não têm link cruzado entre si; o redirect funciona.
+- `PUBLIC_APP_URL` precisa ser configurado no deploy para o backend devolver
+  `displayUrl` absoluto (o frontend já absolutiza como defesa).
+- `tests/e2e/global-setup.ts` ainda pode deixar processos filhos em alguns
+  ambientes; CI limpa o runner. Os rate limits de teste sobem via env.
 
 ### Fase 3 — Fichas, dados e sistemas (1 semana)
 
@@ -174,6 +206,8 @@ uma mesa inteira. Ele é o principal critério de release.
 
 - Local (caos headless): `cd tests/e2e && node chaos/run.mjs`.
 - Local (E2E com navegador): `cd tests/e2e && npx playwright test`.
+- Mesa presencial simulada: `npx playwright test specs/table-mode.spec.ts --workers=1`
+  (1 TV 1920×1080 + 5 celulares 390×844 + loop de 24 iterações).
 - CI: GitHub Actions (repositório público → minutos gratuitos), em PRs da Fase 1+.
 - Se o binário do Mongo não estiver em cache: `MONGOMS_SYSTEM_BINARY=...` ou
   deixe o `mongodb-memory-server` baixar uma vez.

@@ -2,14 +2,20 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import GridLayer from '../GridLayer.vue';
 import type { AuraInfo, GridSquare, TokenInfo } from '../../types';
+import { clampGridPoint, gridToSquareId, pixelToGrid, type GridPoint } from '../../services/gridGeometry';
 import {
   auraElements,
   computeReachableSquares,
+  pingCenterPixels,
   squareIndex,
   tokenEntries,
   tokenStyle,
+  type BoardPing,
   type BoardTokenEntry,
 } from './boardGeometry';
+
+const LONG_PRESS_MS = 500;
+const TAP_TOLERANCE_PX = 12;
 
 const props = withDefaults(
   defineProps<{
@@ -24,6 +30,7 @@ const props = withDefaults(
     interactive?: boolean;
     metersPerSquare?: number;
     auras?: AuraInfo[];
+    pings?: BoardPing[];
   }>(),
   {
     squares: () => [],
@@ -37,10 +44,15 @@ const props = withDefaults(
     interactive: false,
     metersPerSquare: 1.5,
     auras: () => [],
+    pings: () => [],
   },
 );
 
-const emit = defineEmits<{ (e: 'request-move', squareId: string): void }>();
+const emit = defineEmits<{
+  (e: 'request-move', squareId: string): void;
+  (e: 'move-blocked', squareId: string): void;
+  (e: 'token-details', token: TokenInfo): void;
+}>();
 
 const containerRef = ref<HTMLDivElement | null>(null);
 const containerSize = ref({ width: 0, height: 0 });
@@ -129,20 +141,151 @@ function highlightStyle(squareId: string): Record<string, string> {
   };
 }
 
-function handleSquareClick(square: GridSquare) {
-  if (!props.moveMode || !props.interactive) return;
-  if (!reachableIds.value.has(square.id)) return;
-  emit('request-move', square.id);
+// ---------------------------------------------------------------------------
+// Interação por ponteiro (toque no tabuleiro)
+// ---------------------------------------------------------------------------
+// O toque é convertido para unidades de grade com `gridGeometry` antes de virar
+// um quadrado; nenhum pixel chega ao servidor. Long-press (500ms) abre os
+// detalhes do token e suprime o toque seguinte.
+
+const canvasRef = ref<HTMLDivElement | null>(null);
+let pressTimer: ReturnType<typeof setTimeout> | null = null;
+let pressPointerId: number | null = null;
+let pressStart = { x: 0, y: 0 };
+let pressMoved = false;
+let longPressTriggered = false;
+
+function clearLongPress() {
+  if (pressTimer) {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  }
 }
+
+function resetPress() {
+  clearLongPress();
+  pressPointerId = null;
+  pressMoved = false;
+  longPressTriggered = false;
+}
+
+function gridPointAt(clientX: number, clientY: number): GridPoint | null {
+  const el = canvasRef.value;
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  const size = boardSize.value.squareSize;
+  if (!(size > 0) || rect.width <= 0 || rect.height <= 0) return null;
+  const local = pixelToGrid({ x: clientX - rect.left, y: clientY - rect.top }, size);
+  return clampGridPoint(local, props.gridWidth, props.gridHeight);
+}
+
+function tokenAt(grid: GridPoint): TokenInfo | null {
+  const col = Math.floor(grid.x);
+  const row = Math.floor(grid.y);
+  for (const entry of entries.value) {
+    if (
+      col >= entry.col &&
+      col < entry.col + entry.footprint &&
+      row >= entry.row &&
+      row < entry.row + entry.footprint
+    ) {
+      return entry.token;
+    }
+  }
+  return null;
+}
+
+function handlePointerDown(event: PointerEvent) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  pressPointerId = event.pointerId;
+  pressStart = { x: event.clientX, y: event.clientY };
+  pressMoved = false;
+  longPressTriggered = false;
+  try {
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+  } catch {
+    // Captura de ponteiro é opcional; sem ela o browser ainda entrega o toque.
+  }
+  clearLongPress();
+  const startClient = { x: event.clientX, y: event.clientY };
+  pressTimer = setTimeout(() => {
+    pressTimer = null;
+    const grid = gridPointAt(startClient.x, startClient.y);
+    const token = grid ? tokenAt(grid) : null;
+    if (token) {
+      longPressTriggered = true;
+      emit('token-details', token);
+    }
+  }, LONG_PRESS_MS);
+}
+
+function handlePointerMove(event: PointerEvent) {
+  if (pressPointerId === null || event.pointerId !== pressPointerId || pressMoved) return;
+  const distance = Math.hypot(event.clientX - pressStart.x, event.clientY - pressStart.y);
+  if (distance > TAP_TOLERANCE_PX) {
+    pressMoved = true;
+    clearLongPress();
+  }
+}
+
+function handlePointerUp(event: PointerEvent) {
+  if (pressPointerId === null || event.pointerId !== pressPointerId) return;
+  const wasLongPress = longPressTriggered;
+  const wasMoved = pressMoved;
+  resetPress();
+  if (wasLongPress || wasMoved) return;
+  if (!props.moveMode || !props.interactive) return;
+  const grid = gridPointAt(event.clientX, event.clientY);
+  if (!grid) return;
+  const squareId = gridToSquareId(grid, props.gridWidth, props.gridHeight);
+  if (!squareId) return;
+  if (reachableIds.value.has(squareId)) {
+    emit('request-move', squareId);
+  } else {
+    emit('move-blocked', squareId);
+  }
+}
+
+function handlePointerCancel() {
+  resetPress();
+}
+
+const pingList = computed(() => {
+  const size = boardSize.value.squareSize;
+  if (!(size > 0)) return [];
+  const result: Array<{ id: string; style: Record<string, string> }> = [];
+  for (const ping of props.pings ?? []) {
+    const center = pingCenterPixels(ping, props.gridWidth, props.gridHeight, size);
+    if (!center) continue;
+    result.push({
+      id: ping.id,
+      style: {
+        left: `${center.x - size / 2}px`,
+        top: `${center.y - size / 2}px`,
+        width: `${size}px`,
+        height: `${size}px`,
+        '--ping-color': ping.color || '#ffeb3b',
+      },
+    });
+  }
+  return result;
+});
 </script>
 
 <template>
   <div ref="containerRef" class="player-board" :class="{ 'move-armed': moveMode && interactive }">
     <div
+      ref="canvasRef"
       class="board-canvas"
       :style="{ width: `${boardSize.width}px`, height: `${boardSize.height}px` }"
       role="img"
       :aria-label="`Tabuleiro ${gridWidth} por ${gridHeight}`"
+      @pointerdown="handlePointerDown"
+      @pointermove="handlePointerMove"
+      @pointerup="handlePointerUp"
+      @pointercancel="handlePointerCancel"
+      @lostpointercapture="handlePointerCancel"
+      @contextmenu.prevent
     >
       <img v-if="mapUrl" class="board-map" :src="mapUrl" alt="" draggable="false" />
       <div v-else class="board-placeholder">
@@ -160,7 +303,6 @@ function handleSquareClick(square: GridSquare) {
         :pixel-height="boardSize.height"
         :is-measuring="false"
         :memo-key="gridWidth * 1000 + gridHeight"
-        @square-left-click="handleSquareClick"
       />
 
       <div
@@ -168,6 +310,14 @@ function handleSquareClick(square: GridSquare) {
         :key="aura.id"
         class="board-aura"
         :style="aura.style"
+        aria-hidden="true"
+      ></div>
+
+      <div
+        v-for="ping in pingList"
+        :key="`ping-${ping.id}`"
+        class="board-ping"
+        :style="ping.style"
         aria-hidden="true"
       ></div>
 
@@ -212,6 +362,7 @@ function handleSquareClick(square: GridSquare) {
   overflow: hidden;
   padding: 8px;
   box-sizing: border-box;
+  touch-action: none;
 }
 
 .board-canvas {
@@ -221,6 +372,9 @@ function handleSquareClick(square: GridSquare) {
   border-radius: var(--radius-md);
   background: #241b1f;
   box-shadow: var(--elev-2);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .board-map {
@@ -269,6 +423,27 @@ function handleSquareClick(square: GridSquare) {
   box-shadow: inset 0 0 0 2px rgba(var(--color-accent-rgb), 0.85);
   pointer-events: none;
   z-index: 3;
+}
+
+.board-ping {
+  position: absolute;
+  box-sizing: border-box;
+  border: 3px solid var(--ping-color, #ffeb3b);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 5;
+  animation: boardPingRipple 1.1s ease-out forwards;
+}
+
+@keyframes boardPingRipple {
+  0% {
+    transform: scale(0.35);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
 }
 
 .board-token {
@@ -335,6 +510,11 @@ function handleSquareClick(square: GridSquare) {
   .board-token,
   .move-highlight {
     transition: none;
+  }
+
+  .board-ping {
+    animation: none;
+    opacity: 0.85;
   }
 }
 </style>

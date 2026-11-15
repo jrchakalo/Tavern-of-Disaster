@@ -1,5 +1,19 @@
 export type SessionRole = 'DM' | 'PLAYER' | 'DISPLAY' | 'SPECTATOR';
 
+/**
+ * Prefixo do id sintético da TV. Nunca corresponde a um ObjectId de usuário
+ * real, então não pode ser confundido com DM/PLAYER.
+ */
+export const DISPLAY_USER_ID_PREFIX = 'display:';
+
+export function displayUserId(tableId: string): string {
+  return `${DISPLAY_USER_ID_PREFIX}${tableId}`;
+}
+
+export function isDisplayUserId(userId: string | null | undefined): boolean {
+  return typeof userId === 'string' && userId.startsWith(DISPLAY_USER_ID_PREFIX);
+}
+
 export type PresenceEntry = {
   userId: string;
   username: string;

@@ -55,3 +55,25 @@ node chaos/run.mjs
 
 See `chaos/README.md` for the checklist and how to read its JSON report.
 
+## Table mode tests (Phase 2)
+
+`specs/table-mode.spec.ts` drives 1 TV (1920×1080) + 5 mobile players (390×844)
+through `docs/TABLE_MODE.md`: display token, invite join, convergence, movement,
+turn ownership, dice log, reload and an accelerated 60-minute loop.
+`specs/display-security.spec.ts` checks display read-only enforcement, display
+token rotation/revocation and grid-coordinate pings (2 clients).
+
+```bash
+# Chrome do sistema (evita baixar o Chromium do Playwright)
+E2E_CHANNEL=chrome npx playwright test specs/table-mode.spec.ts --workers=1
+E2E_CHANNEL=chrome npx playwright test specs/display-security.spec.ts --workers=1
+```
+
+Both specs use `test.describe.configure({ mode: 'serial' })` because they share
+a table/token/page world. Run them with `--workers=1` and do not enable retries:
+the scenario already consumes the `limitCreate` bucket (20 req / 5 min).
+
+> Phase 2 status: validated against `restore/phase-2-table-mode` (`e67e730`) —
+> **14/14 passed** (`table-mode` 9/9 + `display-security` 5/5) in 38.7 s.
+> See `docs/qa/PHASE2-TABLE-MODE-REPORT.md` for evidence, execution commands and
+> the PO verdict fields.

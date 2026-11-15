@@ -146,6 +146,9 @@ class SocketService {
   private lastResyncRequestAt = 0;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshRetryUsed = false;
+  /** Modo TV: conectado com token de display, sem JWT e sem refresh. */
+  private displayMode = false;
+  private displayToken: string | null = null;
 
   constructor() {
     // O store pede resync quando detecta buraco de revisão, sem importar este
@@ -229,8 +232,9 @@ class SocketService {
 
   connect(tableId: string) {
     if (this.socket) {
-      if (this.currentTableId === tableId) return; // idempotente
-      this.disconnect(); // mesa diferente: reconecta limpo
+      // Socket de display tem auth diferente (token de TV): nunca reaproveitar.
+      if (!this.displayMode && this.currentTableId === tableId) return; // idempotente
+      this.disconnect(); // mesa diferente ou vindo do display: reconecta limpo
     }
     this.currentTableId = tableId;
     this.store.setConnectionStatus('connecting');
@@ -248,9 +252,71 @@ class SocketService {
     this.scheduleTokenRefresh();
   }
 
-  private bindSocketHandlers(socket: Socket) {
+  // ------------------------------------------------------------------
+  // Conexão de display (TV read-only, sem JWT)
+  // ------------------------------------------------------------------
+
+  /** Indica se o socket atual é uma conexão de display (TV). */
+  isDisplayMode(): boolean {
+    return this.displayMode;
+  }
+
+  /**
+   * Conecta a TV com o token de display. Não usa JWT, não agenda refresh de
+   * sessão e nunca chama `refreshToken` (contrato: docs/TABLE_MODE.md §3.3).
+   * O backend resolve a mesa dona do token; só `joinTable`/`requestResync`
+   * dessa mesa são aceitos.
+   */
+  connectDisplay(tableId: string, token: string) {
+    if (!token) {
+      this.displayMode = true;
+      this.store.setDisplayMode(true);
+      this.store.setConnectionStatus('error');
+      try { toast.error('Token da TV ausente.'); } catch {}
+      return;
+    }
+    // Idempotente: mesma mesa + mesmo token já conectando/conectado.
+    if (
+      this.socket &&
+      this.displayMode &&
+      this.currentTableId === tableId &&
+      this.displayToken === token
+    ) {
+      return;
+    }
+    this.disconnect(); // limpa socket, timers e listeners anteriores
+    this.displayMode = true;
+    this.displayToken = token;
+    this.currentTableId = tableId;
+    this.store.setDisplayMode(true);
+    this.store.setConnectionStatus('connecting');
+
+    this.socket = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      tryAllTransports: true,
+      upgrade: true,
+      // Token de display no handshake; o servidor rejeita com
+      // connect_error UNAUTHENTICATED se for inválido/revogado.
+      auth: { displayToken: token },
+    });
+    this.bindSocketHandlers(this.socket, { display: true });
+    this.bindWindowListeners();
+  }
+
+  /** Desconecta a TV (equivalente a `disconnect`, com nome explícito p/ UX). */
+  disconnectDisplay() {
+    this.disconnect();
+  }
+
+  private bindSocketHandlers(socket: Socket, options?: { display?: boolean }) {
+    const isDisplay = options?.display === true;
     socket.on('connect', () => {
       this.store.setConnectionStatus('connected');
+      if (isDisplay) {
+        // TV: join da mesa do token + resync; sem JWT e sem refresh.
+        void this.joinDisplayTable();
+        return;
+      }
       this.scheduleTokenRefresh();
       void this.joinCurrentTable();
     });
@@ -269,6 +335,20 @@ class SocketService {
 
     socket.on('connect_error', (error: unknown) => {
       const err = error as { data?: { code?: string }; message?: string } | null;
+      if (isDisplay) {
+        if (err?.data?.code === 'UNAUTHENTICATED') {
+          // Token da TV inválido/revogado: reconectar em loop não resolve.
+          // Derruba o socket para não girar reconexão eterna.
+          socket.disconnect();
+          this.store.setConnectionStatus('error');
+          try {
+            toast.error('Token da TV inválido.');
+          } catch {}
+        }
+        // Outros erros (rede local, servidor fora): Socket.IO continua
+        // tentando; `reconnect_attempt` já marca o status.
+        return;
+      }
       if (err?.data?.code === 'TOKEN_EXPIRED') {
         void this.handleTokenExpired();
         return;
@@ -393,6 +473,27 @@ class SocketService {
       } else if (ack.error.code === 'FORBIDDEN' || ack.error.code === 'UNAUTHENTICATED') {
         // Toast já mostrado pelo emitWithAck; não fica na mesa.
         this.disconnect();
+      }
+    } catch {
+      // Timeout/toast já tratados; Socket.IO continua tentando reconectar.
+    }
+  }
+
+  /**
+   * Join da TV na mesa dona do token de display. Em falha de autorização,
+   * para de tentar (sem loop de reconnect com token inválido).
+   */
+  private async joinDisplayTable() {
+    const tableId = this.currentTableId;
+    if (!tableId || !this.socket) return;
+    try {
+      const ack = await this.emitWithAck('joinTable', tableId);
+      if (ack.ok) {
+        void this.requestResync({ tableId, sinceRevision: this.store.revision });
+      } else {
+        // Join recusado (rate limit, mesa encerrada etc.): não fica na mesa.
+        this.store.setConnectionStatus('error');
+        this.teardownSocket();
       }
     } catch {
       // Timeout/toast já tratados; Socket.IO continua tentando reconectar.
@@ -554,6 +655,10 @@ class SocketService {
     this.teardownSocket();
     this.currentTableId = null;
     this.refreshRetryUsed = false;
+    // Reset do modo display: flags do serviço + estado do store (UX lê isto).
+    this.displayMode = false;
+    this.displayToken = null;
+    this.store.setDisplayMode(false);
     this.unbindWindowListeners();
     this.store.setConnectionStatus('disconnected');
   }
@@ -666,6 +771,13 @@ class SocketService {
   }
 
   // Ping
+  /**
+   * Emite um ping efêmero. `x/y` são coordenadas em UNIDADES DE GRADE
+   * (0..gridWidth / 0..gridHeight da cena ativa; ver docs/TABLE_MODE.md §5.3),
+   * NUNCA pixels de dispositivo. A conversão pixel→grade é responsabilidade
+   * do chamador via `gridGeometry.pixelToGrid`; o servidor valida os limites
+   * e responde VALIDATION sem broadcast quando fora do grid.
+   */
   sendPing(payload: { tableId: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string }, ack?: (a: Ack) => void) {
     return this.emitRequest('requestPing', payload, ack);
   }

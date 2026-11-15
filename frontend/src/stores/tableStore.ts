@@ -276,6 +276,12 @@ export const useTableStore = defineStore('table', () => {
     const you: Ref<SessionYou | null> = ref(null);
     const presence: Ref<PresenceEntry[]> = ref([]);
     const isApplyingPatch: Ref<boolean> = ref(false);
+    // Modo TV: ligado pelo socketService ao conectar com token de display.
+    const displayMode: Ref<boolean> = ref(false);
+
+    function setDisplayMode(value: boolean) {
+        displayMode.value = value;
+    }
 
     function setScenesFromDTO(sceneDtos: SceneDTO[]) {
         scenes.value = sceneDtos.map(mapSceneDTO);
@@ -288,6 +294,18 @@ export const useTableStore = defineStore('table', () => {
     // GETTERS
     const isDM: ComputedRef<boolean> = computed(() => {
       return currentUser.value?.id === currentTable.value?.dm._id;
+    });
+
+    /**
+     * Pode o cliente atual emitir mutações? Falso para a TV (role DISPLAY) e
+     * para quem veio sem permissões no snapshot. A autoridade continua sendo
+     * o servidor; isto só serve para a UX esconder controles de escrita.
+     */
+    const canWrite: ComputedRef<boolean> = computed(() => {
+      const me = you.value;
+      if (!me) return false;
+      if (me.role === 'DISPLAY') return false;
+      return (me.permissions?.length ?? 0) > 0;
     });
 
     const activeScene = computed(() => {
@@ -896,5 +914,9 @@ export const useTableStore = defineStore('table', () => {
         applySnapshot,
         applyPatch,
         setPresence,
+        // Modo display (TV read-only)
+        displayMode,
+        setDisplayMode,
+        canWrite,
     };
 });

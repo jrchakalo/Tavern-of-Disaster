@@ -4,8 +4,10 @@
 > skill, designação, branch, revisão, correção e merge entra aqui. Se o contexto
 > da conversa se perder, este arquivo é a fonte da verdade do processo.
 >
-> Última atualização: 2026-11-14. **Fase 1 concluída e aprovada**:
-> backend 64/64, frontend 43/43, E2E 8/8, caos 14/14 PASS.
+> Última atualização: 2026-11-15. **Fases 1 e 2 concluídas e aprovadas**:
+> `v0.9.2-phase1` (backend 64/64, frontend 43/43, E2E 8/8, caos 14/14) e
+> `v0.9.3-phase2` (backend 76/76, frontend 113/113, E2E 22/22, table mode 9/9,
+> display security 5/5, caos 14/14). Próxima: Fase 3 (fichas, dados, sistemas).
 
 ## 1. Modelo de trabalho
 
@@ -204,6 +206,12 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-14 | Frontend (GLM-5.3-Flash) | `restore/phase-1-frontend` / `3c0eed1` + `8db2177` + `8e66d8d` | **Aprovado** | `npm run type-check` OK; `npm run test:unit` 35/35; `npm run build` OK; integração com UX: 43/43 testes | `baseRevision`, movimento via `tokenUpdates` e resize de grid corrigidos e testados. |
 | 2026-11-14 | Backend (DeepSeek V4.1 Flash 1017) | `restore/phase-1-backend` / `f8df20a` + `f6ac357` | **Aprovado** | `npm test` 64/64; `npm run build` OK; 12 suítes; integração 2+ clientes | Authz por entidade, ack, revisão, CAS de turno, presença e refresh; 4 correções aplicadas. |
 | 2026-11-14 | QA (MiniMax M3.1 Flash) | `restore/phase-1-qa` / `8fc0243` | **Aprovado** | Spec authz 7/7; suíte E2E completa 8/8; caos 14/14 PASS, `revision=4`, 0 `actionError` | Cross-table, actionError, revisão monotônica, reconexão, turno concorrente e convergência de 7 clientes. |
+| 2026-11-14 | Frontend P2 (GLM-5.3-Flash) | `restore/phase-2-frontend` / `d36ca84` | **Aprovado** | `type-check` OK; `test:unit` 69/69; `build` OK | `connectDisplay` sem JWT/refresh, `canWrite`, join por convite e REST de token. Ping em pixel no `TableView` sinalizado para UX. |
+| 2026-11-15 | Backend P2 (DeepSeek V4.1 Flash 1017) | `restore/phase-2-backend` / `c46d6f0` | **Aprovado** | `npm test` 76/76; `npm run build` OK; 12 testes de integração display | Token SHA-256, auth DISPLAY, guard read-only, rollback/rotação e ping em grade. |
+| 2026-11-15 | QA P2 (DeepSeek V4.1 Flash 1017) | `restore/phase-2-qa` / `4c3b50f` + `bd346dd` | **Aprovado** | `table-mode` 9/9 + `display-security` 5/5; suíte E2E completa 22/22; caos P1 PASS | Relatório em `docs/qa/PHASE2-TABLE-MODE-REPORT.md`; 1 TV + 5 celulares + loop de 24 iterações. |
+| 2026-11-15 | UX P2 (MiMo-V2.6-Flash) | `restore/phase-2-ux` / `03c16b4` + `2273862` + `1cba8b6` | **Aprovado** | `type-check` OK; 113/113 na integração; build OK | Card fora do turno, QR absoluto, pings/`pingCenterPixels` em grade e redirect pós-login corrigidos e testados. |
+| 2026-11-15 | Regressão P1 na integração P2 | `restore/phase-2-table-mode` | **Aprovado** | happy-path + realtime-authz + display-security: **13/13** | Nenhuma regressão da Fase 1 após backend/frontend/UX da Fase 2. |
+| 2026-11-15 | Integração P2 final | `restore/phase-2-table-mode` / `2de7f14` | **Aprovado** | E2E completo **22/22**; table-mode **9/9**; display-security **5/5**; caos **PASS** | 1 TV 1920×1080 + 5 celulares 390×844 + 24 iterações; tag `v0.9.3-phase2`. |
 | — | — | — | — | — | (preencher a cada PR) |
 
 ## 10. Registro de correções
@@ -235,6 +243,69 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 ## 12. Como retomar
 
 1. Ler este arquivo e `docs/REALTIME_PROTOCOL.md`.
-2. Ver `git worktree list` e `git branch --list 'restore/phase-1-*'`.
+2. Ver `git worktree list` e `git branch --list 'restore/phase-2-*'`.
 3. Ver a seção 9 para o último veredito.
-4. Continuar do primeiro item “a iniciar” da seção 2/7.
+4. Continuar do primeiro item “a iniciar” da seção 13.
+
+## 13. Fase 2 — Modo Mesa Presencial
+
+Contrato: `docs/TABLE_MODE.md`. Branch de integração:
+`restore/phase-2-table-mode`. Base: `main` em `d2cd365` (tag
+`v0.9.2-phase1`).
+
+### 13.1 Time
+
+| Coder | Escopo | Branch | Modelo |
+|---|---|---|---|
+| `coder-backend` | token de display, auth socket DISPLAY, geometria de ping, validação | `restore/phase-2-backend` | `opencode-go/deepseek-v4.1-flash` |
+| `coder-frontend` | conexão display, store/role, join por convite, REST de display token | `restore/phase-2-frontend` | `opencode-go/glm-5.3-flash` |
+| `coder-ux` | `/play` ficha resumida/PV, `/display` TV, QR `TableSharePanel`, mobile | `restore/phase-2-ux` | `opencode-go/mimo-v2.6-flash` |
+| `coder-qa` | E2E 1 TV + 5 celulares, read-only, geometria e caos de mesa | `restore/phase-2-qa` | `opencode-go/deepseek-v4.1-flash` (retry; MiniMax retornou vazio) |
+
+PO: `opencode-go/deepseek-v4.1-flash` (1017).
+
+### 13.2 Decisões
+
+- Display usa token dedicado, hash SHA-256 no banco; texto claro só no fragmento
+  da URL da TV e em `sessionStorage`.
+- Coordenadas no fio são unidades de grade; helper compartilhado
+  `frontend/src/services/gridGeometry.ts` escrito pelo PO antes das branches.
+- QR é gerado offline no frontend com `qrcode` (MIT); sem serviço externo.
+- UX usa MiMo-V2.6-Flash nesta fase por causa do limite de 100 req/dia do
+  LongCat 2.5 Free e do foco visual (Visual Coding 71,5 / OSWorld 80,8).
+- Deploy (Supabase/Render/Vercel) continua fora do escopo até a Fase 5; a Fase 2
+  roda local com Mongo em memória/Docker e storage local.
+- QA foi reexecutado em DeepSeek V4.1 Flash 1017 porque a primeira sessão
+  MiniMax terminou sem commits nem relatório; o worktree estava limpo.
+- A suíte E2E completa compartilha um único backend/IP; `LOGIN_RATE_LIMIT_POINTS`
+  e `CREATE_RATE_LIMIT_POINTS` sobem para 1000 apenas no `global-setup.ts`.
+  Produção mantém 5/20 por 5 min.
+
+### 13.3 Quadro
+
+| ID | Entrega | Coder | Critério |
+|---|---|---|---|
+| P2-BE-1 | `displayTokenHash` + gerar/rotacionar/revogar | backend | DM only; hash persistido; token antigo inválido |
+| P2-BE-2 | handshake `displayToken` + snapshot DISPLAY | backend | só a mesa do token; `permissions=[]` |
+| P2-BE-3 | mutações de display bloqueadas | backend | 403 em todas as ações de escrita |
+| P2-BE-4 | ping em coordenadas de grade + validação | backend | fora do grid → VALIDATION; broadcast em grade |
+| P2-BE-5 | testes de display/geometria com 2+ clientes | backend | token, rotação, read-only, cross-table |
+| P2-FE-1 | `connectDisplay(tableId, token)` e auth sem JWT | frontend | display conecta e recebe snapshot |
+| P2-FE-2 | store/role DISPLAY e bloqueio de escritas no cliente | frontend | UI não emite mutação |
+| P2-FE-3 | join por convite (`POST /api/tables/join`) | frontend | jogador entra pelo QR |
+| P2-FE-4 | REST de token de display + helpers | frontend | gerar/rotacionar/revogar |
+| P2-FE-5 | pings em grade usando `gridGeometry` | frontend | sem pixel no payload |
+| P2-UX-1 | `/play` ficha resumida, PV, movimento, dados, turno | UX | 390×844, toque, safe areas |
+| P2-UX-2 | `/display` TV real por token, fullscreen, fit | UX | 1920×1080, read-only |
+| P2-UX-3 | `TableSharePanel` com QR do jogador e da TV | UX | QR offline, rotacionar/revogar |
+| P2-QA-1 | E2E 1 TV + 5 celulares | QA | todos convergem, TV read-only |
+| P2-QA-2 | caos de mesa/reconexão/60 min acelerado | QA | revisão e hashes iguais |
+| P2-QA-3 | relatório da fase | QA | evidência e gaps |
+
+### 13.4 Ordem de integração
+
+1. Backend display/geometria.
+2. Frontend display/join/ping.
+3. UX play/display/QR.
+4. QA E2E + caos.
+5. Gates completos, merge `--no-ff` em `main`, tag `v0.9.3-phase2`.

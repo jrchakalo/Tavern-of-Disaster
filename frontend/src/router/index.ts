@@ -35,10 +35,9 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
-      path: '/display/:tableId', // TV read-only (token de display é Fase 2)
+      path: '/display/:tableId', // TV read-only: entra pelo token de display (#token=…), sem JWT
       name: 'display',
-      component: () => import('../views/DisplayView.vue'),
-      meta: { requiresAuth: true }
+      component: () => import('../views/DisplayView.vue')
     },
     {
       path: '/dice',
@@ -69,9 +68,10 @@ router.beforeEach((to, from, next) => {
   const isLoggedIn = !!authToken.value; // Verifica se o usuário está logado
 
   if (to.meta.requiresAuth && !isLoggedIn) {
-    // Se o usuário NÃO está logado...
+    // Se o usuário NÃO está logado... redireciona para o login preservando a
+    // rota de origem (o QR do jogador volta para /play/:id?invite=… após login).
     console.log('Acesso bloqueado. Redirecionando para /login');
-    next({ name: 'login' }); // ...redireciona para a página de login.
+    next({ name: 'login', query: { redirect: to.fullPath } }); // volta para a rota pedida
   } else {
     // Senão, permite que a navegação continue normalmente.
     next();

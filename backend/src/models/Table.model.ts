@@ -14,6 +14,8 @@ export interface ITable extends Document {
   pauseUntil?: Date | null;
   systemId?: Types.ObjectId | null;
   revision: number; // Revisão monotônica do estado da mesa (protocolo realtime)
+  displayTokenHash?: string | null; // sha256 do token da TV (texto claro nunca é persistido)
+  displayTokenRotatedAt?: Date | null;
 }
 
 const TableSchema: Schema<ITable> = new Schema({
@@ -31,6 +33,9 @@ const TableSchema: Schema<ITable> = new Schema({
   pauseUntil: { type: Date, required: false, default: null },
   systemId: { type: Schema.Types.ObjectId, ref: 'System', default: null },
   revision: { type: Number, default: 0, min: 0 },
+  // `select: false` impede que o hash vaze nas respostas REST que serializam a mesa.
+  displayTokenHash: { type: String, default: null, index: true, select: false },
+  displayTokenRotatedAt: { type: Date, default: null },
 }, {
   timestamps: true
 });

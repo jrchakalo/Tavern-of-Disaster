@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { setAuthToken } from '../services/authService';
 import { toast } from '../services/toast';
+import { resolveSafeRedirect } from '../services/safeRedirect';
 import { API_BASE_URL } from '../services/apiBase';
 
 const email = ref('');
 const password = ref('');
+const route = useRoute();
 const router = useRouter();
 
 async function handleLogin() {
-  console.log('Tentando fazer login com:', email.value);
   try {
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
@@ -26,16 +27,15 @@ async function handleLogin() {
     const data = await response.json();
 
     if (response.ok) {
-      console.log('Login bem-sucedido, token recebido:', data.token);
-
       // Salvar o token no navegador
       localStorage.setItem('authToken', data.token);
       setAuthToken(data.token); // Atualiza o token de autenticação global
 
       // Sucesso: sem modal/alert intrusivo. Toast opcional curto ou nenhum.
       toast.success(data.message || 'Login realizado.');
-      // Redireciona para a página principal após o login
-      router.push('/');
+      // Volta para a rota pedida (ex.: QR do jogador em /play/:id?invite=…);
+      // só caminhos internos passam — ver resolveSafeRedirect.
+      router.push(resolveSafeRedirect(route.query.redirect));
     } else {
       toast.error(data.message || 'Erro no login.');
     }
