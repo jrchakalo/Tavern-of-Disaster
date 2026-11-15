@@ -42,6 +42,7 @@ function handleInput(event: Event) {
       :readonly="readonly"
       :placeholder="placeholder"
       :rows="rows"
+      :aria-label="label"
       @input="handleInput"
     ></textarea>
     <input
@@ -54,6 +55,7 @@ function handleInput(event: Event) {
       :min="min"
       :max="max"
       :step="step"
+      :aria-label="label"
       @input="handleInput"
     />
     <small v-if="hint" class="sheet-field__hint">{{ hint }}</small>

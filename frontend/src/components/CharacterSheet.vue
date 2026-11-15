@@ -55,7 +55,15 @@ const systemKind = computed<'op2' | 'opsh' | 'standard'>(() => {
   if (systemKey.value === 'ordem-paranormal-sobrevivendo-ao-horror') return 'opsh';
   return 'standard';
 });
+const SYSTEM_LABELS: Record<string, string> = {
+  dnd5e: 'D&D 5e',
+  'cyberpunk-red': 'Cyberpunk RED',
+  'ordem-paranormal-2': 'Ordem Paranormal 2',
+  'ordem-paranormal-sobrevivendo-ao-horror': 'Sobrevivendo ao Horror',
+};
 const systemLabel = computed(() => {
+  const key = props.character?.systemKey;
+  if (key && SYSTEM_LABELS[key]) return SYSTEM_LABELS[key];
   if (props.system) return props.system.name;
   if (systemKind.value === 'op2') return 'Ordem Paranormal 2';
   if (systemKind.value === 'opsh') return 'Sobrevivendo ao Horror';
