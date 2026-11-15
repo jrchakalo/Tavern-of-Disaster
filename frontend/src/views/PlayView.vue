@@ -10,6 +10,8 @@ import { joinTableByInvite } from '../services/tableAccessService';
 import { getMyCharacters } from '../services/characterService';
 import { distanceInSquares, squareIdToGrid } from '../services/gridGeometry';
 import { useTableStore } from '../stores/tableStore';
+import { useCharacterStore } from '../stores/characterStore';
+import { mergeCharacterSummary } from '../components/character/summary';
 import type { CharacterDTO, TokenInfo } from '../types';
 
 import PlayerBoard from '../components/play/PlayerBoard.vue';
@@ -19,6 +21,7 @@ import TokenDetailsSheet from '../components/play/TokenDetailsSheet.vue';
 import ConnectionPill from '../components/play/ConnectionPill.vue';
 import ActionErrorBanner from '../components/play/ActionErrorBanner.vue';
 import PlayerDicePanel from '../components/play/PlayerDicePanel.vue';
+import CharacterSheet from '../components/CharacterSheet.vue';
 import { readSessionExtras, roleLabel } from '../components/play/sessionMeta';
 
 const route = useRoute();
@@ -26,6 +29,7 @@ const router = useRouter();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
 
 const store = useTableStore();
+const characterStore = useCharacterStore();
 const {
   currentTable,
   activeScene,
@@ -43,6 +47,7 @@ const {
   auras,
   pings,
   isDM,
+  characters: characterSummaries,
 } = storeToRefs(store);
 
 const extras = computed(() => readSessionExtras(store));
@@ -92,10 +97,94 @@ const myToken = computed<TokenInfo | null>(() => {
 
 function characterFor(token: TokenInfo | null | undefined): CharacterDTO | null {
   if (!token?.characterId) return null;
-  return myCharacters.value.find((character) => character._id === token.characterId) ?? null;
+  const base = myCharacters.value.find((character) => character._id === token.characterId) ?? null;
+  if (!base) return null;
+  // Resumo canônico (sessionPatch) cobre PV/CA alterados por OUTRO cliente.
+  const summary = (characterSummaries?.value ?? []).find(
+    (entry) => entry._id === base._id,
+  );
+  return mergeCharacterSummary(base, summary);
 }
 
 const myCharacter = computed(() => characterFor(myToken.value));
+
+// ---------------------------------------------------------------------------
+// Ficha completa no /play (dono/DM): QA abre pelo token card ou iniciativa.
+// ---------------------------------------------------------------------------
+
+const showCharacterSheet = ref(false);
+const activeCharacterId = ref<string | null>(null);
+
+const sheetCharacter = computed(() => {
+  if (!activeCharacterId.value) return null;
+  const base =
+    myCharacters.value.find((character) => character._id === activeCharacterId.value) ?? null;
+  if (!base) return null;
+  const summary = (characterSummaries?.value ?? []).find((entry) => entry._id === base._id);
+  return mergeCharacterSummary(base, summary);
+});
+
+const sheetIsOwner = computed(
+  () => Boolean(sheetCharacter.value && sheetCharacter.value.ownerId === currentUser.value?.id),
+);
+
+const detailsCharacter = computed(() => characterFor(detailsToken.value));
+
+const openableCharacterIds = computed(() => myCharacters.value.map((character) => character._id));
+
+function openCharacterSheet(characterId: string) {
+  if (!characterId) return;
+  activeCharacterId.value = characterId;
+  showCharacterSheet.value = true;
+}
+
+function openSheetFromDetails() {
+  if (!detailsCharacter.value) return;
+  openCharacterSheet(detailsCharacter.value._id);
+  detailsToken.value = null;
+}
+
+function closeCharacterSheet() {
+  showCharacterSheet.value = false;
+  activeCharacterId.value = null;
+}
+
+async function handleCharacterSave(payload: Partial<CharacterDTO>) {
+  if (!tableId || !activeCharacterId.value) return;
+  try {
+    const updated = await characterStore.updateCharacter(
+      tableId,
+      activeCharacterId.value,
+      payload,
+    );
+    if (updated) {
+      myCharacters.value = myCharacters.value.map((character) =>
+        character._id === updated._id ? updated : character,
+      );
+    }
+    toast.success('Ficha atualizada.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Não foi possível salvar a ficha.';
+    toast.error(message);
+  }
+}
+
+async function handleCharacterDelete() {
+  if (!tableId || !activeCharacterId.value) return;
+  const confirmed = window.confirm('Remover esta ficha? Esta ação não pode ser desfeita.');
+  if (!confirmed) return;
+  try {
+    await characterStore.deleteCharacter(tableId, activeCharacterId.value);
+    myCharacters.value = myCharacters.value.filter(
+      (character) => character._id !== activeCharacterId.value,
+    );
+    toast.success('Ficha removida.');
+    closeCharacterSheet();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Não foi possível remover a ficha.';
+    toast.error(message);
+  }
+}
 
 const tableName = computed(() => currentTable.value?.name ?? 'Mesa');
 const sceneName = computed(() => activeScene.value?.name ?? 'Cena sem nome');
@@ -366,7 +455,9 @@ onBeforeUnmount(() => {
         :tokens="tokensOnMap"
         :meters-per-square="metersPerSquare"
         :current-user-id="currentUser?.id ?? null"
+        :openable-character-ids="openableCharacterIds"
         orientation="horizontal"
+        @open-character-sheet="openCharacterSheet"
       />
     </section>
 
@@ -376,6 +467,10 @@ onBeforeUnmount(() => {
         :is-my-turn="isMyTurn"
         :character="myCharacter"
         :meters-per-square="metersPerSquare"
+        :table-id="tableId"
+        :can-edit="Boolean(myCharacter)"
+        :openable="Boolean(myCharacter)"
+        @open-sheet="myCharacter && openCharacterSheet(myCharacter._id)"
       />
       <div v-if="canWrite" class="play-actions">
         <button
@@ -410,10 +505,12 @@ onBeforeUnmount(() => {
     <TokenDetailsSheet
       v-if="detailsToken"
       :token="detailsToken"
-      :character="characterFor(detailsToken)"
+      :character="detailsCharacter"
       :meters-per-square="metersPerSquare"
       :is-my-token="detailsToken._id === myToken?._id"
+      :can-open-sheet="Boolean(detailsCharacter)"
       @close="detailsToken = null"
+      @open-character="openSheetFromDetails"
     />
 
     <PlayerDicePanel
@@ -421,6 +518,17 @@ onBeforeUnmount(() => {
       :table-id="tableId"
       :current-token-id="currentTurnTokenId"
       @close="diceOpen = false"
+    />
+
+    <CharacterSheet
+      :open="showCharacterSheet"
+      :character="sheetCharacter"
+      :isDM="isDM"
+      :isOwner="sheetIsOwner"
+      :system="null"
+      @close="closeCharacterSheet"
+      @save="handleCharacterSave"
+      @delete="handleCharacterDelete"
     />
   </div>
 </template>

@@ -9,14 +9,21 @@ const props = withDefaults(
     metersPerSquare?: number;
     currentUserId?: string | null;
     orientation?: 'horizontal' | 'vertical';
+    /** Fichas que este cliente pode abrir (dono/DM) — vira `.character-link`. */
+    openableCharacterIds?: string[];
   }>(),
   {
     tokens: () => [],
     metersPerSquare: 1.5,
     currentUserId: null,
     orientation: 'horizontal',
+    openableCharacterIds: () => [],
   },
 );
+
+const emit = defineEmits<{ (e: 'open-character-sheet', characterId: string): void }>();
+
+const openableIds = computed(() => new Set(props.openableCharacterIds));
 
 const enriched = computed(() =>
   props.entries.map((entry) => {
@@ -25,7 +32,8 @@ const enriched = computed(() =>
       token && props.currentUserId && token.ownerId && token.ownerId._id === props.currentUserId,
     );
     const remaining = token ? `${token.remainingMovement.toFixed(1)}m` : '—';
-    return { entry, token, isMine, remaining };
+    const vitals = token?.character ?? null;
+    return { entry, token, isMine, remaining, vitals };
   }),
 );
 </script>
@@ -47,8 +55,33 @@ const enriched = computed(() =>
             :style="{ background: item.token?.color || 'var(--color-text-muted)' }"
             aria-hidden="true"
           ></span>
-          <span class="initiative-item__name" :title="item.entry.characterName">
+          <button
+            v-if="item.entry.characterId && openableIds.has(item.entry.characterId)"
+            type="button"
+            class="character-link"
+            :title="`Abrir ficha de ${item.entry.characterName}`"
+            @click.stop="emit('open-character-sheet', item.entry.characterId)"
+          >
             {{ item.entry.characterName }}
+          </button>
+          <span
+            v-else
+            class="initiative-item__name"
+            :title="item.entry.characterName"
+          >
+            {{ item.entry.characterName }}
+          </span>
+        </div>
+        <div v-if="item.vitals" class="initiative-item__vitals">
+          <span
+            v-if="item.vitals.maxHP != null"
+            class="initiative-item__hp"
+            :title="`PV ${item.vitals.currentHP ?? 0} / ${item.vitals.maxHP}`"
+          >
+            PV {{ item.vitals.currentHP ?? 0 }} / {{ item.vitals.maxHP }}
+          </span>
+          <span v-if="item.vitals.defense != null" class="initiative-item__def">
+            CA {{ item.vitals.defense }}
           </span>
         </div>
         <div class="initiative-item__meta">
@@ -133,6 +166,50 @@ const enriched = computed(() =>
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.character-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-accent-alt);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.character-link:hover,
+.character-link:focus-visible {
+  text-decoration: underline;
+}
+
+.character-link:focus-visible {
+  outline: 2px solid var(--color-warning);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.initiative-item__vitals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 4px;
+  font-size: 0.74rem;
+}
+
+.initiative-item__hp {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.initiative-item__def {
+  font-weight: 700;
+  color: var(--color-accent-alt);
 }
 
 .initiative-item__meta {

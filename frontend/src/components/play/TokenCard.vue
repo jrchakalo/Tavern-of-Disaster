@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { CharacterDTO, TokenInfo } from '../../types';
+import { tokenCharacter } from '../character/summary';
+import { setCharacterHp } from '../character/hpSync';
+import { toast } from '../../services/toast';
 
 const props = withDefaults(
   defineProps<{
@@ -8,24 +11,45 @@ const props = withDefaults(
     isMyTurn?: boolean;
     character?: CharacterDTO | null;
     metersPerSquare?: number;
+    /** Mesa atual: habilita o ajuste rápido de PV via socket (Fase 3). */
+    tableId?: string;
+    /** Dono da ficha pode editar PV direto do card. */
+    canEdit?: boolean;
+    /** Cartão clicável abre a ficha completa (QA: sheet a partir do /play). */
+    openable?: boolean;
   }>(),
   {
     character: null,
     metersPerSquare: 1.5,
+    tableId: '',
+    canEdit: false,
+    openable: false,
   },
 );
 
-const name = computed(() => props.character?.name || props.token?.name || 'Nenhum token ativo');
+const emit = defineEmits<{ (e: 'open-sheet'): void }>();
+
+/** Resumo canônico colado no token (atualiza ao vivo via tokenUpdates). */
+const summary = computed(() => tokenCharacter(props.token));
+
+const name = computed(
+  () => props.character?.name || summary.value?.name || props.token?.name || 'Nenhum token ativo',
+);
 const avatarUrl = computed(() => props.character?.avatarUrl || props.token?.imageUrl || null);
 const initial = computed(() => name.value.charAt(0).toUpperCase());
 
+/** PV/CA: resumo do token é a fonte viva; a ficha completa cobre o fallback. */
+const maxHP = computed(() => summary.value?.maxHP ?? props.character?.stats?.maxHP ?? null);
+const currentHP = computed(
+  () => summary.value?.currentHP ?? props.character?.stats?.currentHP ?? 0,
+);
 const hp = computed(() => {
-  const stats = props.character?.stats;
-  if (!stats || stats.maxHP == null) return null;
-  return `${stats.currentHP ?? 0} / ${stats.maxHP}`;
+  if (maxHP.value == null) return null;
+  return `${currentHP.value} / ${maxHP.value}`;
 });
 
-const defense = computed(() => props.character?.stats?.defense ?? null);
+const defense = computed(() => summary.value?.defense ?? props.character?.stats?.defense ?? null);
+const level = computed(() => props.character?.profile?.level ?? null);
 
 const meters = computed(() =>
   props.token
@@ -47,10 +71,63 @@ const status = computed(() => {
 });
 
 const dotColor = computed(() => props.token?.color || 'var(--color-text-muted)');
+
+const characterId = computed(
+  () => props.character?._id ?? summary.value?._id ?? props.token?.characterId ?? null,
+);
+
+const canAdjustHp = computed(
+  () => Boolean(props.canEdit && props.tableId && characterId.value && maxHP.value !== null),
+);
+
+/**
+ * Ajuste rápido de PV (§8.2): caminho canônico `characterStore.updateHp`
+ * (socket com ack) com fallbacks do `hpSync`. Erro já notificado pelo
+ * socketService não garaante um segundo toast ("errors once").
+ */
+async function adjustHp(delta: number) {
+  if (!canAdjustHp.value || !props.tableId || !characterId.value) return;
+  const boundedMax = maxHP.value ?? undefined;
+  const base = currentHP.value;
+  let next = base + delta;
+  if (boundedMax !== undefined) next = Math.min(next, boundedMax);
+  next = Math.max(0, next);
+  if (next === base) return;
+  const result = await setCharacterHp({
+    tableId: props.tableId,
+    characterId: characterId.value,
+    currentHP: next,
+    maxHP: boundedMax,
+    statsFallback: props.character?.stats ?? null,
+  });
+  if (!result.ok && !result.alreadyNotified) {
+    toast.error(result.message);
+  }
+}
+
+function handleCardClick() {
+  if (props.openable) emit('open-sheet');
+}
+
+function handleCardKeydown(event: KeyboardEvent) {
+  if (!props.openable) return;
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    emit('open-sheet');
+  }
+}
 </script>
 
 <template>
-  <article class="token-card" :aria-label="`Ficha: ${name}`">
+  <article
+    class="token-card"
+    :class="{ 'token-card--openable': openable }"
+    :aria-label="`Ficha: ${name}`"
+    :role="openable ? 'button' : undefined"
+    :tabindex="openable ? 0 : undefined"
+    @click="handleCardClick"
+    @keydown="handleCardKeydown"
+  >
     <span class="token-card__avatar" :style="{ background: dotColor }" aria-hidden="true">
       <img v-if="avatarUrl" :src="avatarUrl" alt="" draggable="false" />
       <span v-else class="token-card__initial">{{ initial }}</span>
@@ -62,10 +139,31 @@ const dotColor = computed(() => props.token?.color || 'var(--color-text-muted)')
         <span v-if="defense !== null" class="token-card__defense" :title="`Defesa ${defense}`">
           Def {{ defense }}
         </span>
+        <span v-if="level !== null" class="token-card__level" :title="`Nível ${level}`">
+          Nv {{ level }}
+        </span>
         <span class="token-card__movement" title="Movimento restante / total">
           {{ meters }} · {{ squares }} quad
         </span>
       </p>
+    </div>
+    <div v-if="canAdjustHp" class="token-card__hp-actions" @click.stop>
+      <button
+        type="button"
+        class="token-card__hp-btn"
+        aria-label="Diminuir PV em 1"
+        @click="adjustHp(-1)"
+      >
+        −
+      </button>
+      <button
+        type="button"
+        class="token-card__hp-btn"
+        aria-label="Aumentar PV em 1"
+        @click="adjustHp(1)"
+      >
+        +
+      </button>
     </div>
     <span class="token-card__status" :class="{ 'is-my-turn': isMyTurn }">{{ status }}</span>
   </article>
@@ -81,6 +179,19 @@ const dotColor = computed(() => props.token?.color || 'var(--color-text-muted)')
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-surface);
+}
+
+.token-card--openable {
+  cursor: pointer;
+}
+
+.token-card--openable:hover {
+  border-color: var(--color-border-strong);
+}
+
+.token-card--openable:focus-visible {
+  outline: 2px solid var(--color-accent-alt);
+  outline-offset: 2px;
 }
 
 .token-card__avatar {
@@ -134,6 +245,39 @@ const dotColor = computed(() => props.token?.color || 'var(--color-text-muted)')
 .token-card__hp {
   font-weight: 700;
   color: var(--color-text);
+}
+
+.token-card__level {
+  font-weight: 700;
+  color: var(--color-accent-alt);
+}
+
+.token-card__hp-actions {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.token-card__hp-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.token-card__hp-btn:hover {
+  border-color: var(--color-accent-alt);
+  color: var(--color-accent-alt);
+}
+
+.token-card__hp-btn:focus-visible {
+  outline: 2px solid var(--color-warning);
+  outline-offset: 1px;
 }
 
 .token-card__status {
