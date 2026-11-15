@@ -517,8 +517,10 @@ test.beforeAll(async ({ browser }) => {
 
   // Sonda do atalho de PV (formas usuais; o contrato não fixa o payload).
   for (let index = 0; index < HP_SHAPES.length; index += 1) {
+    // A ficha online é do DM; o contrato §3.2 permite dono ou DM, não o
+    // jogador que apenas controla o token. Probe com o socket do DM.
     const ack = await emitWithAck(
-      playerSocket,
+      dmSocket,
       'requestUpdateCharacterHp',
       HP_SHAPES[index](table._id, characterId, INITIAL.currentHP),
       PROBE_TIMEOUT_MS,
