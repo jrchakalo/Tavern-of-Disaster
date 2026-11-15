@@ -50,6 +50,8 @@ export interface TokenInfo {
   size: TokenSize;
   canOverlap?: boolean;
   characterId?: string | null;
+  /** Resumo da ficha vinculada (PV/CA em tempo real); `null` quando desvinculado. */
+  character?: CharacterSummaryLite | null;
 }
 
 export interface TokenOwner {
@@ -269,7 +271,9 @@ export interface TokenDTO {
   remainingMovement: number;
   size: TokenSize;
   canOverlap: boolean;
-  characterId?: string;
+  /** `string` quando vinculado; `null` explicitamente quando desvinculado. */
+  characterId?: string | null;
+  /** Resumo da ficha vinculada; `null` quando desvinculado. */
   character?: CharacterSummaryLite | null;
 }
 

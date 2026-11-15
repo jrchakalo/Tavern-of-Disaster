@@ -187,7 +187,10 @@ function mapTokenDTO(dto: TokenDTO): TokenInfo {
         remainingMovement: dto.remainingMovement,
         size: toTokenSize(dto.size),
         canOverlap: dto.canOverlap,
+        // Backend serializa `characterId: null` para token desvinculado e
+        // `character: { _id, name, currentHP, maxHP, defense } | null`.
         characterId: dto.characterId ?? null,
+        character: dto.character ?? null,
     };
 }
 
@@ -280,7 +283,8 @@ export const useTableStore = defineStore('table', () => {
     const presence: Ref<PresenceEntry[]> = ref([]);
     // Resumos de fichas da mesa (o servidor é a fonte; ficha completa vem por REST)
     const characters: Ref<CharacterSummaryDTO[]> = ref([]);
-    // Log de rolagens canônico (máx. 50, mais recente no fim)
+    // Log de rolagens canônico (máx. 50, MAIS RECENTE PRIMEIRO, como o backend
+    // ordena com sort({ createdAt: -1 }) em snapshot e no histórico REST)
     const recentRolls: Ref<RollLogEntryDTO[]> = ref([]);
     const isApplyingPatch: Ref<boolean> = ref(false);
     // Modo TV: ligado pelo socketService ao conectar com token de display.
@@ -496,7 +500,7 @@ export const useTableStore = defineStore('table', () => {
         you.value = snapshot.you;
         presence.value = [...snapshot.presence];
         characters.value = [...(snapshot.characters ?? [])];
-        recentRolls.value = (snapshot.recentRolls ?? []).slice(-RECENT_ROLLS_CAP);
+        recentRolls.value = (snapshot.recentRolls ?? []).slice(0, RECENT_ROLLS_CAP);
         revision.value = snapshot.revision;
         clockSkewMs.value = snapshot.serverNowMs - Date.now();
         lastSyncAt.value = Date.now();
@@ -624,7 +628,7 @@ export const useTableStore = defineStore('table', () => {
                 removeCharacterSummaries(changes.charactersRemoved);
             }
             if (changes.recentRolls) {
-                recentRolls.value = [...changes.recentRolls].slice(-RECENT_ROLLS_CAP);
+                recentRolls.value = [...changes.recentRolls].slice(0, RECENT_ROLLS_CAP);
             }
             if (changes.sessionStatus) {
                 const next = changes.sessionStatus.status;
@@ -685,10 +689,12 @@ export const useTableStore = defineStore('table', () => {
         return characters.value.find((c) => c._id === id) ?? null;
     }
 
-    /** Acrescenta uma rolagem ao log canônico (cap 50). */
+    /**
+     * Acrescenta uma rolagem ao log canônico (cap 50). Ordem newest-first:
+     * a rolagem nova entra na frente, coerente com snapshot/patch do backend.
+     */
     function addRecentRoll(entry: RollLogEntryDTO) {
-        const next = [...recentRolls.value, entry];
-        recentRolls.value = next.length > RECENT_ROLLS_CAP ? next.slice(next.length - RECENT_ROLLS_CAP) : next;
+        recentRolls.value = [entry, ...recentRolls.value].slice(0, RECENT_ROLLS_CAP);
     }
 
     function placeToken(newToken: TokenInfo) {
