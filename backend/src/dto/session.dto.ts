@@ -1,4 +1,5 @@
 import type { PresenceEntry, SessionRole } from '../services/presenceService';
+import type { DiceRolledPayload } from './roll.dto';
 
 export interface UserSummaryDTO {
   _id: string;
@@ -38,6 +39,34 @@ export interface SceneDTO {
   metersPerSquare?: number;
 }
 
+/** Resumo de ficha exposto na TV e para os demais jogadores. */
+export interface CharacterSummaryDTO {
+  _id: string;
+  name: string;
+  ownerId: string;
+  systemKey?: string;
+  level?: number;
+  currentHP?: number;
+  maxHP?: number;
+  defense?: number;
+  /** Token vinculado na mesa (se houver). */
+  tokenId?: string | null;
+}
+
+/** Resumo mínimo embutido no token. */
+export interface CharacterSummaryLite {
+  _id: string;
+  name: string;
+  currentHP?: number;
+  maxHP?: number;
+  defense?: number;
+}
+
+export interface CharacterUpdateDTO {
+  characterId: string;
+  patch: Partial<CharacterSummaryDTO>;
+}
+
 export interface TokenDTO {
   _id: string;
   tableId: string;
@@ -51,7 +80,9 @@ export interface TokenDTO {
   remainingMovement: number;
   size: string;
   canOverlap: boolean;
-  characterId?: string;
+  characterId?: string | null;
+  /** Ficha vinculada (resumo), quando existir. */
+  character?: CharacterSummaryLite | null;
 }
 
 export interface MeasurementDTO {
@@ -87,6 +118,8 @@ export interface SessionStateDTO {
   initiative: InitiativeEntryDTO[];
   measurements: MeasurementDTO[];
   auras: AuraDTO[];
+  characters: CharacterSummaryDTO[];
+  recentRolls: DiceRolledPayload[];
 }
 
 // --- Protocolo realtime (Fase 1) -----------------------------------------
@@ -137,6 +170,13 @@ export interface SessionPatchChanges {
   /** Substitui a lista inteira. */
   auras?: AuraDTO[];
   sessionStatus?: SessionStatusPatch;
+  /** Substitui a lista inteira. */
+  characters?: CharacterSummaryDTO[];
+  /** Merge por characterId. */
+  characterUpdates?: CharacterUpdateDTO[];
+  charactersRemoved?: string[];
+  /** Substitui a lista inteira (máx. 50, mais recente primeiro). */
+  recentRolls?: DiceRolledPayload[];
 }
 
 /** Alteração incremental canônica do estado da mesa. */

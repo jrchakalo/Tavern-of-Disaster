@@ -266,7 +266,7 @@ export const zPingPayload = z.object({
 // Dice ---------------------------------------------------------------------
 export const zRollDicePayload = z.object({
   tableId,
-  expression: trimmedString(1, 64),
+  expression: trimmedString(1, 80),
   tokenId: objectId.optional(),
   characterId: objectId.optional(),
   metadata: optionalTrimmedString(128).optional(),
@@ -303,15 +303,107 @@ const zCharacterStats = z
     }
   });
 const characterNotes = optionalTrimmedString(1024);
+const characterKeyList = z
+  .array(characterAttributeKey)
+  .max(64, { message: 'Limite de 64 chaves.' })
+  .optional();
+const characterSystemKey = trimmedString(1, 64).optional();
+const zCharacterProfile = z
+  .object({
+    className: optionalTrimmedString(100).optional(),
+    level: z.number().int().min(0).max(100).optional(),
+    race: optionalTrimmedString(100).optional(),
+    background: optionalTrimmedString(100).optional(),
+    alignment: optionalTrimmedString(100).optional(),
+    speed: z.number().finite().min(0).max(100000).optional(),
+    hitDice: optionalTrimmedString(32).optional(),
+  })
+  .optional();
+const zCharacterAttacks = z
+  .array(
+    z.object({
+      name: trimmedString(1, 100),
+      bonus: optionalTrimmedString(64).optional(),
+      damage: optionalTrimmedString(64).optional(),
+      notes: optionalTrimmedString(1024).optional(),
+    })
+  )
+  .max(50, { message: 'Limite de 50 ataques.' })
+  .optional();
+const zCharacterFeatures = z
+  .array(
+    z.object({
+      name: trimmedString(1, 100),
+      description: optionalTrimmedString(2048).optional(),
+    })
+  )
+  .max(100, { message: 'Limite de 100 características.' })
+  .optional();
+const zCharacterInventory = z
+  .array(
+    z.object({
+      name: trimmedString(1, 100),
+      quantity: z.number().int().min(0).max(100000).optional(),
+      notes: optionalTrimmedString(512).optional(),
+    })
+  )
+  .max(200, { message: 'Limite de 200 itens.' })
+  .optional();
+const zCharacterSpellSlots = z
+  .record(
+    trimmedString(1, 16),
+    z
+      .object({
+        used: z.number().int().min(0).max(1000).optional(),
+        max: z.number().int().min(0).max(1000).optional(),
+      })
+      .superRefine((slot, ctx) => {
+        if (slot.used !== undefined && slot.max !== undefined && slot.used > slot.max) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['used'],
+            message: 'Espaços usados não podem exceder o máximo.',
+          });
+        }
+      })
+  )
+  .refine((value) => Object.keys(value).length <= 20, {
+    message: 'Limite de 20 níveis de magia.',
+  })
+  .optional();
 
 const characterBodyBase = {
   name: nameString,
   avatarUrl: optionalUrlInput,
+  systemKey: characterSystemKey,
+  profile: zCharacterProfile,
   attributes: characterAttributes.optional(),
   stats: zCharacterStats.optional(),
   skills: characterSkills.optional(),
+  proficientSaves: characterKeyList,
+  proficientSkills: characterKeyList,
+  expertiseSkills: characterKeyList,
+  attacks: zCharacterAttacks,
+  features: zCharacterFeatures,
+  inventory: zCharacterInventory,
+  spellSlots: zCharacterSpellSlots,
   notes: characterNotes.optional(),
 };
+
+/** Campos de posse/escopo nunca podem ser trocados por patch de ficha. */
+export const CHARACTER_FORBIDDEN_PATCH_FIELDS = ['ownerId', 'tableId'] as const;
+
+function rejectForbiddenCharacterFields(value: Record<string, unknown>, ctx: z.RefinementCtx) {
+  CHARACTER_FORBIDDEN_PATCH_FIELDS.forEach((field) => {
+    if (field in value) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: `O campo "${field}" não pode ser alterado por aqui.`,
+      });
+    }
+  });
+}
 
 export const zCreateCharacter = z.object({
   ...characterBodyBase,
@@ -321,14 +413,59 @@ export const zUpdateCharacter = z
   .object({
     name: nameString.optional(),
     avatarUrl: optionalUrlInput,
+    systemKey: characterSystemKey,
+    profile: zCharacterProfile,
     attributes: characterAttributes.optional(),
     stats: zCharacterStats.optional(),
     skills: characterSkills.optional(),
+    proficientSaves: characterKeyList,
+    proficientSkills: characterKeyList,
+    expertiseSkills: characterKeyList,
+    attacks: zCharacterAttacks,
+    features: zCharacterFeatures,
+    inventory: zCharacterInventory,
+    spellSlots: zCharacterSpellSlots,
     notes: characterNotes.optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, {
-    message: 'Informe ao menos um campo para atualizar.',
+  .passthrough()
+  .superRefine((value, ctx) => {
+    rejectForbiddenCharacterFields(value as Record<string, unknown>, ctx);
+    if (Object.keys(value).length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe ao menos um campo para atualizar.',
+      });
+    }
   });
+
+// Fichas em tempo real -----------------------------------------------------
+const characterId = objectId;
+
+export const zCreateCharacterPayload = z.object({
+  tableId,
+  character: zCreateCharacter,
+  /** Só o Mestre pode criar ficha para outro membro da mesa. */
+  ownerId: objectId.optional(),
+});
+
+export const zUpdateCharacterPayload = z.object({
+  tableId,
+  characterId,
+  patch: zUpdateCharacter,
+  expectedRevision: expectedRevisionField,
+});
+
+export const zDeleteCharacterPayload = z.object({
+  tableId,
+  characterId,
+});
+
+export const zUpdateCharacterHpPayload = z.object({
+  tableId,
+  characterId,
+  currentHP: z.number().int().min(0).max(100000),
+  expectedRevision: expectedRevisionField,
+});
 
 // Templates ---------------------------------------------------------------
 const templateSystemId = nullableObjectId.optional();
@@ -455,6 +592,16 @@ export const zSystemIdParams = z.object({
 
   export const zRollHistoryQuery = z.object({
     limit: queryLimit,
+    /** Paginação por cursor: retorna rolagens estritamente mais antigas que este instante. */
+    before: coerceQueryValue(
+      z
+        .string()
+        .trim()
+        .min(1)
+        .refine((value) => !Number.isNaN(Date.parse(value)), {
+          message: 'Data "before" inválida.',
+        })
+    ).optional(),
   });
 
 // Types --------------------------------------------------------------------
@@ -491,6 +638,11 @@ export type RollDicePayload = z.infer<typeof zRollDicePayload>;
 export type CharacterStatsInput = z.infer<typeof zCharacterStats>;
 export type CreateCharacterPayload = z.infer<typeof zCreateCharacter>;
 export type UpdateCharacterPayload = z.infer<typeof zUpdateCharacter>;
+export type CharacterProfileInput = z.infer<typeof zCharacterProfile>;
+export type CreateCharacterSocketPayload = z.infer<typeof zCreateCharacterPayload>;
+export type UpdateCharacterSocketPayload = z.infer<typeof zUpdateCharacterPayload>;
+export type DeleteCharacterSocketPayload = z.infer<typeof zDeleteCharacterPayload>;
+export type UpdateCharacterHpSocketPayload = z.infer<typeof zUpdateCharacterHpPayload>;
 export type CreateSceneTemplatePayload = z.infer<typeof zCreateSceneTemplate>;
 export type UpdateSceneTemplatePayload = z.infer<typeof zUpdateSceneTemplate>;
 export type CreateTokenTemplatePayload = z.infer<typeof zCreateTokenTemplate>;
@@ -537,6 +689,10 @@ export const schemas = {
   zCharacterStats,
   zCreateCharacter,
   zUpdateCharacter,
+  zCreateCharacterPayload,
+  zUpdateCharacterPayload,
+  zDeleteCharacterPayload,
+  zUpdateCharacterHpPayload,
   zCreateSceneTemplate,
   zUpdateSceneTemplate,
   zCreateTokenTemplate,

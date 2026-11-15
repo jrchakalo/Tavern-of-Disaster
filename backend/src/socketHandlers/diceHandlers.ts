@@ -1,5 +1,5 @@
 import { Server, Socket } from 'socket.io';
-import { roll, DiceRollResult } from '../services/diceService';
+import { roll } from '../services/diceService';
 import { getTableById, assertUserInTable, isUserDM } from '../services/tableService';
 import Token from '../models/Token.model';
 import Character from '../models/Character.model';
@@ -12,17 +12,17 @@ import { validate } from '../validation/validate';
 import { zRollDicePayload } from '../validation/schemas';
 import type { RollDicePayload } from '../validation/schemas';
 import Roll from '../models/Roll.model';
+import { createSlidingWindowRateLimiter } from '../services/socketRateLimiter';
+import type { DiceRolledPayload } from '../dto/roll.dto';
 
-export interface DiceRolledPayload extends DiceRollResult {
-  tableId: string;
-  userId: string;
-  username: string;
-  tokenId?: string;
-  characterId?: string;
-  tags?: string[];
-  createdAt: string;
-  revision: number;
-}
+export type { DiceRolledPayload } from '../dto/roll.dto';
+
+/** 20 rolagens por 10s por socket. Configurável por env para testes/carga. */
+export const diceRollRateLimiter = createSlidingWindowRateLimiter({
+  limit: Number(process.env.DICE_RATE_LIMIT_POINTS ?? 20),
+  windowMs: Number(process.env.DICE_RATE_LIMIT_WINDOW_MS ?? 10_000),
+});
+const DICE_RATE_LIMITED_MESSAGE = 'Muitas rolagens em pouco tempo. Aguarde alguns segundos.';
 
 export function registerDiceHandlers(io: Server, socket: Socket) {
   const log = createLogger({ scope: 'socket:dice', socketId: socket.id, userId: socket.data.user?.id });
@@ -40,6 +40,7 @@ export function registerDiceHandlers(io: Server, socket: Socket) {
         try {
           const user = socket.data.user;
           assertCondition(!!user, 'Usuário não autenticado.', 401);
+          assertCondition(diceRollRateLimiter.take(socket.id), DICE_RATE_LIMITED_MESSAGE, 429);
           const data = validate(zRollDicePayload, payload);
 
           const table = await getTableById(data.tableId);
@@ -97,11 +98,17 @@ export function registerDiceHandlers(io: Server, socket: Socket) {
               expression: result.expression,
               total: result.total,
               modifier: result.modifier,
-              rolls: result.rolls.map((r) => ({ die: r.die, value: r.value, kept: r.kept })),
+              rolls: result.rolls.map((r) => ({
+                die: r.die,
+                value: r.value,
+                kept: r.kept,
+                ...(r.explosions ? { explosions: r.explosions } : {}),
+              })),
               metadata: data.metadata,
               tags: data.tags,
               characterId: data.characterId || undefined,
               tokenId: data.tokenId || undefined,
+              revision,
             });
           } catch (persistError) {
             log.error(
@@ -126,4 +133,7 @@ export function registerDiceHandlers(io: Server, socket: Socket) {
   };
 
   socket.on('requestRollDice', requestRollDice);
+  socket.on('disconnect', () => {
+    diceRollRateLimiter.reset(socket.id);
+  });
 }
