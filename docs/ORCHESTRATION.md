@@ -237,6 +237,7 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-14 | Frontend (GLM-5.3-Flash) | `tokenUpdates` com `squareId` não movia o token entre quadrados no store | Mover o token no grid ao aplicar o patch | 1 | corrigido em `8e66d8d` |
 | 2026-11-14 | Frontend (GLM-5.3-Flash) | Patch de `activeScene` com novo grid não reconstruía `squares` | Reconstruir o grid preservando tokens | 1 | corrigido em `8e66d8d` |
 | 2026-11-15 | Frontend P3 (GLM-5.3-Flash) | `restore/phase-3-frontend` / `8fbc829` | **Aprovado com ressalvas** | `type-check` OK; 167/167; build OK | Store/socket de ficha, HP, roll log e dice local; falta validar contrato com backend/UX. |
+| 2026-11-15 | QA P3 (DeepSeek V4.1 Flash 1017) | `restore/phase-3-qa` / `936db06` | **Aprovado com ressalvas** | Type-check OK; specs prontos; execução bloqueada pré-integração | E2E ficha/PV/dados/sistema + 2 contextos online; rodar após backend/UX. |
 | — | — | — | — | — | — |
 
 ## 11. Riscos e limites
