@@ -32,7 +32,10 @@ Currently implemented core features:
   acks, reconnection and automatic resync
 * Entity-based authorization (token → scene → table → role) and cross-table IDOR
   protection
-* Mobile player controller (`/play/:id`) and read-only TV board (`/display/:id`)
+* Mobile player controller (`/play/:id`) with condensed HP/defense/movement card
+* Read-only TV board (`/display/:id`) authenticated by a dedicated display token
+* Offline QR codes for player invite and TV pairing
+* Canonical grid-unit geometry for pings and measurements across devices
 * Automated tests: backend unit + Socket.IO integration, frontend unit,
   Playwright E2E and a 6-client chaos harness
 * Multi-footprint tokens with footprint collision validation

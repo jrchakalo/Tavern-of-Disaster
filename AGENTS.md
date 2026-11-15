@@ -14,9 +14,10 @@ Vue 3 + Vite + TypeScript + Pinia no frontend.
 
 - `main` contém a antiga branch `expand`, que já incorpora `character`, `rolling`,
   `system`, `polishing` e `fix`.
-- A restauração está organizada em fases. Fases 0 e 1 concluídas; a próxima é
-  `restore/phase-2-table-mode`. Tag da Fase 1: `v0.9.2-phase1`.
-- O protocolo realtime está em `docs/REALTIME_PROTOCOL.md`; o diário de
+- A restauração está organizada em fases. Fases 0, 1 e 2 concluídas; a próxima é
+  `restore/phase-3-sheets-dice`. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`.
+- Contratos: `docs/REALTIME_PROTOCOL.md` (tempo real) e `docs/TABLE_MODE.md`
+  (TV + celulares, display token, QR, geometria de grade). O diário de
   decisões/modelos/coders está em `docs/ORCHESTRATION.md`.
 - PixiJS está morto (não renderiza). O renderizador oficial é DOM/SVG
   (`MapViewport.vue` + `GridLayer.vue` + `TokenLayer.vue`).
@@ -49,6 +50,7 @@ npx vue-tsc --noEmit -p tsconfig.app.json   # type-check real
 # testes de tempo real / caos
 cd tests/e2e
 npx playwright test                         # E2E com 2+ navegadores
+npx playwright test specs/table-mode.spec.ts --workers=1  # 1 TV + 5 celulares
 node chaos/run.mjs                          # caos headless de 6 clientes
 ```
 

@@ -4,10 +4,10 @@
 > skill, designação, branch, revisão, correção e merge entra aqui. Se o contexto
 > da conversa se perder, este arquivo é a fonte da verdade do processo.
 >
-> Última atualização: 2026-11-14. **Fase 1 concluída e aprovada**
-> (`v0.9.2-phase1`): backend 64/64, frontend 43/43, E2E 8/8, caos 14/14 PASS.
-> **Fase 2 em andamento**: modo mesa presencial (TV + 5 celulares, QR,
-> token de display, geometria canônica).
+> Última atualização: 2026-11-15. **Fases 1 e 2 concluídas e aprovadas**:
+> `v0.9.2-phase1` (backend 64/64, frontend 43/43, E2E 8/8, caos 14/14) e
+> `v0.9.3-phase2` (backend 76/76, frontend 113/113, E2E 22/22, table mode 9/9,
+> display security 5/5, caos 14/14). Próxima: Fase 3 (fichas, dados, sistemas).
 
 ## 1. Modelo de trabalho
 
@@ -211,6 +211,7 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-15 | QA P2 (DeepSeek V4.1 Flash 1017) | `restore/phase-2-qa` / `4c3b50f` + `bd346dd` | **Aprovado** | `table-mode` 9/9 + `display-security` 5/5; suíte E2E completa 22/22; caos P1 PASS | Relatório em `docs/qa/PHASE2-TABLE-MODE-REPORT.md`; 1 TV + 5 celulares + loop de 24 iterações. |
 | 2026-11-15 | UX P2 (MiMo-V2.6-Flash) | `restore/phase-2-ux` / `03c16b4` + `2273862` + `1cba8b6` | **Aprovado** | `type-check` OK; 113/113 na integração; build OK | Card fora do turno, QR absoluto, pings/`pingCenterPixels` em grade e redirect pós-login corrigidos e testados. |
 | 2026-11-15 | Regressão P1 na integração P2 | `restore/phase-2-table-mode` | **Aprovado** | happy-path + realtime-authz + display-security: **13/13** | Nenhuma regressão da Fase 1 após backend/frontend/UX da Fase 2. |
+| 2026-11-15 | Integração P2 final | `restore/phase-2-table-mode` / `2de7f14` | **Aprovado** | E2E completo **22/22**; table-mode **9/9**; display-security **5/5**; caos **PASS** | 1 TV 1920×1080 + 5 celulares 390×844 + 24 iterações; tag `v0.9.3-phase2`. |
 | — | — | — | — | — | (preencher a cada PR) |
 
 ## 10. Registro de correções
