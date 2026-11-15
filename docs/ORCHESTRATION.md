@@ -203,6 +203,10 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-15 | Mesh WebRTC + TURN free antes de SFU | 1 DM + 4 jogadores cabem em mesh; áudio-first evita estourar upload/cota. |
 | 2026-11-15 | LiveKit Cloud free como fallback SFU | 5.000 min/mês cobrem ~13 sessões de 6 pessoas; UI continua própria. |
 | 2026-11-15 | E2E online com fake media | Playwright/Chromium permite testar tracks, mute/deafen e reconexão sem hardware. |
+| 2026-11-15 | Ficha completa só dono/DM; resumo para os demais | Evita vazar notas/atributos privados e mantém a TV leve. |
+| 2026-11-15 | Mutação de ficha via socket | Garante ack/revisão e PV sincronizado em todos os tokens. |
+| 2026-11-15 | Dados com `!` explosivo e limites | Cyberpunk RED exige d10 explosivo; limites evitam DoS no servidor. |
+| 2026-11-15 | Log de rolagens com TTL de 7 dias | Cabe no Atlas M0 e ainda cobre a sessão + revisão. |
 
 ## 9. Registro de resultados
 
@@ -361,3 +365,42 @@ Substitui a numeração antiga de beta ops, que passa a Fase 6.
 4. TURN: Metered free ou coturn self-host? (recomendado Metered no beta)
 5. SFU: aceitar LiveKit Cloud free como fallback? (recomendado sim)
 6. Compartilhamento de tela no beta? (recomendado 5C)
+
+## 15. Fase 3 — Fichas, dados e sistemas
+
+Contrato: `docs/SHEETS_DICE.md`. Branch de integração:
+`restore/phase-3-sheets-dice`. Base: `main` em `efce6e3`.
+
+### 15.1 Time
+
+| Coder | Escopo | Branch | Modelo |
+|---|---|---|---|
+| backend | modelo/DTO, ficha realtime, PV↔token, dados/explosão, log, seed | `restore/phase-3-backend` | `opencode-go/deepseek-v4.1-flash` |
+| frontend | store de resumos, socket de ficha/PV, roll log, dice local | `restore/phase-3-frontend` | `opencode-go/glm-5.3-flash` |
+| UX | ficha D&D/Cyberpunk, token↔ficha, PV no card/TV, dados/log | `restore/phase-3-ux` | `opencode-go/mimo-v2.6-flash` |
+| QA | E2E ficha/PV/dados/sistema + 2 clientes online | `restore/phase-3-qa` | `opencode-go/deepseek-v4.1-flash` |
+
+PO: `opencode-go/deepseek-v4.1-flash` (1017).
+
+### 15.2 Decisões
+
+- Ficha completa é dona/DM; outros recebem só resumo (nome/PV/CA/nível).
+- Mutação de ficha via socket com ack/revisão; REST continua para leitura/fallback.
+- PV propaga para todos os tokens vinculados via `tokenUpdates.character`.
+- Dados server-authoritative; `!` explosivo para Cyberpunk; limites 100 dados/1000 faces.
+- Log de rolagens com TTL de 7 dias e `recentRolls` no snapshot.
+- Sistema inicial D&D 5e; Cyberpunk RED como segundo, sem automação completa de regras.
+- `characterMath.ts` escrito pelo PO antes das branches para evitar divergência.
+- Online-aware: ficha/PV/dados são testados com 2 contextos remotos já na Fase 3.
+
+### 15.3 Quadro
+
+| ID | Entrega | Coder |
+|---|---|---|
+| P3-BE-1..3 | modelo, DTO/snapshot/patch, ficha realtime/PV | backend |
+| P3-BE-4..6 | dados/explosão, rate limit, log | backend |
+| P3-BE-7..8 | seed D&D/Cyberpunk + testes | backend |
+| P3-FE-1..4 | store, socket ficha/PV, characterStore, roll log | frontend |
+| P3-FE-5..6 | dice local, testes | frontend |
+| P3-UX-1..4 | ficha, token↔ficha, dados/log, sistema | UX |
+| P3-QA-1..3 | E2E presencial + online, relatório | QA |
