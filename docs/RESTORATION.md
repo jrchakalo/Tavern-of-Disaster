@@ -1,6 +1,7 @@
 # Plano de Restauração — Tavern of Disaster
 
-> Status: em execução. Fases 0, 1, 2 e 3 concluídas e integradas; próxima: Fase 4.
+> Status: em execução. Fases 0–3 concluídas; **Fase 3.1 (Ordem Paranormal 2)**
+> é a prioridade do primeiro one-shot. Fase 4 pausada até OP2 fechar.
 > Última atualização: 2026-11-15. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
 > `v0.9.4-phase3`.
 
@@ -18,7 +19,10 @@ recuperação.
 | Histórico | Branches antigas preservadas; novas branches por fase; nada de fast-forward |
 | Infra | 100% gratuita no beta (Vercel + Render + Atlas M0 + Supabase free) |
 | Playtest | 100% simulado, sem pessoas |
-| Sistema inicial | D&D 5e (presets e ficha) |
+| Sistema principal | **Ordem Paranormal 2 (OP2)** — prioridade do primeiro one-shot |
+| Sistemas suportados | OP2; D&D 5e; Cyberpunk RED como secundário |
+| OP1 | Apenas a extensão *Sobrevivendo ao Horror* (OP1 puro não será usado) |
+| Fonte de regras | PDFs locais em `references/ordem-paranormal/` (não versionados) |
 | Renderizador | DOM/SVG; Pixi removido |
 | Primeiro marco | 1 TV + 5 celulares virtuais, 60 min simulados, zero divergência |
 
@@ -38,7 +42,8 @@ main
 │   ├── restore/phase-2-ux         ficha resumida, TV real, QR, mobile
 │   └── restore/phase-2-qa         1 TV + 5 celulares + display security
 ├── restore/phase-3-sheets-dice    fichas, dados, sistemas (v0.9.4-phase3)
-├── restore/phase-4-media-scenes   uploads, cenas, persistência
+├── restore/phase-3-op2            Ordem Paranormal 2 (one-shot, prioridade)
+├── restore/phase-4-media-scenes   uploads, cenas, persistência (pausada)
 ├── restore/phase-5-online         WebRTC, áudio/vídeo, chat, TURN (online real)
 └── restore/phase-6-beta-ops       deploy free, observabilidade, playtest simulado
 ```
@@ -180,7 +185,27 @@ decisões. Tags: `v0.9.0-restore` (marco zero), `v0.9.x` por fase, `v1.0.0-beta`
 - Log de rolagens tem TTL de 7 dias (sem exportação).
 - D&D 5e tem ficha completa, mas não compêndio de magias/itens.
 
-### Fase 4 — Mídia e cenas (1 semana)
+### Fase 3.1 — Ordem Paranormal 2 (prioridade do one-shot)
+
+Contrato: `docs/ORDEM_PARANORMAL.md`. Branch futura:
+`restore/phase-3-op2`.
+
+- [ ] Receber/ler PDFs em `references/ordem-paranormal/` (não versionar).
+- [ ] Extrair regras exatas do playtest OP2 + *Sobrevivendo ao Horror*.
+- [ ] Seed `ordem-paranormal-2` com atributos/perfis/perícias/presets.
+- [ ] Ficha OP2: Físico/Mente/Emoção como dados, 20 perícias, Vida/PD,
+      Defesa, NEX/nível, perfil, ocupação, armas, rituais, condições/medo.
+- [ ] Motor de teste OP2: dado de atributo + dado de perícia, DT, RA/RB,
+      crítico, falha crítica, step up/down.
+- [ ] UI mobile/desktop da ficha OP2; resumo Vida/PD/Defesa no token/TV.
+- [ ] E2E do one-shot: DM + jogadores, perícias, combate simplificado,
+      PD/medo, log e reconexão.
+- [ ] Teste online com 2 contextos remotos.
+
+**Saída:** one-shot de OP2 jogável de ponta a ponta, com a ficha e os dados
+corretos, antes de retomar a Fase 4.
+
+### Fase 4 — Mídia e cenas (1 semana) — PAUSADA
 
 - Upload com adapter (`local`/`supabase`), compressão, quotas, limpeza de órfãos.
 - Subir mapa pelo celular do Mestre.

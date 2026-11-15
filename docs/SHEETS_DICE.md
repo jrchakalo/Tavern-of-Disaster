@@ -1,6 +1,9 @@
 # Fichas, Dados e Sistemas — Contrato da Fase 3
 
-> Status: aprovado para implementação em 2026-11-15.
+> Status: implementado e integrado em `v0.9.4-phase3` (D&D 5e + Cyberpunk RED).
+> **Nota (2026-11-15):** o sistema principal do primeiro one-shot é **Ordem
+> Paranormal 2**, que usa dados graduados e ficha própria. A revisão OP2 está
+> em `docs/ORDEM_PARANORMAL.md` (Fase 3.1) e tem prioridade sobre a Fase 4.
 > Depende de `docs/REALTIME_PROTOCOL.md` (estado/revisão) e
 > `docs/TABLE_MODE.md` (TV/celulares/geometria).
 > Objetivo: ficha utilizável, PV sincronizado, dados server-authoritative,

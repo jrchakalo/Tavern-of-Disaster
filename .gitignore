@@ -28,6 +28,10 @@ coverage/
 # Local uploads (dev storage driver)
 backend/uploads/
 
+# Local rulebooks/references (copyrighted; never commit PDFs)
+references/*
+!references/README.md
+
 # Test artifacts
 playwright-report/
 test-results/

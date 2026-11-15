@@ -15,12 +15,16 @@ Vue 3 + Vite + TypeScript + Pinia no frontend.
 - `main` contém a antiga branch `expand`, que já incorpora `character`, `rolling`,
   `system`, `polishing` e `fix`.
 - A restauração está organizada em fases. Fases 0–3 concluídas; a próxima é
-  `restore/phase-4-media-scenes`. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
-  `v0.9.4-phase3`.
+  **Fase 3.1 — Ordem Paranormal 2** (`restore/phase-3-op2`), prioridade do
+  primeiro one-shot. A Fase 4 fica pausada até OP2 fechar. Tags:
+  `v0.9.2-phase1`, `v0.9.3-phase2`, `v0.9.4-phase3`.
 - Contratos: `docs/REALTIME_PROTOCOL.md` (tempo real), `docs/TABLE_MODE.md`
-  (TV + celulares, display token, QR, geometria de grade) e
-  `docs/ONLINE_MODE.md` (jogo remoto + voz/vídeo/chat). O diário de
-  decisões/modelos/coders está em `docs/ORCHESTRATION.md`.
+  (TV + celulares, display token, QR, geometria de grade),
+  `docs/SHEETS_DICE.md` (fichas/dados D&D/Cyberpunk) e
+  `docs/ORDEM_PARANORMAL.md` (OP2). O diário de decisões/modelos/coders está em
+  `docs/ORCHESTRATION.md`.
+- PDFs de regras ficam em `references/ordem-paranormal/` (ignorado pelo Git;
+  nunca commitar material copyrighted).
 - A frente online é requisito real: a mesma mesa funciona presencial e remota.
   Voz/vídeo/chat ficam dentro do app; TURN/SFU é infraestrutura invisível.
 - PixiJS está morto (não renderiza). O renderizador oficial é DOM/SVG
