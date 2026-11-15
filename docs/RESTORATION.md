@@ -38,7 +38,8 @@ main
 │   └── restore/phase-2-qa         1 TV + 5 celulares + display security
 ├── restore/phase-3-sheets-dice    fichas, dados, sistemas
 ├── restore/phase-4-media-scenes   uploads, cenas, persistência
-└── restore/phase-5-beta-ops       deploy free, observabilidade, playtest simulado
+├── restore/phase-5-online         WebRTC, áudio/vídeo, chat, TURN (online real)
+└── restore/phase-6-beta-ops       deploy free, observabilidade, playtest simulado
 ```
 
 Cada fase é integrada em `main` com `git merge --no-ff`, preservando a árvore de
@@ -149,6 +150,8 @@ decisões. Tags: `v0.9.0-restore` (marco zero), `v0.9.x` por fase, `v1.0.0-beta`
 - Dados server-authoritative, presets por sistema, limite de dados.
 - D&D 5e completo para o beta; Cyberpunk RED como segundo sistema (d10 explosivo).
 - Log de rolagens persistido.
+- **Online-aware:** ficha, PV e rolagens sincronizam via `revision` e funcionam
+  para jogadores remotos; o log é a fonte para a TV e para o chat.
 
 ### Fase 4 — Mídia e cenas (1 semana)
 
@@ -157,13 +160,32 @@ decisões. Tags: `v0.9.0-restore` (marco zero), `v0.9.x` por fase, `v1.0.0-beta`
 - Medições e auras persistidas (sobrevivem a restart).
 - Religar templates ou remover painéis órfãos.
 - Code-split do `TableView` e limpeza de mídia pesada.
+- **Online-aware:** upload e troca de cena precisam funcionar para um Mestre
+  remoto, com progresso e erro visíveis.
 
-### Fase 5 — Operação e beta simulado (1 semana)
+### Fase 5 — Online e comunicação (1,5–2 semanas)
+
+Contrato: `docs/ONLINE_MODE.md`.
+
+- WebRTC mesh (áudio-first) com sinalização no Socket.IO; vídeo opcional.
+- Microfone, mute, **deafen**, câmera, seleção de dispositivo, indicador de fala.
+- Compartilhamento de tela do Mestre.
+- Chat de texto por mesa com histórico e mensagens de sistema.
+- Presença com estado de mídia; DM pode remover peer da chamada.
+- TURN/STUN configuráveis (Metered Open Relay free; coturn opcional).
+- ICE restart/reconexão; indicador de qualidade.
+- E2E online com fake media (2+ clientes) e teste manual em redes diferentes.
+
+**Saída:** 1 Mestre + 4 jogadores remotos, 30–60 min, áudio/vídeo/chat e
+tabuleiro funcionando sem Discord/Zoom. Sem gravação.
+
+### Fase 6 — Operação e beta simulado (1 semana)
 
 - Deploy 100% free: Vercel (frontend), Render free + keep-alive (backend),
   Atlas M0 (Mongo), Supabase free (storage), GitHub Actions (CI).
+- TURN/LiveKit e `PUBLIC_APP_URL` configurados; HTTPS obrigatório para mídia.
 - Healthcheck, `/metrics` protegido, logs, backup do Atlas.
-- Playtest simulado completo e relatório de release.
+- Playtest simulado completo (presencial + online) e relatório de release.
 - `v1.0.0-beta`.
 
 ## 5. Playtest simulado (substitui a mesa real)
@@ -178,6 +200,7 @@ uma mesa inteira. Ele é o principal critério de release.
 | Mestre | Playwright context + login | 1440×900 |
 | Jogador 1–4 | Playwright contexts + login | 390×844 (iPhone-like) |
 | TV | Playwright context read-only | 1920×1080 |
+| Remoto 1–2 | Playwright context + fake media (flags Chromium) | 1280×800 / 390×844 |
 | Clientes caóticos | `socket.io-client` headless | — |
 
 ### Roteiro (60 min simulados, acelerados)
@@ -193,6 +216,15 @@ uma mesa inteira. Ele é o principal critério de release.
 9. Mudança de cena e volta; medições e auras sobrevivem.
 10. Verificação final de convergência.
 
+**Cenário online (Fase 5):**
+
+1. Mestre e 2 jogadores em contextos separados, com fake mic/camera.
+2. Todos entram por link/convite; áudio conecta; estado de mute/deafen propaga.
+3. Câmera liga/desliga; track de vídeo chega ao outro peer.
+4. Compartilhamento de tela do Mestre aparece; chat funciona.
+5. Derrubar um peer e reconectar; chamada e tabuleiro convergem.
+6. Loop de 30 min acelerado com tabuleiro + voz + dados, sem divergência.
+
 ### Asserções obrigatórias
 
 - Todos os clientes terminam com a mesma `revision` e o mesmo hash de tabuleiro.
@@ -200,6 +232,8 @@ uma mesa inteira. Ele é o principal critério de release.
 - Toda ação rejeitada gera feedback visível.
 - Reconexão <2s e sem perda de estado.
 - TV nunca entra em estado de escrita.
+- Chamada online: mute/deafen/câmera refletem em todos; reconexão recupera áudio.
+- Nenhum áudio/vídeo gravado; credenciais TURN não aparecem em logs.
 - Screenshots por etapa para regressão visual.
 
 ### Onde roda
@@ -220,6 +254,8 @@ uma mesa inteira. Ele é o principal critério de release.
 | Render | web service free | dorme após ~15 min | keep-alive externo + wake no início da sessão |
 | MongoDB Atlas | M0 512 MB | espaço/conexões | TTL de rolls; índices; backup manual |
 | Supabase | 1 GB storage | imagens grandes | Sharp WebP + quotas |
+| Metered Open Relay (TURN) | 20 GB/mês | vídeo em mesh | áudio-first; TURN só quando P2P falha |
+| LiveKit Cloud (SFU, fallback) | 5.000 min WebRTC/mês | ~13 sessões de 6 pessoas | usar só se mesh não bastar |
 | GitHub Actions | público | minutos | e2e só em PRs críticos |
 
 Alternativa para uso privado sem custo: Cloudflare Tunnel apontando para o backend
@@ -232,6 +268,8 @@ local. Não serve para beta público, mas serve para uma sessão remota eventual
 - Ação de turno: p95 <200ms.
 - Zero erro de console em 60 min simulados.
 - Onboarding: mesa + TV + 3 celulares em <5 min.
+- Online: entrar em chamada em <10s; reconexão de áudio em <5s; mute/deafen
+  refletidos em <300ms; 30 min sem queda não recuperada.
 
 ## 8. Não-objetivos do beta
 
@@ -248,3 +286,8 @@ mestre, 3D, voz/vídeo, múltiplas instâncias de backend.
 | Dependência Supabase | adapter de storage desde a Fase 0 |
 | Código morto | remoção de Pixi/órfãos na Fase 0 |
 | Segurança multi-mesa | testes de ataque cross-table no CI |
+| Mesh estourar upload com vídeo | áudio-first; câmera opcional; limite de câmeras; SFU fallback |
+| TURN free esgotar | monitorar 20 GB/mês; preferir P2P; LiveKit free como fallback |
+| NAT/firewall bloquear mídia | TURN TCP/443; ICE restart; teste em 4G/Wi-Fi |
+| Safari iOS quebrar áudio | testes manuais + fallback de UI; sem autoplay forçado |
+| Privacidade de câmera/mic | consentimento explícito; sem gravação; sem log de SDP |

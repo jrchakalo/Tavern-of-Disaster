@@ -20,11 +20,12 @@
 
 Tavern of Disaster is a virtual tabletop where I mix two passions: web development and RPG. The goal is to build a lean, fast real‑time tool for my groups, iterating features as creativity (and playtest) demands.
 
-Restoration status: Phase 1 (`v0.9.2-phase1`) is integrated — authoritative
-realtime protocol with revision/resync/acks, entity-based authorization,
-reconnection, atomic turn advancement, and the `/play/:id` + `/display/:id`
-shells. See `docs/RESTORATION.md`, `docs/REALTIME_PROTOCOL.md` and
-`docs/ORCHESTRATION.md`.
+Restoration status: Phase 2 (`v0.9.3-phase2`) is integrated — authoritative
+realtime protocol, entity-based authorization, table mode with TV display token,
+mobile player controller, QR invites and canonical grid geometry. The next
+front is sheets/dice/systems; online voice/video/chat is planned as its own
+phase (`docs/ONLINE_MODE.md`). See `docs/RESTORATION.md`,
+`docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md` and `docs/ORCHESTRATION.md`.
 
 Currently implemented core features:
 

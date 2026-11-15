@@ -16,9 +16,12 @@ Vue 3 + Vite + TypeScript + Pinia no frontend.
   `system`, `polishing` e `fix`.
 - A restauração está organizada em fases. Fases 0, 1 e 2 concluídas; a próxima é
   `restore/phase-3-sheets-dice`. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`.
-- Contratos: `docs/REALTIME_PROTOCOL.md` (tempo real) e `docs/TABLE_MODE.md`
-  (TV + celulares, display token, QR, geometria de grade). O diário de
+- Contratos: `docs/REALTIME_PROTOCOL.md` (tempo real), `docs/TABLE_MODE.md`
+  (TV + celulares, display token, QR, geometria de grade) e
+  `docs/ONLINE_MODE.md` (jogo remoto + voz/vídeo/chat). O diário de
   decisões/modelos/coders está em `docs/ORCHESTRATION.md`.
+- A frente online é requisito real: a mesma mesa funciona presencial e remota.
+  Voz/vídeo/chat ficam dentro do app; TURN/SFU é infraestrutura invisível.
 - PixiJS está morto (não renderiza). O renderizador oficial é DOM/SVG
   (`MapViewport.vue` + `GridLayer.vue` + `TokenLayer.vue`).
 - O backend não depende mais do Supabase para iniciar: o storage usa o driver
@@ -72,8 +75,11 @@ node chaos/run.mjs                          # caos headless de 6 clientes
 5. **Um tabuleiro, uma geometria.** Coordenadas normalizadas (grid/ViewBox), nunca
    pixels do dispositivo. Pings, medições, auras e tokens usam o mesmo espaço.
 6. **Três modos, três rotas.** `/table/:id` (Mestre), `/play/:id` (Jogador),
-   `/display/:id` (TV read-only).
+   `/display/:id` (TV read-only). O modo online usa as mesmas rotas.
 7. **Nada de feature nova antes do núcleo multi-dispositivo convergir.**
+8. **Mídia não é estado de tabuleiro.** Voz/vídeo/tela são efêmeros, sem
+   `revision`, sem gravação; a sinalização é autenticada por mesa e só
+   DM/PLAYER entram na chamada. TURN/SFU nunca recebem autorização própria.
 
 ## 5. Mapa do backend
 
