@@ -293,76 +293,127 @@ Algoritmo do passo:
 9. `high`/`low` = maior/menor dado de teste não anulado.
 10. `damageBase` (se `damageMode`): crítico → soma dos dois maiores; senão RA.
 
-## 5. OPSH — contrato (base OP1 + suplemento)
+## 5. OPSH — contrato (OP1 core v1.1 + suplemento)
 
-> **Lacuna conhecida:** o PDF do OP1 core não está em
-> `references/ordem-paranormal/`. A base abaixo é a base pública do OP1
-> (atributos, classes, NEX, perícias e testes de d20) e **precisa ser validada**
-> contra o livro core antes do playtest de OPSH. O suplemento em si está
-> integralmente coberto.
+> **Fonte:** `ordem-paranormal-rpg.pdf` (OP1 core v1.1) e
+> `op1-sobrevivendo-ao-horror.pdf`, ambos lidos localmente. A base do OP1
+> abaixo foi validada no livro core. O suplemento acrescenta origens, opções
+> de classe, a classe Sobrevivente, medo, ferimentos e regras opcionais.
 
-### 5.1 Base OP1 usada
+### 5.1 Base OP1 validada
 
-- Cinco atributos (1–5): `agilidade`, `forca`, `intelecto`, `presenca`, `vigor`.
-- Classes: `combatente`, `especialista`, `ocultista`, `sobrevivente`.
-- NEX 5%–99% (ou patentes: recruta, operador, agente especial, oficial de
-  operações, agente de elite).
-- Teste: rola **N d20** (N = atributo), mantém o maior, soma o bônus de
-  treinamento da perícia (`0`, `+5`, `+10`, `+15`) e outros mods vs DT. 20
-  natural = sucesso crítico; todos 1 = falha crítica.
-- Perícias do OP1 (26): acrobacia, adestramento, artes, atletismo, ciencias,
-  crime, diplomacia, enganacao, fortitude, furtividade, iniciativa,
-  intimidacao, intuicao, investigacao, luta, medicina, ocultismo, percepcao,
-  pilotagem, pontaria, reflexos, religiao, sobrevivencia, tatica, tecnologia,
-  vontade.
+- Cinco atributos (0–5): `agilidade`, `forca`, `intelecto`, `presenca`,
+  `vigor`. Criação: todos começam em 1, recebem 4 pontos; máximo inicial 3;
+  pode reduzir um atributo a 0 para ganhar +1 ponto.
+- **Teste:** rola **N d20** (N = valor do atributo), mantém o **maior** e soma
+  o bônus de treinamento da perícia. Com atributo **0**, rola `2d20` e mantém o
+  **pior**. Um **20 natural** no dado escolhido é sucesso automático,
+  independente da DT. **Não existe falha crítica por “todos 1”** no OP1 core.
+- Graus de treinamento: destreinado `+0`, treinado `+5`, veterano `+10`,
+  expert `+15`. Algumas perícias só funcionam se treinadas.
+- **Defesa** = `10 + Agilidade + modificadores`. **Deslocamento** padrão 9 m
+  (6 quadrados).
+- **NEX** 5%–99% em passos de 5%; limite de PE por turno vai de 1 (NEX 5%) a
+  20 (NEX 99%). Patentes (regra opcional de evolução por patentes): recruta,
+  operador, agente especial, oficial de operações, agente de elite.
+- **28 perícias** e atributos-base:
 
-### 5.2 O que o suplemento acrescenta
+| Perícia | Atributo | Perícia | Atributo |
+|---|---|---|---|
+| acrobacia | agilidade | luta | forca |
+| adestramento | presenca | medicina | intelecto |
+| artes | presenca | ocultismo | intelecto |
+| atletismo | forca | percepcao | presenca |
+| atualidades | intelecto | pilotagem | agilidade |
+| ciencias | intelecto | pontaria | agilidade |
+| crime | agilidade | profissao | intelecto |
+| diplomacia | presenca | reflexos | agilidade |
+| enganacao | presenca | religiao | presenca |
+| fortitude | vigor | sobrevivencia | intelecto |
+| furtividade | agilidade | tatica | intelecto |
+| iniciativa | agilidade | tecnologia | intelecto |
+| intimidacao | presenca | vontade | presenca |
+| intuicao | intelecto | | |
+| investigacao | intelecto | | |
 
-- **Origens novas** e opções para as três classes.
-- **Nova classe `sobrevivente`** (estágios 1–5, PV `8+VIG`, PE `2+PRE`,
-  Sanidade 8; ou PD `4+PRE` +2/estágio na regra sem Sanidade).
+`profissao` aceita um campo livre (ex.: psicólogo, engenheiro, médico legal).
+
+### 5.2 Classes e recursos (OP1 core)
+
+| Classe | PV inicial | PV por NEX | PE inicial | PE por NEX | SAN inicial | SAN por NEX |
+|---|---|---|---|---|---|---|
+| combatente | 20+VIG | 4+VIG | 2+PRE | 2+PRE | 12 | 3 |
+| especialista | 16+VIG | 3+VIG | 3+PRE | 3+PRE | 16 | 4 |
+| ocultista | 12+VIG | 2+VIG | 4+PRE | 4+PRE | 20 | 5 |
+
+### 5.3 O que o suplemento acrescenta
+
+- **Origens novas**, novas opções para as três classes e a classe
+  **`sobrevivente`** (estágios 1–5; NEX 0%).
+- **Sobrevivente:** PV `8+VIG` (+2/estágio), PE `2+PRE` (+1/estágio), SAN 8
+  (+2/estágio); limite de PE sempre 1; trilhas durão/esperto/esotérico.
 - **Jogando sem Sanidade (opcional):** PE + SAN viram **PD**.
-  - NEX: Combatente `6+PRE` (+3+PRE por NEX), Especialista `8+PRE` (+4+PRE),
-    Ocultista `10+PRE` (+5+PRE), Sobrevivente `4+PRE` (+2/estágio).
-  - Patentes: Combatente `8+PRE` (+4+PRE), Especialista `12+PRE` (+6+PRE),
-    Ocultista `16+PRE` (+8+PRE), Sobrevivente `4+PRE` (+2/estágio).
-  - Dano mental reduz um passo por dado e divide a quantidade de dados pela
-    metade (arredonda para cima).
-  - Dormir recupera PV; relaxar recupera PD.
-- **Medo em jogo:** testes de Vontade contra DT; falha gera abalo/pânico e
-  perda de SAN/PD; visões de medo causam dano mental.
+  - NEX: combatente `6+PRE` (+3+PRE), especialista `8+PRE` (+4+PRE),
+    ocultista `10+PRE` (+5+PRE), sobrevivente `4+PRE` (+2/estágio).
+  - Patentes: combatente `8+PRE` (+4+PRE), especialista `12+PRE` (+6+PRE),
+    ocultista `16+PRE` (+8+PRE), sobrevivente `4+PRE` (+2/estágio).
+  - Todo dano mental vira perda de PD; cada dado de dano mental cai um passo e
+    a quantidade de dados é dividida pela metade (arredonda para cima).
+  - Dormir recupera PV; relaxar recupera PD; prato favorito dá +2 PD temporários.
+  - Com PD, “perturbado” = PD abaixo da metade do total; “enlouquecendo” =
+    dano mental maior que os PD atuais.
+- **Evolução por patentes (opcional):** substitui o NEX. PV e PD por patente:
+  combatente `20+VIG` (+10+VIG) e `8+PRE` (+4+PRE); especialista `16+VIG`
+  (+8+VIG) e `12+PRE` (+6+PRE); ocultista `12+VIG` (+6+VIG) e `16+PRE`
+  (+8+PRE). Para pré-requisitos, o nível de experiência é igual ao limite de PD.
+- **Medo em jogo:** fonte de medo causa dano mental; teste de **Vontade**
+  anula ou reduz à metade conforme a fonte (ex.: `1d4` DT 15 anula; `1d6`
+  DT 20 metade; `2d6` DT 25 metade; `4d4` DT 30; `4d8` DT 35; `4d12` DT 40).
+  Ambiente horripilante causa 1, 2 ou 5 de dano mental por rodada.
+  Quando a SAN chega a 0 por dano mental (ou sofre dano mental com SAN 0), rola
+  `2d10 + 1` por efeito de medo anterior na mesma cena na **Tabela 2.2**
+  (encorajamento, surto de adrenalina, hesitação, fraqueza, lapso, ansiedade,
+  desorientação, desespero, histeria, abalo, alucinação, susto, pânico…).
+  Efeitos duram até recuperar 1 SAN; efeito repetido vira o próximo da tabela.
+  Ações: **acalmar** (Diplomacia/Profissão psicólogo/Religião, DT +5 por uso na
+  cena) e **se entregar para o medo** (1×/sessão, rola 2d10+5 e recupera
+  `1d4 SAN por NEX` na rodada seguinte).
 - **Ferimentos debilitantes (opcional):** ao falhar no teste de Fortitude de
   dano massivo, rola `1d6` (1 Agi, 2 For, 3 Int, 4 Pre, 5 Vig, 6 superficial).
-  Penalidade `−O` no atributo; se Vigor, reduz PV máx. em `−1` por 5% de NEX.
-  Cura: Medicina DT 20 em interlúdio.
-- **Traumas/insanidade** e as demais regras opcionais do capítulo 2.
+  Penalidade `−O` no atributo; se Vigor, reduz PV máx. em `−1` por 5% de NEX
+  (ou por nível). Cura: Medicina DT 20 em interlúdio.
+- **Regras opcionais do capítulo 2** (NEX & experiência, sem mapa, combate
+  narrativo, conjuração complexa etc.) entram como flags de mesa, sem
+  compêndio de texto.
 
-### 5.3 Ficha OPSH (campos)
+### 5.4 Ficha OPSH (campos)
 
 ```ts
 systemKey: 'ordem-paranormal-sobrevivendo-ao-horror';
-attributes: { agilidade; forca; intelecto; presenca; vigor }; // 1..5
+attributes: { agilidade; forca; intelecto; presenca; vigor }; // 0..5
 skills: Record<SkillKey, 0 | 5 | 10 | 15>;                     // bônus de treino
 profile: { classe; origem; trilha?; nex?; patente?; nivel?; idade?; conceito? };
 stats: {
-  currentHP; maxHP; defense;
+  currentHP; maxHP; defense;   // defense = 10 + Agi + mods
   currentPE; maxPE;            // modo SAN
   currentSAN; maxSAN;          // modo SAN
   currentPD; maxPD;            // modo PD (sem Sanidade)
 };
+progressionMode?: 'nex' | 'patente' | 'estagio';
 sanityMode: 'san' | 'pd';
 conditions?: string[];
 traumas?: string[];
-injuries?: Array<{ attribute: string; penalty: number }>;
+injuries?: Array<{ attribute: string; penalty: number; note?: string }>;
 rituals?: Array<{ name; circle?; cost?; description? }>;
 attacks?: Array<{ name; bonus?; damage?; notes? }>;
 inventory?: Array<{ name; quantity?; notes? }>;
 notes?: string;
 ```
 
-O mesmo motor de expressão do backend atende OPSH (`4d20kh1+5`), então **não
-há engine nova** para OPSH; a ficha calcula a expressão a partir do atributo e
-do treino.
+O mesmo motor de expressão do backend atende OPSH. A ficha gera
+`Nd20kh1+5` (atributo > 0) ou `2d20kl1+5` (atributo 0); o dado escolhido 20
+é sucesso automático e a UI destaca isso. **Não** há falha crítica por “todos
+1” no OP1; não inventar essa regra.
 
 ## 6. UI
 
@@ -398,7 +449,9 @@ do treino.
       limite de 4 rolados/3 somados, dano no crítico — cobertos por unitários.
 - [ ] Tabelas de lesão/trauma/falha crítica rolam e voltam com chave/resumo.
 - [ ] PV/PD no token/TV e reconexão sem divergência.
-- [ ] Ficha OPSH com Sanidade **e** PD, ferimentos debilitantes e testes d20.
+- [ ] Ficha OPSH com Sanidade **e** PD, 28 perícias, testes `Nd20` (20 natural
+      = sucesso automático, atributo 0 = pior de 2d20), ferimentos
+      debilitantes, medo e as três progressões (NEX/patente/estágio).
 - [ ] E2E do one-shot: DM + 2 jogadores, cena, tokens, fichas OP2, testes de
       perícia, ataque/dano, PD/medo, log e reconexão.
 - [ ] E2E online: 2 contextos remotos (sem TV).
@@ -420,8 +473,8 @@ do treino.
 
 ## 9. Pendências
 
-1. PDF do **OP1 core** para validar a base do OPSH (perícias, classes,
-   progressão, Defesa, medo). Sem ele, a base acima é a referência pública.
-2. Confirmar se o one-shot usará os **dois** PDFs do Beta (Missão 1 e Missão 2)
+1. Confirmar se o one-shot usará os **dois** PDFs do Beta (Missão 1 e Missão 2)
    ou só um; a implementação cobre os dois.
-3. Rituais: só nome/custo/descrição (confirmado).
+2. Rituais: só nome/custo/descrição (confirmado).
+3. OPSH: o core v1.1 foi lido e validado; falta apenas decidir, na mesa, entre
+   progressão por NEX, por patentes ou por estágios (a ficha suporta as três).

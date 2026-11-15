@@ -455,9 +455,9 @@ atendem. **OPSH** é o suplemento de OP1 que a mesa também quer, com peso igual
 
 ### 16.3 Pendências
 
-1. PDF do **OP1 core** para validar a base do OPSH (perícias, classes,
-   progressão, Defesa, medo). A base pública está documentada e marcada.
-2. Confirmar se o one-shot usa as duas missões do Beta ou só uma.
+1. Confirmar se o one-shot usa as duas missões do Beta ou só uma.
+2. Decidir a progressão de OPSH na mesa: NEX, patentes ou estágios (a ficha
+   suporta as três). O core v1.1 já foi lido e validado.
 
 ### 16.4 Quadro
 
