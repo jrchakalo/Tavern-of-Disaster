@@ -23,10 +23,11 @@ Tavern of Disaster is a virtual tabletop where I mix two passions: web developme
 Restoration status: Phase 3 (`v0.9.4-phase3`) is integrated — realtime protocol,
 table mode with TV display token/QR, mobile player controller, canonical grid
 geometry, realtime character sheets with HP sync, server-authoritative dice
-(D&D 5e + Cyberpunk RED) and persisted roll log. The next front is media/scenes;
-online voice/video/chat is planned as Phase 5 (`docs/ONLINE_MODE.md`). See
-`docs/RESTORATION.md`, `docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md`,
-`docs/SHEETS_DICE.md` and `docs/ORCHESTRATION.md`.
+(D&D 5e + Cyberpunk RED) and persisted roll log. The next priority is
+**Phase 3.1: Ordem Paranormal 2**, the system for the first one-shot
+(`docs/ORDEM_PARANORMAL.md`); media/scenes and online voice/video/chat come
+after. See `docs/RESTORATION.md`, `docs/REALTIME_PROTOCOL.md`,
+`docs/TABLE_MODE.md`, `docs/SHEETS_DICE.md` and `docs/ORCHESTRATION.md`.
 
 Currently implemented core features:
 
