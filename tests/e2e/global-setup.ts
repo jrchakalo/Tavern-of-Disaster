@@ -14,7 +14,9 @@ const frontendDir = path.join(repoRoot, 'frontend');
 async function waitForResource(resource: string) {
   await waitOn({
     resources: [resource],
-    timeout: 60_000,
+    // `ts-node` compila o backend inteiro no boot; máquinas carregadas passam
+    // facilmente dos 60s originais e derrubavam specs válidos.
+    timeout: 180_000,
     interval: 500,
     reverse: false,
     tcpTimeout: 10_000,
