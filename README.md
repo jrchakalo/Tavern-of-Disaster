@@ -20,12 +20,13 @@
 
 Tavern of Disaster is a virtual tabletop where I mix two passions: web development and RPG. The goal is to build a lean, fast real‑time tool for my groups, iterating features as creativity (and playtest) demands.
 
-Restoration status: Phase 2 (`v0.9.3-phase2`) is integrated — authoritative
-realtime protocol, entity-based authorization, table mode with TV display token,
-mobile player controller, QR invites and canonical grid geometry. The next
-front is sheets/dice/systems; online voice/video/chat is planned as its own
-phase (`docs/ONLINE_MODE.md`). See `docs/RESTORATION.md`,
-`docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md` and `docs/ORCHESTRATION.md`.
+Restoration status: Phase 3 (`v0.9.4-phase3`) is integrated — realtime protocol,
+table mode with TV display token/QR, mobile player controller, canonical grid
+geometry, realtime character sheets with HP sync, server-authoritative dice
+(D&D 5e + Cyberpunk RED) and persisted roll log. The next front is media/scenes;
+online voice/video/chat is planned as Phase 5 (`docs/ONLINE_MODE.md`). See
+`docs/RESTORATION.md`, `docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md`,
+`docs/SHEETS_DICE.md` and `docs/ORCHESTRATION.md`.
 
 Currently implemented core features:
 
@@ -37,6 +38,8 @@ Currently implemented core features:
 * Read-only TV board (`/display/:id`) authenticated by a dedicated display token
 * Offline QR codes for player invite and TV pairing
 * Canonical grid-unit geometry for pings and measurements across devices
+* Realtime D&D 5e / Cyberpunk RED character sheets with HP/CA synced to tokens
+* Server-authoritative dice (exploding `!`), system presets and persisted roll log
 * Automated tests: backend unit + Socket.IO integration, frontend unit,
   Playwright E2E and a 6-client chaos harness
 * Multi-footprint tokens with footprint collision validation

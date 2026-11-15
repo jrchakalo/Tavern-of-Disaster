@@ -4,12 +4,11 @@
 > skill, designação, branch, revisão, correção e merge entra aqui. Se o contexto
 > da conversa se perder, este arquivo é a fonte da verdade do processo.
 >
-> Última atualização: 2026-11-15. **Fases 1 e 2 concluídas e aprovadas**:
-> `v0.9.2-phase1` (backend 64/64, frontend 43/43, E2E 8/8, caos 14/14) e
-> `v0.9.3-phase2` (backend 76/76, frontend 113/113, E2E 22/22, table mode 9/9,
-> display security 5/5, caos 14/14). Próxima: Fase 3 (fichas, dados, sistemas).
-> A frente **online** (voz/vídeo/chat sem Discord) foi incorporada ao plano como
-> Fase 5 em `docs/ONLINE_MODE.md`.
+> Última atualização: 2026-11-15. **Fases 1, 2 e 3 concluídas e aprovadas**:
+> `v0.9.2-phase1`, `v0.9.3-phase2` e `v0.9.4-phase3` (backend 103/103,
+> frontend 185/185, E2E 34/34, caos 14/14). Próxima: Fase 4 (mídia e cenas).
+> A frente **online** (voz/vídeo/chat sem Discord) é a Fase 5 em
+> `docs/ONLINE_MODE.md`; o deploy/beta é a Fase 6.
 
 ## 1. Modelo de trabalho
 
@@ -239,6 +238,10 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-15 | Frontend P3 (GLM-5.3-Flash) | `restore/phase-3-frontend` / `8fbc829` + `98ae8d6` | **Aprovado** | `type-check` OK; 170/170; build OK | Store/socket de ficha, HP, roll log e dice local; ordem de `recentRolls` e `characterId: null` alinhados. |
 | 2026-11-15 | QA P3 (DeepSeek V4.1 Flash 1017) | `restore/phase-3-qa` / `936db06` | **Aprovado com ressalvas** | Type-check OK; specs prontos; execução bloqueada pré-integração | E2E ficha/PV/dados/sistema + 2 contextos online; rodar após backend/UX. |
 | 2026-11-15 | Backend P3 (DeepSeek V4.1 Flash 1017) | `restore/phase-3-backend` / `ed77a93` | **Aprovado** | `npm test` 103/103; build OK; 14 testes novos de integração | Ficha realtime, PV↔token, dados com `!`, rate limit, log/TTL e seed D&D/Cyberpunk. |
+| 2026-11-15 | UX P3 (MiMo-V2.6-Flash) | `restore/phase-3-ux` / `74af03d`..`a0b6a5c` | **Aprovado** | `type-check` OK; 185/185; build OK; table-mode 9/9 | Ficha D&D 5e/Cyberpunk, token↔ficha, PV no card/TV, dados/log, seletor de sistema. |
+| 2026-11-15 | Integração P3 final | `restore/phase-3-sheets-dice` / `991744a` | **Aprovado** | E2E completo **34/34**; sheets-dice 8/8; online 4/4; caos PASS | Correções do PO: auth de `/api/systems` por rota e probe de HP online como DM. |
+| 2026-11-15 | Backend/PO | `characterRouter` com auth global em `/api` derrubava `/api/systems` com 401 | Auth por rota no character router; teste de regressão com a ordem real do server | 1 | corrigido em `1abcedb` |
+| 2026-11-15 | QA/PO | Spec online sondava HP de ficha do DM com socket do jogador | Usar socket do DM (dono/DM apenas, §3.2) | 1 | corrigido em `991744a` |
 | — | — | — | — | — | — |
 
 ## 11. Riscos e limites

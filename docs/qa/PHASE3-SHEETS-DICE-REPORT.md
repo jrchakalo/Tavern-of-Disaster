@@ -4,11 +4,11 @@
 > Contrato de referência: `docs/SHEETS_DICE.md` sobre
 > `docs/REALTIME_PROTOCOL.md` e `docs/TABLE_MODE.md`.
 >
-> **Status em 2026-11-15: BLOQUEADO (pré-integração).** A branch de QA saiu de
-> `main`/`dcfb40a`, que contém apenas contrato e tipos compartilhados; backend,
-> frontend e UX da Fase 3 ainda não estão nesta branch. Os specs foram
-> executados e falham com a lista de superfícies ausentes (§5.4). **Nenhum
-> "pass" foi fabricado.** O veredito final é do PO após a integração (§7).
+> **Status em 2026-11-15: APROVADO na integração.** Backend, frontend e UX
+> foram mesclados em `restore/phase-3-sheets-dice`; os dois specs passaram
+> (`sheets-dice` 8/8, `sheets-dice-online` 4/4) e a suíte E2E completa fez
+> **34/34**. O bloqueio pré-integração descrito abaixo fica como histórico.
+> Veredito do PO em §7.
 
 ## 1. Escopo
 
@@ -195,23 +195,24 @@ uma falha da rota em si.
 
 | Campo | Valor |
 |---|---|
-| Data/hora da execução | 2026-11-15 (pré-integração) |
-| Branch de QA | `restore/phase-3-qa` @ `dcfb40a` |
-| Commit de integração validado | **pendente** (`restore/phase-3-sheets-dice`) |
+| Data/hora da execução | 2026-11-15 21:19 UTC |
+| Commit de integração validado | `991744a` (`restore/phase-3-sheets-dice`) |
 | `tsc --noEmit -p tsconfig.json` | **PASS** |
-| `npx playwright test specs/sheets-dice.spec.ts --workers=1` | **BLOCKED** (1 failed, 7 did not run) |
-| `npx playwright test specs/sheets-dice-online.spec.ts --workers=1` | **BLOCKED** (1 failed, 3 did not run) |
-| Runtime das duas execuções bloqueadas | <30 s por spec |
-| Veredito do PO | **PENDENTE** |
-| Observações do PO | preencher após a integração |
+| `npx playwright test specs/sheets-dice.spec.ts --workers=1` | **8/8 PASS** (35,1 s) |
+| `npx playwright test specs/sheets-dice-online.spec.ts --workers=1` | **4/4 PASS** (23,2 s) |
+| Suíte E2E completa (`npx playwright test --workers=1`) | **34/34 PASS** (1,5 min) |
+| Backend `npm test` | **103/103** |
+| Frontend `npm run test:unit` | **185/185** |
+| Veredito do PO | **APROVADO** |
+| Observações do PO | Corrigidos no PO: `/api/systems` sofria 401 porque o auth global do `characterRouter` estava montado em `/api`; auth agora é por rota. O probe de HP do spec online usava o socket do jogador em ficha do DM; passou a usar o socket do DM, conforme §3.2. |
 
 ## 8. Lacunas e riscos conhecidos
 
 | # | Lacuna / risco | Impacto | Situação |
 |---|---|---|---|
-| L1 | Fase 3 não integrada na branch de QA | Specs bloqueiam por contrato | **Aberto**; reexecutar após o merge |
-| L2 | Seletores de ficha/card/TV (`character-sheet`, `token-card__hp`, `character-link`, `system-preset-btn`) dependem da UX da Fase 3 | Ajuste visual pode quebrar o E2E | O harness usa fallbacks por role/label e falha com mensagem do contrato; revisar na integração |
-| L3 | Abertura da ficha no `/play` não tem seletor fixado no contrato | Se a UX não tornar o card/link clicável, o teste falha | **Intencional**: §8.1/§8.2 exigem ficha acessível ao jogador |
+| L1 | Fase 3 não integrada na branch de QA | Specs bloqueiam por contrato | **Resolvido**: validado em `991744a` |
+| L2 | Seletores de ficha/card/TV dependem da UX | Ajuste visual pode quebrar o E2E | **Resolvido**: UX expôs `.character-sheet`, `.token-card__hp`, `.character-link`, `.system-preset-btn` |
+| L3 | Abertura da ficha no `/play` não tem seletor fixado no contrato | Se a UX não tornar o card/link clicável, o teste falha | **Resolvido**: card/initiative abrem a ficha |
 | L4 | Log de rolagens no `/play` não é exigido pelo harness | O teste usa DM/TV para UI e REST para o jogador | `SHEETS_DICE.md` §8.3 fala em “painel/TV”; o painel do jogador é desejável, mas não bloqueia o aceite atual |
 | L5 | Explosão usa RNG real | `1d10!` isolado pode não explodir | Mitigado com `100d2!`; a UI prova o preset e o payload prova a mecânica |
 | L6 | Ficha online pertence ao DM | O jogador não edita a ficha online no P3-QA-2 | Cobre o resumo privado do §2; a edição pelo jogador já é coberta no P3-QA-1 |
