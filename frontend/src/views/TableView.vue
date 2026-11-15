@@ -170,6 +170,15 @@ const {
 } = storeToRefs(tableStore);
 
 const characterFetchScope = ref<'player' | 'dm'>('player');
+// O DM precisa de TODAS as fichas da mesa para abrir qualquer ficha pela
+// iniciativa (§8.2); jogadores seguem com as próprias.
+watch(
+  isDM,
+  (value) => {
+    characterFetchScope.value = value ? 'dm' : 'player';
+  },
+  { immediate: true },
+);
 const activeCharacterId = ref<string | null>(null);
 const showCharacterSheet = ref(false);
 const showActionLog = ref(false);
