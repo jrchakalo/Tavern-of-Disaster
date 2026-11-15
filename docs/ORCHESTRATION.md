@@ -209,7 +209,8 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-14 | Frontend P2 (GLM-5.3-Flash) | `restore/phase-2-frontend` / `d36ca84` | **Aprovado** | `type-check` OK; `test:unit` 69/69; `build` OK | `connectDisplay` sem JWT/refresh, `canWrite`, join por convite e REST de token. Ping em pixel no `TableView` sinalizado para UX. |
 | 2026-11-15 | Backend P2 (DeepSeek V4.1 Flash 1017) | `restore/phase-2-backend` / `c46d6f0` | **Aprovado** | `npm test` 76/76; `npm run build` OK; 12 testes de integração display | Token SHA-256, auth DISPLAY, guard read-only, rollback/rotação e ping em grade. |
 | 2026-11-15 | QA P2 (DeepSeek V4.1 Flash 1017) | `restore/phase-2-qa` / `4c3b50f` | **Aprovado com ressalvas** | `display-security` 5/5 PASS na integração; `table-mode` bloqueado até a UX | Relatório em `docs/qa/PHASE2-TABLE-MODE-REPORT.md`; falta rodar 1 TV + 5 celulares. |
-| 2026-11-15 | UX P2 (MiMo-V2.6-Flash) | `restore/phase-2-ux` / `03c16b4` | **Em correção** | `type-check` OK; 76/76; build OK | 4 correções de integração devolvidas: card fora do turno, QR relativo, ping heurístico, redirect pós-login. |
+| 2026-11-15 | UX P2 (MiMo-V2.6-Flash) | `restore/phase-2-ux` / `03c16b4` + `2273862` | **Aprovado com ressalvas** | `type-check` OK; 109/109 na integração; build OK | Card fora do turno, QR absoluto, ping no grid e redirect pós-login corrigidos; resta `pingCenterPixels` (follow-up). |
+| 2026-11-15 | Regressão P1 na integração P2 | `restore/phase-2-table-mode` | **Aprovado** | happy-path + realtime-authz + display-security: **13/13** | Nenhuma regressão da Fase 1 após backend/frontend/UX da Fase 2. |
 | — | — | — | — | — | (preencher a cada PR) |
 
 ## 10. Registro de correções
