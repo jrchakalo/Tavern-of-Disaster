@@ -68,6 +68,20 @@ export function mapScene(scene: IScene | (IScene & { toObject?: () => IScene }))
   };
 }
 
+/** Recursos OP2/OPSH expostos no resumo (undefined em D&D/Cyberpunk). */
+function mapCharacterVitals(stats?: ICharacter['stats']) {
+  return {
+    currentPD: stats?.currentPD,
+    maxPD: stats?.maxPD,
+    armorPoints: stats?.armorPoints,
+    armorPointsMax: stats?.armorPointsMax,
+    currentPE: stats?.currentPE,
+    maxPE: stats?.maxPE,
+    currentSAN: stats?.currentSAN,
+    maxSAN: stats?.maxSAN,
+  };
+}
+
 export function mapCharacterSummary(
   character: ICharacter,
   tokenId?: string | null
@@ -81,6 +95,7 @@ export function mapCharacterSummary(
     currentHP: character.stats?.currentHP,
     maxHP: character.stats?.maxHP,
     defense: character.stats?.defense,
+    ...mapCharacterVitals(character.stats),
     tokenId: tokenId ?? null,
   };
 }
@@ -92,6 +107,7 @@ export function mapCharacterSummaryLite(character: ICharacter): CharacterSummary
     currentHP: character.stats?.currentHP,
     maxHP: character.stats?.maxHP,
     defense: character.stats?.defense,
+    ...mapCharacterVitals(character.stats),
   };
 }
 

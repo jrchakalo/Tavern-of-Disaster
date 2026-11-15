@@ -56,6 +56,46 @@ export const SYSTEM_SEEDS: SystemSeed[] = [
       { key: 'medium-damage', label: 'Dano médio', expression: '3d6', category: 'damage' },
     ],
   },
+  {
+    // Fase 3.1 — atributos são dados graduados (d4..d12), sem movimento fixo.
+    key: 'ordem-paranormal-2',
+    name: 'Ordem Paranormal 2 (Playtest)',
+    description: 'Investigação sobrenatural com atributos em dados graduados e testes de passo.',
+    defaultAttributes: [
+      { key: 'fisico', label: 'Físico', type: 'number' },
+      { key: 'mente', label: 'Mente', type: 'number' },
+      { key: 'emocao', label: 'Emoção', type: 'number' },
+    ],
+    dicePresets: [
+      { key: 'attribute-d4', label: 'Dado de atributo d4', expression: '1d4', category: 'attribute' },
+      { key: 'attribute-d6', label: 'Dado de atributo d6', expression: '1d6', category: 'attribute' },
+      { key: 'attribute-d8', label: 'Dado de atributo d8', expression: '1d8', category: 'attribute' },
+      { key: 'attribute-d10', label: 'Dado de atributo d10', expression: '1d10', category: 'attribute' },
+      { key: 'attribute-d12', label: 'Dado de atributo d12', expression: '1d12', category: 'attribute' },
+      { key: 'damage-light', label: 'Dano leve (1d6)', expression: '1d6', category: 'damage' },
+      { key: 'damage-medium', label: 'Dano médio (1d8)', expression: '1d8', category: 'damage' },
+      { key: 'damage-heavy', label: 'Dano pesado (1d10)', expression: '1d10', category: 'damage' },
+    ],
+  },
+  {
+    // Fase 3.1 — base OP1 + suplemento; atributos numéricos e pools de d20.
+    key: 'ordem-paranormal-sobrevivendo-ao-horror',
+    name: 'Ordem Paranormal: Sobrevivendo ao Horror',
+    description: 'Horror investigativo com atributos numéricos, NEX e testes de Nd20.',
+    defaultAttributes: [
+      { key: 'agilidade', label: 'Agilidade', type: 'number' },
+      { key: 'forca', label: 'Força', type: 'number' },
+      { key: 'intelecto', label: 'Intelecto', type: 'number' },
+      { key: 'presenca', label: 'Presença', type: 'number' },
+      { key: 'vigor', label: 'Vigor', type: 'number' },
+    ],
+    dicePresets: [
+      { key: 'check-1d20', label: 'Teste (1d20)', expression: '1d20', category: 'check' },
+      { key: 'check-2d20', label: 'Teste (2d20kh1)', expression: '2d20kh1', category: 'check' },
+      { key: 'check-3d20', label: 'Teste (3d20kh1)', expression: '3d20kh1', category: 'check' },
+      { key: 'check-4d20', label: 'Teste (4d20kh1)', expression: '4d20kh1', category: 'check' },
+    ],
+  },
 ];
 
 /**

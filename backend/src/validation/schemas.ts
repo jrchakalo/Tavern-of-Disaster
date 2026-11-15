@@ -264,14 +264,76 @@ export const zPingPayload = z.object({
 });
 
 // Dice ---------------------------------------------------------------------
-export const zRollDicePayload = z.object({
-  tableId,
-  expression: trimmedString(1, 80),
-  tokenId: objectId.optional(),
-  characterId: objectId.optional(),
-  metadata: optionalTrimmedString(128).optional(),
-  tags: z.array(tagSchema).max(8).optional(),
+const dieSizeSchema = z.union([
+  z.literal(4),
+  z.literal(6),
+  z.literal(8),
+  z.literal(10),
+  z.literal(12),
+  z.literal(20),
+]);
+const stepAttributeEnum = z.enum(['fisico', 'mente', 'emocao']);
+const stepTargetEnum = z.enum(['attribute', 'skill']);
+const opTableEnum = z.enum(['lesao', 'trauma', 'falha-critica']);
+
+/** Payload do motor de passo do OP2 (ver docs/ORDEM_PARANORMAL.md §4). */
+export const zStepRollPayload = z.object({
+  attribute: stepAttributeEnum,
+  attributeDie: dieSizeSchema,
+  skillKey: trimmedString(1, 64),
+  skillDie: dieSizeSchema,
+  bonusDice: z.array(dieSizeSchema).max(2, { message: 'Limite de 2 dados bônus.' }).optional(),
+  stepDelta: z.number().int().min(-2).max(2).optional(),
+  stepTarget: stepTargetEnum.optional(),
+  difficulty: z.number().int().min(1).max(100).optional(),
+  dreadDie: dieSizeSchema.nullable().optional(),
+  label: optionalTrimmedString(100).optional(),
+  damageModifier: z.number().int().min(-100).max(100).optional(),
+  damageMode: z.boolean().optional(),
 });
+
+/**
+ * Compatibilidade: `expression` continua válida e sozinha. O payload aceita
+ * exatamente um entre `expression`, `step` e `table`.
+ */
+export const zRollDicePayload = z
+  .object({
+    tableId,
+    expression: trimmedString(1, 80).optional(),
+    step: zStepRollPayload.optional(),
+    table: opTableEnum.optional(),
+    modifier: z.number().int().min(-10).max(10).optional(),
+    tokenId: objectId.optional(),
+    characterId: objectId.optional(),
+    metadata: optionalTrimmedString(128).optional(),
+    tags: z.array(tagSchema).max(8).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const modes = [value.expression, value.step, value.table].filter(
+      (entry) => entry !== undefined
+    ).length;
+    if (modes === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expression'],
+        message: 'Informe "expression", "step" ou "table".',
+      });
+    }
+    if (modes > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expression'],
+        message: 'Use apenas um entre "expression", "step" e "table".',
+      });
+    }
+    if (value.modifier !== undefined && value.table === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['modifier'],
+        message: 'O modificador só se aplica a rolagens de tabela.',
+      });
+    }
+  });
 
 // Characters ---------------------------------------------------------------
 const characterAttributeKey = trimmedString(1, 64);
@@ -282,25 +344,50 @@ const characterSkillValue = z.union([z.number().finite(), trimmedString(1, 256)]
 const characterSkills = z
   .record(characterAttributeKey, characterSkillValue)
   .refine((value) => Object.keys(value).length <= 64, { message: 'Limite de 64 perícias.' });
-const zCharacterStats = z
+const statValue = (max = 100000) => z.number().finite().min(0).max(max).optional();
+const armorValue = () => z.number().finite().min(0).max(10000).optional();
+export const zCharacterStats = z
   .object({
-    currentHP: z.number().finite().min(0).max(100000).optional(),
-    maxHP: z.number().finite().min(0).max(100000).optional(),
+    currentHP: statValue(),
+    maxHP: statValue(),
     defense: z.number().finite().min(0).max(10000).optional(),
     baseInitiative: z.number().finite().min(-50).max(1000).optional(),
+    currentPD: statValue(),
+    maxPD: statValue(),
+    armorPoints: armorValue(),
+    armorPointsMax: armorValue(),
+    currentPE: statValue(),
+    maxPE: statValue(),
+    currentSAN: statValue(),
+    maxSAN: statValue(),
   })
   .superRefine((stats, ctx) => {
-    if (
-      stats.currentHP !== undefined &&
-      stats.maxHP !== undefined &&
-      stats.currentHP > stats.maxHP
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['currentHP'],
-        message: 'HP atual não pode exceder o máximo.',
-      });
-    }
+    const pairs: Array<{
+      current: keyof typeof stats;
+      max: keyof typeof stats;
+      message: string;
+    }> = [
+      { current: 'currentHP', max: 'maxHP', message: 'HP atual não pode exceder o máximo.' },
+      { current: 'currentPD', max: 'maxPD', message: 'PD atual não pode exceder o máximo.' },
+      { current: 'currentPE', max: 'maxPE', message: 'PE atual não pode exceder o máximo.' },
+      { current: 'currentSAN', max: 'maxSAN', message: 'SAN atual não pode exceder o máximo.' },
+      {
+        current: 'armorPoints',
+        max: 'armorPointsMax',
+        message: 'Pontos de armadura atuais não podem exceder o máximo.',
+      },
+    ];
+    pairs.forEach(({ current, max, message }) => {
+      const currentValue = stats[current];
+      const maxValue = stats[max];
+      if (currentValue != null && maxValue != null && currentValue > maxValue) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [current as string],
+          message,
+        });
+      }
+    });
   });
 const characterNotes = optionalTrimmedString(1024);
 const characterKeyList = z
@@ -317,8 +404,60 @@ const zCharacterProfile = z
     alignment: optionalTrimmedString(100).optional(),
     speed: z.number().finite().min(0).max(100000).optional(),
     hitDice: optionalTrimmedString(32).optional(),
+    perfil: z.enum(['executor', 'analista', 'vigilante']).optional(),
+    vocacao: optionalTrimmedString(100).optional(),
+    idade: z.number().int().min(0).max(1000).optional(),
+    classe: optionalTrimmedString(100).optional(),
+    origem: optionalTrimmedString(100).optional(),
+    trilha: optionalTrimmedString(100).optional(),
+    nex: z.number().int().min(0).max(100).optional(),
+    patente: optionalTrimmedString(100).optional(),
+    conceito: optionalTrimmedString(500).optional(),
   })
   .optional();
+const zCharacterFear = z
+  .object({
+    dreadDie: dieSizeSchema.nullable().optional(),
+    active: z.boolean().optional(),
+    notes: optionalTrimmedString(500).optional(),
+  })
+  .optional();
+const zCharacterRelations = z
+  .array(
+    z.object({
+      name: trimmedString(1, 100),
+      grade: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+      note: optionalTrimmedString(500).optional(),
+    })
+  )
+  .max(20, { message: 'Limite de 20 relações.' })
+  .optional();
+const zCharacterRituals = z
+  .array(
+    z.object({
+      name: trimmedString(1, 100),
+      cost: optionalTrimmedString(100).optional(),
+      circle: z.number().int().min(0).max(5).optional(),
+      description: optionalTrimmedString(2048).optional(),
+    })
+  )
+  .max(50, { message: 'Limite de 50 rituais.' })
+  .optional();
+const zCharacterStringList = z
+  .array(trimmedString(1, 100))
+  .max(50, { message: 'Limite de 50 itens.' })
+  .optional();
+const zCharacterInjuries = z
+  .array(
+    z.object({
+      attribute: trimmedString(1, 100),
+      penalty: z.number().finite().min(-100).max(100),
+      note: optionalTrimmedString(500).optional(),
+    })
+  )
+  .max(20, { message: 'Limite de 20 ferimentos.' })
+  .optional();
+const zCharacterSanityMode = z.enum(['san', 'pd']).optional();
 const zCharacterAttacks = z
   .array(
     z.object({
@@ -387,6 +526,13 @@ const characterBodyBase = {
   features: zCharacterFeatures,
   inventory: zCharacterInventory,
   spellSlots: zCharacterSpellSlots,
+  fear: zCharacterFear,
+  relations: zCharacterRelations,
+  rituals: zCharacterRituals,
+  conditions: zCharacterStringList,
+  traumas: zCharacterStringList,
+  injuries: zCharacterInjuries,
+  sanityMode: zCharacterSanityMode,
   notes: characterNotes.optional(),
 };
 
@@ -425,6 +571,13 @@ export const zUpdateCharacter = z
     features: zCharacterFeatures,
     inventory: zCharacterInventory,
     spellSlots: zCharacterSpellSlots,
+    fear: zCharacterFear,
+    relations: zCharacterRelations,
+    rituals: zCharacterRituals,
+    conditions: zCharacterStringList,
+    traumas: zCharacterStringList,
+    injuries: zCharacterInjuries,
+    sanityMode: zCharacterSanityMode,
     notes: characterNotes.optional(),
   })
   .passthrough()
@@ -635,7 +788,13 @@ export type AddPersistentMeasurementPayload = z.infer<typeof zAddPersistentMeasu
 export type RemovePersistentMeasurementPayload = z.infer<typeof zRemovePersistentMeasurementPayload>;
 export type ClearAllMeasurementsPayload = z.infer<typeof zClearAllMeasurementsPayload>;
 export type RollDicePayload = z.infer<typeof zRollDicePayload>;
+export type StepRollPayload = z.infer<typeof zStepRollPayload>;
+export type OpTableKey = z.infer<typeof opTableEnum>;
 export type CharacterStatsInput = z.infer<typeof zCharacterStats>;
+export type CharacterFearInput = z.infer<typeof zCharacterFear>;
+export type CharacterRelationInput = z.infer<typeof zCharacterRelations>;
+export type CharacterRitualInput = z.infer<typeof zCharacterRituals>;
+export type CharacterInjuryInput = z.infer<typeof zCharacterInjuries>;
 export type CreateCharacterPayload = z.infer<typeof zCreateCharacter>;
 export type UpdateCharacterPayload = z.infer<typeof zUpdateCharacter>;
 export type CharacterProfileInput = z.infer<typeof zCharacterProfile>;
@@ -686,6 +845,7 @@ export const schemas = {
   zRemovePersistentMeasurementPayload,
   zClearAllMeasurementsPayload,
   zRollDicePayload,
+  zStepRollPayload,
   zCharacterStats,
   zCreateCharacter,
   zUpdateCharacter,
