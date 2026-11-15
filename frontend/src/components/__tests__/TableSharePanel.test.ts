@@ -170,6 +170,30 @@ describe('TableSharePanel', () => {
     wrapper.unmount();
   });
 
+  it('absolutizes a relative display URL before rendering QR and link', async () => {
+    accessMock.createDisplayToken.mockResolvedValue({
+      token: 'abc',
+      displayUrl: '/display/table-1#token=abc',
+    });
+    const expected = `${window.location.origin}/display/table-1#token=abc`;
+
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper
+      .findAll('button')
+      .find((btn) => btn.text() === 'Gerar token da TV')!
+      .trigger('click');
+    await flushPromises();
+
+    expect(qrMock.toDataURL).toHaveBeenCalledWith(expected, expect.anything());
+    expect(wrapper.text()).toContain(expected);
+    const displayLink = wrapper.findAll('a.share-block__link').find((a) =>
+      (a.attributes('href') ?? '').includes('/display/'),
+    );
+    expect(displayLink?.attributes('href')).toBe(expected);
+    wrapper.unmount();
+  });
+
   it('shows the TV connected badge when a display socket is present', async () => {
     const wrapper = mountPanel({ displayConnected: true });
     await flushPromises();

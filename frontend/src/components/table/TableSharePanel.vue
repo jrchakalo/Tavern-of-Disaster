@@ -40,6 +40,19 @@ async function renderQr(text: string): Promise<string> {
   });
 }
 
+/**
+ * O backend devolve `displayUrl` absoluto quando `PUBLIC_APP_URL`/
+ * `CORS_ORIGIN` está configurado; sem eles o valor vem como caminho relativo
+ * (`/display/...`). QR relativo não escaneia — sempre absolutizar aqui.
+ */
+function toAbsoluteUrl(url: string): string {
+  if (!url) return url;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url; // já tem esquema (http:, https:)
+  if (url.startsWith('//')) return `${window.location.protocol}${url}`; // protocolo relativo
+  if (url.startsWith('/')) return `${window.location.origin}${url}`;
+  return `${window.location.origin}/${url}`;
+}
+
 watch(
   playerUrl,
   async (url) => {
@@ -68,8 +81,8 @@ async function generateDisplayToken() {
   errorMessage.value = '';
   try {
     const result = await createDisplayToken(props.tableId);
-    displayUrl.value = result.displayUrl;
-    displayQr.value = await renderQr(result.displayUrl);
+    displayUrl.value = toAbsoluteUrl(result.displayUrl);
+    displayQr.value = await renderQr(displayUrl.value);
     toast.success('Token da TV gerado.');
   } catch (error) {
     reportError(error, 'Não foi possível gerar o token da TV.');
@@ -199,7 +212,7 @@ async function copyLink(url: string) {
             {{
               confirmAction === 'rotate'
                 ? 'Rotacionar invalida o link da TV atual. Gerar um novo token?'
-                : 'Revogar derruba a TV conectada agora. Revogar mesmo assim?'
+                : 'Revogar invalida o link da TV; a TV cai na próxima reconexão. Revogar mesmo assim?'
             }}
             <span class="share-block__actions">
               <button

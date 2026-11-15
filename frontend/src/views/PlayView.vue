@@ -67,12 +67,35 @@ const inviteError = ref('');
 const myCharacters = ref<CharacterDTO[]>([]);
 const detailsToken = ref<TokenInfo | null>(null);
 
+function ownerIdOf(token: TokenInfo): string | null {
+  const owner: unknown = token.ownerId;
+  if (typeof owner === 'string') return owner;
+  if (owner && typeof owner === 'object' && '_id' in owner) {
+    const id = (owner as { _id?: unknown })._id;
+    return typeof id === 'string' ? id : null;
+  }
+  return null;
+}
+
+/**
+ * Token do jogador para exibição (ficha, avatar, destaque no tabuleiro).
+ * `myActiveToken` só existe quando o turno atual é do jogador; fora do turno
+ * a ficha continua visível buscando o token dono do usuário na mesa.
+ * Permissão de movimento continua usando `myActiveToken` + `isMyTurn`.
+ */
+const myToken = computed<TokenInfo | null>(() => {
+  if (myActiveToken.value) return myActiveToken.value;
+  const userId = currentUser.value?.id;
+  if (!userId) return null;
+  return tokensOnMap.value.find((token) => ownerIdOf(token) === userId) ?? null;
+});
+
 function characterFor(token: TokenInfo | null | undefined): CharacterDTO | null {
   if (!token?.characterId) return null;
   return myCharacters.value.find((character) => character._id === token.characterId) ?? null;
 }
 
-const myCharacter = computed(() => characterFor(myActiveToken.value));
+const myCharacter = computed(() => characterFor(myToken.value));
 
 const tableName = computed(() => currentTable.value?.name ?? 'Mesa');
 const sceneName = computed(() => activeScene.value?.name ?? 'Cena sem nome');
@@ -319,7 +342,7 @@ onBeforeUnmount(() => {
         :map-url="currentMapUrl"
         :tokens="tokensOnMap"
         :current-turn-token-id="currentTurnTokenId"
-        :active-token-id="myActiveToken?._id ?? null"
+        :active-token-id="myToken?._id ?? null"
         :move-mode="moveMode"
         :interactive="isMyTurn && canWrite"
         :meters-per-square="metersPerSquare"
@@ -349,7 +372,7 @@ onBeforeUnmount(() => {
 
     <footer class="play-controls">
       <TokenCard
-        :token="myActiveToken"
+        :token="myToken"
         :is-my-turn="isMyTurn"
         :character="myCharacter"
         :meters-per-square="metersPerSquare"
@@ -389,7 +412,7 @@ onBeforeUnmount(() => {
       :token="detailsToken"
       :character="characterFor(detailsToken)"
       :meters-per-square="metersPerSquare"
-      :is-my-token="detailsToken._id === myActiveToken?._id"
+      :is-my-token="detailsToken._id === myToken?._id"
       @close="detailsToken = null"
     />
 

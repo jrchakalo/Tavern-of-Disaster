@@ -128,9 +128,11 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
 }
 
 /**
- * Centro do ping no espaço local do grid. O protocolo da Fase 2 envia `x/y`
- * em unidades de grade; `toLocalPoint` mantém o fallback para clientes
- * antigos que ainda enviavam pixels enquanto a migração não fecha.
+ * Centro do ping no espaço local do grid.
+ *
+ * Pings são **sempre** unidades de grade (protocolo da Fase 2, §5.3): `x/y`
+ * multiplicam o tamanho do quadrado. O heurístico grid-vs-pixel fica apenas
+ * nas medições (`toLocalPoint`), que ainda têm clientes legados.
  */
 function pingCenter(pg: PingInfo): { x: number; y: number } | null {
   if (pg.squareId) {
@@ -138,7 +140,7 @@ function pingCenter(pg: PingInfo): { x: number; y: number } | null {
     if (center) return center;
   }
   if (pg.x == null || pg.y == null) return null;
-  return toLocalPoint({ x: pg.x, y: pg.y });
+  return { x: pg.x * props.squareSize, y: pg.y * props.squareSize };
 }
 
 function getTokenSizeInSquares(size: TokenSize): number {

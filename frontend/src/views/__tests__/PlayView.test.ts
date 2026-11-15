@@ -244,6 +244,42 @@ describe('PlayView', () => {
     wrapper.unmount();
   });
 
+  it('keeps the player card visible outside their turn and blocks movement', async () => {
+    characterMock.getMyCharacters.mockResolvedValue([
+      {
+        _id: 'char-1',
+        ownerId: 'user-1',
+        tableId: 'table-1',
+        name: 'Lyra',
+        stats: { currentHP: 42, maxHP: 50, defense: 16 },
+      },
+    ]);
+    // Turno atual é de outro token; o token do jogador segue na mesa.
+    tableStoreStub.__refs = createRefs({
+      tokensOnMap: ref([{ ...baseToken, characterId: 'char-1' }]),
+      currentTurnTokenId: ref('tok-2'),
+      myActiveToken: ref(null),
+      initiativeList: ref([
+        { _id: 'init-1', characterName: 'Lyra', tokenId: 'tok-1', isCurrentTurn: false },
+        { _id: 'init-2', characterName: 'Goblin', tokenId: 'tok-2', isCurrentTurn: true },
+      ]),
+    });
+
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    const card = wrapper.get('.token-card');
+    expect(card.text()).toContain('Lyra');
+    expect(card.text()).toContain('PV 42 / 50');
+    expect(card.text()).toContain('Def 16');
+    expect(card.text()).toContain('6.0m / 9.0m');
+    expect(card.text()).toContain('Aguardando');
+
+    expect(wrapper.get('button.control-btn--move').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('button.control-btn--end').attributes('disabled')).toBeDefined();
+    wrapper.unmount();
+  });
+
   it('sends requestMoveToken with expectedRevision when the player taps a reachable square', async () => {
     tableStoreStub.__refs = createRefs({
       currentTurnTokenId: ref('tok-1'),

@@ -1,22 +1,19 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useRouter } from 'vue-router'; 
+import { useRoute, useRouter } from 'vue-router';
 import { toast } from '../services/toast';
+import { resolveSafeRedirect } from '../services/safeRedirect';
 import { API_BASE_URL } from '../services/apiBase';
 
 const username = ref('');
 const email = ref('');
 const password = ref('');
 
+const route = useRoute();
 const router = useRouter();
 
 // Função para lidar com o registro do usuário
 async function handleRegister() {
-  console.log('Tentando registrar com:', {
-    username: username.value,
-    email: email.value,
-  });
-
   try {
     const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
       method: 'POST',
@@ -34,7 +31,10 @@ async function handleRegister() {
 
     if (response.ok) { // Se a resposta for bem-sucedida
       toast.success(data.message || 'Usuário registrado com sucesso!');
-      router.push('/login'); 
+      // Registro não loga: segue para o login carregando o redirect original
+      // (ex.: QR do jogador em /play/:id?invite=…).
+      const redirect = resolveSafeRedirect(route.query.redirect, '');
+      router.push(redirect ? { path: '/login', query: { redirect } } : '/login');
     } else { 
       toast.error(`Erro no registro: ${data.message}`);
     }
