@@ -7,6 +7,11 @@ import Character, {
   CharacterFeature,
   CharacterInventoryItem,
   CharacterSpellSlot,
+  CharacterFear,
+  CharacterRelation,
+  CharacterRitual,
+  CharacterInjury,
+  CharacterSanityMode,
 } from '../models/Character.model';
 import Table, { ITable } from '../models/Table.model';
 import System, { ISystem } from '../models/System.model';
@@ -65,6 +70,10 @@ function assertUserInTableOrDm(userId: string | undefined, table: ITable) {
   }
 }
 
+/**
+ * Preserva TODOS os campos de stats conhecidos. O merge de patch depende
+ * disso: campos ausentes na UI (ex.: PD/armadura) não podem ser perdidos.
+ */
 function toPlainStats(stats?: CharacterStats | null): CharacterStats {
   if (!stats) return {};
   const maybeDocument = stats as CharacterStats & { toObject?: () => CharacterStats };
@@ -74,6 +83,14 @@ function toPlainStats(stats?: CharacterStats | null): CharacterStats {
     maxHP: plain.maxHP,
     defense: plain.defense,
     baseInitiative: plain.baseInitiative,
+    currentPD: plain.currentPD,
+    maxPD: plain.maxPD,
+    armorPoints: plain.armorPoints,
+    armorPointsMax: plain.armorPointsMax,
+    currentPE: plain.currentPE,
+    maxPE: plain.maxPE,
+    currentSAN: plain.currentSAN,
+    maxSAN: plain.maxSAN,
   };
 }
 
@@ -92,6 +109,55 @@ function validateStats(stats?: CharacterStats) {
   if (defense != null && defense < 0) {
     throw new ServiceError('Defesa não pode ser negativa.');
   }
+
+  const resourcePairs: Array<{
+    current: keyof CharacterStats;
+    max: keyof CharacterStats;
+    currentLabel: string;
+    message: string;
+  }> = [
+    {
+      current: 'currentPD',
+      max: 'maxPD',
+      currentLabel: 'PD',
+      message: 'PD atual não pode exceder o máximo.',
+    },
+    {
+      current: 'currentPE',
+      max: 'maxPE',
+      currentLabel: 'PE',
+      message: 'PE atual não pode exceder o máximo.',
+    },
+    {
+      current: 'currentSAN',
+      max: 'maxSAN',
+      currentLabel: 'SAN',
+      message: 'SAN atual não pode exceder o máximo.',
+    },
+    {
+      current: 'armorPoints',
+      max: 'armorPointsMax',
+      currentLabel: 'Pontos de armadura',
+      message: 'Pontos de armadura atuais não podem exceder o máximo.',
+    },
+  ];
+  resourcePairs.forEach(({ current, max, currentLabel, message }) => {
+    const currentValue = stats[current];
+    const maxValue = stats[max];
+    if (typeof currentValue === 'number' && currentValue < 0) {
+      throw new ServiceError(`${currentLabel} atual não pode ser negativo.`);
+    }
+    if (typeof maxValue === 'number' && maxValue < 0) {
+      throw new ServiceError(`${currentLabel} máximo não pode ser negativo.`);
+    }
+    if (
+      typeof currentValue === 'number' &&
+      typeof maxValue === 'number' &&
+      currentValue > maxValue
+    ) {
+      throw new ServiceError(message);
+    }
+  });
 }
 
 function sanitizeName(name?: string): string {
@@ -134,6 +200,102 @@ function mergeWithSystemDefaultAttributes(system: ISystem | null, provided?: Rec
   return merged;
 }
 
+const OP2_SYSTEM_KEY = 'ordem-paranormal-2';
+const OPSH_SYSTEM_KEY = 'ordem-paranormal-sobrevivendo-ao-horror';
+const OP2_SKILL_DICE = new Set([4, 6, 8, 10, 12, 20]);
+
+/** Atributos iniciais por sistema (apenas quando o cliente não enviou o valor). */
+const SYSTEM_ATTRIBUTE_DEFAULTS: Record<string, Record<string, number>> = {
+  [OP2_SYSTEM_KEY]: { fisico: 6, mente: 6, emocao: 6 },
+  [OPSH_SYSTEM_KEY]: { agilidade: 1, forca: 1, intelecto: 1, presenca: 1, vigor: 1 },
+};
+
+function applySystemAttributeDefaults(
+  attributes: Record<string, number>,
+  provided: Record<string, number> | undefined,
+  systemKey: string
+): Record<string, number> {
+  const defaults = SYSTEM_ATTRIBUTE_DEFAULTS[systemKey];
+  if (!defaults) return attributes;
+  const merged = { ...attributes };
+  Object.entries(defaults).forEach(([key, value]) => {
+    const providedValue = provided?.[key];
+    if (typeof providedValue === 'number' && Number.isFinite(providedValue)) {
+      merged[key] = providedValue;
+      return;
+    }
+    merged[key] = value;
+  });
+  return merged;
+}
+
+/**
+ * Perícias do OP2 guardam o dado da perícia (4/6/8/10/12/20), não um bônus
+ * numérico. A validação é específica do sistema para não afetar D&D/Cyberpunk.
+ */
+function assertSkillDiceForSystem(
+  systemKey: string | undefined,
+  skills: Record<string, number | string> | undefined
+) {
+  if (systemKey !== OP2_SYSTEM_KEY || !skills) return;
+  Object.entries(skills).forEach(([key, value]) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new ServiceError(
+        `A perícia "${key}" precisa de um dado (4, 6, 8, 10, 12 ou 20).`
+      );
+    }
+    if (!OP2_SKILL_DICE.has(value)) {
+      throw new ServiceError(
+        `Dado inválido para a perícia "${key}". Use 4, 6, 8, 10, 12 ou 20.`
+      );
+    }
+  });
+}
+
+const OP2_ATTRIBUTE_KEYS = ['fisico', 'mente', 'emocao'] as const;
+const OP2_ATTRIBUTE_DICE = new Set([4, 6, 8, 10, 12, 20]);
+const OPSH_ATTRIBUTE_KEYS = ['agilidade', 'forca', 'intelecto', 'presenca', 'vigor'] as const;
+
+/**
+ * Atributos do OP2 são dados (4/6/8/10/12/20) e os do OPSH são valores 0..5.
+ * Extras/legado são preservados; só as chaves do sistema são validadas.
+ */
+function assertAttributesForSystem(
+  systemKey: string | undefined,
+  attributes: Record<string, number> | undefined
+) {
+  if (!attributes) return;
+
+  if (systemKey === OP2_SYSTEM_KEY) {
+    OP2_ATTRIBUTE_KEYS.forEach((key) => {
+      if (!(key in attributes)) return;
+      const value = attributes[key];
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new ServiceError(`O atributo "${key}" precisa de um dado (4, 6, 8, 10, 12 ou 20).`);
+      }
+      if (!OP2_ATTRIBUTE_DICE.has(value)) {
+        throw new ServiceError(
+          `Dado inválido para o atributo "${key}". Use 4, 6, 8, 10, 12 ou 20.`
+        );
+      }
+    });
+    return;
+  }
+
+  if (systemKey === OPSH_SYSTEM_KEY) {
+    OPSH_ATTRIBUTE_KEYS.forEach((key) => {
+      if (!(key in attributes)) return;
+      const value = attributes[key];
+      if (typeof value !== 'number' || !Number.isInteger(value)) {
+        throw new ServiceError(`O atributo "${key}" precisa ser um número inteiro de 0 a 5.`);
+      }
+      if (value < 0 || value > 5) {
+        throw new ServiceError(`Valor inválido para o atributo "${key}". Use um inteiro de 0 a 5.`);
+      }
+    });
+  }
+}
+
 /** Chave do sistema: cópia da mesa, sobrescrita apenas pelo Mestre, fallback dnd5e. */
 async function resolveSystemKey(
   table: ITable,
@@ -158,9 +320,11 @@ function assignCharacterFields(character: ICharacter, payload: UpdateCharacterPa
     character.profile = payload.profile as CharacterProfile;
   }
   if (payload.attributes !== undefined) {
+    assertAttributesForSystem(character.systemKey, payload.attributes as Record<string, number>);
     character.attributes = payload.attributes as Record<string, number>;
   }
   if (payload.skills !== undefined) {
+    assertSkillDiceForSystem(character.systemKey, payload.skills as Record<string, number | string>);
     character.skills = payload.skills as Record<string, number | string>;
   }
   if (payload.proficientSaves !== undefined) {
@@ -183,6 +347,27 @@ function assignCharacterFields(character: ICharacter, payload: UpdateCharacterPa
   }
   if (payload.spellSlots !== undefined) {
     character.spellSlots = payload.spellSlots as Record<string, CharacterSpellSlot>;
+  }
+  if (payload.fear !== undefined) {
+    character.fear = payload.fear as CharacterFear;
+  }
+  if (payload.relations !== undefined) {
+    character.relations = payload.relations as CharacterRelation[];
+  }
+  if (payload.rituals !== undefined) {
+    character.rituals = payload.rituals as CharacterRitual[];
+  }
+  if (payload.conditions !== undefined) {
+    character.conditions = payload.conditions;
+  }
+  if (payload.traumas !== undefined) {
+    character.traumas = payload.traumas;
+  }
+  if (payload.injuries !== undefined) {
+    character.injuries = payload.injuries as CharacterInjury[];
+  }
+  if (payload.sanityMode !== undefined) {
+    character.sanityMode = payload.sanityMode as CharacterSanityMode;
   }
   if (payload.notes !== undefined) {
     character.notes = payload.notes;
@@ -234,10 +419,13 @@ export async function createCharacter(
   const name = sanitizeName(payload.name);
   validateStats(payload.stats);
   const system = await loadTableSystem(table);
-  const attributes = system
+  const systemKey = await resolveSystemKey(table, payload.systemKey, userIsDM);
+  const baseAttributes = system
     ? mergeWithSystemDefaultAttributes(system, payload.attributes)
     : payload.attributes ?? {};
-  const systemKey = await resolveSystemKey(table, payload.systemKey, userIsDM);
+  assertAttributesForSystem(systemKey, payload.attributes);
+  const attributes = applySystemAttributeDefaults(baseAttributes, payload.attributes, systemKey);
+  assertSkillDiceForSystem(systemKey, payload.skills as Record<string, number | string> | undefined);
 
   const character = new Character({
     name,
@@ -256,6 +444,13 @@ export async function createCharacter(
     features: payload.features ?? [],
     inventory: payload.inventory ?? [],
     spellSlots: payload.spellSlots ?? {},
+    fear: payload.fear,
+    relations: payload.relations ?? [],
+    rituals: payload.rituals ?? [],
+    conditions: payload.conditions ?? [],
+    traumas: payload.traumas ?? [],
+    injuries: payload.injuries ?? [],
+    sanityMode: payload.sanityMode,
     notes: payload.notes,
   });
   await character.save();
