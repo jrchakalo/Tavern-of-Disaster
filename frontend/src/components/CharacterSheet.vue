@@ -4,6 +4,8 @@ import type { Character, SystemDTO } from '../types';
 
 import SheetTabs from './character/SheetTabs.vue';
 import VitalsBar from './character/VitalsBar.vue';
+import Op2Sheet from './character/Op2Sheet.vue';
+import OpshSheet from './character/OpshSheet.vue';
 import IdentitySection from './character/IdentitySection.vue';
 import AbilitiesSection from './character/AbilitiesSection.vue';
 import CombatSection from './character/CombatSection.vue';
@@ -39,11 +41,30 @@ const activeTab = ref<SheetTabKey>('identidade');
 /** Houve edição desde a última sincronização: protege o rascunho de patches externos. */
 const dirty = ref(false);
 
+/** Fichas de sistema próprio expõem `buildPatch` para o rodapé salvar. */
+type SystemSheetHandle = { buildPatch: () => Partial<Character> };
+const op2SheetRef = ref<SystemSheetHandle | null>(null);
+const opshSheetRef = ref<SystemSheetHandle | null>(null);
+
 const canEdit = computed(() => props.isDM || props.isOwner);
 const hasCharacterLoaded = computed(() => Boolean(props.character));
 const systemKey = computed(() => props.character?.systemKey ?? props.system?.key ?? null);
 const dnd = computed(() => isDndSheet(systemKey.value));
-const systemLabel = computed(() => (props.system ? props.system.name : ''));
+const systemKind = computed<'op2' | 'opsh' | 'standard'>(() => {
+  if (systemKey.value === 'ordem-paranormal-2') return 'op2';
+  if (systemKey.value === 'ordem-paranormal-sobrevivendo-ao-horror') return 'opsh';
+  return 'standard';
+});
+const systemLabel = computed(() => {
+  if (props.system) return props.system.name;
+  if (systemKind.value === 'op2') return 'Ordem Paranormal 2';
+  if (systemKind.value === 'opsh') return 'Sobrevivendo ao Horror';
+  return '';
+});
+const sheetTitle = computed(() => {
+  if (systemKind.value !== 'standard') return props.character?.name ?? 'Novo personagem';
+  return draft.value.name || props.character?.name || 'Novo personagem';
+});
 const systemAttributeKeys = computed(
   () => props.system?.defaultAttributes?.map((attribute) => attribute.key) ?? [],
 );
@@ -60,6 +81,7 @@ const tabs: Array<{ key: SheetTabKey; label: string }> = [
 ];
 
 function syncFromCharacter() {
+  if (systemKind.value !== 'standard') return;
   draft.value = buildDraft(props.character, {
     systemAttributeKeys: systemAttributeKeys.value,
     dnd: dnd.value,
@@ -95,6 +117,13 @@ watch(
 
 function handleSave() {
   if (!props.character || !canEdit.value) return;
+  if (systemKind.value !== 'standard') {
+    const handle = systemKind.value === 'op2' ? op2SheetRef.value : opshSheetRef.value;
+    const payload = handle?.buildPatch();
+    if (!payload) return;
+    emit('save', { ...payload, name: payload.name || props.character.name });
+    return;
+  }
   emit(
     'save',
     buildPatch(draft.value, { fallbackName: props.character.name }),
@@ -161,7 +190,7 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
         <header class="sheet-header">
           <div class="sheet-header__text">
             <p class="sheet-label">Ficha do Personagem</p>
-            <h2>{{ draft.name || character?.name || 'Novo personagem' }}</h2>
+            <h2>{{ sheetTitle }}</h2>
             <p v-if="!canEdit && hasCharacterLoaded" class="readonly-hint">
               Visualização somente leitura
             </p>
@@ -175,6 +204,20 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
         </header>
 
         <section v-if="hasCharacterLoaded" class="sheet-body">
+          <Op2Sheet
+            v-if="systemKind === 'op2'"
+            ref="op2SheetRef"
+            :character="character"
+            :can-edit="canEdit"
+          />
+          <OpshSheet
+            v-else-if="systemKind === 'opsh'"
+            ref="opshSheetRef"
+            :character="character"
+            :can-edit="canEdit"
+          />
+
+          <template v-else>
           <VitalsBar :draft="draft" :can-edit="canEdit" :patch="applyPatch" />
 
           <SheetTabs :tabs="tabs" v-model="activeTab" />
@@ -247,6 +290,7 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
               />
             </div>
           </div>
+          </template>
         </section>
 
         <section v-else class="sheet-empty">
