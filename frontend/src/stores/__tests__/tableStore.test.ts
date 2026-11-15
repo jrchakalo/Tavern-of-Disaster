@@ -660,30 +660,32 @@ describe('tableStore — fichas (resumos) e log de rolagens', () => {
     expect(store.characters[0]._id).toBe('char-3');
   });
 
-  it('recentRolls: patch substitui a lista com cap de 50', () => {
+  it('recentRolls: patch substitui a lista (newest-first) com cap de 50', () => {
     const store = useTableStore();
     store.applySnapshot(makeSnapshot());
     expect(store.recentRolls).toEqual([]);
 
+    // Backend envia newest first (sort createdAt: -1): índice 0 é o mais novo.
     const many = Array.from({ length: 60 }, (_, i) => ({
       tableId: 'table-1',
       userId: 'u1',
       username: 'Mestre',
       expression: '1d20',
-      rolls: [{ die: 20, value: i + 1, kept: 'kept' as const }],
+      rolls: [{ die: 20, value: 60 - i, kept: 'kept' as const }],
       modifier: 0,
-      total: i + 1,
-      createdAt: new Date(2026, 0, 1, 0, 0, i).toISOString(),
+      total: 60 - i,
+      createdAt: new Date(2026, 0, 1, 0, 0, 59 - i).toISOString(),
     }));
 
     store.applyPatch(makePatch({}, { recentRolls: many }));
     expect(store.recentRolls).toHaveLength(50);
-    // Mantém as mais recentes (fim da lista).
-    expect(store.recentRolls[0].total).toBe(11);
-    expect(store.recentRolls[49].total).toBe(60);
+    // Cap 50: mantém as 50 mais recentes (início da lista), descarta as 10
+    // mais antigas (totals 10..1).
+    expect(store.recentRolls[0].total).toBe(60);
+    expect(store.recentRolls[49].total).toBe(11);
   });
 
-  it('diceRolled ao vivo acrescenta ao log canônico com cap de 50', () => {
+  it('diceRolled ao vivo acrescenta no início do log canônico com cap de 50', () => {
     const store = useTableStore();
     store.applySnapshot(makeSnapshot());
 
@@ -702,9 +704,89 @@ describe('tableStore — fichas (resumos) e log de rolagens', () => {
     }
 
     expect(store.recentRolls).toHaveLength(50);
-    expect(store.recentRolls[0].total).toBe(6); // 5 mais antigas descartadas
-    expect(store.recentRolls[49].total).toBe(55);
+    // Newest-first: a rolagem mais nova (55) vem primeiro; as 5 mais antigas
+    // (totals 1..5) saem pelo cap.
+    expect(store.recentRolls[0].total).toBe(55);
+    expect(store.recentRolls[0].revision).toBe(59);
+    expect(store.recentRolls[49].total).toBe(6);
     // O log narrativo continua sendo alimentado junto.
     expect(store.logs).toHaveLength(55);
+  });
+});
+
+describe('tableStore — TokenDTO: characterId nulo e resumo de ficha', () => {
+  beforeEach(() => {
+    const store = useTableStore();
+    store.revision = 0;
+    store.lastSyncAt = 0;
+  });
+
+  it('token desvinculado: characterId null e character null', () => {
+    const store = useTableStore();
+    store.applySnapshot(makeSnapshot({
+      tokens: [
+        makeToken({
+          _id: 'tk-free',
+          squareId: 'sq-0',
+          characterId: null,
+          character: null,
+        }),
+      ],
+    }));
+
+    const token = store.squares.find((sq) => sq.token?._id === 'tk-free')?.token;
+    expect(token?.characterId).toBeNull();
+    expect(token?.character).toBeNull();
+  });
+
+  it('token vinculado: characterId string e resumo de ficha mapeado (PV/CA)', () => {
+    const store = useTableStore();
+    store.applySnapshot(makeSnapshot({
+      tokens: [
+        makeToken({
+          _id: 'tk-linked',
+          squareId: 'sq-1',
+          characterId: 'char-1',
+          character: { _id: 'char-1', name: 'Bruxa', currentHP: 9, maxHP: 22, defense: 14 },
+        }),
+      ],
+    }));
+
+    const token = store.squares.find((sq) => sq.token?._id === 'tk-linked')?.token;
+    expect(token?.characterId).toBe('char-1');
+    expect(token?.character).toEqual({
+      _id: 'char-1',
+      name: 'Bruxa',
+      currentHP: 9,
+      maxHP: 22,
+      defense: 14,
+    });
+  });
+
+  it('tokenUpdates carrega patch.character (PV atualizado via ficha)', () => {
+    const store = useTableStore();
+    store.applySnapshot(makeSnapshot({
+      tokens: [
+        makeToken({
+          _id: 'tk-linked',
+          squareId: 'sq-1',
+          characterId: 'char-1',
+          character: { _id: 'char-1', name: 'Bruxa', currentHP: 9, maxHP: 22, defense: 14 },
+        }),
+      ],
+    }));
+
+    store.applyPatch(
+      makePatch({}, {
+        tokenUpdates: [{
+          tokenId: 'tk-linked',
+          patch: { character: { _id: 'char-1', name: 'Bruxa', currentHP: 5, maxHP: 22, defense: 14 } },
+        }],
+      }),
+    );
+
+    const token = store.squares.find((sq) => sq.token?._id === 'tk-linked')?.token;
+    expect(token?.character?.currentHP).toBe(5);
+    expect(token?.characterId).toBe('char-1');
   });
 });
