@@ -163,7 +163,6 @@ export function registerCharacterSyncHandler(fn: ((event: CharacterSyncEvent) =>
 
 class SocketService {
   private socket: Socket | null = null;
-  private store = useTableStore();
   private currentTableId: string | null = null;
   private windowListenersBound = false;
   private resyncInFlight = false;
@@ -174,6 +173,14 @@ class SocketService {
   /** Modo TV: conectado com token de display, sem JWT e sem refresh. */
   private displayMode = false;
   private displayToken: string | null = null;
+
+  /**
+   * O store é resolvido sob demanda: assim o módulo pode ser importado (p.ex.
+   * por componentes de ficha) antes de a Pinia estar ativa no app/teste.
+   */
+  private get store() {
+    return useTableStore();
+  }
 
   constructor() {
     // O store pede resync quando detecta buraco de revisão, sem importar este
@@ -224,7 +231,12 @@ class SocketService {
    * dono do resultado (sem timeout local). Sem callback, devolve uma Promise
    * que nunca rejeita: falhas viram toast (timeout) ou `actionError`.
    */
-  private emitRequest<TPayload>(event: string, payload: TPayload, ack?: (a: Ack) => void): Promise<Ack> {
+  private emitRequest<TPayload>(
+    event: string,
+    payload: TPayload,
+    ack?: (a: Ack) => void,
+    options: EmitWithAckOptions = {},
+  ): Promise<Ack> {
     if (ack) {
       return new Promise<Ack>((resolve) => {
         if (!this.socket) {
@@ -239,7 +251,9 @@ class SocketService {
         });
       });
     }
-    return this.emitWithAck(event, payload).catch((err: unknown) => this.toAckFailure(event, err));
+    return this.emitWithAck(event, payload, options).catch((err: unknown) =>
+      this.toAckFailure(event, err),
+    );
   }
 
   private toAckFailure(event: string, err: unknown): AckError {
@@ -795,8 +809,12 @@ class SocketService {
     return this.emitRequest('requestRemoveMeasurement', payload, ack);
   }
 
-  rollDice(params: RollDiceParams, ack?: (a: Ack) => void) {
-    return this.emitRequest('requestRollDice', params, ack);
+  /**
+   * `options.silent` permite que a ficha exiba o erro da rolagem uma única vez
+   * (sem o toast automático do serviço).
+   */
+  rollDice(params: RollDiceParams, ack?: (a: Ack) => void, options: EmitWithAckOptions = {}) {
+    return this.emitRequest('requestRollDice', params, ack, options);
   }
 
   clearAllMeasurements(tableId: string, sceneId: string, ack?: (a: Ack) => void) {
@@ -855,6 +873,15 @@ class SocketService {
       currentHP: payload.stats?.currentHP,
       maxHP: payload.stats?.maxHP,
       defense: payload.stats?.defense,
+      currentPD: payload.stats?.currentPD,
+      maxPD: payload.stats?.maxPD,
+      armorPoints: payload.stats?.armorPoints,
+      armorPointsMax: payload.stats?.armorPointsMax,
+      currentPE: payload.stats?.currentPE,
+      maxPE: payload.stats?.maxPE,
+      currentSAN: payload.stats?.currentSAN,
+      maxSAN: payload.stats?.maxSAN,
+      sanityMode: payload.sanityMode,
       tokenId: undefined,
     };
   }

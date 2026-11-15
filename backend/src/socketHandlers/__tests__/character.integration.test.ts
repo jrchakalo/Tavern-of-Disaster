@@ -241,6 +241,9 @@ describe('character realtime (2+ clients)', () => {
         defense: 16,
         tokenId: null,
       });
+      // Fichas D&D continuam sem recursos de OP2 (campos undefined).
+      expect(patch.changes.characters[0].currentPD).toBeUndefined();
+      expect(patch.changes.characters[0].armorPoints).toBeUndefined();
     }
 
     const stored = await Character.findOne({ tableId: table._id });
@@ -617,5 +620,110 @@ describe('character realtime (2+ clients)', () => {
     });
     expect(missing.ok).toBe(false);
     expect(missing.error.code).toBe('NOT_FOUND');
+  });
+
+  it('9. PD/armadura sobrevivem ao patch e aparecem no snapshot e no token', async () => {
+    const system = await System.create({
+      key: 'ordem-paranormal-2',
+      name: 'Ordem Paranormal 2 (Playtest)',
+    });
+    const dm = await createUser('dm-char-pd');
+    const player = await createUser('player-char-pd');
+    const { table, scene } = await createTableWithScene(
+      dm._id,
+      [player._id],
+      system._id as Types.ObjectId
+    );
+
+    const dmClient = await connectClient(signToken(dm));
+    const playerClient = await connectClient(signToken(player));
+    await joinTable(dmClient, table._id.toString());
+    await joinTable(playerClient, table._id.toString());
+
+    const createAck = await emitAck(playerClient, 'requestCreateCharacter', {
+      tableId: table._id.toString(),
+      character: {
+        name: 'Agente OP2',
+        attributes: { fisico: 8 },
+        stats: {
+          currentHP: 12,
+          maxHP: 12,
+          currentPD: 5,
+          maxPD: 5,
+          armorPoints: 2,
+          armorPointsMax: 3,
+          currentPE: 2,
+          maxPE: 2,
+        },
+        skills: { luta: 10, pontaria: 8 },
+        relations: [{ name: 'Irmã', grade: 3 }],
+        fear: { dreadDie: 6, active: true },
+        rituals: [{ name: 'Luz', cost: '1 PE', circle: 1 }],
+        conditions: ['Abalado'],
+      },
+    });
+    expect(createAck.ok).toBe(true);
+
+    const character = await Character.findOne({ tableId: table._id });
+    expect(character?.systemKey).toBe('ordem-paranormal-2');
+    expect(character?.stats?.currentPD).toBe(5);
+    const attributes = character?.attributes as unknown as Map<string, number>;
+    expect(attributes.get('fisico')).toBe(8);
+    expect(attributes.get('mente')).toBe(6);
+
+    const token = await createLinkedToken({
+      tableId: table._id,
+      sceneId: scene._id,
+      ownerId: player._id,
+      characterId: character!._id,
+    });
+
+    const patchPromise = onceEvent(dmClient, 'sessionPatch');
+    const updateAck = await emitAck(playerClient, 'requestUpdateCharacter', {
+      tableId: table._id.toString(),
+      characterId: character!._id.toString(),
+      patch: { stats: { currentPD: 3 } },
+    });
+    const patch = await patchPromise;
+
+    expect(updateAck.ok).toBe(true);
+    expect(patch.changes.characterUpdates[0].patch).toMatchObject({
+      currentPD: 3,
+      maxPD: 5,
+      armorPoints: 2,
+      armorPointsMax: 3,
+      currentPE: 2,
+      maxPE: 2,
+    });
+    expect(patch.changes.tokenUpdates[0].patch.character).toMatchObject({
+      _id: character!._id.toString(),
+      currentPD: 3,
+      maxPD: 5,
+      armorPoints: 2,
+      armorPointsMax: 3,
+    });
+
+    const stored = await Character.findById(character!._id);
+    expect(stored?.stats).toMatchObject({ currentPD: 3, maxPD: 5, armorPoints: 2 });
+
+    const { snapshot } = await resync(dmClient, table._id.toString());
+    const summary = snapshot.characters.find(
+      (item: any) => item._id === character!._id.toString()
+    );
+    expect(summary).toMatchObject({
+      currentPD: 3,
+      maxPD: 5,
+      armorPoints: 2,
+      armorPointsMax: 3,
+      currentPE: 2,
+      maxPE: 2,
+    });
+    const tokenDTO = snapshot.tokens.find((item: any) => item._id === token._id.toString());
+    expect(tokenDTO.character).toMatchObject({
+      currentPD: 3,
+      maxPD: 5,
+      armorPoints: 2,
+      armorPointsMax: 3,
+    });
   });
 });

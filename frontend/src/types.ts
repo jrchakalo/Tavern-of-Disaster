@@ -116,11 +116,25 @@ export interface AuraInfo {
   difficultTerrain?: boolean;
 }
 
+/** Tamanho de dado usado pelas fichas de Ordem Paranormal. */
+export type DieSize = 4 | 6 | 8 | 10 | 12 | 20;
+
 export interface CharacterStats {
   currentHP?: number;
   maxHP?: number;
   defense?: number;
   baseInitiative?: number;
+  /** Ordem Paranormal 2: Pontos de Determinação. */
+  currentPD?: number;
+  maxPD?: number;
+  /** Ordem Paranormal 2: pontos de armadura atuais/máximos (−10 dano cada). */
+  armorPoints?: number;
+  armorPointsMax?: number;
+  /** Ordem Paranormal: Sobrevivendo ao Horror — modo Sanidade. */
+  currentPE?: number;
+  maxPE?: number;
+  currentSAN?: number;
+  maxSAN?: number;
 }
 
 export interface CharacterProfile {
@@ -131,12 +145,65 @@ export interface CharacterProfile {
   alignment?: string;
   speed?: number;
   hitDice?: string;
+  /** Ordem Paranormal 2 — identidade (campos aditivos; D&D ignora). */
+  perfil?: 'executor' | 'analista' | 'vigilante';
+  vocacao?: string;
+  idade?: number;
+  /** Ordem Paranormal: Sobrevivendo ao Horror (base OP1). */
+  classe?: string;
+  origem?: string;
+  trilha?: string;
+  nex?: string;
+  patente?: string;
+  conceito?: string;
+  /** Campo livre da perícia Profissão (OP1/OPSH). */
+  profissao?: string;
 }
 
 export interface CharacterAttack {
   name: string;
   bonus?: string;
+  /** Dano no formato do sistema; OP2 usa `RA+3`, D&D usa `1d8+3`. */
   damage?: string;
+  /** Alcance textual (OP2: corpo a corpo, curto, longo…). */
+  range?: string;
+  notes?: string;
+}
+
+/** Medo/pavor do OP2: dado de pavor que acompanha o teste sem somar. */
+export interface CharacterFear {
+  dreadDie?: DieSize | null;
+  active?: boolean;
+  notes?: string;
+}
+
+/** Relação do OP2 — graus 1 (afinidade), 2 (vínculo) e 3 (devoção). */
+export interface CharacterRelation {
+  name: string;
+  grade: 1 | 2 | 3;
+  note?: string;
+}
+
+export interface CharacterRitual {
+  name: string;
+  /** Custo em PE/PD, quando houver. */
+  cost?: string;
+  description?: string;
+  /** OPSH: círculo do ritual (1..5 ou texto livre). */
+  circle?: string;
+}
+
+/**
+ * Ferimento debilitante do OPSH. No OP2 a lista de lesões é textual
+ * (`string[]`); o tipo da ficha aceita as duas formas para não quebrar fichas
+ * antigas nem a variante sem Sanidade.
+ */
+export interface CharacterInjury {
+  attribute: string;
+  penalty: number;
+  /** Campo persistido pelo backend (OP2/OPSH). */
+  note?: string;
+  /** Alias usado pelo editor da ficha. */
   notes?: string;
 }
 
@@ -174,6 +241,18 @@ export interface CharacterDTO {
   features?: CharacterFeature[];
   inventory?: CharacterInventoryItem[];
   spellSlots?: Record<string, CharacterSpellSlot>;
+  /** Medo/pavor (OP2) e efeitos relacionados. */
+  fear?: CharacterFear;
+  relations?: CharacterRelation[];
+  rituals?: CharacterRitual[];
+  conditions?: string[];
+  traumas?: string[];
+  /** OP2: texto das lesões; OPSH: ferimentos debilitantes estruturados. */
+  injuries?: Array<string | CharacterInjury>;
+  /** OPSH: `san` usa PE/SAN; `pd` usa um único pool de PD. */
+  sanityMode?: 'san' | 'pd';
+  /** OPSH: progressão por NEX (padrão), patente (opcional) ou estágio. */
+  progressionMode?: 'nex' | 'patente' | 'estagio';
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -188,15 +267,34 @@ export interface CharacterSummaryDTO {
   currentHP?: number;
   maxHP?: number;
   defense?: number;
+  currentPD?: number;
+  maxPD?: number;
+  armorPoints?: number;
+  armorPointsMax?: number;
+  currentPE?: number;
+  maxPE?: number;
+  currentSAN?: number;
+  maxSAN?: number;
+  sanityMode?: 'san' | 'pd';
   tokenId?: string | null;
 }
 
 export interface CharacterSummaryLite {
   _id: string;
   name: string;
+  systemKey?: string;
   currentHP?: number;
   maxHP?: number;
   defense?: number;
+  currentPD?: number;
+  maxPD?: number;
+  armorPoints?: number;
+  armorPointsMax?: number;
+  currentPE?: number;
+  maxPE?: number;
+  currentSAN?: number;
+  maxSAN?: number;
+  sanityMode?: 'san' | 'pd';
 }
 
 export interface CharacterUpdateDTO {
@@ -340,19 +438,110 @@ export interface SessionStateDTO {
   auras: AuraDTO[];
 }
 
-export interface RollDiceParams {
-  tableId: string;
+/** Pedido de teste por passo (OP2): atributo + perícia, RA/RB e pavor. */
+export interface StepRollRequest {
+  attribute: 'fisico' | 'mente' | 'emocao';
+  attributeDie: DieSize;
+  skillKey: string;
+  skillDie: DieSize;
+  /** Dados extras (relações/habilidades); o servidor limita a 2. */
+  bonusDice?: DieSize[];
+  /** Aumento/redução de passo, aplicado ao alvo e limitado a d4..d12. */
+  stepDelta?: number;
+  stepTarget?: 'attribute' | 'skill';
+  /** DT do teste; padrão 7. */
+  difficulty?: number;
+  /** Dado de pavor (d6 por padrão), quando o personagem está sob medo. */
+  dreadDie?: DieSize | null;
+  label?: string;
+  /** Modificador de dano da arma, ex.: +3 de `RA+3`. */
+  damageModifier?: number;
+  /** `true` em ataques: o resultado traz `damageBase` (RA ou 2 maiores). */
+  damageMode?: boolean;
+}
+
+export type TableRollKey = 'lesao' | 'trauma' | 'falha-critica';
+
+export interface StepRollSummary {
+  attribute: { key: string; die: DieSize; value: number };
+  skill: { key: string; die: DieSize; value: number };
+  bonusDice: Array<{ die: DieSize; value: number }>;
+  dread?: { die: DieSize; value: number };
+  canceledValues: number[];
+  high: number;
+  low: number;
+  difficulty: number;
+  success: boolean;
+  critical: boolean;
+  fumble: boolean;
+  dreadEnds: boolean;
+  summedDice: number[];
+  damageBase?: number;
+  label?: string;
+}
+
+/** Resultado do passo: espelha `StepRollResult` do contrato do backend. */
+export interface StepRollResult {
+  kind: 'step';
   expression: string;
+  rolls: Array<SingleDieRoll & { role?: 'attribute' | 'skill' | 'bonus' | 'dread' }>;
+  modifier: number;
+  total: number;
+  step: StepRollSummary;
+}
+
+/** Resultado de tabela de lesão/trauma/falha crítica. */
+export interface TableRollResult {
+  kind: 'table';
+  table: TableRollKey;
+  expression: string;
+  die: number;
+  /** Alguns caminhos serializam só o valor; aceitamos os dois formatos. */
+  roll: number | SingleDieRoll;
+  key: string;
+  summary: string;
+  modifier?: number;
+  total?: number;
+}
+
+export interface DiceRollBaseParams {
+  tableId: string;
   tokenId?: string;
   characterId?: string;
   tags?: string[];
   metadata?: string;
 }
 
+export interface ExpressionRollParams extends DiceRollBaseParams {
+  expression: string;
+  step?: never;
+  table?: never;
+}
+
+export interface StepRollParams extends DiceRollBaseParams {
+  step: StepRollRequest;
+  expression?: never;
+  table?: never;
+}
+
+export interface TableRollParams extends DiceRollBaseParams {
+  table: TableRollKey;
+  modifier?: number;
+  expression?: never;
+  step?: never;
+}
+
+/**
+ * O evento continua `requestRollDice`; o payload aceita expressão (D&D,
+ * Cyberpunk), passo (OP2) ou tabela (lesão/trauma/falha crítica).
+ */
+export type RollDiceParams = ExpressionRollParams | StepRollParams | TableRollParams;
+
 export interface DiceRolledPayload {
   tableId: string;
   expression: string;
-  rolls: SingleDieRoll[];
+  /** Testes de passo marcam o papel de cada dado; expressões comuns não. */
+  rolls: Array<SingleDieRoll & { role?: 'attribute' | 'skill' | 'bonus' | 'dread' }>;
   modifier: number;
   total: number;
   metadata?: string;
@@ -363,6 +552,14 @@ export interface DiceRolledPayload {
   tags?: string[];
   createdAt: string;
   revision?: number;
+  /** Discrimina o motor que produziu o resultado. */
+  kind?: 'expression' | 'step' | 'table';
+  /** Espelho do bloco `step` do `StepRollResult`. */
+  step?: StepRollSummary;
+  /** Resultado de tabela de lesão/trauma/falha crítica. */
+  tableResult?: TableRollResult;
+  /** Atalho serializado pelo backend para o histórico/TV. */
+  table?: TableRollKey;
 }
 
 export type RollLogEntryDTO = DiceRolledPayload;

@@ -328,6 +328,92 @@ describe('recentRolls no snapshot e rate limit', () => {
     expect(stored?.revision).toBe(0);
   });
 
+  it('persiste teste de passo e devolve no REST e no resync', async () => {
+    const dm = await createUser('dm-roll-step');
+    const player = await createUser('player-roll-step');
+    const { table } = await createTableWithScene(dm._id, [player._id]);
+
+    const client = await connectClient(signToken(player));
+    await joinTable(client, table._id.toString());
+
+    const diceRolledPromise = onceEvent(client, 'diceRolled');
+    const ack = await emitAck(client, 'requestRollDice', {
+      tableId: table._id.toString(),
+      step: {
+        attribute: 'fisico',
+        attributeDie: 10,
+        skillKey: 'luta',
+        skillDie: 10,
+        difficulty: 7,
+      },
+    });
+    const diceRolled = await diceRolledPromise;
+
+    expect(ack.ok).toBe(true);
+    expect(diceRolled.kind).toBe('step');
+    expect(diceRolled.expression).toContain('Luta');
+    expect(diceRolled.step).toMatchObject({ difficulty: 7 });
+    expect(typeof diceRolled.step.success).toBe('boolean');
+    expect(diceRolled.rolls.filter((roll: any) => roll.role)).toHaveLength(2);
+
+    const history = await request(realtime.app)
+      .get(`/api/tables/${table._id}/rolls`)
+      .set('Authorization', `Bearer ${signToken(player)}`);
+    expect(history.status).toBe(200);
+    expect(history.body[0]).toMatchObject({
+      kind: 'step',
+      expression: diceRolled.expression,
+      total: diceRolled.total,
+      userId: player._id.toString(),
+    });
+    expect(history.body[0].step).toMatchObject({ difficulty: 7 });
+    expect(history.body[0].rolls[0].role).toBe('attribute');
+
+    const snapshot = await resync(client, table._id.toString());
+    expect(snapshot.recentRolls[0]).toMatchObject({
+      kind: 'step',
+      expression: diceRolled.expression,
+    });
+    expect(snapshot.recentRolls[0].step).toMatchObject({ difficulty: 7 });
+  });
+
+  it('persiste rolagem de tabela de lesão com chave e resumo', async () => {
+    const dm = await createUser('dm-roll-table');
+    const player = await createUser('player-roll-table');
+    const { table } = await createTableWithScene(dm._id, [player._id]);
+
+    const client = await connectClient(signToken(player));
+    await joinTable(client, table._id.toString());
+
+    const diceRolledPromise = onceEvent(client, 'diceRolled');
+    const ack = await emitAck(client, 'requestRollDice', {
+      tableId: table._id.toString(),
+      table: 'lesao',
+      modifier: 0,
+    });
+    const diceRolled = await diceRolledPromise;
+
+    expect(ack.ok).toBe(true);
+    expect(diceRolled.kind).toBe('table');
+    expect(diceRolled.expression).toBe('Lesão 1d20');
+    expect(diceRolled.tableResult).toMatchObject({ table: 'lesao', die: 20 });
+    expect(typeof diceRolled.tableResult.key).toBe('string');
+    expect(diceRolled.tableResult.summary.length).toBeGreaterThan(0);
+
+    const history = await request(realtime.app)
+      .get(`/api/tables/${table._id}/rolls`)
+      .set('Authorization', `Bearer ${signToken(dm)}`);
+    expect(history.status).toBe(200);
+    expect(history.body[0]).toMatchObject({
+      kind: 'table',
+      expression: 'Lesão 1d20',
+    });
+    expect(history.body[0].tableResult).toMatchObject({
+      table: 'lesao',
+      key: diceRolled.tableResult.key,
+    });
+  });
+
   it('limita 20 rolagens por 10s por socket e libera após reconectar', async () => {
     const dm = await createUser('dm-roll-rate');
     const player = await createUser('player-roll-rate');

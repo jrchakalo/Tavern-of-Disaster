@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { CharacterDTO, TokenInfo } from '../../types';
-import { tokenCharacter } from '../character/summary';
+import { characterResourceBadges, tokenCharacter } from '../character/summary';
 import { setCharacterHp } from '../character/hpSync';
 import { toast } from '../../services/toast';
 
@@ -50,6 +50,10 @@ const hp = computed(() => {
 
 const defense = computed(() => summary.value?.defense ?? props.character?.stats?.defense ?? null);
 const level = computed(() => props.character?.profile?.level ?? null);
+/** PD/PE/SAN/armadura (OP2/OPSH) ao lado do PV; vazio para D&D 5e. */
+const resources = computed(() =>
+  characterResourceBadges(summary.value, props.character),
+);
 
 const meters = computed(() =>
   props.token
@@ -147,6 +151,15 @@ function handleCardKeydown(event: KeyboardEvent) {
         <span v-if="hp !== null" class="token-card__hp" :title="`PV ${hp}`">PV {{ hp }}</span>
         <span v-if="defense !== null" class="token-card__defense" :title="`Defesa ${defense}`">
           Def {{ defense }}
+        </span>
+        <span
+          v-for="resource in resources"
+          :key="resource.key"
+          class="token-card__resource"
+          :class="`token-card__resource--${resource.key}`"
+          :title="resource.title"
+        >
+          {{ resource.label }} {{ resource.value }}
         </span>
         <span v-if="level !== null" class="token-card__level" :title="`Nível ${level}`">
           Nv {{ level }}

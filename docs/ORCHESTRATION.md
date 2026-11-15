@@ -4,11 +4,12 @@
 > skill, designação, branch, revisão, correção e merge entra aqui. Se o contexto
 > da conversa se perder, este arquivo é a fonte da verdade do processo.
 >
-> Última atualização: 2026-11-15. **Fases 1, 2 e 3 concluídas e aprovadas**:
-> `v0.9.2-phase1`, `v0.9.3-phase2` e `v0.9.4-phase3` (backend 103/103,
-> frontend 185/185, E2E 34/34, caos 14/14).
-> **Fase 3.1 (Ordem Paranormal 2)** é a prioridade do primeiro one-shot;
-> a Fase 4 está pausada até OP2 fechar. A frente **online** é a Fase 5 em
+> Última atualização: 2026-11-15. **Fases 1, 2, 3 e 3.1 concluídas e
+> aprovadas**: `v0.9.2-phase1`, `v0.9.3-phase2`, `v0.9.4-phase3` e
+> `v0.9.5-phase3.1`.
+> A Fase 3.1 entregou **Ordem Paranormal 2 + Sobrevivendo ao Horror**:
+> backend 154/154, frontend 223/223, E2E 45/45 (novos 11/11) e caos 14/14.
+> A próxima é a **Fase 4 (mídia e cenas)**. A frente **online** é a Fase 5 em
 > `docs/ONLINE_MODE.md`; o deploy/beta é a Fase 6.
 
 ## 1. Modelo de trabalho
@@ -210,6 +211,9 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-15 | Ordem Paranormal 2 vira o sistema principal | É o sistema do primeiro one-shot; usa dados graduados e ficha própria. |
 | 2026-11-15 | Fase 4 pausada; Fase 3.1 OP2 primeiro | Sem OP2 o one-shot não acontece; mídia/cenas pode esperar. |
 | 2026-11-15 | OP1 puro fora; *Sobrevivendo ao Horror* conforme PDFs | Usuário confirmou que só a extensão será usada. |
+| 2026-11-15 | OP2 Beta/Contos da Vigília como referência primária | É o playtest mais recente; nomes do Alpha entram como aliases. |
+| 2026-11-15 | OPSH entra inteiro, com Sanidade **e** PD opcional | Usuário respondeu "tudo"; o suplemento define as duas progressões. |
+| 2026-11-15 | D&D 5e continua padrão; OP2/OPSH com peso igual | Concordância da plataforma com o futuro Call of Cthulhu. |
 
 ## 9. Registro de resultados
 
@@ -420,49 +424,63 @@ PO: `opencode-go/deepseek-v4.1-flash` (1017).
 | P3-UX-1..4 | ficha, token↔ficha, dados/log, sistema | UX |
 | P3-QA-1..3 | E2E presencial + online, relatório | QA |
 
-## 16. Fase 3.1 — Ordem Paranormal 2 (one-shot)
+## 16. Fase 3.1 — Ordem Paranormal 2 + Sobrevivendo ao Horror (one-shot)
 
-Contrato: `docs/ORDEM_PARANORMAL.md`. Branch futura: `restore/phase-3-op2`.
+Contrato: `docs/ORDEM_PARANORMAL.md`. Branch: `restore/phase-3-op2`.
 
 ### 16.1 Por que revisar
 
-A Fase 3 entregou D&D 5e e Cyberpunk RED, mas o sistema principal do primeiro
-one-shot é **Ordem Paranormal 2**. OP2 usa dados graduados (d4–d12), teste de
-**dado de atributo + dado de perícia**, atributos Físico/Mente/Emoção, perfis,
-Vida/PD, NEX separado de nível e 20 perícias próprias. A ficha D&D e o motor
-atual não atendem.
+A Fase 3 entregou D&D 5e e Cyberpunk RED, mas o sistema do primeiro one-shot é
+**Ordem Paranormal 2**. OP2 usa dados graduados (d4–d12), teste de **dado de
+atributo + dado de perícia**, atributos Físico/Mente/Emoção, perfis, PV/PD,
+nível e 20 perícias próprias. A ficha D&D e o motor de expressão atual não
+atendem. **OPSH** é o suplemento de OP1 que a mesa também quer, com peso igual.
 
 ### 16.2 Decisões
 
-- OP2 é o sistema principal; D&D 5e continua suportado; Cyberpunk RED fica
-  secundário.
-- OP1 puro não será usado; apenas a extensão *Sobrevivendo ao Horror*, conforme
-  o usuário confirmar quais regras entram.
-- Nada de inventar regras: os PDFs locais em `references/ordem-paranormal/`
-  são a fonte. A pasta é ignorada pelo Git.
-- A Fase 4 fica pausada até o one-shot de OP2 fechar.
-- Motor de dados ganha um tipo `stepPool` (atributo + perícia, RA/RB,
-  crítico/falha, step up/down), além do motor de expressão atual.
-- Ficha OP2 completa dono/DM; resumo (Vida/PD/Defesa) para TV/jogadores.
+- **D&D 5e continua o sistema padrão da plataforma**; OP2 e OPSH têm o mesmo
+  peso; Cyberpunk RED fica secundário; Call of Cthulhu é futuro.
+- OP2 usa o **Beta/Contos da Vigília** como referência primária e aceita os
+  nomes de perícia do Alpha como aliases.
+- OPSH entra **inteiro** (PD, medo, traumas, ferimentos, origens, classes,
+  regras opcionais); OP1 puro não será usado.
+- Nada de homebrew/adaptacões nesta fase. Os PDFs locais em
+  `references/ordem-paranormal/` são a fonte; a pasta é ignorada pelo Git.
+- Combate do PDF de referência do Beta (três fases), dano `RA+mod`, armadura
+  reduz 10 por ponto.
+- Rituais: nome, custo e descrição.
+- A Fase 4 fica pausada apenas durante a Fase 3.1; concluída esta, retoma.
+- Motor de dados ganha `step` (atributo + perícia, bônus, pavor, RA/RB,
+  crítico/falha, step up/down) + tabelas de lesão/trauma/falha crítica. OPSH
+  reutiliza o motor de expressão (`Nd20kh1+bônus`).
 
 ### 16.3 Pendências
 
-1. PDFs em `references/ordem-paranormal/`.
-2. Confirmar Alpha vs Beta/Contos da Vigília.
-3. Confirmar quais regras de *Sobrevivendo ao Horror* entram.
-4. Confirmar combate simplificado vs versão mais recente.
-5. Rituais completos ou nome/custo/descrição no beta.
+1. Confirmar se o one-shot usa as duas missões do Beta ou só uma.
+2. Decidir a progressão de OPSH na mesa: NEX, patentes ou estágios (a ficha
+   suporta as três). O core v1.1 já foi lido e validado.
 
-### 16.4 Quadro previsto
+### 16.4 Quadro
 
 | ID | Entrega | Coder |
 |---|---|---|
-| P3.1-BE-1 | seed OP2 + modelo de ficha por sistema | backend |
-| P3.1-BE-2 | motor `stepPool` + validação + log | backend |
-| P3.1-BE-3 | testes de regras/dados | backend |
-| P3.1-FE-1 | tipos/store/socket OP2 | frontend |
-| P3.1-FE-2 | client do motor step pool | frontend |
-| P3.1-UX-1 | ficha OP2 mobile/desktop | UX |
-| P3.1-UX-2 | recursos/condições/medo no token/TV | UX |
-| P3.1-QA-1 | E2E one-shot OP2 presencial | QA |
-| P3.1-QA-2 | E2E online 2 contextos | QA |
+| P3.1-BE-1 | modelo/validação/seed OP2 + OPSH, PD/armadura, perfil, relações, rituais, condições | backend |
+| P3.1-BE-2 | motor `step` + tabelas + log + unitários | backend |
+| P3.1-FE-1 | tipos, socket, `sheetTypes`, store | frontend |
+| P3.1-FE-2 | ficha OP2 (dados, recursos, relações, rituais, condições) | frontend |
+| P3.1-FE-3 | ficha OPSH (d20, SAN/PD, ferimentos) | frontend |
+| P3.1-QA-1 | unitários de regra + E2E one-shot presencial | QA |
+| P3.1-QA-2 | E2E online 2 contextos + caos | QA |
+
+### 16.5 Resultado
+
+- Backend **154/154**, frontend **223/223**, type-check e builds verdes.
+- E2E completo **45/45** (novos specs `op2-one-shot` 8/8 e `op2-online` 3/3).
+- Caos **14/14**, `result: PASS`.
+- Correções de revisão: validação de atributos por sistema, perícias de legado,
+  alinhamento de campos (`profissao`, `progressionMode`, NEX/círculo texto,
+  `attacks.range`, lesões texto/estruturadas), ack de rolagem visível, DT 1..100,
+  ataque OPSH com pool de d20, leitura de `note`/`notes`, rótulo de sistema e
+  nome acessível dos campos.
+- Evidência: `docs/qa/PHASE3.1-OP2-REPORT.md`.
+- Tag: `v0.9.5-phase3.1`.

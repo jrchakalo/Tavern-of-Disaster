@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { IInitiativeEntry, TokenInfo } from '../../types';
+import { characterResourceBadges } from '../character/summary';
 
 const props = withDefaults(
   defineProps<{
@@ -33,7 +34,8 @@ const enriched = computed(() =>
     );
     const remaining = token ? `${token.remainingMovement.toFixed(1)}m` : '—';
     const vitals = token?.character ?? null;
-    return { entry, token, isMine, remaining, vitals };
+    const resources = characterResourceBadges(vitals);
+    return { entry, token, isMine, remaining, vitals, resources };
   }),
 );
 </script>
@@ -82,6 +84,14 @@ const enriched = computed(() =>
           </span>
           <span v-if="item.vitals.defense != null" class="initiative-item__def">
             CA {{ item.vitals.defense }}
+          </span>
+          <span
+            v-for="resource in item.resources"
+            :key="resource.key"
+            class="initiative-item__resource"
+            :title="resource.title"
+          >
+            {{ resource.label }} {{ resource.value }}
           </span>
         </div>
         <div class="initiative-item__meta">

@@ -34,10 +34,16 @@ export function mapRollToPayload(roll: LeanRoll, fallbackRevision = 0): DiceRoll
       value: item.value,
       kept: item.kept,
       ...(item.explosions ? { explosions: item.explosions } : {}),
+      ...(item.role ? { role: item.role } : {}),
     })),
     modifier: roll.modifier ?? 0,
     total: roll.total,
     metadata: roll.metadata,
+    ...(roll.kind ? { kind: roll.kind } : {}),
+    ...(roll.step ? { step: roll.step as DiceRolledPayload['step'] } : {}),
+    ...(roll.tableResult
+      ? { tableResult: roll.tableResult as DiceRolledPayload['tableResult'] }
+      : {}),
     tableId: roll.tableId.toString(),
     userId,
     username: populated ? rawUser!.username ?? '' : '',

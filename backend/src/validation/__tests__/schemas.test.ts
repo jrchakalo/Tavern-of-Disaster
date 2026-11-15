@@ -1,4 +1,10 @@
-import { zPlaceTokenPayload, zCreateTokenTemplate } from '../schemas';
+import {
+  zPlaceTokenPayload,
+  zCreateTokenTemplate,
+  zRollDicePayload,
+  zCharacterStats,
+  zCreateCharacter,
+} from '../schemas';
 
 const baseTokenPayload = {
   tableId: '6af838beedca4f72eb0a8672',
@@ -40,5 +46,238 @@ describe('schemas de URL opcional', () => {
       imageUrl: '',
     });
     expect(parsed.imageUrl).toBeUndefined();
+  });
+});
+
+describe('zRollDicePayload (expressão, passo e tabela)', () => {
+  const tableId = '6af838beedca4f72eb0a8672';
+
+  it('mantém compatibilidade com { expression }', () => {
+    const parsed = zRollDicePayload.parse({ tableId, expression: '2d6+3' });
+    expect(parsed.expression).toBe('2d6+3');
+    expect(parsed.step).toBeUndefined();
+    expect(parsed.table).toBeUndefined();
+  });
+
+  it('aceita um teste de passo completo', () => {
+    const parsed = zRollDicePayload.parse({
+      tableId,
+      step: {
+        attribute: 'fisico',
+        attributeDie: 10,
+        skillKey: 'luta',
+        skillDie: 8,
+        bonusDice: [6, 8],
+        stepDelta: 1,
+        stepTarget: 'skill',
+        difficulty: 9,
+        dreadDie: 6,
+        label: 'Luta (Físico)',
+        damageModifier: 3,
+        damageMode: true,
+      },
+    });
+    expect(parsed.step).toMatchObject({
+      attribute: 'fisico',
+      attributeDie: 10,
+      skillKey: 'luta',
+      skillDie: 8,
+      difficulty: 9,
+      dreadDie: 6,
+    });
+  });
+
+  it('aceita d20 explícito e dreadDie nulo', () => {
+    const parsed = zRollDicePayload.parse({
+      tableId,
+      step: {
+        attribute: 'mente',
+        attributeDie: 20,
+        skillKey: 'bruxaria',
+        skillDie: 20,
+        dreadDie: null,
+      },
+    });
+    expect(parsed.step?.attributeDie).toBe(20);
+    expect(parsed.step?.dreadDie).toBeNull();
+  });
+
+  it('aceita rolagem de tabela com modificador de patamar', () => {
+    const parsed = zRollDicePayload.parse({ tableId, table: 'lesao', modifier: 2 });
+    expect(parsed.table).toBe('lesao');
+    expect(parsed.modifier).toBe(2);
+  });
+
+  it('exige exatamente um entre expression, step e table', () => {
+    expect(() => zRollDicePayload.parse({ tableId })).toThrow();
+    expect(() =>
+      zRollDicePayload.parse({
+        tableId,
+        expression: '1d20',
+        step: { attribute: 'fisico', attributeDie: 10, skillKey: 'luta', skillDie: 10 },
+      })
+    ).toThrow();
+    expect(() => zRollDicePayload.parse({ tableId, expression: '1d20', table: 'trauma' })).toThrow();
+  });
+
+  it('rejeita modificador fora de rolagem de tabela', () => {
+    expect(() => zRollDicePayload.parse({ tableId, expression: '1d20', modifier: 1 })).toThrow();
+  });
+
+  it('rejeita tabela desconhecida', () => {
+    expect(() => zRollDicePayload.parse({ tableId, table: 'morte' })).toThrow();
+  });
+
+  it('rejeita passo com mais de 2 dados bônus, dado inválido e dificuldade fora da faixa', () => {
+    const base = { attribute: 'fisico', attributeDie: 10, skillKey: 'luta', skillDie: 10 };
+    expect(() =>
+      zRollDicePayload.parse({ tableId, step: { ...base, bonusDice: [6, 6, 6] } })
+    ).toThrow();
+    expect(() => zRollDicePayload.parse({ tableId, step: { ...base, skillDie: 5 } })).toThrow();
+    expect(() =>
+      zRollDicePayload.parse({ tableId, step: { ...base, difficulty: 0 } })
+    ).toThrow();
+    expect(() =>
+      zRollDicePayload.parse({ tableId, step: { ...base, stepDelta: 3 } })
+    ).toThrow();
+    expect(() =>
+      zRollDicePayload.parse({ tableId, step: { ...base, damageModifier: 101 } })
+    ).toThrow();
+  });
+});
+
+describe('zCharacterStats (PD, PE, SAN e armadura)', () => {
+  it('aceita recursos completos', () => {
+    const parsed = zCharacterStats.parse({
+      currentHP: 5,
+      maxHP: 10,
+      currentPD: 3,
+      maxPD: 5,
+      armorPoints: 2,
+      armorPointsMax: 3,
+      currentPE: 1,
+      maxPE: 2,
+      currentSAN: 4,
+      maxSAN: 6,
+    });
+    expect(parsed).toMatchObject({ currentPD: 3, armorPoints: 2, currentSAN: 4 });
+  });
+
+  it('valida as relações atuais <= máximo', () => {
+    expect(() => zCharacterStats.parse({ currentPD: 6, maxPD: 5 })).toThrow();
+    expect(() => zCharacterStats.parse({ currentPE: 6, maxPE: 5 })).toThrow();
+    expect(() => zCharacterStats.parse({ currentSAN: 6, maxSAN: 5 })).toThrow();
+    expect(() => zCharacterStats.parse({ armorPoints: 4, armorPointsMax: 3 })).toThrow();
+  });
+
+  it('não quebra patch parcial com um único campo', () => {
+    expect(zCharacterStats.parse({ currentPD: 2 })).toEqual({ currentPD: 2 });
+    expect(zCharacterStats.parse({ maxSAN: 8 })).toEqual({ maxSAN: 8 });
+  });
+
+  it('rejeita valores negativos', () => {
+    expect(() => zCharacterStats.parse({ currentPD: -1 })).toThrow();
+    expect(() => zCharacterStats.parse({ armorPoints: -1 })).toThrow();
+  });
+});
+
+describe('ficha OP2/OPSH (aditivo)', () => {
+  const base = { name: 'Agente' };
+
+  it('aceita perfil, medo, relações, rituais, condições, traumas e ferimentos', () => {
+    const parsed = zCreateCharacter.parse({
+      ...base,
+      profile: {
+        perfil: 'executor',
+        vocacao: 'Investigador',
+        idade: 34,
+        classe: 'combatente',
+        origem: 'Militar',
+        trilha: 'Aniquilador',
+        nex: 25,
+        patente: 'operador',
+        conceito: 'Caçador de monstros',
+        level: 3,
+      },
+      stats: { currentPD: 4, maxPD: 6, armorPoints: 1, armorPointsMax: 2 },
+      fear: { dreadDie: 6, active: true, notes: 'Medo de altura' },
+      relations: [{ name: 'Irmã', grade: 3, note: 'Única família' }],
+      rituals: [{ name: 'Luz', cost: '1 PE', circle: 1, description: 'Ilumina a área.' }],
+      conditions: ['Atordoado'],
+      traumas: ['TEPT'],
+      injuries: [{ attribute: 'agilidade', penalty: -1, note: 'Joelho' }],
+      sanityMode: 'san',
+    });
+
+    expect(parsed.relations).toHaveLength(1);
+    expect(parsed.fear?.dreadDie).toBe(6);
+    expect(parsed.sanityMode).toBe('san');
+  });
+
+  it('mantém fichas D&D antigas válidas sem os campos novos', () => {
+    const parsed = zCreateCharacter.parse({
+      ...base,
+      profile: { className: 'Guerreiro', level: 5, race: 'Humano' },
+      stats: { currentHP: 30, maxHP: 40, defense: 17 },
+      skills: { athletics: 5, perception: 'expertise' },
+      spellSlots: { '1': { used: 0, max: 2 } },
+    });
+    expect(parsed.fear).toBeUndefined();
+    expect(parsed.conditions).toBeUndefined();
+  });
+
+  it('rejeita limites e enumerações inválidas', () => {
+    expect(() =>
+      zCreateCharacter.parse({
+        ...base,
+        fear: { dreadDie: 5 },
+      })
+    ).toThrow();
+
+    expect(() =>
+      zCreateCharacter.parse({
+        ...base,
+        profile: { perfil: 'heroi' },
+      })
+    ).toThrow();
+
+    expect(() =>
+      zCreateCharacter.parse({
+        ...base,
+        relations: Array.from({ length: 21 }, (_, index) => ({
+          name: `Relação ${index}`,
+          grade: 1 as const,
+        })),
+      })
+    ).toThrow();
+
+    expect(() =>
+      zCreateCharacter.parse({
+        ...base,
+        rituals: Array.from({ length: 51 }, (_, index) => ({ name: `Ritual ${index}` })),
+      })
+    ).toThrow();
+
+    expect(() =>
+      zCreateCharacter.parse({
+        ...base,
+        conditions: Array.from({ length: 51 }, (_, index) => `Condição ${index}`),
+      })
+    ).toThrow();
+
+    expect(() =>
+      zCreateCharacter.parse({
+        ...base,
+        injuries: Array.from({ length: 21 }, (_, index) => ({
+          attribute: 'vigor',
+          penalty: -1,
+          note: `${index}`,
+        })),
+      })
+    ).toThrow();
+  });
+
+  it('rejeita condição acima de 100 caracteres', () => {
+    expect(() => zCreateCharacter.parse({ ...base, conditions: ['x'.repeat(101)] })).toThrow();
   });
 });
