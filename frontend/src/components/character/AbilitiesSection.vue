@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import SheetField from './SheetField.vue';
 import type { SheetDraft, SheetPatch } from './sheetTypes';
 import { DND_ABILITY_KEYS, DND_ABILITY_LABELS, DND_ABILITY_SHORT } from './sheetTypes';
 import {

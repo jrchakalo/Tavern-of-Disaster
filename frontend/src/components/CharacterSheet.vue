@@ -73,10 +73,12 @@ function applyPatch(patch: SheetPatch) {
 }
 
 // (Re)abre a ficha quando o diálogo abre ou o personagem muda de id.
+// Comparação por id (primitivo): troca de identidade do objeto com o mesmo id
+// NÃO reseta o rascunho — isso fica por conta do guard de `dirty` abaixo.
 watch(
-  () => [props.open, props.character?._id] as const,
-  ([open]) => {
-    if (open) syncFromCharacter();
+  () => (props.open ? props.character?._id ?? null : null),
+  (id) => {
+    if (id !== null) syncFromCharacter();
   },
   { immediate: true },
 );
