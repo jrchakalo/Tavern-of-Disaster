@@ -293,6 +293,8 @@ PO: `opencode-go/deepseek-v4.1-flash` (1017).
 - UX da Fase 3 foi retomada em `mimo-v2.6-flash-free` porque a sessão Go
   atingiu o limite de 5h. Os componentes parciais em `components/character/`
   foram preservados; o worktree recebeu o merge da integração antes do retry.
+- O limite Go resetou; a UX voltou para `opencode-go/mimo-v2.6-flash` sem
+  reiniciar a tarefa. LongCat free foi apenas ponte durante o bloqueio.
 - A suíte E2E completa compartilha um único backend/IP; `LOGIN_RATE_LIMIT_POINTS`
   e `CREATE_RATE_LIMIT_POINTS` sobem para 1000 apenas no `global-setup.ts`.
   Produção mantém 5/20 por 5 min.
