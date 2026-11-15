@@ -1,11 +1,12 @@
 # Ordem Paranormal 2 + Sobrevivendo ao Horror — contrato da Fase 3.1
 
-> Status: **contrato aprovado para implementação** (2026-11-15).
+> Status: **implementado e aprovado** em `v0.9.5-phase3.1` (2026-11-15).
+> Evidência: `docs/qa/PHASE3.1-OP2-REPORT.md`.
 > Fontes lidas localmente em `references/ordem-paranormal/` (não versionadas):
 > `op2-playtest-beta-contos-da-vigilia.pdf`, `op2-maldicao-do-idolo-de-pedra.pdf`
-> (Alpha), fichas prontas do Beta (Missão 1 e Elite) e
-> `op1-sobrevivendo-ao-horror.pdf`.
-> Branch: `restore/phase-3-op2`. Prioridade: **one-shot da primeira sessão**.
+> (Alpha), fichas prontas do Beta (Missão 1 e Elite),
+> `op1-sobrevivendo-ao-horror.pdf` e `ordem-paranormal-rpg.pdf` (OP1 core v1.1).
+> Branch: `restore/phase-3-op2`.
 > Nada de texto protegido no repositório: aqui só ficam resumos mecânicos.
 
 ## 1. Decisões de produto
@@ -442,22 +443,22 @@ O mesmo motor de expressão do backend atende OPSH. A ficha gera
 
 ## 7. Critérios de aceite (Fase 3.1)
 
-- [ ] Seed `ordem-paranormal-2` e `ordem-paranormal-sobrevivendo-ao-horror`
+- [x] Seed `ordem-paranormal-2` e `ordem-paranormal-sobrevivendo-ao-horror`
       idempotente; D&D 5e continua default.
-- [ ] Ficha OP2 cria, edita, persiste, reabre e sincroniza entre 2 clientes.
-- [ ] Motor de passo: RA/RB, crítico, falha crítica, pavor, step up/down,
+- [x] Ficha OP2 cria, edita, persiste, reabre e sincroniza entre 2 clientes.
+- [x] Motor de passo: RA/RB, crítico, falha crítica, pavor, step up/down,
       limite de 4 rolados/3 somados, dano no crítico — cobertos por unitários.
-- [ ] Tabelas de lesão/trauma/falha crítica rolam e voltam com chave/resumo.
-- [ ] PV/PD no token/TV e reconexão sem divergência.
-- [ ] Ficha OPSH com Sanidade **e** PD, 28 perícias, testes `Nd20` (20 natural
+- [x] Tabelas de lesão/trauma/falha crítica rolam e voltam com chave/resumo.
+- [x] PV/PD no token/TV e reconexão sem divergência.
+- [x] Ficha OPSH com Sanidade **e** PD, 28 perícias, testes `Nd20` (20 natural
       = sucesso automático, atributo 0 = pior de 2d20), ferimentos
       debilitantes, medo e as três progressões (NEX/patente/estágio).
-- [ ] E2E do one-shot: DM + 2 jogadores, cena, tokens, fichas OP2, testes de
+- [x] E2E do one-shot: DM + 2 jogadores, cena, tokens, fichas OP2, testes de
       perícia, ataque/dano, PD/medo, log e reconexão.
-- [ ] E2E online: 2 contextos remotos (sem TV).
-- [ ] D&D 5e e Cyberpunk RED verdes; backend, frontend, build e type-check
+- [x] E2E online: 2 contextos remotos (sem TV).
+- [x] D&D 5e e Cyberpunk RED verdes; backend, frontend, build e type-check
       verdes.
-- [ ] Nenhum PDF ou texto protegido commitado.
+- [x] Nenhum PDF ou texto protegido commitado.
 
 ## 8. Quadro de coders
 

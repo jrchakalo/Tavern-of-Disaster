@@ -1,9 +1,9 @@
 # Plano de Restauração — Tavern of Disaster
 
-> Status: em execução. Fases 0–3 concluídas; **Fase 3.1 (Ordem Paranormal 2)**
-> é a prioridade do primeiro one-shot. Fase 4 pausada até OP2 fechar.
+> Status: em execução. Fases 0–3.1 concluídas; a próxima é **Fase 4 (mídia e
+> cenas)**. O one-shot de OP2/OPSH está jogável.
 > Última atualização: 2026-11-15. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
-> `v0.9.4-phase3`.
+> `v0.9.4-phase3`, `v0.9.5-phase3.1`.
 
 ## 1. Diagnóstico em uma frase
 
@@ -42,7 +42,7 @@ main
 │   ├── restore/phase-2-ux         ficha resumida, TV real, QR, mobile
 │   └── restore/phase-2-qa         1 TV + 5 celulares + display security
 ├── restore/phase-3-sheets-dice    fichas, dados, sistemas (v0.9.4-phase3)
-├── restore/phase-3-op2            Ordem Paranormal 2 (one-shot, prioridade)
+├── restore/phase-3-op2            Ordem Paranormal 2 + OPSH (v0.9.5-phase3.1)
 ├── restore/phase-4-media-scenes   uploads, cenas, persistência (pausada)
 ├── restore/phase-5-online         WebRTC, áudio/vídeo, chat, TURN (online real)
 └── restore/phase-6-beta-ops       deploy free, observabilidade, playtest simulado
@@ -185,7 +185,7 @@ decisões. Tags: `v0.9.0-restore` (marco zero), `v0.9.x` por fase, `v1.0.0-beta`
 - Log de rolagens tem TTL de 7 dias (sem exportação).
 - D&D 5e tem ficha completa, mas não compêndio de magias/itens.
 
-### Fase 3.1 — Ordem Paranormal 2 + Sobrevivendo ao Horror (prioridade do one-shot)
+### Fase 3.1 — Ordem Paranormal 2 + Sobrevivendo ao Horror (concluída)
 
 Contrato: `docs/ORDEM_PARANORMAL.md`. Branch: `restore/phase-3-op2`.
 
@@ -198,35 +198,38 @@ plataforma; OP2 e OPSH têm o mesmo peso.
 - [x] Ler PDFs em `references/ordem-paranormal/` (não versionados).
 - [x] Congelar contrato: atributos/perícias em dado, teste de passo, RA/RB,
       crítico, falha crítica, pavor, lesão/trauma, relações, armadura.
-- [ ] Seed `ordem-paranormal-2` (atributos default d6, 20 perícias, presets).
-- [ ] Ficha OP2: Físico/Mente/Emoção como dados, 20 perícias, PV/PD,
+- [x] Seed `ordem-paranormal-2` (atributos default d6, 20 perícias, presets).
+- [x] Ficha OP2: Físico/Mente/Emoção como dados, 20 perícias, PV/PD,
       armadura, perfil, vocação, nível, idade, relações, rituais,
       condições/traumas/lesões, ataques e inventário.
-- [ ] Motor `step`: atributo + perícia, dados bônus, pavor, step up/down,
+- [x] Motor `step`: atributo + perícia, dados bônus, pavor, step up/down,
       DT, RA/RB, crítico (empate ≥6), falha crítica, dano de crítico.
-- [ ] Tabelas de lesão (1d20), trauma (1d20) e falha crítica (1d8).
-- [ ] UI mobile/desktop; PV/PD/armadura no token/TV; rolagens pelo log.
-- [ ] E2E one-shot: DM + jogadores, perícias, ataque/dano, PD/medo, log,
+- [x] Tabelas de lesão (1d20), trauma (1d20) e falha crítica (1d8).
+- [x] UI mobile/desktop; PV/PD/armadura no token/TV; rolagens pelo log.
+- [x] E2E one-shot: DM + jogadores, perícias, ataque/dano, PD/medo, log,
       reconexão.
-- [ ] E2E online com 2 contextos remotos.
+- [x] E2E online com 2 contextos remotos.
 
 **3.1b — OPSH**
 
-- [ ] Seed `ordem-paranormal-sobrevivendo-ao-horror` (5 atributos, 26
+- [x] Seed `ordem-paranormal-sobrevivendo-ao-horror` (5 atributos, 28
       perícias, classes/origens/trilhas, modos SAN e PD).
-- [ ] Ficha OPSH: d20 pools, treino `+0/+5/+10/+15`, PV/Defesa, PE/SAN ou PD,
+- [x] Ficha OPSH: d20 pools, treino `+0/+5/+10/+15`, PV/Defesa, PE/SAN ou PD,
       ferimentos debilitantes, medo/traumas, rituais.
-- [ ] Testes `Nd20kh1 + bônus` usando o motor de expressão existente.
-- [ ] E2E OPSH mínimo (ficha, teste, PD/SAN, ferimento).
+- [x] Testes `Nd20kh1 + bônus` usando o motor de expressão existente.
+- [x] E2E OPSH mínimo (ficha, teste, PD/SAN, ferimento).
+
+> Evidência: `docs/qa/PHASE3.1-OP2-REPORT.md` — backend 154/154, frontend
+> 223/223, E2E 45/45 (novos 11/11), caos 14/14.
 
 > **OP1 core:** lido e validado (`ordem-paranormal-rpg.pdf`, v1.1). A base do
 > OPSH está em `docs/ORDEM_PARANORMAL.md` §5 (28 perícias, classes, NEX,
 > Defesa, medo).
 
 **Saída:** one-shot de OP2 jogável de ponta a ponta e OPSH funcional com o
-suplemento, antes de retomar a Fase 4.
+suplemento. **Concluída em 2026-11-15** (tag `v0.9.5-phase3.1`).
 
-### Fase 4 — Mídia e cenas (1 semana) — PAUSADA
+### Fase 4 — Mídia e cenas (1 semana)
 
 - Upload com adapter (`local`/`supabase`), compressão, quotas, limpeza de órfãos.
 - Subir mapa pelo celular do Mestre.

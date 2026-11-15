@@ -4,12 +4,13 @@
 > skill, designação, branch, revisão, correção e merge entra aqui. Se o contexto
 > da conversa se perder, este arquivo é a fonte da verdade do processo.
 >
-> Última atualização: 2026-11-15. **Fases 1, 2 e 3 concluídas e aprovadas**:
-> `v0.9.2-phase1`, `v0.9.3-phase2` e `v0.9.4-phase3` (backend 103/103,
-> frontend 185/185, E2E 34/34, caos 14/14).
-> **Fase 3.1 (Ordem Paranormal 2 + Sobrevivendo ao Horror)** é a prioridade do
-> primeiro one-shot; a Fase 4 está pausada até OP2/OPSH fecharem. A frente
-> **online** é a Fase 5 em `docs/ONLINE_MODE.md`; o deploy/beta é a Fase 6.
+> Última atualização: 2026-11-15. **Fases 1, 2, 3 e 3.1 concluídas e
+> aprovadas**: `v0.9.2-phase1`, `v0.9.3-phase2`, `v0.9.4-phase3` e
+> `v0.9.5-phase3.1`.
+> A Fase 3.1 entregou **Ordem Paranormal 2 + Sobrevivendo ao Horror**:
+> backend 154/154, frontend 223/223, E2E 45/45 (novos 11/11) e caos 14/14.
+> A próxima é a **Fase 4 (mídia e cenas)**. A frente **online** é a Fase 5 em
+> `docs/ONLINE_MODE.md`; o deploy/beta é a Fase 6.
 
 ## 1. Modelo de trabalho
 
@@ -448,7 +449,7 @@ atendem. **OPSH** é o suplemento de OP1 que a mesa também quer, com peso igual
 - Combate do PDF de referência do Beta (três fases), dano `RA+mod`, armadura
   reduz 10 por ponto.
 - Rituais: nome, custo e descrição.
-- A Fase 4 fica pausada até a Fase 3.1 fechar.
+- A Fase 4 fica pausada apenas durante a Fase 3.1; concluída esta, retoma.
 - Motor de dados ganha `step` (atributo + perícia, bônus, pavor, RA/RB,
   crítico/falha, step up/down) + tabelas de lesão/trauma/falha crítica. OPSH
   reutiliza o motor de expressão (`Nd20kh1+bônus`).
@@ -470,3 +471,16 @@ atendem. **OPSH** é o suplemento de OP1 que a mesa também quer, com peso igual
 | P3.1-FE-3 | ficha OPSH (d20, SAN/PD, ferimentos) | frontend |
 | P3.1-QA-1 | unitários de regra + E2E one-shot presencial | QA |
 | P3.1-QA-2 | E2E online 2 contextos + caos | QA |
+
+### 16.5 Resultado
+
+- Backend **154/154**, frontend **223/223**, type-check e builds verdes.
+- E2E completo **45/45** (novos specs `op2-one-shot` 8/8 e `op2-online` 3/3).
+- Caos **14/14**, `result: PASS`.
+- Correções de revisão: validação de atributos por sistema, perícias de legado,
+  alinhamento de campos (`profissao`, `progressionMode`, NEX/círculo texto,
+  `attacks.range`, lesões texto/estruturadas), ack de rolagem visível, DT 1..100,
+  ataque OPSH com pool de d20, leitura de `note`/`notes`, rótulo de sistema e
+  nome acessível dos campos.
+- Evidência: `docs/qa/PHASE3.1-OP2-REPORT.md`.
+- Tag: `v0.9.5-phase3.1`.

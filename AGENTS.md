@@ -14,11 +14,9 @@ Vue 3 + Vite + TypeScript + Pinia no frontend.
 
 - `main` contém a antiga branch `expand`, que já incorpora `character`, `rolling`,
   `system`, `polishing` e `fix`.
-- A restauração está organizada em fases. Fases 0–3 concluídas; a próxima é
-  **Fase 3.1 — Ordem Paranormal 2 + Sobrevivendo ao Horror**
-  (`restore/phase-3-op2`), prioridade do primeiro one-shot. A Fase 4 fica
-  pausada até a Fase 3.1 fechar. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
-  `v0.9.4-phase3`.
+- A restauração está organizada em fases. Fases 0–3.1 concluídas; a próxima é
+  **Fase 4 — mídia e cenas**. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
+  `v0.9.4-phase3`, `v0.9.5-phase3.1`.
 - **D&D 5e é o sistema padrão da plataforma.** OP2 e OPSH têm o mesmo peso;
   Cyberpunk RED é secundário; Call of Cthulhu é futuro.
 - Contratos: `docs/REALTIME_PROTOCOL.md` (tempo real), `docs/TABLE_MODE.md`
