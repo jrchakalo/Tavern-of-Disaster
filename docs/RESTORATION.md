@@ -185,25 +185,46 @@ decisões. Tags: `v0.9.0-restore` (marco zero), `v0.9.x` por fase, `v1.0.0-beta`
 - Log de rolagens tem TTL de 7 dias (sem exportação).
 - D&D 5e tem ficha completa, mas não compêndio de magias/itens.
 
-### Fase 3.1 — Ordem Paranormal 2 (prioridade do one-shot)
+### Fase 3.1 — Ordem Paranormal 2 + Sobrevivendo ao Horror (prioridade do one-shot)
 
-Contrato: `docs/ORDEM_PARANORMAL.md`. Branch futura:
-`restore/phase-3-op2`.
+Contrato: `docs/ORDEM_PARANORMAL.md`. Branch: `restore/phase-3-op2`.
 
-- [ ] Receber/ler PDFs em `references/ordem-paranormal/` (não versionar).
-- [ ] Extrair regras exatas do playtest OP2 + *Sobrevivendo ao Horror*.
-- [ ] Seed `ordem-paranormal-2` com atributos/perfis/perícias/presets.
-- [ ] Ficha OP2: Físico/Mente/Emoção como dados, 20 perícias, Vida/PD,
-      Defesa, NEX/nível, perfil, ocupação, armas, rituais, condições/medo.
-- [ ] Motor de teste OP2: dado de atributo + dado de perícia, DT, RA/RB,
-      crítico, falha crítica, step up/down.
-- [ ] UI mobile/desktop da ficha OP2; resumo Vida/PD/Defesa no token/TV.
-- [ ] E2E do one-shot: DM + jogadores, perícias, combate simplificado,
-      PD/medo, log e reconexão.
-- [ ] Teste online com 2 contextos remotos.
+Regras extraídas dos PDFs locais (Beta/Contos da Vigília como primário, Alpha
+como compatibilidade; OPSH integral). D&D 5e continua o sistema padrão da
+plataforma; OP2 e OPSH têm o mesmo peso.
 
-**Saída:** one-shot de OP2 jogável de ponta a ponta, com a ficha e os dados
-corretos, antes de retomar a Fase 4.
+**3.1a — OP2 (gate do one-shot)**
+
+- [x] Ler PDFs em `references/ordem-paranormal/` (não versionados).
+- [x] Congelar contrato: atributos/perícias em dado, teste de passo, RA/RB,
+      crítico, falha crítica, pavor, lesão/trauma, relações, armadura.
+- [ ] Seed `ordem-paranormal-2` (atributos default d6, 20 perícias, presets).
+- [ ] Ficha OP2: Físico/Mente/Emoção como dados, 20 perícias, PV/PD,
+      armadura, perfil, vocação, nível, idade, relações, rituais,
+      condições/traumas/lesões, ataques e inventário.
+- [ ] Motor `step`: atributo + perícia, dados bônus, pavor, step up/down,
+      DT, RA/RB, crítico (empate ≥6), falha crítica, dano de crítico.
+- [ ] Tabelas de lesão (1d20), trauma (1d20) e falha crítica (1d8).
+- [ ] UI mobile/desktop; PV/PD/armadura no token/TV; rolagens pelo log.
+- [ ] E2E one-shot: DM + jogadores, perícias, ataque/dano, PD/medo, log,
+      reconexão.
+- [ ] E2E online com 2 contextos remotos.
+
+**3.1b — OPSH**
+
+- [ ] Seed `ordem-paranormal-sobrevivendo-ao-horror` (5 atributos, 26
+      perícias, classes/origens/trilhas, modos SAN e PD).
+- [ ] Ficha OPSH: d20 pools, treino `+0/+5/+10/+15`, PV/Defesa, PE/SAN ou PD,
+      ferimentos debilitantes, medo/traumas, rituais.
+- [ ] Testes `Nd20kh1 + bônus` usando o motor de expressão existente.
+- [ ] E2E OPSH mínimo (ficha, teste, PD/SAN, ferimento).
+
+> **Lacuna:** o PDF do OP1 core não está na pasta. A base pública do OP1
+> (atributos, classes, NEX, perícias, d20 pool) está documentada no contrato e
+> precisa ser validada contra o livro core antes do playtest de OPSH.
+
+**Saída:** one-shot de OP2 jogável de ponta a ponta e OPSH funcional com o
+suplemento, antes de retomar a Fase 4.
 
 ### Fase 4 — Mídia e cenas (1 semana) — PAUSADA
 

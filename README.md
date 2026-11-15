@@ -24,10 +24,12 @@ Restoration status: Phase 3 (`v0.9.4-phase3`) is integrated — realtime protoco
 table mode with TV display token/QR, mobile player controller, canonical grid
 geometry, realtime character sheets with HP sync, server-authoritative dice
 (D&D 5e + Cyberpunk RED) and persisted roll log. The next priority is
-**Phase 3.1: Ordem Paranormal 2**, the system for the first one-shot
-(`docs/ORDEM_PARANORMAL.md`); media/scenes and online voice/video/chat come
-after. See `docs/RESTORATION.md`, `docs/REALTIME_PROTOCOL.md`,
-`docs/TABLE_MODE.md`, `docs/SHEETS_DICE.md` and `docs/ORCHESTRATION.md`.
+**Phase 3.1: Ordem Paranormal 2 + Sobrevivendo ao Horror**, the systems for the
+first one-shot (`docs/ORDEM_PARANORMAL.md`); D&D 5e remains the platform
+default, with OP2 and OPSH at equal weight. Media/scenes and online
+voice/video/chat come after. See `docs/RESTORATION.md`,
+`docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md`, `docs/SHEETS_DICE.md` and
+`docs/ORCHESTRATION.md`.
 
 Currently implemented core features:
 
