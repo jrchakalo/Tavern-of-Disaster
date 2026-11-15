@@ -24,12 +24,15 @@ import type {
     SessionYou,
     PresenceEntry,
     TokenUpdateDTO,
+    CharacterSummaryDTO,
+    RollLogEntryDTO,
 } from '../types';
 import { currentUser } from '../services/authService';
 
 const DEFAULT_GRID = 30;
 const DEFAULT_METERS_PER_SQUARE = 1.5;
 const LOG_CAP = 200;
+const RECENT_ROLLS_CAP = 50;
 type MeasurementShape = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
 type PersistentMeasurement = {
     id: string;
@@ -275,6 +278,10 @@ export const useTableStore = defineStore('table', () => {
     const lastSyncAt: Ref<number> = ref(0);
     const you: Ref<SessionYou | null> = ref(null);
     const presence: Ref<PresenceEntry[]> = ref([]);
+    // Resumos de fichas da mesa (o servidor é a fonte; ficha completa vem por REST)
+    const characters: Ref<CharacterSummaryDTO[]> = ref([]);
+    // Log de rolagens canônico (máx. 50, mais recente no fim)
+    const recentRolls: Ref<RollLogEntryDTO[]> = ref([]);
     const isApplyingPatch: Ref<boolean> = ref(false);
     // Modo TV: ligado pelo socketService ao conectar com token de display.
     const displayMode: Ref<boolean> = ref(false);
@@ -438,6 +445,9 @@ export const useTableStore = defineStore('table', () => {
 
     function handleDiceRoll(payload: DiceRolledPayload) {
         addLogEntry(buildRollLogEntry(payload));
+        // Log canônico (revision-aware): `revision` segue no payload quando o
+        // servidor a enviou; cap de 50 é aplicado em addRecentRoll.
+        addRecentRoll(payload);
         if (payload.userId === currentUser.value?.id) {
             diceAnimationHook.value?.(payload);
         }
@@ -485,6 +495,8 @@ export const useTableStore = defineStore('table', () => {
         setAurasFromDTO(snapshot.auras, nextActiveSceneId);
         you.value = snapshot.you;
         presence.value = [...snapshot.presence];
+        characters.value = [...(snapshot.characters ?? [])];
+        recentRolls.value = (snapshot.recentRolls ?? []).slice(-RECENT_ROLLS_CAP);
         revision.value = snapshot.revision;
         clockSkewMs.value = snapshot.serverNowMs - Date.now();
         lastSyncAt.value = Date.now();
@@ -589,6 +601,31 @@ export const useTableStore = defineStore('table', () => {
             if (changes.auras) {
                 setAurasFromDTO(changes.auras, activeSceneId.value);
             }
+            if (changes.characters) {
+                setCharacterSummaries(changes.characters);
+            }
+            if (changes.characterUpdates) {
+                changes.characterUpdates.forEach((update) => {
+                    const existing = characters.value.find((c) => c._id === update.characterId);
+                    // Preenche campos obrigatórios do resumo e descarta undefined
+                    // explícito do patch (o servidor só manda o que mudou).
+                    const cleanPatch = Object.fromEntries(
+                        Object.entries(update.patch).filter(([, value]) => value !== undefined),
+                    ) as Partial<CharacterSummaryDTO>;
+                    upsertCharacterSummary({
+                        _id: update.characterId,
+                        name: existing?.name ?? '',
+                        ownerId: existing?.ownerId ?? '',
+                        ...cleanPatch,
+                    });
+                });
+            }
+            if (changes.charactersRemoved) {
+                removeCharacterSummaries(changes.charactersRemoved);
+            }
+            if (changes.recentRolls) {
+                recentRolls.value = [...changes.recentRolls].slice(-RECENT_ROLLS_CAP);
+            }
             if (changes.sessionStatus) {
                 const next = changes.sessionStatus.status;
                 if (
@@ -613,6 +650,45 @@ export const useTableStore = defineStore('table', () => {
 
     function setPresence(entries: PresenceEntry[]) {
         presence.value = [...entries];
+    }
+
+    // ------------------------------------------------------------------
+    // Fichas (resumos) e log de rolagens — canônico via snapshot/patch
+    // ------------------------------------------------------------------
+
+    /** Substitui a lista de resumos (snapshot ou `changes.characters`). */
+    function setCharacterSummaries(list: CharacterSummaryDTO[]) {
+        characters.value = [...list];
+    }
+
+    /** Merge por `_id`: atualiza o resumo existente ou acrescenta. */
+    function upsertCharacterSummary(summary: CharacterSummaryDTO) {
+        const idx = characters.value.findIndex((c) => c._id === summary._id);
+        if (idx >= 0) {
+            const clone = [...characters.value];
+            clone[idx] = { ...clone[idx], ...summary };
+            characters.value = clone;
+        } else {
+            characters.value = [...characters.value, { ...summary }];
+        }
+    }
+
+    /** Remove resumos por `_id` (delete de ficha desvincula via patch). */
+    function removeCharacterSummaries(ids: string[]) {
+        const removeSet = new Set(ids);
+        characters.value = characters.value.filter((c) => !removeSet.has(c._id));
+    }
+
+    /** Helper de leitura para a UX (token card, TV, /play). */
+    function characterSummary(id: string | null | undefined): CharacterSummaryDTO | null {
+        if (!id) return null;
+        return characters.value.find((c) => c._id === id) ?? null;
+    }
+
+    /** Acrescenta uma rolagem ao log canônico (cap 50). */
+    function addRecentRoll(entry: RollLogEntryDTO) {
+        const next = [...recentRolls.value, entry];
+        recentRolls.value = next.length > RECENT_ROLLS_CAP ? next.slice(next.length - RECENT_ROLLS_CAP) : next;
     }
 
     function placeToken(newToken: TokenInfo) {
@@ -914,6 +990,14 @@ export const useTableStore = defineStore('table', () => {
         applySnapshot,
         applyPatch,
         setPresence,
+        // Fichas (resumos) e log de rolagens
+        characters,
+        recentRolls,
+        characterSummary,
+        setCharacterSummaries,
+        upsertCharacterSummary,
+        removeCharacterSummaries,
+        addRecentRoll,
         // Modo display (TV read-only)
         displayMode,
         setDisplayMode,

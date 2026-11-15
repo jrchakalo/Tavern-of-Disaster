@@ -554,3 +554,157 @@ describe('tableStore — modo display (TV read-only)', () => {
     expect(store.revision).toBe(5);
   });
 });
+
+describe('tableStore — fichas (resumos) e log de rolagens', () => {
+  beforeEach(() => {
+    const store = useTableStore();
+    store.revision = 0;
+    store.lastSyncAt = 0;
+    store.setInitialState({
+      table: {
+        _id: 'table-1',
+        name: 'Mesa do Caos',
+        dm: { _id: 'u1', username: 'Mestre' },
+        players: [],
+        inviteCode: 'ABC123',
+        status: 'LIVE',
+        pauseUntil: null,
+        activeSceneId: 'scene-1',
+      },
+      activeScene: null,
+      scenes: [],
+      tokens: [],
+      initiative: [],
+      measurements: [],
+      auras: [],
+    });
+  });
+
+  afterEach(() => {
+    registerResyncRequester(null);
+  });
+
+  it('applySnapshot popula characters e recentRolls (default [])', () => {
+    const store = useTableStore();
+    store.applySnapshot(makeSnapshot({
+      characters: [
+        { _id: 'char-1', name: 'Bruxa', ownerId: 'u2', currentHP: 10, maxHP: 22, defense: 14, tokenId: null },
+      ],
+      recentRolls: [
+        {
+          tableId: 'table-1', userId: 'u2', username: 'Jogador', expression: '2d6+3',
+          rolls: [{ die: 6, value: 4, kept: 'kept' }, { die: 6, value: 6, kept: 'kept' }],
+          modifier: 3, total: 13, createdAt: new Date().toISOString(), revision: 5,
+        },
+      ],
+    }));
+
+    expect(store.characters).toHaveLength(1);
+    expect(store.characters[0].name).toBe('Bruxa');
+    expect(store.recentRolls).toHaveLength(1);
+    expect(store.recentRolls[0].total).toBe(13);
+    expect(store.characterSummary('char-1')?.currentHP).toBe(10);
+    expect(store.characterSummary('desconhecido')).toBeNull();
+    expect(store.characterSummary(null)).toBeNull();
+  });
+
+  it('applySnapshot sem characters/recentRolls usa listas vazias', () => {
+    const store = useTableStore();
+    store.applySnapshot(makeSnapshot());
+    expect(store.characters).toEqual([]);
+    expect(store.recentRolls).toEqual([]);
+  });
+
+  it('applyPatch: characters substitui, characterUpdates faz merge, charactersRemoved remove', () => {
+    const store = useTableStore();
+    store.applySnapshot(makeSnapshot({
+      characters: [
+        { _id: 'char-1', name: 'Bruxa', ownerId: 'u2', currentHP: 10, maxHP: 22, defense: 14 },
+        { _id: 'char-2', name: 'Clérigo', ownerId: 'u3', currentHP: 18, maxHP: 20 },
+      ],
+    }));
+
+    const applied = store.applyPatch(
+      makePatch({}, {
+        characterUpdates: [
+          { characterId: 'char-1', patch: { currentHP: 5, tokenId: 'tk-1' } },
+          // personagem desconhecido: entra na lista pelo patch
+          { characterId: 'char-9', patch: { name: 'NPC', ownerId: 'u1' } },
+        ],
+        charactersRemoved: ['char-2'],
+      }),
+    );
+
+    expect(applied).toBe(true);
+    expect(store.revision).toBe(6);
+    expect(store.characters.map((c) => c._id).sort()).toEqual(['char-1', 'char-9']);
+    const bruxa = store.characterSummary('char-1');
+    expect(bruxa?.currentHP).toBe(5);
+    expect(bruxa?.maxHP).toBe(22); // campo não tocado pelo patch é preservado
+    expect(bruxa?.tokenId).toBe('tk-1');
+  });
+
+  it('applyPatch substitui a lista quando changes.characters vem completo', () => {
+    const store = useTableStore();
+    store.applySnapshot(makeSnapshot({
+      characters: [{ _id: 'char-1', name: 'Bruxa', ownerId: 'u2' }],
+    }));
+
+    store.applyPatch(
+      makePatch({}, {
+        characters: [{ _id: 'char-3', name: 'Ladino', ownerId: 'u3', defense: 15 }],
+      }),
+    );
+
+    expect(store.characters).toHaveLength(1);
+    expect(store.characters[0]._id).toBe('char-3');
+  });
+
+  it('recentRolls: patch substitui a lista com cap de 50', () => {
+    const store = useTableStore();
+    store.applySnapshot(makeSnapshot());
+    expect(store.recentRolls).toEqual([]);
+
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      tableId: 'table-1',
+      userId: 'u1',
+      username: 'Mestre',
+      expression: '1d20',
+      rolls: [{ die: 20, value: i + 1, kept: 'kept' as const }],
+      modifier: 0,
+      total: i + 1,
+      createdAt: new Date(2026, 0, 1, 0, 0, i).toISOString(),
+    }));
+
+    store.applyPatch(makePatch({}, { recentRolls: many }));
+    expect(store.recentRolls).toHaveLength(50);
+    // Mantém as mais recentes (fim da lista).
+    expect(store.recentRolls[0].total).toBe(11);
+    expect(store.recentRolls[49].total).toBe(60);
+  });
+
+  it('diceRolled ao vivo acrescenta ao log canônico com cap de 50', () => {
+    const store = useTableStore();
+    store.applySnapshot(makeSnapshot());
+
+    for (let i = 0; i < 55; i += 1) {
+      store.handleDiceRoll({
+        tableId: 'table-1',
+        userId: 'u1',
+        username: 'Mestre',
+        expression: '1d20',
+        rolls: [{ die: 20, value: i + 1, kept: 'kept' }],
+        modifier: 0,
+        total: i + 1,
+        createdAt: new Date(2026, 0, 1, 0, 0, i).toISOString(),
+        revision: 5 + i,
+      });
+    }
+
+    expect(store.recentRolls).toHaveLength(50);
+    expect(store.recentRolls[0].total).toBe(6); // 5 mais antigas descartadas
+    expect(store.recentRolls[49].total).toBe(55);
+    // O log narrativo continua sendo alimentado junto.
+    expect(store.logs).toHaveLength(55);
+  });
+});
