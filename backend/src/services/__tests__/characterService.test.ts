@@ -236,6 +236,92 @@ describe('characterService.createCharacter', () => {
     });
   });
 
+  it('validates OP2/OPSH attributes by system without affecting other systems', async () => {
+    const op2System = await System.create({
+      key: 'ordem-paranormal-2',
+      name: 'Ordem Paranormal 2 (Playtest)',
+    });
+    const op2Table = await Table.create({
+      name: 'Mesa OP2 Atributos',
+      dm: dmId,
+      players: [playerId],
+      inviteCode: 'INV-OP2-ATTRS',
+      scenes: [],
+      systemId: op2System._id,
+    });
+
+    const validOp2 = await createCharacter(playerId.toString(), op2Table._id.toString(), {
+      name: 'OP2 válido',
+      attributes: { fisico: 4, mente: 12, emocao: 20 },
+    });
+    expect(mapToPlainObject(validOp2.attributes as any)).toMatchObject({
+      fisico: 4,
+      mente: 12,
+      emocao: 20,
+    });
+
+    await expect(
+      createCharacter(playerId.toString(), op2Table._id.toString(), {
+        name: 'OP2 inválido',
+        attributes: { fisico: 7 },
+      })
+    ).rejects.toThrow('Dado inválido para o atributo "fisico"');
+
+    await expect(
+      updateCharacter(playerId.toString(), op2Table._id.toString(), validOp2._id.toString(), {
+        attributes: { mente: 7 },
+      })
+    ).rejects.toThrow('Dado inválido para o atributo "mente"');
+    expect(mapToPlainObject((await Character.findById(validOp2._id))!.attributes as any)).toMatchObject({
+      mente: 12,
+    });
+
+    const opshSystem = await System.create({
+      key: 'ordem-paranormal-sobrevivendo-ao-horror',
+      name: 'Ordem Paranormal: Sobrevivendo ao Horror',
+    });
+    const opshTable = await Table.create({
+      name: 'Mesa OPSH Atributos',
+      dm: dmId,
+      players: [playerId],
+      inviteCode: 'INV-OPSH-ATTRS',
+      scenes: [],
+      systemId: opshSystem._id,
+    });
+
+    const validOpsh = await createCharacter(playerId.toString(), opshTable._id.toString(), {
+      name: 'OPSH válido',
+      attributes: { agilidade: 0, forca: 5, intelecto: 2, presenca: 3, vigor: 4 },
+    });
+    expect(mapToPlainObject(validOpsh.attributes as any)).toMatchObject({
+      agilidade: 0,
+      forca: 5,
+      intelecto: 2,
+      presenca: 3,
+      vigor: 4,
+    });
+
+    await expect(
+      createCharacter(playerId.toString(), opshTable._id.toString(), {
+        name: 'OPSH inválido',
+        attributes: { vigor: 6 },
+      })
+    ).rejects.toThrow('Valor inválido para o atributo "vigor"');
+
+    const dndTable = await Table.create({
+      name: 'Mesa D&D Atributos',
+      dm: dmId,
+      players: [playerId],
+      inviteCode: 'INV-DND-ATTRS',
+      scenes: [],
+    });
+    const dnd = await createCharacter(playerId.toString(), dndTable._id.toString(), {
+      name: 'D&D',
+      attributes: { STR: 16, DEX: 14 },
+    });
+    expect(mapToPlainObject(dnd.attributes as any)).toMatchObject({ STR: 16, DEX: 14 });
+  });
+
   it('validates OP2 skill dice as numbers only for the OP2 system', async () => {
     const system = await System.create({
       key: 'ordem-paranormal-2',

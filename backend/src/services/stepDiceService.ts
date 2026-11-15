@@ -98,10 +98,12 @@ const SKILL_LABELS: Record<string, string> = {
   investigacao: 'Investigação',
   ocultismo: 'Ocultismo',
   pilotagem: 'Pilotagem',
+  profissao: 'Profissão',
   reflexos: 'Reflexos',
   religiao: 'Religião',
   tatica: 'Tática',
   tecnologia: 'Tecnologia',
+  atualidades: 'Atualidades',
   vontade: 'Vontade',
 };
 

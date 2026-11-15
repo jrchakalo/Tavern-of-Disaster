@@ -252,6 +252,50 @@ function assertSkillDiceForSystem(
   });
 }
 
+const OP2_ATTRIBUTE_KEYS = ['fisico', 'mente', 'emocao'] as const;
+const OP2_ATTRIBUTE_DICE = new Set([4, 6, 8, 10, 12, 20]);
+const OPSH_ATTRIBUTE_KEYS = ['agilidade', 'forca', 'intelecto', 'presenca', 'vigor'] as const;
+
+/**
+ * Atributos do OP2 são dados (4/6/8/10/12/20) e os do OPSH são valores 0..5.
+ * Extras/legado são preservados; só as chaves do sistema são validadas.
+ */
+function assertAttributesForSystem(
+  systemKey: string | undefined,
+  attributes: Record<string, number> | undefined
+) {
+  if (!attributes) return;
+
+  if (systemKey === OP2_SYSTEM_KEY) {
+    OP2_ATTRIBUTE_KEYS.forEach((key) => {
+      if (!(key in attributes)) return;
+      const value = attributes[key];
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new ServiceError(`O atributo "${key}" precisa de um dado (4, 6, 8, 10, 12 ou 20).`);
+      }
+      if (!OP2_ATTRIBUTE_DICE.has(value)) {
+        throw new ServiceError(
+          `Dado inválido para o atributo "${key}". Use 4, 6, 8, 10, 12 ou 20.`
+        );
+      }
+    });
+    return;
+  }
+
+  if (systemKey === OPSH_SYSTEM_KEY) {
+    OPSH_ATTRIBUTE_KEYS.forEach((key) => {
+      if (!(key in attributes)) return;
+      const value = attributes[key];
+      if (typeof value !== 'number' || !Number.isInteger(value)) {
+        throw new ServiceError(`O atributo "${key}" precisa ser um número inteiro de 0 a 5.`);
+      }
+      if (value < 0 || value > 5) {
+        throw new ServiceError(`Valor inválido para o atributo "${key}". Use um inteiro de 0 a 5.`);
+      }
+    });
+  }
+}
+
 /** Chave do sistema: cópia da mesa, sobrescrita apenas pelo Mestre, fallback dnd5e. */
 async function resolveSystemKey(
   table: ITable,
@@ -276,6 +320,7 @@ function assignCharacterFields(character: ICharacter, payload: UpdateCharacterPa
     character.profile = payload.profile as CharacterProfile;
   }
   if (payload.attributes !== undefined) {
+    assertAttributesForSystem(character.systemKey, payload.attributes as Record<string, number>);
     character.attributes = payload.attributes as Record<string, number>;
   }
   if (payload.skills !== undefined) {
@@ -378,6 +423,7 @@ export async function createCharacter(
   const baseAttributes = system
     ? mergeWithSystemDefaultAttributes(system, payload.attributes)
     : payload.attributes ?? {};
+  assertAttributesForSystem(systemKey, payload.attributes);
   const attributes = applySystemAttributeDefaults(baseAttributes, payload.attributes, systemKey);
   assertSkillDiceForSystem(systemKey, payload.skills as Record<string, number | string> | undefined);
 
