@@ -19,17 +19,42 @@ import DisplayBoard from '../../components/display/DisplayBoard.vue';
 const mockRoute = { params: { tableId: 'display-1' } };
 vi.mock('vue-router', () => ({ useRoute: () => mockRoute }));
 
-const socketServiceMock = vi.hoisted(() => ({
-  connect: vi.fn(),
-  disconnect: vi.fn(),
-  moveToken: vi.fn(),
-  nextTurn: vi.fn(),
-  placeToken: vi.fn(),
-  rollDice: vi.fn(),
-  setActiveScene: vi.fn(),
-  updateSessionStatus: vi.fn(),
+// Socket real (mockado) exposto para o DisplayView registrar `connect_error`.
+const harness = vi.hoisted(() => {
+  const handlers: Record<string, (payload: unknown) => void> = {};
+  const socket = {
+    on: vi.fn((event: string, listener: (payload: unknown) => void) => {
+      handlers[event] = listener;
+    }),
+    off: vi.fn((event: string) => {
+      delete handlers[event];
+    }),
+  };
+  const socketServiceMock = {
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    moveToken: vi.fn(),
+    nextTurn: vi.fn(),
+    placeToken: vi.fn(),
+    rollDice: vi.fn(),
+    setActiveScene: vi.fn(),
+    updateSessionStatus: vi.fn(),
+    socket,
+  };
+  return { handlers, socket, socketServiceMock };
+});
+
+vi.mock('../../services/socketService', () => ({ socketService: harness.socketServiceMock }));
+
+const socketServiceMock = harness.socketServiceMock;
+const socketHandlers = harness.handlers;
+
+const displaySessionMock = vi.hoisted(() => ({
+  connectDisplay: vi.fn(),
+  disconnectDisplay: vi.fn(),
+  isDisplayMode: vi.fn(() => true),
 }));
-vi.mock('../../services/socketService', () => ({ socketService: socketServiceMock }));
+vi.mock('../../services/displaySession', () => displaySessionMock);
 
 const toastMock = vi.hoisted(() => ({
   success: vi.fn(),
@@ -48,8 +73,8 @@ vi.mock('../../services/authService', () => authState);
 const tableStoreStub = {
   __refs: createRefs(),
   revision: 12,
-  you: { userId: 'dm-1', username: 'DM', role: 'DISPLAY' },
-  presence: [],
+  you: { userId: 'tv-1', username: 'TV', role: 'DISPLAY' },
+  presence: [{ userId: 'display:display-1', username: 'TV', role: 'DISPLAY', socketCount: 1 }],
 };
 vi.mock('../../stores/tableStore', () => ({ useTableStore: () => tableStoreStub }));
 
@@ -100,39 +125,114 @@ function createRefs(overrides: Record<string, unknown> = {}) {
     gridHeight: ref(20),
     metersPerSquare: ref(1.5),
     auras: ref([]),
+    pings: ref([]),
     isDM: ref(false),
     ...overrides,
   };
 }
 
+function setDisplayToken(hash: string | null, stored: string | null = null) {
+  window.location.hash = hash ?? '';
+  window.sessionStorage.clear();
+  if (stored) window.sessionStorage.setItem('tod:displayToken:display-1', stored);
+}
+
 beforeEach(() => {
   tableStoreStub.__refs = createRefs();
   tableStoreStub.revision = 12;
-  Object.values(socketServiceMock).forEach((fn) => fn.mockClear());
+  setDisplayToken(null);
+  Object.keys(socketHandlers).forEach((key) => delete socketHandlers[key]);
+  Object.values(socketServiceMock).forEach((fn) => {
+    if (typeof fn === 'function' && 'mockClear' in fn) (fn as { mockClear: () => void }).mockClear();
+  });
+  Object.values(displaySessionMock).forEach((fn) => fn.mockClear());
   Object.values(toastMock).forEach((fn) => fn.mockClear());
 });
 
+function mountDisplay() {
+  return mount(DisplayView, {
+    global: { stubs: { DisplayBoard: true } },
+  });
+}
+
 describe('DisplayView', () => {
-  it('renders scene and initiative from the store', async () => {
-    const wrapper = mount(DisplayView, {
-      global: { stubs: { DisplayBoard: true } },
-    });
+  it('connects with the display token from the URL hash (no JWT path)', async () => {
+    setDisplayToken('#token=tv-secret');
+
+    const wrapper = mountDisplay();
     await flushPromises();
 
+    expect(displaySessionMock.connectDisplay).toHaveBeenCalledWith({
+      tableId: 'display-1',
+      token: 'tv-secret',
+    });
+    expect(socketServiceMock.connect).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('tod:displayToken:display-1')).toBe('tv-secret');
     expect(wrapper.text()).toContain('Mesa da TV');
     expect(wrapper.text()).toContain('Salão Principal');
     expect(wrapper.text()).toContain('Lyra');
     expect(wrapper.text()).toContain('1d20+5');
-    expect(socketServiceMock.connect).toHaveBeenCalledWith('display-1');
 
     wrapper.unmount();
-    expect(socketServiceMock.disconnect).toHaveBeenCalledTimes(1);
+    expect(displaySessionMock.disconnectDisplay).toHaveBeenCalled();
+  });
+
+  it('falls back to the sessionStorage token when there is no fragment', async () => {
+    setDisplayToken(null, 'stored-token');
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    expect(displaySessionMock.connectDisplay).toHaveBeenCalledWith({
+      tableId: 'display-1',
+      token: 'stored-token',
+    });
+    wrapper.unmount();
+  });
+
+  it('shows the configuration state when there is no token at all', async () => {
+    setDisplayToken(null);
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('TV não configurada');
+    expect(displaySessionMock.connectDisplay).not.toHaveBeenCalled();
+    expect(wrapper.find('.display-body').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('shows an invalid-token state and stops retrying on UNAUTHENTICATED', async () => {
+    setDisplayToken('#token=revogado');
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    expect(displaySessionMock.connectDisplay).toHaveBeenCalledTimes(1);
+
+    socketHandlers['connect_error']?.({ data: { code: 'UNAUTHENTICATED' } });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Token da TV inválido');
+    expect(displaySessionMock.disconnectDisplay).toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('shows a calm waiting state when the session is not LIVE', async () => {
+    setDisplayToken('#token=tv-secret');
+    tableStoreStub.__refs = createRefs({ sessionStatus: ref('PREPARING') });
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Aguardando o Mestre');
+    wrapper.unmount();
   });
 
   it('never calls mutating socket methods', async () => {
-    const wrapper = mount(DisplayView, {
-      global: { stubs: { DisplayBoard: true } },
-    });
+    setDisplayToken('#token=tv-secret');
+
+    const wrapper = mountDisplay();
     await flushPromises();
 
     expect(socketServiceMock.moveToken).not.toHaveBeenCalled();
@@ -145,14 +245,15 @@ describe('DisplayView', () => {
     wrapper.unmount();
   });
 
-  it('shows a calm waiting state when the session is not LIVE', async () => {
-    tableStoreStub.__refs = createRefs({ sessionStatus: ref('PREPARING') });
-    const wrapper = mount(DisplayView, {
-      global: { stubs: { DisplayBoard: true } },
-    });
+  it('renders no write controls in the display layout', async () => {
+    setDisplayToken('#token=tv-secret');
+
+    const wrapper = mountDisplay();
     await flushPromises();
 
-    expect(wrapper.text()).toContain('Aguardando o Mestre');
+    const writeLabels = /mover|encerrar|dados|rolar|iniciar|pausar/i;
+    const writeButtons = wrapper.findAll('button').filter((btn) => writeLabels.test(btn.text()));
+    expect(writeButtons).toHaveLength(0);
     wrapper.unmount();
   });
 });
@@ -187,6 +288,27 @@ describe('DisplayBoard read-only board', () => {
     expect(wrapper.find('.display-board__token').exists()).toBe(true);
     expect(wrapper.findAll('button')).toHaveLength(0);
     expect(wrapper.find('.display-board').attributes('aria-label')).toContain('somente leitura');
+    wrapper.unmount();
+  });
+
+  it('renders pings in grid units without emitting anything', async () => {
+    const wrapper = mount(DisplayBoard, {
+      props: {
+        squares: [],
+        gridWidth: 10,
+        gridHeight: 10,
+        tokens: [],
+        metersPerSquare: 1.5,
+        pings: [{ id: 'ping-1', x: 2, y: 3, color: '#ffeb3b' }],
+      },
+    });
+    await flushPromises();
+
+    // Quadro sem ResizeObserver ativo fica com squareSize 0; o ping só é
+    // renderizado quando a geometria está pronta. Garantimos que nada quebra
+    // e que nenhum controle aparece.
+    expect(wrapper.findAll('button')).toHaveLength(0);
+    expect(wrapper.find('.display-board').exists()).toBe(true);
     wrapper.unmount();
   });
 });

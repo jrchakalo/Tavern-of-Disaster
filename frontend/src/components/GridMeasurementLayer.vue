@@ -127,6 +127,20 @@ function getLocalCenterForSquareId(squareId: string): { x: number; y: number } |
   return { x: col * props.squareSize + props.squareSize / 2, y: row * props.squareSize + props.squareSize / 2 };
 }
 
+/**
+ * Centro do ping no espaço local do grid. O protocolo da Fase 2 envia `x/y`
+ * em unidades de grade; `toLocalPoint` mantém o fallback para clientes
+ * antigos que ainda enviavam pixels enquanto a migração não fecha.
+ */
+function pingCenter(pg: PingInfo): { x: number; y: number } | null {
+  if (pg.squareId) {
+    const center = getLocalCenterForSquareId(pg.squareId);
+    if (center) return center;
+  }
+  if (pg.x == null || pg.y == null) return null;
+  return toLocalPoint({ x: pg.x, y: pg.y });
+}
+
 function getTokenSizeInSquares(size: TokenSize): number {
   switch (size) {
     case 'Grande': return 2;
@@ -268,19 +282,10 @@ function handleViewportContextMenu() {
   <svg v-if="props.pings.length" class="ping-overlay" :viewBox="viewBox" preserveAspectRatio="none">
     <template v-for="pg in props.pings" :key="pg.id">
       <circle
-        v-if="pg.squareId && getLocalCenterForSquareId(pg.squareId)"
+        v-if="pingCenter(pg)"
         class="ping-circle ping-circle-anim"
-        :cx="getLocalCenterForSquareId(pg.squareId)?.x || 0"
-        :cy="getLocalCenterForSquareId(pg.squareId)?.y || 0"
-        r="0"
-        :style="{ '--ping-radius': `${props.squareSize}px`, stroke: pg.color || '#ffeb3b' }"
-        fill="none"
-      />
-      <circle
-        v-else-if="pg.x != null && pg.y != null"
-        class="ping-circle ping-circle-anim"
-        :cx="pg.x"
-        :cy="pg.y"
+        :cx="pingCenter(pg)?.x || 0"
+        :cy="pingCenter(pg)?.y || 0"
         r="0"
         :style="{ '--ping-radius': `${props.squareSize}px`, stroke: pg.color || '#ffeb3b' }"
         fill="none"

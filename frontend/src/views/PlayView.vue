@@ -1,22 +1,28 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 
 import { currentUser } from '../services/authService';
 import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
+import { joinTableByInvite } from '../services/tableAccessService';
+import { getMyCharacters } from '../services/characterService';
+import { distanceInSquares, squareIdToGrid } from '../services/gridGeometry';
 import { useTableStore } from '../stores/tableStore';
+import type { CharacterDTO, TokenInfo } from '../types';
 
 import PlayerBoard from '../components/play/PlayerBoard.vue';
 import InitiativeStrip from '../components/play/InitiativeStrip.vue';
 import TokenCard from '../components/play/TokenCard.vue';
+import TokenDetailsSheet from '../components/play/TokenDetailsSheet.vue';
 import ConnectionPill from '../components/play/ConnectionPill.vue';
 import ActionErrorBanner from '../components/play/ActionErrorBanner.vue';
 import PlayerDicePanel from '../components/play/PlayerDicePanel.vue';
 import { readSessionExtras, roleLabel } from '../components/play/sessionMeta';
 
 const route = useRoute();
+const router = useRouter();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
 
 const store = useTableStore();
@@ -35,6 +41,7 @@ const {
   gridHeight,
   metersPerSquare,
   auras,
+  pings,
   isDM,
 } = storeToRefs(store);
 
@@ -45,6 +52,27 @@ const presenceCount = computed(
   () => extras.value.presence?.length ?? currentTable.value?.players?.length ?? 0,
 );
 const role = computed(() => you.value?.role ?? (isDM.value ? 'DM' : 'PLAYER'));
+
+// QR de convite: entra na mesa antes de conectar (Fase 2, §4.1).
+const inviteCode = computed(() => {
+  const raw = (route.query as Record<string, unknown> | undefined)?.invite;
+  if (Array.isArray(raw)) return raw.length ? String(raw[0] ?? '') : '';
+  return raw == null ? '' : String(raw);
+});
+const isMember = computed(() => you.value?.role === 'DM' || you.value?.role === 'PLAYER');
+const canWrite = computed(() => role.value === 'DM' || role.value === 'PLAYER');
+
+const joining = ref(false);
+const inviteError = ref('');
+const myCharacters = ref<CharacterDTO[]>([]);
+const detailsToken = ref<TokenInfo | null>(null);
+
+function characterFor(token: TokenInfo | null | undefined): CharacterDTO | null {
+  if (!token?.characterId) return null;
+  return myCharacters.value.find((character) => character._id === token.characterId) ?? null;
+}
+
+const myCharacter = computed(() => characterFor(myActiveToken.value));
 
 const tableName = computed(() => currentTable.value?.name ?? 'Mesa');
 const sceneName = computed(() => activeScene.value?.name ?? 'Cena sem nome');
@@ -100,19 +128,54 @@ watch(connectionStatus, (status, previous) => {
   }
 });
 
-function handleRequestMove(squareId: string) {
+function moveCost(fromSquareId: string, toSquareId: string) {
+  const from = squareIdToGrid(fromSquareId, gridWidth.value);
+  const to = squareIdToGrid(toSquareId, gridWidth.value);
+  if (!from || !to) return { squares: 0, meters: 0 };
+  const squares = distanceInSquares(
+    { x: from.col + 0.5, y: from.row + 0.5 },
+    { x: to.col + 0.5, y: to.row + 0.5 },
+  );
+  const scale = metersPerSquare.value > 0 ? metersPerSquare.value : 1.5;
+  return { squares, meters: Math.round(squares * scale * 10) / 10 };
+}
+
+async function handleRequestMove(squareId: string) {
   const token = myActiveToken.value;
   if (!token || !isMyTurn.value) {
     toast.error('Você só pode mover o seu token no seu turno.');
     return;
   }
-  socketService.moveToken({ tableId, tokenId: token._id, targetSquareId: squareId });
-  moveMode.value = false;
+  const cost = moveCost(token.squareId, squareId);
+  const ack = await socketService.moveToken({
+    tableId,
+    tokenId: token._id,
+    targetSquareId: squareId,
+    expectedRevision: revision.value,
+  });
+  if (ack && ack.ok) {
+    moveMode.value = false;
+    toast.success(`Movimento: ${cost.squares} quad · ${cost.meters}m`, 2500);
+  } else if (ack && ack.ok === false) {
+    errorMessage.value = ack.error?.message || 'O movimento foi recusado pelo servidor.';
+  }
+}
+
+function handleMoveBlocked() {
+  toast.warning('Fora do alcance do seu movimento.');
 }
 
 function handleNextTurn() {
   if (!activeScene.value) return;
-  socketService.nextTurn(tableId, activeScene.value._id);
+  socketService.nextTurn(tableId, activeScene.value._id, revision.value);
+}
+
+function goBack() {
+  if (window.history.length > 1) {
+    router.back();
+  } else {
+    router.push({ name: 'tables' });
+  }
 }
 
 // O `socketService` centraliza o toast de `actionError` (fonte única). Esta
@@ -156,13 +219,43 @@ function handleActionError(payload: unknown) {
   errorMessage.value = extractActionErrorMessage(payload);
 }
 
-onMounted(() => {
+async function loadMyCharacters() {
+  try {
+    myCharacters.value = await getMyCharacters(tableId);
+  } catch {
+    toast.error('Não foi possível carregar sua ficha.');
+  }
+}
+
+async function bootstrap() {
+  const invite = inviteCode.value;
+  if (invite && !isMember.value) {
+    joining.value = true;
+    try {
+      const result = await joinTableByInvite(invite);
+      if (result.tableId && result.tableId !== tableId) {
+        throw new Error('Este convite é para outra mesa.');
+      }
+    } catch (error) {
+      inviteError.value =
+        error instanceof Error && error.message ? error.message : 'Não foi possível entrar na mesa.';
+      joining.value = false;
+      return;
+    }
+    joining.value = false;
+  }
+
   socketService.connect(tableId);
   const socket = readSocket();
   if (socket && !actionErrorListener) {
     actionErrorListener = handleActionError;
     socket.on('actionError', actionErrorListener);
   }
+  void loadMyCharacters();
+}
+
+onMounted(() => {
+  void bootstrap();
 });
 
 onBeforeUnmount(() => {
@@ -199,6 +292,25 @@ onBeforeUnmount(() => {
       @dismiss="errorMessage = ''"
     />
 
+    <div
+      v-if="inviteError"
+      class="invite-overlay"
+      role="alert"
+    >
+      <div class="invite-overlay__card">
+        <h2>Não foi possível entrar</h2>
+        <p>{{ inviteError }}</p>
+        <button type="button" class="control-btn" @click="goBack">Voltar</button>
+      </div>
+    </div>
+
+    <div v-else-if="joining" class="invite-overlay invite-overlay--calm" role="status">
+      <div class="invite-overlay__card">
+        <h2>Entrando na mesa…</h2>
+        <p>Confirmando seu convite.</p>
+      </div>
+    </div>
+
     <section class="play-board" aria-label="Tabuleiro">
       <PlayerBoard
         :squares="squares"
@@ -209,10 +321,13 @@ onBeforeUnmount(() => {
         :current-turn-token-id="currentTurnTokenId"
         :active-token-id="myActiveToken?._id ?? null"
         :move-mode="moveMode"
-        :interactive="isMyTurn"
+        :interactive="isMyTurn && canWrite"
         :meters-per-square="metersPerSquare"
         :auras="auras"
+        :pings="pings"
         @request-move="handleRequestMove"
+        @move-blocked="handleMoveBlocked"
+        @token-details="detailsToken = $event"
       />
       <div v-if="!isLive" class="session-overlay" role="status">
         <div class="session-overlay__card">
@@ -233,8 +348,13 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="play-controls">
-      <TokenCard :token="myActiveToken" :is-my-turn="isMyTurn" />
-      <div class="play-actions">
+      <TokenCard
+        :token="myActiveToken"
+        :is-my-turn="isMyTurn"
+        :character="myCharacter"
+        :meters-per-square="metersPerSquare"
+      />
+      <div v-if="canWrite" class="play-actions">
         <button
           type="button"
           class="control-btn control-btn--move"
@@ -263,6 +383,15 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </footer>
+
+    <TokenDetailsSheet
+      v-if="detailsToken"
+      :token="detailsToken"
+      :character="characterFor(detailsToken)"
+      :meters-per-square="metersPerSquare"
+      :is-my-token="detailsToken._id === myActiveToken?._id"
+      @close="detailsToken = null"
+    />
 
     <PlayerDicePanel
       :open="diceOpen"
@@ -394,6 +523,42 @@ onBeforeUnmount(() => {
   padding: 4px 0;
   border-top: 1px solid var(--color-border);
   background: rgba(20, 14, 18, 0.55);
+}
+
+.invite-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(20, 14, 18, 0.97);
+}
+
+.invite-overlay--calm {
+  background: rgba(20, 14, 18, 0.9);
+}
+
+.invite-overlay__card {
+  max-width: 340px;
+  padding: 20px;
+  text-align: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--elev-2);
+}
+
+.invite-overlay__card h2 {
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+.invite-overlay__card p {
+  margin: 0 0 16px;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .play-controls {
