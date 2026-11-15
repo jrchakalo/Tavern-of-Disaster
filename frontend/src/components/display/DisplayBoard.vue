@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import GridLayer from '../GridLayer.vue';
 import type { AuraInfo, GridSquare, TokenInfo } from '../../types';
 import { auraElements, pingCenterPixels, tokenEntries, tokenStyle, type BoardPing } from '../play/boardGeometry';
+import { characterResourceBadges } from '../character/summary';
 
 const props = withDefaults(
   defineProps<{
@@ -63,6 +64,13 @@ const boardSize = computed(() => {
 });
 
 const entries = computed(() => tokenEntries(props.tokens ?? [], props.gridWidth));
+
+/** PD/PE/SAN/armadura ao lado de PV/CA no rótulo da TV (vazio em D&D). */
+function resourceSuffix(token: TokenInfo): string {
+  return characterResourceBadges(token.character)
+    .map((resource) => `· ${resource.label} ${resource.value}`)
+    .join(' ');
+}
 
 const auraList = computed(() =>
   auraElements(props.auras ?? [], entries.value, boardSize.value.squareSize, props.metersPerSquare),
@@ -152,11 +160,19 @@ const pingList = computed(() => {
         </span>
         <span class="display-board__label">
           {{ entry.token.name }}<template
-            v-if="entry.token.character && entry.token.character.maxHP != null"
+            v-if="
+              entry.token.character &&
+              (entry.token.character.maxHP != null || resourceSuffix(entry.token))
+            "
           >
-            · PV {{ entry.token.character.currentHP ?? 0 }}/{{ entry.token.character.maxHP }}
+            <template v-if="entry.token.character.maxHP != null">
+              · PV {{ entry.token.character.currentHP ?? 0 }}/{{ entry.token.character.maxHP }}
+            </template>
             <template v-if="entry.token.character.defense != null">
               · CA {{ entry.token.character.defense }}
+            </template>
+            <template v-if="resourceSuffix(entry.token)">
+              {{ resourceSuffix(entry.token) }}
             </template>
           </template>
         </span>

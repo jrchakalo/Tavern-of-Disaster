@@ -163,7 +163,6 @@ export function registerCharacterSyncHandler(fn: ((event: CharacterSyncEvent) =>
 
 class SocketService {
   private socket: Socket | null = null;
-  private store = useTableStore();
   private currentTableId: string | null = null;
   private windowListenersBound = false;
   private resyncInFlight = false;
@@ -174,6 +173,14 @@ class SocketService {
   /** Modo TV: conectado com token de display, sem JWT e sem refresh. */
   private displayMode = false;
   private displayToken: string | null = null;
+
+  /**
+   * O store é resolvido sob demanda: assim o módulo pode ser importado (p.ex.
+   * por componentes de ficha) antes de a Pinia estar ativa no app/teste.
+   */
+  private get store() {
+    return useTableStore();
+  }
 
   constructor() {
     // O store pede resync quando detecta buraco de revisão, sem importar este
@@ -855,6 +862,15 @@ class SocketService {
       currentHP: payload.stats?.currentHP,
       maxHP: payload.stats?.maxHP,
       defense: payload.stats?.defense,
+      currentPD: payload.stats?.currentPD,
+      maxPD: payload.stats?.maxPD,
+      armorPoints: payload.stats?.armorPoints,
+      armorPointsMax: payload.stats?.armorPointsMax,
+      currentPE: payload.stats?.currentPE,
+      maxPE: payload.stats?.maxPE,
+      currentSAN: payload.stats?.currentSAN,
+      maxSAN: payload.stats?.maxSAN,
+      sanityMode: payload.sanityMode,
       tokenId: undefined,
     };
   }

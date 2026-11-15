@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { CharacterDTO, TokenInfo } from '../../types';
-import { tokenCharacter } from '../character/summary';
+import { characterResourceBadges, tokenCharacter } from '../character/summary';
 
 const props = withDefaults(
   defineProps<{
@@ -36,6 +36,9 @@ const hp = computed(() => {
 });
 const defense = computed(() => summary.value?.defense ?? props.character?.stats?.defense ?? null);
 const level = computed(() => props.character?.profile?.level ?? null);
+const resources = computed(() =>
+  characterResourceBadges(summary.value, props.character),
+);
 const squares = computed(() => {
   const scale = props.metersPerSquare > 0 ? props.metersPerSquare : 1.5;
   const remaining = Math.floor(props.token.remainingMovement / scale + 1e-6);
@@ -89,6 +92,10 @@ onBeforeUnmount(() => {
         <div v-if="defense !== null">
           <dt>Defesa</dt>
           <dd>{{ defense }}</dd>
+        </div>
+        <div v-for="resource in resources" :key="resource.key">
+          <dt>{{ resource.label }}</dt>
+          <dd :title="resource.title">{{ resource.value }}</dd>
         </div>
         <div v-if="level !== null">
           <dt>Nível</dt>
