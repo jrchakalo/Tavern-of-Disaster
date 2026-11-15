@@ -253,12 +253,13 @@ export const zRemoveAuraPayload = z.object({
 });
 
 // Ping (efêmero) -----------------------------------------------------------
+// `x`/`y` são unidades de grade (1 = uma célula), nunca pixels do dispositivo.
 export const zPingPayload = z.object({
   tableId,
   sceneId,
   squareId: z.string().trim().min(1).max(64).optional(),
-  x: z.number().finite().optional(),
-  y: z.number().finite().optional(),
+  x: z.number().finite(),
+  y: z.number().finite(),
   color: z.string().trim().min(1).max(32).optional(),
 });
 

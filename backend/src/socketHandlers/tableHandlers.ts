@@ -61,6 +61,68 @@ export function registerTableHandlers(io: Server, socket: Socket) {
     return typeof raw?.tableId === 'string' ? raw.tableId : undefined;
   };
 
+  /**
+   * Entrada da TV: só a mesa resolvida pelo token de display. Nunca usa
+   * `assertUserInTable` com o id sintético (ele não é membro real).
+   */
+  const joinDisplayTable = async (tableId: string) => {
+    const displayTableId = socket.data.displayTableId as string | undefined;
+    assertCondition(!!displayTableId, 'Sessão de display inválida.', 401);
+    assertCondition(tableId === displayTableId, 'A TV não pode entrar em outra mesa.', 403);
+    const table = await getTableById(tableId);
+    assertCondition(!!table, 'Mesa não encontrada.', 404);
+
+    const displayId = socket.data.user?.id as string | undefined;
+    assertCondition(!!displayId, 'Sessão de display inválida.', 401);
+
+    if (!socket.rooms.has(tableId)) {
+      await socket.join(tableId);
+    }
+    recordTableJoin(socket.id, tableId);
+    if (!socket.data.joinedTables) {
+      socket.data.joinedTables = new Set<string>();
+    }
+    socket.data.joinedTables.add(tableId);
+    joinPresence(tableId, displayId!, 'TV', socket.id);
+
+    const snapshot = await buildSessionSnapshot(tableId, displayId!, 'TV', { roleOverride: 'DISPLAY' });
+    if (!snapshot) {
+      throw new ServiceError('Mesa não encontrada.', 404);
+    }
+    socket.emit('sessionSnapshot', snapshot);
+    sendPresenceUpdated(io, tableId, snapshot.table, snapshot.revision);
+    log.info({ tableId }, 'TV entrou na mesa via token de display');
+    return { tableId, revision: snapshot.revision };
+  };
+
+  /** Ressincronização da TV: mesma mesa do token, snapshot sempre DISPLAY. */
+  const resyncDisplayTable = async (tableId: string) => {
+    const displayTableId = socket.data.displayTableId as string | undefined;
+    assertCondition(!!displayTableId, 'Sessão de display inválida.', 401);
+    assertCondition(tableId === displayTableId, 'A TV não pode ressincronizar outra mesa.', 403);
+    const table = await getTableById(tableId);
+    assertCondition(!!table, 'Mesa não encontrada.', 404);
+
+    const displayId = socket.data.user?.id as string | undefined;
+    assertCondition(!!displayId, 'Sessão de display inválida.', 401);
+
+    if (!socket.rooms.has(tableId)) {
+      await socket.join(tableId);
+      if (!socket.data.joinedTables) {
+        socket.data.joinedTables = new Set<string>();
+      }
+      socket.data.joinedTables.add(tableId);
+      joinPresence(tableId, displayId!, 'TV', socket.id);
+    }
+
+    const snapshot = await buildSessionSnapshot(tableId, displayId!, 'TV', { roleOverride: 'DISPLAY' });
+    if (!snapshot) {
+      throw new ServiceError('Mesa não encontrada.', 404);
+    }
+    socket.emit('sessionSnapshot', snapshot);
+    return { tableId, revision: snapshot.revision };
+  };
+
   const joinTable = async (payload: unknown, ackArg?: unknown) => {
     const ack = extractAck(ackArg);
     await runAction({
@@ -72,9 +134,14 @@ export function registerTableHandlers(io: Server, socket: Socket) {
       tableIdHint: hintTableId(payload),
       body: async () => {
         registerJoinAttempt();
+        const { tableId } = validate(zJoinTablePayload, payload);
+
+        if (socket.data.isDisplay) {
+          return joinDisplayTable(tableId);
+        }
+
         const userId = socket.data.user?.id;
         assertCondition(!!userId, 'Usuário não autenticado.', 401);
-        const { tableId } = validate(zJoinTablePayload, payload);
 
         // Autoriza ANTES de entrar na sala. A mesa é carregada sem populate
         // para que dm/players continuem como ObjectId na checagem de vínculo.
@@ -136,6 +203,11 @@ export function registerTableHandlers(io: Server, socket: Socket) {
       tableIdHint: hintTableId(payload),
       body: async () => {
         const data = validate(zRequestResyncPayload, payload);
+
+        if (socket.data.isDisplay) {
+          return resyncDisplayTable(data.tableId);
+        }
+
         const userId = socket.data.user?.id;
         assertCondition(!!userId, 'Usuário não autenticado.', 401);
         const table = await getTableById(data.tableId);

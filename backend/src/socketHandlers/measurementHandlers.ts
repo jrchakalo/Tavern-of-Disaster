@@ -324,8 +324,10 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
         const user = socket.data.user;
         assertCondition(!!user, 'Usuário não autenticado.', 401);
         const data = validate(zPingPayload, payload);
+        // A mesa é resolvida pela cena, nunca pelo tableId enviado.
         const { scene, table } = await loadSceneContext(data.sceneId);
-        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        const tableId = table._id.toString();
+        assertEntityBelongsToTable(tableId, data.tableId);
         assertUserInTable(user!.id, table);
         assertCondition(
           !!table.activeScene && table.activeScene.toString() === scene._id.toString(),
@@ -333,19 +335,29 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
           400
         );
 
+        const gridWidth = scene.gridWidth ?? 30;
+        const gridHeight = scene.gridHeight ?? 30;
+        assertCondition(
+          data.x >= 0 && data.x <= gridWidth && data.y >= 0 && data.y <= gridHeight,
+          'Ping fora dos limites da grade.',
+          400
+        );
+
+        const revision = await getRevision(tableId);
         const ping = {
           id: randomId(6),
           userId: user!.id,
           username: user!.username,
-          sceneId: data.sceneId,
+          sceneId: scene._id.toString(),
           squareId: data.squareId,
           x: data.x,
           y: data.y,
           color: data.color,
           ts: Date.now(),
+          revision,
         };
-        io.to(data.tableId).emit('pingBroadcast', ping);
-        return { tableId: data.tableId, revision: await getRevision(data.tableId) };
+        io.to(tableId).emit('pingBroadcast', ping);
+        return { tableId, revision };
       },
     });
   };

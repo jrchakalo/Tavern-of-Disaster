@@ -91,6 +91,13 @@ export type RunActionParams = {
 };
 
 /**
+ * Eventos que a TV pode emitir. Todo o resto é bloqueado antes de qualquer
+ * escrita, mesmo que um cliente manipulado tente chamar mutações diretamente.
+ */
+const DISPLAY_ALLOWED_EVENTS = new Set(['joinTable', 'requestResync']);
+const DISPLAY_READONLY_MESSAGE = 'A TV é somente leitura.';
+
+/**
  * Executa uma ação realtime garantindo exatamente uma resposta:
  * - sucesso: `sessionPatch` (quando há mudança) + ack `{ ok: true, revision }`;
  * - falha: ack `{ ok: false, error }` ou, sem callback, `actionError` no socket.
@@ -116,6 +123,14 @@ export async function runAction(params: RunActionParams): Promise<void> {
     }
     socket.emit('actionError', { event, error, revision, serverNowMs });
   };
+
+  // A TV é estritamente read-only. Bloqueia antes de validar payload ou tocar
+  // no banco; revisão 0 evita vazar o estado atual da mesa.
+  if (socket.data?.isDisplay && !DISPLAY_ALLOWED_EVENTS.has(event)) {
+    log.warn({ event }, 'Ação de display bloqueada (somente leitura)');
+    respondError(0, { code: 'FORBIDDEN', message: DISPLAY_READONLY_MESSAGE });
+    return;
+  }
 
   try {
     const outcome = await body();

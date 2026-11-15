@@ -30,7 +30,8 @@ import {
 import { getTableById } from './services/tableService';
 import { getRevisionSafe } from './services/revisionService';
 import { getTableInfo, sendPresenceUpdated } from './services/sessionService';
-import { leavePresence } from './services/presenceService';
+import { displayUserId, leavePresence } from './services/presenceService';
+import { resolveDisplayToken } from './services/displayTokenService';
 
 dotenv.config();
 const log = createLogger({ scope: 'server' });
@@ -52,20 +53,49 @@ function buildCorsOptions() {
   };
 }
 
+function createAuthError(message: string, code: 'UNAUTHENTICATED' | 'TOKEN_EXPIRED') {
+  const error = new Error(`Authentication error: ${message}`) as Error & {
+    data?: { code: string };
+  };
+  error.data = { code };
+  return error;
+}
+
 /**
  * Autenticação de handshake do Socket.IO.
- * Token expirado entrega `err.data.code = 'TOKEN_EXPIRED'` para o cliente renovar.
+ * - `auth.displayToken`: TV read-only, resolvida antes (e sem) JWT.
+ * - `auth.token`: usuário normal, com `TOKEN_EXPIRED` quando expirado.
  */
 function socketAuthMiddleware(socket: Socket, next: (err?: Error) => void) {
-  const token = socket.handshake.auth?.token;
   const socketLog = log.child({ scope: 'socket-auth', socketId: socket.id });
+  const displayToken = socket.handshake.auth?.displayToken;
+
+  // Token de display tem precedência e não exige JWT. Nunca logar o texto claro.
+  if (typeof displayToken === 'string') {
+    void resolveDisplayToken(displayToken)
+      .then((resolved) => {
+        if (!resolved) {
+          socketLog.warn('Token de display inválido no handshake');
+          return next(createAuthError('Token de display inválido.', 'UNAUTHENTICATED'));
+        }
+        socket.data.user = { id: displayUserId(resolved.tableId), username: 'TV' };
+        socket.data.displayTableId = resolved.tableId;
+        socket.data.isDisplay = true;
+        socket.data.joinedTables = new Set<string>();
+        socketLog.info({ tableId: resolved.tableId }, 'Socket display autenticado');
+        next();
+      })
+      .catch((error) => {
+        socketLog.error({ err: error?.name }, 'Falha ao resolver token de display');
+        next(createAuthError('Token de display inválido.', 'UNAUTHENTICATED'));
+      });
+    return;
+  }
+
+  const token = socket.handshake.auth?.token;
   if (!token) {
     socketLog.warn('Tentativa de conexão sem token');
-    const missing = new Error('Authentication error: Token não fornecido.') as Error & {
-      data?: { code: string };
-    };
-    missing.data = { code: 'UNAUTHENTICATED' };
-    return next(missing);
+    return next(createAuthError('Token não fornecido.', 'UNAUTHENTICATED'));
   }
 
   const jwtSecret = process.env.JWT_SECRET;
@@ -78,13 +108,12 @@ function socketAuthMiddleware(socket: Socket, next: (err?: Error) => void) {
     if (err) {
       const expired = err?.name === 'TokenExpiredError';
       socketLog.warn({ err: err?.name }, 'Token inválido no handshake');
-      const authError = new Error(
-        expired ? 'Authentication error: Token expirado.' : 'Authentication error: Token inválido.'
-      ) as Error & { data?: { code: string } };
-      authError.data = { code: expired ? 'TOKEN_EXPIRED' : 'UNAUTHENTICATED' };
-      return next(authError);
+      return next(
+        createAuthError(expired ? 'Token expirado.' : 'Token inválido.', expired ? 'TOKEN_EXPIRED' : 'UNAUTHENTICATED')
+      );
     }
     socket.data.user = decoded.user;
+    socket.data.isDisplay = false;
     socket.data.joinedTables = new Set<string>();
     socketLog.info({ userId: decoded.user?.id }, 'Socket autenticado');
     next();

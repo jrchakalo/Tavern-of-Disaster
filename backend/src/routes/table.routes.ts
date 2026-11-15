@@ -12,6 +12,7 @@ import { addPlayerToTable, removePlayerFromTable, getTableById, assertUserIsDM, 
 import { clearAllMeasurements, clearTableMeasurementState } from '../services/measurementService';
 import { addTokenToInitiative } from '../services/initiativeService';
 import { createToken } from '../services/tokenService';
+import { createOrRotateDisplayToken, revokeDisplayToken } from '../services/displayTokenService';
 import { ServiceError } from '../services/serviceErrors';
 import { createLogger } from '../logger';
 
@@ -104,6 +105,44 @@ router.post('/join', authMiddleware, (async (req: AuthRequest, res) => {
   } catch (error) {
     log.error({ err: error }, 'Erro ao entrar na mesa');
     res.status(500).json({ message: 'Erro interno ao entrar na mesa.' });
+  }
+}) as RequestHandler);
+
+// --- Token da TV (display) -------------------------------------------------
+// Gera/rotaciona o token de display. Apenas o Mestre da mesa. O texto claro
+// só é devolvido uma vez e nunca é persistido nem logado.
+router.post('/:tableId/display-token', authMiddleware, limitCreate, (async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Usuário não autenticado.' });
+    }
+    const result = await createOrRotateDisplayToken(req.params.tableId, userId);
+    res.json(result);
+  } catch (error) {
+    if (error instanceof ServiceError) {
+      return res.status(error.status).json({ message: error.message });
+    }
+    log.error({ err: error, tableId: req.params.tableId }, 'Erro ao gerar token da TV');
+    res.status(500).json({ message: 'Erro interno ao gerar token da TV.' });
+  }
+}) as RequestHandler);
+
+// Revoga o token de display (hash = null). Apenas o Mestre da mesa.
+router.delete('/:tableId/display-token', authMiddleware, (async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Usuário não autenticado.' });
+    }
+    await revokeDisplayToken(req.params.tableId, userId);
+    res.status(204).send();
+  } catch (error) {
+    if (error instanceof ServiceError) {
+      return res.status(error.status).json({ message: error.message });
+    }
+    log.error({ err: error, tableId: req.params.tableId }, 'Erro ao revogar token da TV');
+    res.status(500).json({ message: 'Erro interno ao revogar token da TV.' });
   }
 }) as RequestHandler);
 
