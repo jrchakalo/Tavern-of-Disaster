@@ -12,16 +12,19 @@ Colocar os arquivos em:
 references/ordem-paranormal/
 ```
 
-Sugestão de nomes (não é obrigatório, mas ajuda):
+Arquivos recebidos e lidos (nomes atuais):
 
 ```text
-op2-playtest-alpha.pdf
-op2-playtest-beta-contos-da-vigilia.pdf
-op2-ficha-personagem.pdf
-op2-maldicao-do-idolo-de-pedra.pdf
-op1-sobrevivendo-ao-horror.pdf
-op2-adaptacoes-mesa.pdf
+ordem-paranormal-rpg.pdf                 # OP1 core v1.1 (330 pág.)
+op1-sobrevivendo-ao-horror.pdf           # suplemento OPSH (226 pág.)
+op2-playtest-beta-contos-da-vigilia.pdf  # Beta (referência primária do OP2)
+op2-maldicao-do-idolo-de-pedra.pdf       # Alpha (compatibilidade)
+Ordem-2-Playtest-Beta-Missao-*-Extras.zip
+Ordem-2-Playtest-Alpha-Ato-*-Extras.zip
 ```
+
+Os zips foram extraídos em `extracted/` e os textos em `text/` (também
+ignorados pelo Git). O contrato final está em `docs/ORDEM_PARANORMAL.md`.
 
 O PO vai ler os PDFs localmente, extrair os campos/regras e transformar em
 contrato (`docs/ORDEM_PARANORMAL.md`), sem copiar texto protegido para o
