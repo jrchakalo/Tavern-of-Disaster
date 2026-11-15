@@ -54,6 +54,12 @@ export default async function globalSetup(_config: FullConfig) {
     NODE_ENV: 'test',
     JWT_SECRET: process.env.JWT_SECRET ?? 'e2e-secret',
     MONGO_URI: mongoUri,
+    // A suíte inteira compartilha um único backend/IP. Specs diferentes criam
+    // usuários e mesas em sequência; os limites padrão (5/20 por 5 min)
+    // colidem e derrubam specs válidos. Produção não usa estes valores.
+    LOGIN_RATE_LIMIT_POINTS: '1000',
+    CREATE_RATE_LIMIT_POINTS: '1000',
+    RATE_LIMIT_DURATION_SECONDS: '300',
   };
   processes.push(spawnProcess('npm', ['run', 'start:test'], backendDir, backendEnv, 'backend'));
   await waitForResource(`tcp:127.0.0.1:${backendPort}`);

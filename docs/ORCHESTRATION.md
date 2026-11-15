@@ -208,8 +208,8 @@ Não há push para o GitHub nesta fase. O PR é a branch local.
 | 2026-11-14 | QA (MiniMax M3.1 Flash) | `restore/phase-1-qa` / `8fc0243` | **Aprovado** | Spec authz 7/7; suíte E2E completa 8/8; caos 14/14 PASS, `revision=4`, 0 `actionError` | Cross-table, actionError, revisão monotônica, reconexão, turno concorrente e convergência de 7 clientes. |
 | 2026-11-14 | Frontend P2 (GLM-5.3-Flash) | `restore/phase-2-frontend` / `d36ca84` | **Aprovado** | `type-check` OK; `test:unit` 69/69; `build` OK | `connectDisplay` sem JWT/refresh, `canWrite`, join por convite e REST de token. Ping em pixel no `TableView` sinalizado para UX. |
 | 2026-11-15 | Backend P2 (DeepSeek V4.1 Flash 1017) | `restore/phase-2-backend` / `c46d6f0` | **Aprovado** | `npm test` 76/76; `npm run build` OK; 12 testes de integração display | Token SHA-256, auth DISPLAY, guard read-only, rollback/rotação e ping em grade. |
-| 2026-11-15 | QA P2 (DeepSeek V4.1 Flash 1017) | `restore/phase-2-qa` / `4c3b50f` | **Aprovado com ressalvas** | `display-security` 5/5 PASS na integração; `table-mode` bloqueado até a UX | Relatório em `docs/qa/PHASE2-TABLE-MODE-REPORT.md`; falta rodar 1 TV + 5 celulares. |
-| 2026-11-15 | UX P2 (MiMo-V2.6-Flash) | `restore/phase-2-ux` / `03c16b4` + `2273862` | **Aprovado com ressalvas** | `type-check` OK; 109/109 na integração; build OK | Card fora do turno, QR absoluto, ping no grid e redirect pós-login corrigidos; resta `pingCenterPixels` (follow-up). |
+| 2026-11-15 | QA P2 (DeepSeek V4.1 Flash 1017) | `restore/phase-2-qa` / `4c3b50f` + `bd346dd` | **Aprovado** | `table-mode` 9/9 + `display-security` 5/5; suíte E2E completa 22/22; caos P1 PASS | Relatório em `docs/qa/PHASE2-TABLE-MODE-REPORT.md`; 1 TV + 5 celulares + loop de 24 iterações. |
+| 2026-11-15 | UX P2 (MiMo-V2.6-Flash) | `restore/phase-2-ux` / `03c16b4` + `2273862` + `1cba8b6` | **Aprovado** | `type-check` OK; 113/113 na integração; build OK | Card fora do turno, QR absoluto, pings/`pingCenterPixels` em grade e redirect pós-login corrigidos e testados. |
 | 2026-11-15 | Regressão P1 na integração P2 | `restore/phase-2-table-mode` | **Aprovado** | happy-path + realtime-authz + display-security: **13/13** | Nenhuma regressão da Fase 1 após backend/frontend/UX da Fase 2. |
 | — | — | — | — | — | (preencher a cada PR) |
 
@@ -276,6 +276,9 @@ PO: `opencode-go/deepseek-v4.1-flash` (1017).
   roda local com Mongo em memória/Docker e storage local.
 - QA foi reexecutado em DeepSeek V4.1 Flash 1017 porque a primeira sessão
   MiniMax terminou sem commits nem relatório; o worktree estava limpo.
+- A suíte E2E completa compartilha um único backend/IP; `LOGIN_RATE_LIMIT_POINTS`
+  e `CREATE_RATE_LIMIT_POINTS` sobem para 1000 apenas no `global-setup.ts`.
+  Produção mantém 5/20 por 5 min.
 
 ### 13.3 Quadro
 

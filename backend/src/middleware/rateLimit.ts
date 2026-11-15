@@ -1,8 +1,22 @@
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import type { NextFunction, Request, Response } from 'express';
 
-const loginLimiter = new RateLimiterMemory({ points: 5, duration: 300 });
-const createLimiter = new RateLimiterMemory({ points: 20, duration: 300 });
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+// Produção usa os padrões; a suíte E2E sobe os limites via env para não
+// colidir entre specs que compartilham o mesmo IP/processo do backend.
+const rateLimitDuration = positiveInt(process.env.RATE_LIMIT_DURATION_SECONDS, 300);
+const loginLimiter = new RateLimiterMemory({
+  points: positiveInt(process.env.LOGIN_RATE_LIMIT_POINTS, 5),
+  duration: rateLimitDuration,
+});
+const createLimiter = new RateLimiterMemory({
+  points: positiveInt(process.env.CREATE_RATE_LIMIT_POINTS, 20),
+  duration: rateLimitDuration,
+});
 
 async function consumeOrReject(
   limiter: RateLimiterMemory,
