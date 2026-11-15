@@ -20,14 +20,17 @@ import {
   OPSH_ATTRIBUTE_SHORT,
   OPSH_INJURY_ROLLS,
   OPSH_TRAINING_BONUSES,
+  attackUsesRangedSkill,
   buildOpshDraft,
   buildOpshPatch,
   linesFromList,
   listFromLines,
   opshDerivedDefense,
   opshHasNatural20,
+  opshPoolExpression,
   opshResourceFormula,
   opshRollExpression,
+  opshSkillByKey,
   parseAttributeScore,
   parseProgressionMode,
   type OpshAttributeKey,
@@ -198,7 +201,7 @@ function removeRitual(index: number) {
 }
 
 function addAttack() {
-  draft.value.attacks.push({ name: '', bonus: '', damage: '', notes: '' });
+  draft.value.attacks.push({ name: '', bonus: '', damage: '', range: '', notes: '' });
   touch();
 }
 
@@ -286,8 +289,14 @@ async function rollAttack(attack: OpshDraft['attacks'][number]) {
   if (!props.canEdit) return;
   const bonus = Number(attack.bonus);
   const resolved = Number.isFinite(bonus) ? bonus : 0;
-  const expression = `1d20kh1${resolved >= 0 ? '+' : ''}${resolved}`;
-  const label = `Ataque: ${attack.name || 'sem nome'}`;
+  // Ataque do OP1 = pool de d20 do atributo da perícia (Luta/Pontaria) +
+  // bônus de treino/arma. Nunca um único d20.
+  const ranged = attackUsesRangedSkill(attack.range);
+  const skillKey = ranged ? 'pontaria' : 'luta';
+  const definition = opshSkillByKey(skillKey);
+  const attribute = (definition?.attribute ?? (ranged ? 'agilidade' : 'forca')) as OpshAttributeKey;
+  const expression = opshPoolExpression(attributeScore(attribute), resolved);
+  const label = `Ataque: ${attack.name || (ranged ? 'Pontaria' : 'Luta')}`;
   await sendRoll({
     tableId: tableId.value,
     characterId: characterId.value,
@@ -897,6 +906,13 @@ defineExpose({ buildPatch });
                 :readonly="!canEdit"
                 placeholder="1d8+3"
                 @update:model-value="attack.damage = $event; touch()"
+              />
+              <SheetField
+                label="Alcance"
+                :model-value="attack.range"
+                :readonly="!canEdit"
+                placeholder="Corpo a corpo / curto / longo"
+                @update:model-value="attack.range = $event; touch()"
               />
               <SheetField
                 label="Notas"

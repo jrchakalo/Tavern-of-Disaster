@@ -149,7 +149,9 @@ export function parseDamageModifier(damage: string | undefined | null): number {
 
 export function attackUsesRangedSkill(range: string | undefined | null): boolean {
   if (!range) return false;
-  return /dist|longo|arremess|arma de fogo|tiro|\bm\b/i.test(range);
+  return /dist|curto|m[eé]dio|longo|arremess|arma de fogo|tiro|pistola|rev[oó]lver|fuzil|espingarda|arco|besta|\bm\b/i.test(
+    range,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -612,6 +614,14 @@ export function opshRollExpression(attribute: unknown, training: unknown): strin
   return `${pool}+${bonus}`;
 }
 
+/** Pool de d20 do OP1 com um bônus livre (ataques: treino + arma). */
+export function opshPoolExpression(attribute: unknown, bonus: number): string {
+  const score = parseAttributeScore(attribute);
+  const pool = score > 0 ? `${score}d20kh1` : '2d20kl1';
+  const safeBonus = Number.isFinite(bonus) ? Math.trunc(bonus) : 0;
+  return `${pool}${safeBonus >= 0 ? '+' : ''}${safeBonus}`;
+}
+
 /** Defesa derivada do OP1: 10 + Agilidade + modificadores. */
 export function opshDerivedDefense(agilidade: unknown): number {
   return 10 + parseAttributeScore(agilidade);
@@ -726,6 +736,7 @@ export interface OpshAttackDraft {
   name: string;
   bonus: string;
   damage: string;
+  range: string;
   notes: string;
 }
 
@@ -872,6 +883,7 @@ export function buildOpshDraft(character: Character | null): OpshDraft {
       name: attack.name ?? '',
       bonus: asString(attack.bonus),
       damage: asString(attack.damage),
+      range: asString(attack.range),
       notes: asString(attack.notes),
     })),
     inventory: (character?.inventory ?? []).map((item) => ({
@@ -941,6 +953,7 @@ export function buildOpshPatch(draft: OpshDraft): Partial<CharacterDTO> {
       name: row.name.trim(),
       bonus: trimOrUndefined(row.bonus),
       damage: trimOrUndefined(row.damage),
+      range: trimOrUndefined(row.range),
       notes: trimOrUndefined(row.notes),
     }));
 
