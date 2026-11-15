@@ -5,6 +5,7 @@ import { Types } from 'mongoose';
 
 import systemRouter from '../system.routes';
 import tableRouter from '../table.routes';
+import characterRouter from '../character.routes';
 import System from '../../models/System.model';
 import Table from '../../models/Table.model';
 import { connectMongoMemory, disconnectMongoMemory, clearMongoMemory } from '../../test-utils/mongoMemory';
@@ -12,6 +13,9 @@ import { connectMongoMemory, disconnectMongoMemory, clearMongoMemory } from '../
 const buildApp = () => {
   const app = express();
   app.use(express.json());
+  // Mesma ordem do server.ts real: characterRouter antes de systemRouter.
+  // O router de personagens não pode capturar /api/systems com auth global.
+  app.use('/api', characterRouter);
   app.use('/api', systemRouter);
   app.use('/api/tables', tableRouter);
   return app;
