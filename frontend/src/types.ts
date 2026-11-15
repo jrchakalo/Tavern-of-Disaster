@@ -201,6 +201,9 @@ export interface CharacterRitual {
 export interface CharacterInjury {
   attribute: string;
   penalty: number;
+  /** Campo persistido pelo backend (OP2/OPSH). */
+  note?: string;
+  /** Alias usado pelo editor da ficha. */
   notes?: string;
 }
 

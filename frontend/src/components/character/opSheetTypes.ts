@@ -384,7 +384,7 @@ export function buildOpDraft(character: Character | null): Op2Draft {
     conditions: [...(character?.conditions ?? [])],
     traumas: [...(character?.traumas ?? [])],
     injuries: (character?.injuries ?? []).map((injury) =>
-      typeof injury === 'string' ? injury : asString(injury?.notes ?? injury?.attribute),
+      typeof injury === 'string' ? injury : asString(injury?.notes ?? injury?.note ?? injury?.attribute),
     ),
     attacks,
     inventory,
@@ -800,7 +800,7 @@ function readInjuries(character: Character | null): OpshInjuryDraft[] {
     return {
       attribute: injury?.attribute ?? '',
       penalty: asString(injury?.penalty),
-      notes: injury?.notes ?? '',
+      notes: injury?.notes ?? injury?.note ?? '',
     };
   });
 }
