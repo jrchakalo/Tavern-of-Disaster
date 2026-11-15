@@ -410,9 +410,12 @@ const zCharacterProfile = z
     classe: optionalTrimmedString(100).optional(),
     origem: optionalTrimmedString(100).optional(),
     trilha: optionalTrimmedString(100).optional(),
-    nex: z.number().int().min(0).max(100).optional(),
+    nex: z
+      .union([z.number().int().min(0).max(100), trimmedString(1, 16)])
+      .optional(),
     patente: optionalTrimmedString(100).optional(),
     conceito: optionalTrimmedString(500).optional(),
+    profissao: optionalTrimmedString(100).optional(),
   })
   .optional();
 const zCharacterFear = z
@@ -437,7 +440,9 @@ const zCharacterRituals = z
     z.object({
       name: trimmedString(1, 100),
       cost: optionalTrimmedString(100).optional(),
-      circle: z.number().int().min(0).max(5).optional(),
+      circle: z
+        .union([z.number().int().min(0).max(5), trimmedString(1, 16)])
+        .optional(),
       description: optionalTrimmedString(2048).optional(),
     })
   )
@@ -449,21 +454,28 @@ const zCharacterStringList = z
   .optional();
 const zCharacterInjuries = z
   .array(
-    z.object({
-      attribute: trimmedString(1, 100),
-      penalty: z.number().finite().min(-100).max(100),
-      note: optionalTrimmedString(500).optional(),
-    })
+    z.union([
+      trimmedString(1, 200),
+      z.object({
+        attribute: trimmedString(1, 100),
+        penalty: z.number().finite().min(-100).max(100),
+        note: optionalTrimmedString(500).optional(),
+        /** Alguns clientes usam `notes`; aceitamos como alias. */
+        notes: optionalTrimmedString(500).optional(),
+      }),
+    ])
   )
   .max(20, { message: 'Limite de 20 ferimentos.' })
   .optional();
 const zCharacterSanityMode = z.enum(['san', 'pd']).optional();
+const zCharacterProgressionMode = z.enum(['nex', 'patente', 'estagio']).optional();
 const zCharacterAttacks = z
   .array(
     z.object({
       name: trimmedString(1, 100),
       bonus: optionalTrimmedString(64).optional(),
       damage: optionalTrimmedString(64).optional(),
+      range: optionalTrimmedString(64).optional(),
       notes: optionalTrimmedString(1024).optional(),
     })
   )
@@ -533,6 +545,7 @@ const characterBodyBase = {
   traumas: zCharacterStringList,
   injuries: zCharacterInjuries,
   sanityMode: zCharacterSanityMode,
+  progressionMode: zCharacterProgressionMode,
   notes: characterNotes.optional(),
 };
 
@@ -578,6 +591,7 @@ export const zUpdateCharacter = z
     traumas: zCharacterStringList,
     injuries: zCharacterInjuries,
     sanityMode: zCharacterSanityMode,
+    progressionMode: zCharacterProgressionMode,
     notes: characterNotes.optional(),
   })
   .passthrough()

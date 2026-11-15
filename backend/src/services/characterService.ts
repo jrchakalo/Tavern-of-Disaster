@@ -168,6 +168,29 @@ function sanitizeName(name?: string): string {
   return trimmed;
 }
 
+type CharacterInjuryInput =
+  | string
+  | { attribute: string; penalty: number; note?: string; notes?: string };
+
+/**
+ * OP2 usa lesões textuais; OPSH usa ferimentos debilitantes estruturados.
+ * Normalizamos as duas formas para o schema persistido.
+ */
+function normalizeInjuries(injuries?: CharacterInjuryInput[]): CharacterInjury[] | undefined {
+  if (injuries === undefined) return undefined;
+  return injuries.map((injury) => {
+    if (typeof injury === 'string') {
+      return { attribute: 'ferimento', penalty: 0, note: injury };
+    }
+    const note = injury.note ?? injury.notes;
+    return {
+      attribute: injury.attribute,
+      penalty: injury.penalty,
+      ...(note ? { note } : {}),
+    };
+  });
+}
+
 async function loadTableSystem(table: ITable): Promise<ISystem | null> {
   if (!table.systemId) {
     return null;
@@ -364,10 +387,13 @@ function assignCharacterFields(character: ICharacter, payload: UpdateCharacterPa
     character.traumas = payload.traumas;
   }
   if (payload.injuries !== undefined) {
-    character.injuries = payload.injuries as CharacterInjury[];
+    character.injuries = normalizeInjuries(payload.injuries as CharacterInjuryInput[]);
   }
   if (payload.sanityMode !== undefined) {
     character.sanityMode = payload.sanityMode as CharacterSanityMode;
+  }
+  if (payload.progressionMode !== undefined) {
+    character.progressionMode = payload.progressionMode;
   }
   if (payload.notes !== undefined) {
     character.notes = payload.notes;
@@ -449,8 +475,9 @@ export async function createCharacter(
     rituals: payload.rituals ?? [],
     conditions: payload.conditions ?? [],
     traumas: payload.traumas ?? [],
-    injuries: payload.injuries ?? [],
+    injuries: normalizeInjuries(payload.injuries as CharacterInjuryInput[] | undefined) ?? [],
     sanityMode: payload.sanityMode,
+    progressionMode: payload.progressionMode,
     notes: payload.notes,
   });
   await character.save();

@@ -35,15 +35,19 @@ export interface CharacterProfile {
   classe?: string;
   origem?: string;
   trilha?: string;
-  nex?: number;
+  nex?: number | string;
   patente?: string;
   conceito?: string;
+  /** Campo livre da perícia Profissão (OP1/OPSH). */
+  profissao?: string;
 }
 
 export interface CharacterAttack {
   name: string;
   bonus?: string;
   damage?: string;
+  /** OP2: corpo a corpo, curto, longo… */
+  range?: string;
   notes?: string;
 }
 
@@ -78,7 +82,7 @@ export interface CharacterRelation {
 export interface CharacterRitual {
   name: string;
   cost?: string;
-  circle?: number;
+  circle?: number | string;
   description?: string;
 }
 
@@ -114,6 +118,8 @@ export interface ICharacter extends Document {
   traumas?: string[];
   injuries?: CharacterInjury[];
   sanityMode?: CharacterSanityMode;
+  /** OPSH: progressão por NEX, patente ou estágio. */
+  progressionMode?: 'nex' | 'patente' | 'estagio';
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -134,9 +140,10 @@ const CharacterProfileSchema = new Schema<CharacterProfile>(
     classe: { type: String },
     origem: { type: String },
     trilha: { type: String },
-    nex: { type: Number, min: 0, max: 100 },
+    nex: { type: Schema.Types.Mixed },
     patente: { type: String },
     conceito: { type: String },
+    profissao: { type: String },
   },
   { _id: false }
 );
@@ -146,6 +153,7 @@ const CharacterAttackSchema = new Schema<CharacterAttack>(
     name: { type: String, required: true },
     bonus: { type: String },
     damage: { type: String },
+    range: { type: String },
     notes: { type: String },
   },
   { _id: false }
@@ -198,7 +206,7 @@ const CharacterRitualSchema = new Schema<CharacterRitual>(
   {
     name: { type: String, required: true },
     cost: { type: String },
-    circle: { type: Number, min: 0, max: 5 },
+    circle: { type: Schema.Types.Mixed },
     description: { type: String },
   },
   { _id: false }
@@ -251,6 +259,7 @@ const CharacterSchema = new Schema<ICharacter>(
     traumas: { type: [String], default: [] },
     injuries: { type: [CharacterInjurySchema], default: [] },
     sanityMode: { type: String, enum: ['san', 'pd'] },
+    progressionMode: { type: String, enum: ['nex', 'patente', 'estagio'] },
     notes: { type: String },
   },
   { timestamps: true }
