@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { mount, flushPromises } from '@vue/test-utils';
+import { config, mount, flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 
 const rollDiceMock = vi.hoisted(() => vi.fn());
@@ -18,6 +18,10 @@ vi.mock('../../../services/toast', () => ({ toast: toastMock }));
 import OpshSheet from '../OpshSheet.vue';
 import { useTableStore } from '../../../stores/tableStore';
 import type { CharacterDTO, DiceRolledPayload } from '../../../types';
+
+const pinia = createPinia();
+setActivePinia(pinia);
+config.global.plugins = [pinia];
 
 const character: CharacterDTO = {
   _id: 'char-opsh',
@@ -66,7 +70,8 @@ function openTab(wrapper: ReturnType<typeof mount>, label: string) {
 
 describe('OpshSheet — Sobrevivendo ao Horror', () => {
   beforeEach(() => {
-    setActivePinia(createPinia());
+    setActivePinia(pinia);
+    useTableStore().recentRolls = [];
     rollDiceMock.mockReset();
     rollDiceMock.mockResolvedValue({ ok: true, revision: 1, serverNowMs: Date.now() });
     Object.values(toastMock).forEach((fn) => fn.mockReset());
@@ -104,21 +109,38 @@ describe('OpshSheet — Sobrevivendo ao Horror', () => {
 
     await wrapper.get('[aria-label="Rolar Acrobacia"]').trigger('click');
     await flushPromises();
-    expect(rollDiceMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tableId: 'table-1',
-        characterId: 'char-opsh',
-        metadata: 'Acrobacia (Agilidade)',
-        expression: '2d20kl1+5',
-      }),
-    );
+    expect(rollDiceMock.mock.calls[0].slice(1)).toEqual([undefined, { silent: true }]);
+    expect(rollDiceMock.mock.calls[0][0]).toMatchObject({
+      tableId: 'table-1',
+      characterId: 'char-opsh',
+      metadata: 'Acrobacia (Agilidade)',
+      expression: '2d20kl1+5',
+    });
 
     rollDiceMock.mockClear();
     await wrapper.get('[aria-label="Rolar teste de Agilidade"]').trigger('click');
     await flushPromises();
-    expect(rollDiceMock).toHaveBeenCalledWith(
-      expect.objectContaining({ expression: '2d20kl1+0' }),
-    );
+    expect(rollDiceMock.mock.calls[0][0]).toMatchObject({
+      expression: '2d20kl1+0',
+    });
+    wrapper.unmount();
+  });
+
+  it('mostra o erro do ack da rolagem uma única vez', async () => {
+    rollDiceMock.mockResolvedValueOnce({
+      ok: false,
+      error: { message: 'Muitas rolagens' },
+      revision: 1,
+      serverNowMs: Date.now(),
+    });
+    const wrapper = mount(OpshSheet, { props: { character, canEdit: true } });
+    await openTab(wrapper, 'Atributos');
+    await wrapper.get('[aria-label="Rolar Acrobacia"]').trigger('click');
+    await flushPromises();
+
+    expect(toastMock.error).toHaveBeenCalledTimes(1);
+    expect(toastMock.error).toHaveBeenCalledWith('Muitas rolagens');
+    expect(toastMock.success).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
@@ -136,9 +158,9 @@ describe('OpshSheet — Sobrevivendo ao Horror', () => {
 
     await professionRow!.get('button[aria-label="Rolar Profissão"]').trigger('click');
     await flushPromises();
-    expect(rollDiceMock).toHaveBeenCalledWith(
-      expect.objectContaining({ expression: '4d20kh1+15' }),
-    );
+    expect(rollDiceMock.mock.calls[0][0]).toMatchObject({
+      expression: '4d20kh1+15',
+    });
     wrapper.unmount();
   });
 
@@ -185,9 +207,9 @@ describe('OpshSheet — Sobrevivendo ao Horror', () => {
     expect(fearButton).toBeTruthy();
     await fearButton!.trigger('click');
     await flushPromises();
-    expect(rollDiceMock).toHaveBeenCalledWith(
-      expect.objectContaining({ expression: '2d10' }),
-    );
+    expect(rollDiceMock.mock.calls[0][0]).toMatchObject({
+      expression: '2d10',
+    });
 
     rollDiceMock.mockClear();
     const injuryButton = wrapper
@@ -196,9 +218,9 @@ describe('OpshSheet — Sobrevivendo ao Horror', () => {
     expect(injuryButton).toBeTruthy();
     await injuryButton!.trigger('click');
     await flushPromises();
-    expect(rollDiceMock).toHaveBeenCalledWith(
-      expect.objectContaining({ expression: '1d6' }),
-    );
+    expect(rollDiceMock.mock.calls[0][0]).toMatchObject({
+      expression: '1d6',
+    });
     wrapper.unmount();
   });
 

@@ -225,7 +225,12 @@ async function sendRoll(params: RollDiceParams) {
     return;
   }
   try {
-    await socketService.rollDice(params);
+    // O toast automático do serviço fica silencioso: a ficha mostra o erro
+    // exatamente uma vez, inclusive para falhas de ack (rate limit etc.).
+    const ack = await socketService.rollDice(params, undefined, { silent: true });
+    if (!ack.ok) {
+      toast.error(ack.error.message || 'Não foi possível enviar a rolagem.');
+    }
   } catch {
     toast.error('Não foi possível enviar a rolagem.');
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { mount, flushPromises } from '@vue/test-utils';
+import { config, mount, flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 
 const rollDiceMock = vi.hoisted(() => vi.fn());
@@ -18,6 +18,10 @@ vi.mock('../../../services/toast', () => ({ toast: toastMock }));
 import Op2Sheet from '../Op2Sheet.vue';
 import { useTableStore } from '../../../stores/tableStore';
 import type { CharacterDTO, DiceRolledPayload } from '../../../types';
+
+const pinia = createPinia();
+setActivePinia(pinia);
+config.global.plugins = [pinia];
 
 const character: CharacterDTO = {
   _id: 'char-op2',
@@ -84,7 +88,8 @@ function openTab(wrapper: ReturnType<typeof mount>, label: string) {
 
 describe('Op2Sheet — ficha de Ordem Paranormal 2', () => {
   beforeEach(() => {
-    setActivePinia(createPinia());
+    setActivePinia(pinia);
+    useTableStore().recentRolls = [];
     rollDiceMock.mockReset();
     rollDiceMock.mockResolvedValue({ ok: true, revision: 1, serverNowMs: Date.now() });
     Object.values(toastMock).forEach((fn) => fn.mockReset());
@@ -113,22 +118,54 @@ describe('Op2Sheet — ficha de Ordem Paranormal 2', () => {
     await flushPromises();
 
     expect(rollDiceMock).toHaveBeenCalledTimes(1);
-    expect(rollDiceMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tableId: 'table-1',
-        characterId: 'char-op2',
-        metadata: 'Luta (Físico)',
-        step: expect.objectContaining({
-          attribute: 'fisico',
-          attributeDie: 8,
-          skillKey: 'luta',
-          skillDie: 8,
-          difficulty: 7,
-          dreadDie: 6,
-          label: 'Luta (Físico)',
-        }),
+    expect(rollDiceMock.mock.calls[0].slice(1)).toEqual([undefined, { silent: true }]);
+    expect(rollDiceMock.mock.calls[0][0]).toMatchObject({
+      tableId: 'table-1',
+      characterId: 'char-op2',
+      metadata: 'Luta (Físico)',
+      step: expect.objectContaining({
+        attribute: 'fisico',
+        attributeDie: 8,
+        skillKey: 'luta',
+        skillDie: 8,
+        difficulty: 7,
+        dreadDie: 6,
+        label: 'Luta (Físico)',
       }),
-    );
+    });
+    wrapper.unmount();
+  });
+
+  it('mostra o erro do ack da rolagem uma única vez', async () => {
+    rollDiceMock.mockResolvedValueOnce({
+      ok: false,
+      error: { message: 'Muitas rolagens' },
+      revision: 1,
+      serverNowMs: Date.now(),
+    });
+    const wrapper = mount(Op2Sheet, { props: { character, canEdit: true } });
+    await openTab(wrapper, 'Atributos');
+    await wrapper.get('[aria-label="Rolar Luta"]').trigger('click');
+    await flushPromises();
+
+    expect(toastMock.error).toHaveBeenCalledTimes(1);
+    expect(toastMock.error).toHaveBeenCalledWith('Muitas rolagens');
+    expect(toastMock.success).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('limita a DT ao intervalo 1..100 do backend', async () => {
+    const wrapper = mount(Op2Sheet, { props: { character, canEdit: true } });
+    await openTab(wrapper, 'Atributos');
+    const input = wrapper.get('.op2-dt__input');
+
+    await input.setValue('0');
+    await flushPromises();
+    expect((input.element as HTMLInputElement).value).toBe('1');
+
+    await input.setValue('250');
+    await flushPromises();
+    expect((input.element as HTMLInputElement).value).toBe('100');
     wrapper.unmount();
   });
 
@@ -150,16 +187,14 @@ describe('Op2Sheet — ficha de Ordem Paranormal 2', () => {
     await attackButton!.trigger('click');
     await flushPromises();
 
-    expect(rollDiceMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        step: expect.objectContaining({
-          skillKey: 'pontaria',
-          difficulty: 10,
-          damageMode: true,
-          damageModifier: 3,
-        }),
+    expect(rollDiceMock.mock.calls[0][0]).toMatchObject({
+      step: expect.objectContaining({
+        skillKey: 'pontaria',
+        difficulty: 10,
+        damageMode: true,
+        damageModifier: 3,
       }),
-    );
+    });
     wrapper.unmount();
   });
 
@@ -190,11 +225,9 @@ describe('Op2Sheet — ficha de Ordem Paranormal 2', () => {
     await openTab(wrapper, 'Atributos');
     await wrapper.get('[aria-label="Rolar Luta"]').trigger('click');
     await flushPromises();
-    expect(rollDiceMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        step: expect.objectContaining({ bonusDice: [8] }),
-      }),
-    );
+    expect(rollDiceMock.mock.calls[0][0]).toMatchObject({
+      step: expect.objectContaining({ bonusDice: [8] }),
+    });
     wrapper.unmount();
   });
 

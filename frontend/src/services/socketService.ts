@@ -231,7 +231,12 @@ class SocketService {
    * dono do resultado (sem timeout local). Sem callback, devolve uma Promise
    * que nunca rejeita: falhas viram toast (timeout) ou `actionError`.
    */
-  private emitRequest<TPayload>(event: string, payload: TPayload, ack?: (a: Ack) => void): Promise<Ack> {
+  private emitRequest<TPayload>(
+    event: string,
+    payload: TPayload,
+    ack?: (a: Ack) => void,
+    options: EmitWithAckOptions = {},
+  ): Promise<Ack> {
     if (ack) {
       return new Promise<Ack>((resolve) => {
         if (!this.socket) {
@@ -246,7 +251,9 @@ class SocketService {
         });
       });
     }
-    return this.emitWithAck(event, payload).catch((err: unknown) => this.toAckFailure(event, err));
+    return this.emitWithAck(event, payload, options).catch((err: unknown) =>
+      this.toAckFailure(event, err),
+    );
   }
 
   private toAckFailure(event: string, err: unknown): AckError {
@@ -802,8 +809,12 @@ class SocketService {
     return this.emitRequest('requestRemoveMeasurement', payload, ack);
   }
 
-  rollDice(params: RollDiceParams, ack?: (a: Ack) => void) {
-    return this.emitRequest('requestRollDice', params, ack);
+  /**
+   * `options.silent` permite que a ficha exiba o erro da rolagem uma única vez
+   * (sem o toast automático do serviço).
+   */
+  rollDice(params: RollDiceParams, ack?: (a: Ack) => void, options: EmitWithAckOptions = {}) {
+    return this.emitRequest('requestRollDice', params, ack, options);
   }
 
   clearAllMeasurements(tableId: string, sceneId: string, ack?: (a: Ack) => void) {

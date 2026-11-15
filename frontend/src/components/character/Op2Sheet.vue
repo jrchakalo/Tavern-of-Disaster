@@ -171,7 +171,8 @@ function setList(kind: 'conditions' | 'traumas' | 'injuries', event: Event) {
 function setDifficulty(value: number) {
   if (!props.canEdit) return;
   if (!Number.isFinite(value)) return;
-  draft.value.difficulty = Math.max(0, Math.trunc(value));
+  // O backend valida 1..100; a UI usa o mesmo intervalo.
+  draft.value.difficulty = Math.min(100, Math.max(1, Math.trunc(value)));
   touch();
 }
 
@@ -240,7 +241,12 @@ async function sendRoll(params: RollDiceParams) {
     return;
   }
   try {
-    await socketService.rollDice(params);
+    // O toast automático do serviço fica silencioso: a ficha mostra o erro
+    // exatamente uma vez, inclusive para falhas de ack (rate limit etc.).
+    const ack = await socketService.rollDice(params, undefined, { silent: true });
+    if (!ack.ok) {
+      toast.error(ack.error.message || 'Não foi possível enviar a rolagem.');
+    }
   } catch {
     toast.error('Não foi possível enviar a rolagem.');
   }
@@ -492,7 +498,8 @@ defineExpose({ buildPatch });
               <input
                 class="op2-dt__input"
                 type="number"
-                min="0"
+                min="1"
+                max="100"
                 aria-label="DT personalizada"
                 :value="draft.difficulty"
                 :readonly="!canEdit"

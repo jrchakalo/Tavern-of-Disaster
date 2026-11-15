@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { config, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 
 const rollDiceMock = vi.hoisted(() => vi.fn());
@@ -13,6 +13,10 @@ vi.mock('../../services/toast', () => ({
 
 import CharacterSheet from '../CharacterSheet.vue';
 import type { Character } from '../../types';
+
+const pinia = createPinia();
+setActivePinia(pinia);
+config.global.plugins = [pinia];
 
 const op2Character: Character = {
   _id: 'char-op2',
@@ -40,7 +44,7 @@ const opshCharacter: Character = {
 
 describe('CharacterSheet — roteamento por sistema', () => {
   beforeEach(() => {
-    setActivePinia(createPinia());
+    setActivePinia(pinia);
     rollDiceMock.mockReset();
     rollDiceMock.mockResolvedValue({ ok: true, revision: 1, serverNowMs: Date.now() });
   });
