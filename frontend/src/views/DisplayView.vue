@@ -7,6 +7,7 @@ import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
 import { connectDisplay, disconnectDisplay } from '../services/displaySession';
 import { useTableStore } from '../stores/tableStore';
+import type { LogEntry } from '../types';
 
 import DisplayBoard from '../components/display/DisplayBoard.vue';
 import RollLog from '../components/display/RollLog.vue';
@@ -28,6 +29,7 @@ const {
   connectionStatus,
   sessionStatus,
   logs,
+  recentRolls,
   squares,
   gridWidth,
   gridHeight,
@@ -36,6 +38,41 @@ const {
   pings,
   isDM,
 } = storeToRefs(store);
+
+/**
+ * Log da TV: `logs` é efêmero (zera no reload/troca de cena) e `recentRolls`
+ * vem canônico do snapshot (§6.3). Mergeia os dois — rolagens vivas entram
+ * pelo `diceRolled`, rolagens antigas sobrevivem ao reload via snapshot —
+ * sempre em ordem cronológica ascendente (o RollLog exibe as últimas).
+ */
+const displayLogs = computed<LogEntry[]>(() => {
+  const rolls: LogEntry[] = (recentRolls?.value ?? []).map((roll) => {
+    const rollsDisplay = roll.rolls?.length
+      ? roll.rolls.map((rollItem) => (rollItem.kept === 'kept' ? `${rollItem.value}` : `(${rollItem.value})`)).join(', ')
+      : '—';
+    const modifierText = !roll.modifier
+      ? ''
+      : roll.modifier > 0
+        ? ` + ${roll.modifier}`
+        : ` - ${Math.abs(roll.modifier)}`;
+    return {
+      id: `roll:${roll.createdAt}:${roll.expression}:${roll.total}`,
+      type: 'roll',
+      authorId: roll.userId,
+      authorName: roll.username,
+      createdAt: roll.createdAt,
+      content: `${roll.expression} → [${rollsDisplay}]${modifierText} = ${roll.total}`,
+      raw: roll,
+    };
+  });
+  const rollTimes = new Set(rolls.map((entry) => entry.createdAt));
+  const others = (logs?.value ?? []).filter(
+    (entry) => entry.type !== 'roll' || !rollTimes.has(entry.createdAt),
+  );
+  return [...others, ...rolls].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Token da TV: fragmento da URL > sessionStorage. Sem token, não conecta.
@@ -360,7 +397,7 @@ onBeforeUnmount(() => {
 
         <section class="display-log" aria-label="Rolagens recentes">
           <h2 class="display-rail__title">Rolagens</h2>
-          <RollLog :logs="logs" />
+          <RollLog :logs="displayLogs" />
         </section>
       </div>
     </template>

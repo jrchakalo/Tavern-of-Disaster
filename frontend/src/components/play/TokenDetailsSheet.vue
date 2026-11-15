@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { CharacterDTO, TokenInfo } from '../../types';
+import { tokenCharacter } from '../character/summary';
 
 const props = withDefaults(
   defineProps<{
@@ -8,25 +9,33 @@ const props = withDefaults(
     character?: CharacterDTO | null;
     metersPerSquare?: number;
     isMyToken?: boolean;
+    /** Permite abrir a ficha completa a partir dos detalhes (dono/DM). */
+    canOpenSheet?: boolean;
   }>(),
   {
     character: null,
     metersPerSquare: 1.5,
     isMyToken: false,
+    canOpenSheet: false,
   },
 );
 
-const emit = defineEmits<{ (e: 'close'): void }>();
+const emit = defineEmits<{ (e: 'close'): void; (e: 'open-character'): void }>();
 
 const panelRef = ref<HTMLElement | null>(null);
 
-const name = computed(() => props.character?.name || props.token.name);
+/** Resumo colado no token: PV/CA ao vivo mesmo sem a ficha completa. */
+const summary = computed(() => tokenCharacter(props.token));
+
+const name = computed(() => props.character?.name || summary.value?.name || props.token.name);
 const hp = computed(() => {
-  const stats = props.character?.stats;
-  if (!stats || stats.maxHP == null) return null;
-  return `${stats.currentHP ?? 0} / ${stats.maxHP}`;
+  const max = summary.value?.maxHP ?? props.character?.stats?.maxHP;
+  if (max == null) return null;
+  const current = summary.value?.currentHP ?? props.character?.stats?.currentHP ?? 0;
+  return `${current} / ${max}`;
 });
-const defense = computed(() => props.character?.stats?.defense ?? null);
+const defense = computed(() => summary.value?.defense ?? props.character?.stats?.defense ?? null);
+const level = computed(() => props.character?.profile?.level ?? null);
 const squares = computed(() => {
   const scale = props.metersPerSquare > 0 ? props.metersPerSquare : 1.5;
   const remaining = Math.floor(props.token.remainingMovement / scale + 1e-6);
@@ -81,6 +90,10 @@ onBeforeUnmount(() => {
           <dt>Defesa</dt>
           <dd>{{ defense }}</dd>
         </div>
+        <div v-if="level !== null">
+          <dt>Nível</dt>
+          <dd>{{ level }}</dd>
+        </div>
         <div>
           <dt>Movimento</dt>
           <dd>{{ token.remainingMovement.toFixed(1) }}m / {{ token.movement.toFixed(1) }}m</dd>
@@ -98,6 +111,15 @@ onBeforeUnmount(() => {
           <dd>{{ token.size }}</dd>
         </div>
       </dl>
+
+      <button
+        v-if="canOpenSheet"
+        type="button"
+        class="details-sheet__open character-link"
+        @click="emit('open-character')"
+      >
+        Abrir ficha
+      </button>
 
       <p v-if="isMyToken" class="details-sheet__hint">Este é o seu token.</p>
       <p v-else class="details-sheet__hint">Somente leitura.</p>
@@ -188,6 +210,30 @@ onBeforeUnmount(() => {
   margin: 2px 0 0;
   font-size: 0.95rem;
   font-weight: 600;
+}
+
+.details-sheet__open {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  background: var(--color-surface-alt);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.details-sheet__open:hover {
+  border-color: var(--color-accent-alt);
+  color: var(--color-accent-alt);
+}
+
+.details-sheet__open:focus-visible {
+  outline: 2px solid var(--color-warning);
+  outline-offset: 2px;
 }
 
 .details-sheet__hint {

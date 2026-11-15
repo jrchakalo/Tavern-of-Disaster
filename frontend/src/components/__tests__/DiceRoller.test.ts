@@ -51,6 +51,7 @@ describe('DiceRoller', () => {
       expression: '2d6+3',
     }));
     expect(toastMock.success).toHaveBeenCalledWith('Rolagem enviada.');
+    wrapper.unmount();
   });
 
   it('applies system presets when selected', async () => {
@@ -92,5 +93,20 @@ describe('DiceRoller', () => {
     expect(rollLocalDiceMock).toHaveBeenCalledWith('1d20', { metadata: undefined });
     expect(wrapper.emitted('local-roll')).toHaveLength(1);
     expect(toastMock.success).toHaveBeenCalledWith('Rolagem concluída.');
+  });
+
+  it('indica dado explosivo (!) e mostra o status da rolagem', async () => {
+    const wrapper = mount(DiceRoller, {
+      props: { tableId: 'table-123' },
+    });
+
+    expect(wrapper.find('.explosive-hint').exists()).toBe(false);
+    await wrapper.get('#dice-expression').setValue('1d10!');
+    expect(wrapper.find('.explosive-hint').exists()).toBe(true);
+
+    await wrapper.get('button.primary').trigger('click');
+    expect(wrapper.get('.dice-status').text()).toContain('aguardando');
+    expect(wrapper.get('.dice-status').classes()).toContain('dice-status--pending');
+    wrapper.unmount();
   });
 });

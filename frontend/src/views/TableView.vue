@@ -23,14 +23,16 @@ import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
 import ActionLog from '../components/ActionLog.vue';
+import RollLogPanel from '../components/dice/RollLogPanel.vue';
 import DiceRoller from '../components/DiceRoller.vue';
 import DiceAnimation from '../components/DiceAnimation.vue';
 import DMSessionControls from '../components/DMSessionControls.vue';
 import SceneManager from '../components/SceneManager.vue';
 import TableSharePanel from '../components/table/TableSharePanel.vue';
 import { readSessionExtras } from '../components/play/sessionMeta';
+import { mergeCharacterSummary } from '../components/character/summary';
 
-import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character, DiceRolledPayload } from '../types';
+import type { GridSquare, TokenInfo, IScene, IInitiativeEntry, TokenSize, Character, DiceRolledPayload, SystemDTO } from '../types';
 
 type MeasurementTool = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
 type ToolMode = MeasurementTool | 'select' | 'none';
@@ -164,9 +166,19 @@ const {
   currentTurnTokenId,
   myActiveToken,
   logs,
+  characters: characterSummaries,
 } = storeToRefs(tableStore);
 
 const characterFetchScope = ref<'player' | 'dm'>('player');
+// O DM precisa de TODAS as fichas da mesa para abrir qualquer ficha pela
+// iniciativa (§8.2); jogadores seguem com as próprias.
+watch(
+  isDM,
+  (value) => {
+    characterFetchScope.value = value ? 'dm' : 'player';
+  },
+  { immediate: true },
+);
 const activeCharacterId = ref<string | null>(null);
 const showCharacterSheet = ref(false);
 const showActionLog = ref(false);
@@ -184,13 +196,17 @@ const displayConnected = computed(
   () => sessionExtras.value.presence?.some((entry) => entry.role === 'DISPLAY') ?? false,
 );
 const activeCharacter = computed(() => {
+  let base: Character | null = null;
   if (activeCharacterId.value) {
-    return charactersForTable.value.find((char) => char._id === activeCharacterId.value) || null;
+    base = charactersForTable.value.find((char) => char._id === activeCharacterId.value) || null;
+  } else if (tableId) {
+    base = characterStore.selectedCharacter(tableId);
   }
-  if (tableId) {
-    return characterStore.selectedCharacter(tableId);
-  }
-  return null;
+  if (!base) return null;
+  // PV/CA alterados por OUTRO cliente chegam só no resumo canônico
+  // (sessionPatch.characterUpdates); mescla para a ficha aberta convergir.
+  const summary = (characterSummaries?.value ?? []).find((entry) => entry._id === base!._id);
+  return mergeCharacterSummary(base, summary);
 });
 const isActiveCharacterOwner = computed(() => {
   const character = activeCharacter.value;
@@ -202,6 +218,46 @@ const currentSystem = computed(() => {
   const preferredId = profile.value?.preferredSystemId;
   return preferredId ? systemStore.getById(preferredId) : null;
 });
+
+// Seleção de sistema da mesa (DM): lista do systemStore + PUT /tables/:id/system.
+const systemOptions = computed(() => (systemStore.systems ?? []) as SystemDTO[]);
+const selectedSystemId = computed(() => currentTable.value?.systemId ?? '');
+
+async function handleSystemChange(event: Event) {
+  const select = event.target as HTMLSelectElement | null;
+  if (!select || !tableId) return;
+  const systemId = select.value || null;
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/system`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken.value}`,
+      },
+      body: JSON.stringify({ systemId }),
+    });
+    if (!response.ok) {
+      const data = (await response.json().catch(() => ({}))) as { message?: string };
+      throw new Error(data.message || 'Não foi possível atualizar o sistema da mesa.');
+    }
+    const system = systemOptions.value.find((entry) => entry._id === systemId) ?? null;
+    if (currentTable.value) {
+      // Aplicação local imediata; o snapshot canônico reafirma no próximo resync.
+      currentTable.value = {
+        ...currentTable.value,
+        systemId: system?._id ?? null,
+        systemKey: system?.key ?? null,
+        systemName: system?.name ?? null,
+      };
+    }
+    toast.success(system ? `Sistema da mesa: ${system.name}.` : 'Sistema removido da mesa.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro ao salvar o sistema.';
+    toast.error(message);
+    // Reverte o select para o valor canônico.
+    select.value = selectedSystemId.value;
+  }
+}
 const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
 const logCount = computed(() => logs.value.length);
 
@@ -1812,6 +1868,27 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           </div>
         </div>
 
+        <div class="panel-section">
+          <label class="subsection-toggle" for="table-system-select">
+            <h4>Sistema da mesa</h4>
+          </label>
+          <select
+            id="table-system-select"
+            class="system-select"
+            :value="selectedSystemId"
+            aria-label="Sistema da mesa"
+            @change="handleSystemChange"
+          >
+            <option value="">Sem sistema</option>
+            <option v-for="system in systemOptions" :key="system._id" :value="system._id">
+              {{ system.name }}
+            </option>
+          </select>
+          <small class="system-select__hint">
+            Define os presets de dados e os atributos das fichas.
+          </small>
+        </div>
+
         <div v-if="activeScene?.type === 'battlemap'" class="panel-section">
           <button class="subsection-toggle" @click="isGridCollapsed = !isGridCollapsed">
             <h4>Controles do Grid</h4>
@@ -1941,6 +2018,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           <button type="button" class="log-panel__close" @click="toggleActionLog">×</button>
         </header>
         <ActionLog :logs="logs" />
+        <RollLogPanel :table-id="tableId" :limit="20" />
       </aside>
     </transition>
 
@@ -2316,6 +2394,28 @@ main{
   color: inherit; /* mantém a cor de texto */
 }
 .subsection-toggle .chevron { color: var(--color-text-muted); display:flex; align-items:center; }
+/* Sistema da mesa (seletor do DM) */
+.system-select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+.system-select:focus-visible {
+  outline: 2px solid var(--color-accent-alt);
+  outline-offset: 1px;
+}
+.system-select__hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+}
 panel h2 {
   margin-top: 0;
   text-align: center;

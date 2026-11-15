@@ -38,8 +38,29 @@ vi.mock('../../services/tableAccessService', () => tableAccessMock);
 
 const characterMock = vi.hoisted(() => ({
   getMyCharacters: vi.fn(async () => [] as unknown[]),
+  updateCharacter: vi.fn(async () => null),
+  deleteCharacter: vi.fn(async () => undefined),
 }));
 vi.mock('../../services/characterService', () => characterMock);
+
+const characterStoreMock = vi.hoisted(() => ({
+  useCharacterStore: () => ({
+    charactersForTable: vi.fn(() => []),
+    selectedCharacter: vi.fn(() => null),
+    setSelectedCharacter: vi.fn(),
+    fetchForTable: vi.fn(async () => []),
+    createCharacter: vi.fn(async () => null),
+    updateCharacter: vi.fn(async () => null),
+    deleteCharacter: vi.fn(async () => undefined),
+    updateHp: vi.fn(async () => undefined),
+    charactersByTable: {},
+    selectedCharacterId: null,
+    loadingByTable: {},
+    errorByTable: {},
+    setCharacters: vi.fn(),
+  }),
+}));
+vi.mock('../../stores/characterStore', characterStoreMock);
 
 const toastMock = vi.hoisted(() => ({
   success: vi.fn(),
