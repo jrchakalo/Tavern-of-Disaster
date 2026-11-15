@@ -4,6 +4,7 @@ import { getSceneWithTokens } from './sceneService';
 import { listSceneAuras, listScenePersistents } from './measurementService';
 import {
   buildSessionState as assembleSessionState,
+  mapCharacterSummary,
   mapInitiativeEntry,
   mapScene,
   mapToken,
@@ -11,9 +12,13 @@ import {
   mapMeasurement,
   mapAura,
 } from '../dto/sessionAssembler';
+import { listTableRolls, ROLL_LOG_LIMIT } from './rollService';
+import Character, { ICharacter } from '../models/Character.model';
+import Token from '../models/Token.model';
 import { getRevision } from './revisionService';
 import { isDisplayUserId, listPresence, PresenceEntry, SessionRole } from './presenceService';
 import {
+  CharacterSummaryDTO,
   InitiativeEntryDTO,
   SceneDTO,
   SESSION_PROTOCOL_VERSION,
@@ -75,6 +80,19 @@ export async function loadSessionState(tableId: string): Promise<SessionStateBun
   const measurements = activeSceneId ? listScenePersistents(tableId, activeSceneId) : [];
   const auras = activeSceneId ? listSceneAuras(tableId, activeSceneId) : [];
   const scenes = Array.isArray(tableDoc.scenes) ? (tableDoc.scenes as any) : [];
+
+  const characterDocs = await Character.find({ tableId: tableDoc._id }).sort({ createdAt: 1 });
+  const tokenLinks = await Token.find({ tableId: tableDoc._id, characterId: { $ne: null } }).select(
+    '_id characterId'
+  );
+  const characters = buildCharacterSummaries(characterDocs, tokenLinks);
+  const characterByTokenId = buildCharacterByTokenId(tokens as any[], characterDocs);
+
+  const recentRolls = await listTableRolls(tableId, {
+    limit: ROLL_LOG_LIMIT,
+    fallbackRevision: tableDoc.revision ?? 0,
+  });
+
   const state = assembleSessionState(
     tableDoc,
     activeScene as any,
@@ -82,7 +100,10 @@ export async function loadSessionState(tableId: string): Promise<SessionStateBun
     tokens as any,
     initiative as any,
     measurements as any,
-    auras as any
+    auras as any,
+    characters,
+    recentRolls,
+    characterByTokenId
   );
   return {
     state,
@@ -175,9 +196,49 @@ export async function getScenesForTable(tableId: string): Promise<SceneDTO[]> {
   return scenes.map((scene) => mapScene(scene));
 }
 
+type TokenLink = { _id: any; characterId?: any };
+
+function buildCharacterSummaries(characterDocs: ICharacter[], tokenLinks: TokenLink[]): CharacterSummaryDTO[] {
+  const tokenIdByCharacter = new Map<string, string>();
+  tokenLinks.forEach((token) => {
+    if (!token.characterId) return;
+    tokenIdByCharacter.set(token.characterId.toString(), token._id.toString());
+  });
+  return characterDocs.map((character) =>
+    mapCharacterSummary(character, tokenIdByCharacter.get(character._id.toString()) ?? null)
+  );
+}
+
+function buildCharacterByTokenId(tokens: TokenLink[], characterDocs: ICharacter[]): Map<string, ICharacter> {
+  const characterById = new Map(characterDocs.map((character) => [character._id.toString(), character]));
+  const byTokenId = new Map<string, ICharacter>();
+  tokens.forEach((token) => {
+    if (!token.characterId) return;
+    const character = characterById.get(token.characterId.toString());
+    if (character) byTokenId.set(token._id.toString(), character);
+  });
+  return byTokenId;
+}
+
+/** Resumos de ficha da mesa (o que a TV e os outros jogadores podem ver). */
+export async function getCharacterSummariesForTable(tableId: string): Promise<CharacterSummaryDTO[]> {
+  const [characterDocs, tokenLinks] = await Promise.all([
+    Character.find({ tableId }).sort({ createdAt: 1 }),
+    Token.find({ tableId, characterId: { $ne: null } }).select('_id characterId'),
+  ]);
+  return buildCharacterSummaries(characterDocs, tokenLinks);
+}
+
 export async function getTokensForScene(sceneId: string): Promise<TokenDTO[]> {
   const { tokens } = await getSceneWithTokens(sceneId);
-  return (tokens as any[]).map((token) => mapToken(token));
+  const characterIds = (tokens as any[])
+    .map((token) => token.characterId?.toString())
+    .filter((value: string | undefined): value is string => !!value);
+  const characterDocs = characterIds.length
+    ? await Character.find({ _id: { $in: Array.from(new Set(characterIds)) } })
+    : [];
+  const characterByTokenId = buildCharacterByTokenId(tokens as any[], characterDocs);
+  return (tokens as any[]).map((token) => mapToken(token, characterByTokenId.get(token._id.toString()) ?? null));
 }
 
 export function getInitiativeDTO(scene: IScene | null | undefined): InitiativeEntryDTO[] {

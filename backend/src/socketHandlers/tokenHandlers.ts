@@ -13,7 +13,8 @@ import { recordTokenMove, recordTokenMoveError } from '../metrics';
 import { assertCondition } from '../services/serviceErrors';
 import { assertExpectedRevision, bumpRevision, getRevision } from '../services/revisionService';
 import { getTokensForScene, getUserSummary } from '../services/sessionService';
-import { mapInitiativeEntry } from '../dto/sessionAssembler';
+import { mapCharacterSummaryLite, mapInitiativeEntry } from '../dto/sessionAssembler';
+import Character, { ICharacter } from '../models/Character.model';
 import { SessionPatchChanges, TokenDTO } from '../dto/session.dto';
 import { extractAck, runAction } from './ack';
 import { validate } from '../validation/validate';
@@ -229,6 +230,12 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
           patch: patchPayload,
         });
 
+        // Vincular/desvincular ficha também atualiza o resumo embutido no token.
+        let linkedCharacter: ICharacter | null = null;
+        if (patch.characterId !== undefined && updated.characterId) {
+          linkedCharacter = await Character.findById(updated.characterId);
+        }
+
         const changes: SessionPatchChanges = {
           tokenUpdates: [
             {
@@ -240,7 +247,10 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
                 imageUrl: updated.imageUrl,
                 size: updated.size,
                 canOverlap: updated.canOverlap,
-                characterId: updated.characterId ? updated.characterId.toString() : undefined,
+                characterId: updated.characterId ? updated.characterId.toString() : null,
+                ...(patch.characterId !== undefined
+                  ? { character: linkedCharacter ? mapCharacterSummaryLite(linkedCharacter) : null }
+                  : {}),
                 ...(typeof patch.ownerId === 'string'
                   ? { owner: getUserSummary((updated as any).ownerId) }
                   : {}),

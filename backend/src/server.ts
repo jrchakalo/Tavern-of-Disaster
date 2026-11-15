@@ -15,6 +15,7 @@ import { registerTokenHandlers } from './socketHandlers/tokenHandlers';
 import { registerInitiativeHandlers } from './socketHandlers/initiativeHandlers';
 import { registerMeasurementHandlers } from './socketHandlers/measurementHandlers';
 import { registerDiceHandlers } from './socketHandlers/diceHandlers';
+import { registerCharacterHandlers } from './socketHandlers/characterHandlers';
 import { cleanupInactiveTables } from './socketHandlers/measurementStore';
 import tokenTemplateRouter from './routes/tokenTemplate.routes';
 import sceneTemplateRouter from './routes/sceneTemplate.routes';
@@ -32,6 +33,7 @@ import { getRevisionSafe } from './services/revisionService';
 import { getTableInfo, sendPresenceUpdated } from './services/sessionService';
 import { displayUserId, leavePresence } from './services/presenceService';
 import { resolveDisplayToken } from './services/displayTokenService';
+import { seedSystemsSafe } from './services/systemSeedService';
 
 dotenv.config();
 const log = createLogger({ scope: 'server' });
@@ -190,6 +192,7 @@ export function createServer(): { app: express.Express; server: http.Server; io:
     registerInitiativeHandlers(io, socket);
     registerMeasurementHandlers(io, socket);
     registerDiceHandlers(io, socket);
+    registerCharacterHandlers(io, socket);
 
     socket.on('disconnect', () => {
       recordSocketDisconnected(socket.id);
@@ -226,6 +229,7 @@ function startMeasurementCleanup() {
 
 export async function startServer(port: number = Number(process.env.PORT) || 3001) {
   await connectDB();
+  await seedSystemsSafe();
   const { app, server, io } = createServer();
   server.listen(port, () => {
     log.info({ port }, 'Server iniciado');

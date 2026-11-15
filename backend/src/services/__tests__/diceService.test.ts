@@ -115,4 +115,72 @@ describe('diceService.roll', () => {
     expect(() => roll('not-a-die')).toThrow('Expressão de dado inválida.');
     expect(() => roll('1d1')).toThrow('Número de faces inválido.');
   });
+
+  it('supports exploding dice: each max roll rerolls and adds', () => {
+    setRandomSequence([
+      { value: 10, die: 10 },
+      { value: 10, die: 10 },
+      { value: 4, die: 10 },
+    ]);
+    const result = roll('1d10!');
+    expect(result.rolls).toHaveLength(1);
+    expect(result.rolls[0]).toMatchObject({ die: 10, value: 24, kept: 'kept', explosions: 2 });
+    expect(result.total).toBe(24);
+  });
+
+  it('supports exploding dice with multiple dice and a modifier', () => {
+    setRandomSequence([
+      { value: 6, die: 6 },
+      { value: 2, die: 6 },
+      { value: 3, die: 6 },
+    ]);
+    const result = roll('2d6!+3');
+    expect(result.rolls).toHaveLength(2);
+    expect(result.rolls[0]).toMatchObject({ value: 8, explosions: 1 });
+    expect(result.rolls[1]).toMatchObject({ value: 3 });
+    expect(result.rolls[1].explosions).toBeUndefined();
+    expect(result.total).toBe(8 + 3 + 3);
+  });
+
+  it('caps explosions at 20 per die even when every roll is max', () => {
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.999999);
+    const result = roll('1d2!');
+    expect(result.rolls[0].explosions).toBe(20);
+    // 1 rolagem inicial + 20 explosões
+    expect(randomSpy).toHaveBeenCalledTimes(21);
+    expect(result.rolls[0].value).toBe(2 * 21);
+    expect(result.total).toBe(42);
+  });
+
+  it('does not explode when the `!` suffix is absent', () => {
+    setRandomSequence([{ value: 10, die: 10 }]);
+    const result = roll('1d10');
+    expect(result.rolls[0].value).toBe(10);
+    expect(result.rolls[0].explosions).toBeUndefined();
+  });
+
+  it('enforces expression, dice, faces and modifier limits', () => {
+    expect(() => roll('1d6' + '+1'.repeat(40))).toThrow(/muito longa/);
+    expect(() => roll('101d6')).toThrow('Máximo de 100 dados por rolagem.');
+    expect(() => roll('1d1001')).toThrow('Número de faces inválido.');
+    expect(() => roll('1d0')).toThrow('Número de faces inválido.');
+    expect(() => roll('1d6+1001')).toThrow('Modificador inválido.');
+    expect(() => roll('1d6-1001')).toThrow('Modificador inválido.');
+    // Limites aceitos
+    expect(() => roll('100d2')).not.toThrow();
+    expect(() => roll('1d1000+1000')).not.toThrow();
+    expect(() => roll('1d6-1000')).not.toThrow();
+  });
+
+  it('keeps kh/kl working together with normal modifiers', () => {
+    setRandomSequence([
+      { value: 1, die: 6 },
+      { value: 6, die: 6 },
+      { value: 3, die: 6 },
+      { value: 5, die: 6 },
+    ]);
+    const result = roll('4d6kh3+2');
+    expect(result.rolls.filter((r) => r.kept === 'kept')).toHaveLength(3);
+    expect(result.total).toBe(6 + 3 + 5 + 2);
+  });
 });
