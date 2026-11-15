@@ -199,16 +199,22 @@ em `e67e730`) e agora passam nos testes acima.
 
 | Campo | Valor |
 |---|---|
-| Data/hora da execução | 2026-11-15 |
-| Commit de integração validado | `e67e730` (`restore/phase-2-table-mode`) |
-| `npx playwright test specs/table-mode.spec.ts --workers=1` | **9/9** (subconjunto da execução combinada) |
-| `npx playwright test specs/display-security.spec.ts --workers=1` | **5/5** (subconjunto da execução combinada) |
-| Suíte completa (`npx playwright test`, paralela) | _(pendente — 14 passed em 38,7 s com `--workers=1`)_ |
-| `revision` final | _(não impressa; a igualdade entre os 6 clientes é asserida no teste de loop)_ |
-| `tokenHash` final | _(não impresso; a igualdade entre os 6 clientes é asserida no teste de loop)_ |
-| `initiativeHash` final | _(não impresso; a igualdade entre os 6 clientes é asserida no teste de loop)_ |
+| Data/hora da execução | 2026-11-15 15:52 UTC |
+| Commit de integração validado | `2de7f14` (`restore/phase-2-table-mode`) |
+| `npx playwright test specs/table-mode.spec.ts --workers=1` | **9/9** |
+| `npx playwright test specs/display-security.spec.ts --workers=1` | **5/5** |
+| Suíte completa (`npx playwright test --workers=1`) | **22/22** em 1,0 min (happy path + authz + display security + table mode) |
+| Caos P1 (`node chaos/run.mjs`) | **PASS**, 14/14 checks |
+| `revision` final | asserido igual entre os 6 clientes no loop; valor não impresso |
+| `tokenHash` final | asserido igual entre os 6 clientes no loop; valor não impresso |
+| `initiativeHash` final | asserido igual entre os 6 clientes no loop; valor não impresso |
 | `actionError` inesperados | **0** nas asserções dos testes |
-| Veredito do PO | _(pendente)_ |
+| Veredito do PO | **APROVADO** |
+
+O rate limit compartilhado (L5) foi corrigido no `global-setup.ts` via
+`LOGIN_RATE_LIMIT_POINTS=1000` / `CREATE_RATE_LIMIT_POINTS=1000`; produção
+continua com 5/20 por 5 minutos. Sem essa correção, a suíte completa estourava
+`429` ao chegar no `table-mode.spec.ts`.
 
 ## 8. Lacunas e riscos conhecidos
 
@@ -218,7 +224,7 @@ em `e67e730`) e agora passam nos testes acima.
 | L2 | Seletores acoplados ao DOM atual (`play-header__revision`, `display-header__revision`, `board-token`, `display-board__token`, `token-card__status`) | Ajustes de UX podem quebrar o E2E | Alinhado à UX integrada; revisar em mudanças visuais |
 | L3 | A execução usa `pathname + hash` de `displayUrl` com o `E2E_BASE_URL` | Se o backend devolver outro host, o teste continua no frontend local (intencional) | Documentado |
 | L4 | Rotação/revogação só derruba a TV no próximo handshake | Sockets já conectados continuam até reconectar (aceito no §3.4) | Coberto como o contrato permite |
-| L5 | Rate limit `limitCreate` (20/5 min) compartilhado | Duas execuções seguidas completas podem estourar | `retries: 0`; reiniciar o backend reseta o bucket |
+| L5 | Rate limit `limitCreate` (20/5 min) compartilhado | Duas execuções seguidas completas podem estourar | **Resolvido**: limites elevados via env no `global-setup.ts`; produção mantém 5/20 |
 | L6 | `global-setup.ts` pode deixar processos filhos órfãos (L2 da Fase 1) | `EADDRINUSE` em execuções consecutivas | Defeito pré-existente; ver `PHASE1-CHAOS-REPORT.md` L2 |
 | L7 | O cenário de 60 min usa 24 iterações de sockets + UI | Não mede tempo real nem latência p95 | O critério de "60 min" é acelerado, como no plano §5 |
 | L8 | Hashes finais não são impressos no reporter `list` | O PO não vê os valores no log padrão | As igualdades são asseridas entre os 6 clientes; imprimir valores é melhoria futura |
