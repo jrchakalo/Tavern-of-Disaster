@@ -3,11 +3,11 @@
 > Codificado em: `restore/phase-2-qa` (P2-QA-1, P2-QA-2, P2-QA-3).
 > Contrato de referência: `docs/TABLE_MODE.md` e `docs/REALTIME_PROTOCOL.md`.
 >
-> **Status em 2026-11-15: BLOQUEADO.** A Fase 2 ainda não está integrada nesta
-> branch. Os testes foram escritos e executados; a primeira superfície ausente
-> (`POST /api/tables/:tableId/display-token`) falha com mensagem explícita e as
-> demais não executam (`did not run`/`skipped`). Nenhum "pass" foi inventado. O
-> veredito continua sendo do PO (§7).
+> **Status em 2026-11-15: VALIDADO CONTRA A INTEGRAÇÃO.** A Fase 2 foi mesclada
+> em `restore/phase-2-table-mode` (`e67e730`) e os dois specs passaram:
+> **14/14** (`table-mode` 9/9 + `display-security` 5/5) em 38,7 s. O veredito
+> final continua sendo do PO (§7). A execução de bloqueio contra a branch
+> pré-integração fica preservada em §5.4 como histórico.
 
 ## 1. Escopo
 
@@ -21,11 +21,11 @@
 
 | # | Cenário | Asserção principal | Contrato |
 |---|---|---|---|
-| 1 | Contrato da Fase 2 | `POST /display-token` devolve `{ token, displayUrl }`; handshake com `displayToken` conecta | §3.2, §3.3 |
+| 1 | Contrato da Fase 2 | `POST /display-token` devolve `{ token, displayUrl }` (relativo ou absoluto); handshake com `displayToken` conecta | §3.2, §3.3 |
 | 2 | TV 1920×1080 | `/display/:id#token=…` renderiza mesa/cena/iniciativa; **sem** `Mover`, `Encerrar turno`, `Rolar`, `.play-controls` nem `draggable`; revisão não muda na janela de observação | §7 |
-| 3 | 5 celulares 390×844 | `/play/:id?invite=<code>` adiciona os 5 jogadores; header, board e token card visíveis | §4.1, §6 |
+| 3 | 5 celulares 390×844 | `/play/:id?invite=<code>` adiciona os 5 jogadores; header, board e ficha visíveis | §4.1, §6 |
 | 4 | Convergência | TV + 5 celulares na mesma revisão; mesmos nomes/posições de token | §1 (critério 1) |
-| 5 | Movimento do Mestre | token muda no servidor e em todos os clientes; revisão avança | §8 (item 5) |
+| 5 | Movimento do Mestre | token muda no servidor, na TV e nos celulares; revisão avança | §8 (item 5) |
 | 6 | Turnos | cada jogador move no próprio turno pela UI; `Mover` desabilitado fora do turno; socket fora do turno → `FORBIDDEN`; revisão/token intactos | §6.2, §8 (item 6) |
 | 7 | Dados na TV | `requestRollDice` aparece em `.roll-log__item[data-type="roll"]` | §8 (item 7) |
 | 8 | Recarga | 2 celulares + TV recarregados recuperam a revisão do servidor | §1 (critério 7) |
@@ -41,7 +41,7 @@
 | 4 | Display read-only | `requestPlaceToken`, `requestMoveToken`, `requestNextTurn`, `requestSetActiveScene`, `requestPing`, `requestRollDice` → `FORBIDDEN`; revisão e tabuleiro intactos | §3.3, §3.4 |
 | 5 | Rotação/revogação | token anterior falha no handshake; token novo conecta; após `DELETE`, falha de novo; código `UNAUTHENTICATED` | §3.4 |
 
-## 2. Ambiente
+## 2. Ambiente e versionamento
 
 | Item | Valor |
 |---|---|
@@ -52,15 +52,13 @@
 | MongoDB | `mongodb-memory-server` com binário local via `MONGOMS_SYSTEM_BINARY` |
 | Backend | `backend/src/server.ts` via `npm run start:test` (porta 3100) |
 | Frontend | Vite (`npm run dev`, porta 4173) |
-| Branch | `restore/phase-2-qa` @ `8c62df2` |
-| Integração alvo | `restore/phase-2-table-mode` (não mesclada por esta QA) |
+| Branch de QA | `restore/phase-2-qa` |
+| Integração validada | `restore/phase-2-table-mode` @ `e67e730` (backend + frontend + UX; inclui o merge final da UX) |
 
-Estado das branches irmãs no momento da execução (inspeção de `git status`):
-
-- `restore/phase-2-backend`: limpa em `8c62df2` (sem P2-BE-1..4);
-- `restore/phase-2-frontend`: com alterações não commitadas em
-  `socketService.ts`, `tableAccessService.ts`, `tableStore.ts`;
-- `restore/phase-2-ux`: limpa em `8c62df2` (sem P2-UX-1..3).
+Como a branch de QA antecede a integração, a execução foi feita a partir de um
+worktree temporário em `e67e730` com os specs desta branch aplicados por cima.
+Nenhum merge/push foi feito a partir da QA. Quando o PO integrar este commit na
+branch de integração, o comando padrão abaixo roda direto no checkout normal.
 
 ## 3. Comandos
 
@@ -70,20 +68,17 @@ cd tests/e2e
 # type-check dos specs (o pacote e2e não traz `typescript`; usa o do backend)
 ../../backend/node_modules/.bin/tsc --noEmit -p tsconfig.json
 
-# suíte completa (sobe backend + Vite + Mongo em memória via global-setup)
+# suíte contra a integração
 MONGOMS_SYSTEM_BINARY=<repo>/backend/node_modules/.cache/mongodb-memory-server/mongod-x64-fedora-7.0.24 \
 E2E_CHANNEL=chrome \
-npx playwright test specs/table-mode.spec.ts specs/display-security.spec.ts --workers=1
+npx playwright test specs/table-mode.spec.ts --reporter=list --workers=1
 
-# execuções filtradas usadas para isolar as lacunas deste relatório
-npx playwright test specs/table-mode.spec.ts --workers=1
-npx playwright test specs/table-mode.spec.ts -g "5 celulares" --workers=1
-npx playwright test specs/display-security.spec.ts --workers=1
-npx playwright test specs/display-security.spec.ts -g "ping fora do grid" --workers=1
-npx playwright test specs/display-security.spec.ts -g "token de display entra" --workers=1
+MONGOMS_SYSTEM_BINARY=<repo>/backend/node_modules/.cache/mongodb-memory-server/mongod-x64-fedora-7.0.24 \
+E2E_CHANNEL=chrome \
+npx playwright test specs/display-security.spec.ts --reporter=list --workers=1
 ```
 
-## 4. Resultado
+## 4. Resultado da integração (2026-11-15)
 
 ### 4.1 Type-check
 
@@ -91,160 +86,148 @@ npx playwright test specs/display-security.spec.ts -g "token de display entra" -
 |---|---|
 | `tsc --noEmit -p tsconfig.json` (backend tsc) | **OK**, sem erros |
 
-### 4.2 Execuções de 2026-11-15
+### 4.2 Execuções
 
 | Data | Comando | Resultado | Veredito |
 |---|---|---|---|
-| 2026-11-15 | `table-mode.spec.ts specs/display-security.spec.ts --workers=1` | 2 failed / 12 did not run | **BLOQUEADO** — P2-BE-1 (token de display) e P2-BE-4 (ping) |
-| 2026-11-15 | `table-mode.spec.ts --workers=1` | 1 failed / 8 did not run | **BLOQUEADO** — `POST /display-token` responde 404 (P2-BE-1) |
-| 2026-11-15 | `table-mode.spec.ts -g "5 celulares" --workers=1` | 1 failed / 1 did not run | **BLOQUEADO** — convite não adiciona jogadores (P2-FE-3) |
-| 2026-11-15 | `display-security.spec.ts --workers=1` | 1 failed / 4 did not run | **FALHA** — `pingBroadcast` sem `revision` (P2-BE-4 incompleto) |
-| 2026-11-15 | `display-security.spec.ts -g "ping fora do grid"` | 1 failed | **FALHA** — ack `ok:true` e broadcast para coordenada inválida (P2-BE-4) |
-| 2026-11-15 | `display-security.spec.ts -g "token de display entra"` | 1 skipped | **BLOQUEADO** — sem token de display (P2-BE-1) |
+| 2026-11-15 | `table-mode.spec.ts specs/display-security.spec.ts --reporter=list --workers=1` (`e67e730`) | **14 passed** em 38,7 s | **APROVADO** |
+| 2026-11-15 | `table-mode.spec.ts --workers=1` (`e67e730`, subconjunto da execução acima) | **9/9** | **APROVADO** |
+| 2026-11-15 | `display-security.spec.ts --workers=1` (`e67e730`, subconjunto da execução acima) | **5/5** | **APROVADO** |
+
+Runtime da execução combinada: 38,7 s, dentro do alvo de <3 min.
 
 ### 4.3 Tabela de aceite
 
 | Critério (`TABLE_MODE.md`) | Teste | Resultado |
 |---|---|---|
-| TV entra por token de display | table-mode §1/§2 | **BLOQUEADO** (P2-BE-1) |
-| TV nunca muta | display-security §4 | **NÃO EXECUTADO** (depende de P2-BE-1/2) |
-| Jogador entra por QR/convite | table-mode §3 | **FALHOU** (P2-FE-3) |
-| Geometria de grade em pings | display-security §1 | **FALHOU** (sem `revision` no broadcast) |
-| Ping fora do grid → `VALIDATION` | display-security §2 | **FALHOU** (P2-BE-4) |
-| 5 celulares + TV convergem | table-mode §4 | **NÃO EXECUTADO** |
-| Turnos e erro fora do turno | table-mode §6 | **NÃO EXECUTADO** |
-| Rolagem na TV | table-mode §7 | **NÃO EXECUTADO** |
-| Reconexão sem divergência | table-mode §8 | **NÃO EXECUTADO** |
-| 60 min sem divergência | table-mode §9 | **NÃO EXECUTADO** |
+| TV entra por token de display | table-mode §1/§2 | **PASS** |
+| TV nunca muta | display-security §4 | **PASS** |
+| Jogador entra por QR/convite | table-mode §3 | **PASS** |
+| Geometria de grade em pings | display-security §1 | **PASS** |
+| Ping fora do grid → `VALIDATION` | display-security §2 | **PASS** |
+| 5 celulares + TV convergem | table-mode §4 | **PASS** |
+| Turnos e erro fora do turno | table-mode §6 | **PASS** |
+| Rolagem na TV | table-mode §7 | **PASS** |
+| Reconexão sem divergência | table-mode §8 | **PASS** |
+| 60 min sem divergência | table-mode §9 | **PASS** |
 
 ## 5. Evidência
 
-### 5.1 P2-BE-1 — rota de token de display ausente
-
-`table-mode.spec.ts`, teste "contrato da Fase 2 está disponível":
+### 5.1 `table-mode.spec.ts` (9/9)
 
 ```
-Error: P2-BE-1 ausente: POST /api/tables/:tableId/display-token respondeu 404
-(<pre>Cannot POST /api/tables/<id>/display-token</pre>).
-docs/TABLE_MODE.md §3.2 exige { token, displayUrl }.
+✓ P2-QA-1 · contrato da Fase 2 está disponível (5ms)
+✓ TV 1920×1080 entra por token, renderiza mesa/cena/iniciativa e não escreve (3.2s)
+✓ 5 celulares 390×844 entram por /play/:id?invite= e veem o tabuleiro (5.9s)
+✓ TV e os 5 celulares convergem na mesma revisão e no mesmo tabuleiro (729ms)
+✓ movimento do Mestre atualiza todos os clientes (275ms)
+✓ iniciativa: cada jogador move no próprio turno; fora do turno é rejeitado (3.1s)
+✓ rolagem de dados aparece no log da TV (98ms)
+✓ recarregar 2 celulares e a TV recupera a mesma revisão (1.4s)
+✓ loop acelerado de 60 minutos (24 iterações) termina com revisão e hashes iguais (4.5s)
+9/9 passed (execução combinada: 14 passed em 38,7 s)
 ```
 
-O setup chegou até aqui depois de registrar DM + 5 jogadores, criar mesa/cena,
-ativar a cena, colocar 5 tokens e colocar a sessão em `LIVE`. Ou seja, o caminho
-da Fase 1 está funcional; a primeira superfície da Fase 2 é que falta.
+Os logs de `ServiceError: Você só pode mover no seu turno.` (status 403) no teste
+de iniciativa são **esperados**: são as tentativas fora do turno que o teste
+exige que sejam rejeitadas, com revisão inalterada.
 
-### 5.2 P2-FE-3 — convite do jogador não é consumido pelo `/play`
-
-`table-mode.spec.ts -g "5 celulares"`:
+### 5.2 `display-security.spec.ts` (5/5)
 
 ```
-Error: P2-FE-3 ausente: /play/:tableId?invite=<code> não adicionou os jogadores à mesa
-(docs/TABLE_MODE.md §4.1).
-Received: ["p1-p2-…", "p2-p2-…", "p3-p2-…", "p4-p2-…", "p5-p2-…"]
+✓ ping válido em coordenadas de grade chega a 2 clientes com os mesmos x/y (19ms)
+✓ ping fora do grid responde VALIDATION e não gera broadcast (1.2s)
+✓ token de display entra só na mesa dona e recebe role DISPLAY sem permissões (148ms)
+✓ display não consegue mutar estado e a revisão permanece intacta (249ms)
+✓ token rotacionado e token revogado falham no handshake com UNAUTHENTICATED (61ms)
+5/5 passed (execução combinada: 14 passed em 38,7 s)
 ```
 
-Log do backend na mesma execução, repetido para os 5 sockets:
+Os logs de `Ping fora dos limites da grade.` e `A TV não pode entrar em outra
+mesa`/`ressincronizar outra mesa` também são **esperados**: são as asserções
+negativas do contrato.
 
-```
-[socket:table] joinTable falhou
-ServiceError: Usuário não faz parte desta mesa. (status 403)
-```
+### 5.3 Correções feitas nesta revisão
 
-### 5.3 P2-BE-4 — ping sem validação de limites
+| # | Sintoma | Correção |
+|---|---|---|
+| 1 | `TypeError: Invalid URL` na TV | `new URL(w.displayUrl, getBaseUrl())` aceita `displayUrl` relativo (`/display/:id#token=…`) e absoluto. A navegação usa `pathname + hash`, preservando o frontend local. |
+| 2 | Falso negativo no movimento do Mestre | `styleBefore` do token da TV era lido **depois** do movimento (já atualizado). Passou a ser lido antes do `requestMoveToken`. |
+| 3 | Texto do estado do turno | A UX integrada mostra `Seu turno` (não `Sua vez`) em `.token-card__status`; a asserção foi alinhada ao contrato visual atual. |
 
-`display-security.spec.ts -g "ping fora do grid"`:
+Nenhuma dessas correções mascara comportamento: todas são ajustes do próprio
+teste, e o comportamento de produto foi validado nas asserções seguintes.
 
-```
-Error: Esperava ok:false em "requestPing", veio
-{"ok":true,"revision":2,"serverNowMs":…}.
-```
+### 5.4 Histórico — execução pré-integração (bloqueada)
 
-O backend atual aceita `x = gridWidth + 5` e transmite o ping. O contrato
-(`TABLE_MODE.md` §5.3) exige `VALIDATION` sem broadcast.
+Antes do merge da Fase 2, a mesma suíte rodava contra `8c62df2` e falhava como
+esperado:
 
-### 5.4 P2-BE-4 — broadcast de ping sem revisão
-
-`display-security.spec.ts` (teste de ping válido):
-
-```
-Expected: "number"
-Received: "undefined"
-> expect(typeof dmPayload.revision).toBe('number');
-```
-
-`pingBroadcast` chega aos 2 clientes com `x=1.5`/`y=2.5` corretos, mas sem o
-campo `revision` exigido pelo §5.3.
-
-### 5.5 Superfícies que nem chegaram a ser executadas
-
-| Superfície | Motivo |
+| Superfície | Evidência |
 |---|---|
-| P2-BE-2 (handshake `displayToken`) | o probe só roda depois de P2-BE-1; hoje o endpoint não existe |
-| P2-BE-3 (display read-only) | depende de P2-BE-2 |
-| P2-FE-1/2 (conexão DISPLAY e store) | dependem de P2-BE-2 |
-| P2-UX-2 (`/display` por token, sem JWT) | router atual ainda exige JWT em `/display` |
-| P2-FE-5 (ping em grade no cliente) | backend nem valida limites; o teste de 2 clientes já falha antes |
-| P2-UX-3 (`TableSharePanel`/QR) | não há componente nesta branch |
+| P2-BE-1 | `POST /api/tables/:id/display-token` → 404 |
+| P2-FE-3 | `/play?invite=` não adicionava jogadores; `joinTable` 403 |
+| P2-BE-4 | ping fora do grid → `ok:true` + broadcast |
+| P2-BE-4 | `pingBroadcast` sem `revision` |
+
+Esses itens foram resolvidos pela integração (`bba3d1d`, com o merge final da UX
+em `e67e730`) e agora passam nos testes acima.
 
 ## 6. Decisões de implementação
 
 1. **JWT assinado localmente** (HS256, payload `{ user: { id, username } }`) para
-   os 6 usuários do cenário. Motivo: `limitLogin` permite 5 logins/5 min por IP;
+   os usuários do cenário. Motivo: `limitLogin` permite 5 logins/5 min por IP;
    tentar logar 6 vezes pela UI estouraria a cota e criaria flakiness. O token é
    usado no `localStorage` dos contextos mobile e nos sockets de controle.
    `happy-path.spec.ts` continua cobrindo o login real.
 2. **Sem dependência nova.** Reaproveita `socket.io-client` e `@playwright/test`
    já presentes em `tests/e2e/package.json`.
 3. **Bloqueio explícito, não silencioso.** O primeiro teste de cada spec falha
-   com a lista de superfícies ausentes; os dependentes usam `test.skip` com o
-   mesmo motivo ou não executam por causa do modo serial. A suíte nunca fica
-   "verde" sem a Fase 2.
+   com a lista de superfícies ausentes quando o contrato não está disponível.
 4. **Retries desligados nos dois describes** (`retries: 0`). Além de evitar
    mascarar flakiness, o cenário cria 6 usuários + 1 mesa (table-mode) e 3
    usuários + 3 mesas (display-security), o que consumiria o bucket
    `limitCreate` (20/5 min) em uma repetição.
 5. **Ordem serial** (`mode: 'serial'`) porque os testes compartilham um mundo
-   (mesa, tokens, sockets e páginas). Isso mantém a execução previsível com
-   `--workers=1`.
+   (mesa, tokens, sockets e páginas). Executar com `--workers=1`.
 6. **`expectedRevision`** é enviado em `requestMoveToken` do Mestre e no loop,
    exercitando o CAS previsto no protocolo.
+7. **`displayUrl` relativo é o caso normal** em dev/teste (sem
+   `PUBLIC_APP_URL`/`CORS_ORIGIN`); o spec aceita relativo e absoluto.
 
 ## 7. Campos para a execução final do PO
 
-Preencher **somente após** a integração das branches de backend/frontend/UX na
-`restore/phase-2-table-mode` (ou `main`, conforme o plano). Não copiar valores.
-
 | Campo | Valor |
 |---|---|
-| Data/hora da execução | _(pendente)_ |
-| Commit de integração validado | _(pendente)_ |
-| `npx playwright test specs/table-mode.spec.ts --workers=1` | _(pendente)_ |
-| `npx playwright test specs/display-security.spec.ts --workers=1` | _(pendente)_ |
-| Suíte completa (`npx playwright test`, paralela) | _(pendente)_ |
-| `revision` final | _(pendente)_ |
-| `tokenHash` final | _(pendente)_ |
-| `initiativeHash` final | _(pendente)_ |
-| `actionError` inesperados | _(pendente)_ |
+| Data/hora da execução | 2026-11-15 |
+| Commit de integração validado | `e67e730` (`restore/phase-2-table-mode`) |
+| `npx playwright test specs/table-mode.spec.ts --workers=1` | **9/9** (subconjunto da execução combinada) |
+| `npx playwright test specs/display-security.spec.ts --workers=1` | **5/5** (subconjunto da execução combinada) |
+| Suíte completa (`npx playwright test`, paralela) | _(pendente — 14 passed em 38,7 s com `--workers=1`)_ |
+| `revision` final | _(não impressa; a igualdade entre os 6 clientes é asserida no teste de loop)_ |
+| `tokenHash` final | _(não impresso; a igualdade entre os 6 clientes é asserida no teste de loop)_ |
+| `initiativeHash` final | _(não impresso; a igualdade entre os 6 clientes é asserida no teste de loop)_ |
+| `actionError` inesperados | **0** nas asserções dos testes |
 | Veredito do PO | _(pendente)_ |
 
 ## 8. Lacunas e riscos conhecidos
 
 | # | Lacuna / risco | Impacto | Situação |
 |---|---|---|---|
-| L1 | Fase 2 não integrada nesta branch | specs não podem passar | **Bloqueio atual**; reexecutar após merge |
-| L2 | Seletores acoplados ao DOM atual (`play-header__revision`, `display-header__revision`, `board-token`, `display-board__token`, `token-card__status`) | A branch de UX pode renomear classes e quebrar o E2E | Risco aceito; ajustar junto da UX se necessário |
-| L3 | O teste da TV usa `pathname + hash` de `displayUrl` com o `E2E_BASE_URL` | Se o backend devolver outro host, o teste continua no frontend local (intencional) | Documentado |
+| L1 | Fase 2 não integrada na branch de QA | — | **Resolvido**: validado contra `e67e730` |
+| L2 | Seletores acoplados ao DOM atual (`play-header__revision`, `display-header__revision`, `board-token`, `display-board__token`, `token-card__status`) | Ajustes de UX podem quebrar o E2E | Alinhado à UX integrada; revisar em mudanças visuais |
+| L3 | A execução usa `pathname + hash` de `displayUrl` com o `E2E_BASE_URL` | Se o backend devolver outro host, o teste continua no frontend local (intencional) | Documentado |
 | L4 | Rotação/revogação só derruba a TV no próximo handshake | Sockets já conectados continuam até reconectar (aceito no §3.4) | Coberto como o contrato permite |
-| L5 | `pingBroadcast` sem `revision` no backend atual | Contrato §5.3 não cumprido; teste falha | Aguardando P2-BE-4 |
-| L6 | Rate limit `limitCreate` (20/5 min) compartilhado | Duas execuções seguidas completas podem estourar | `retries: 0`; reiniciar o backend reseta o bucket |
-| L7 | `global-setup.ts` pode deixar processos filhos órfãos (L2 da Fase 1) | `EADDRINUSE` em execuções consecutivas | Defeito pré-existente; ver `PHASE1-CHAOS-REPORT.md` L2 |
-| L8 | O cenário de 60 min usa 24 iterações de sockets + UI | Não mede tempo real nem latência p95 | O critério de "60 min" é acelerado, como no plano §5 |
+| L5 | Rate limit `limitCreate` (20/5 min) compartilhado | Duas execuções seguidas completas podem estourar | `retries: 0`; reiniciar o backend reseta o bucket |
+| L6 | `global-setup.ts` pode deixar processos filhos órfãos (L2 da Fase 1) | `EADDRINUSE` em execuções consecutivas | Defeito pré-existente; ver `PHASE1-CHAOS-REPORT.md` L2 |
+| L7 | O cenário de 60 min usa 24 iterações de sockets + UI | Não mede tempo real nem latência p95 | O critério de "60 min" é acelerado, como no plano §5 |
+| L8 | Hashes finais não são impressos no reporter `list` | O PO não vê os valores no log padrão | As igualdades são asseridas entre os 6 clientes; imprimir valores é melhoria futura |
 | L9 | Sem screenshots versionados | `test-results/` é ignorado pelo Git | Evidência textual neste relatório; traces locais em `test-results/` |
 
-## 9. Como reexecutar depois da integração
+## 9. Como reexecutar depois de integrar esta QA
 
 ```bash
-# 1. Integrar backend/frontend/UX na branch de integração e atualizar esta QA.
+# 1. O PO integra restore/phase-2-qa na branch de integração.
 # 2. Instalar/validar dependências.
 cd backend && npm ci
 cd ../frontend && npm ci
@@ -257,7 +240,11 @@ cd tests/e2e
 # 4. Executar (o global-setup sobe backend, Vite e Mongo em memória).
 MONGOMS_SYSTEM_BINARY=<repo>/backend/node_modules/.cache/mongodb-memory-server/mongod-x64-fedora-7.0.24 \
 E2E_CHANNEL=chrome \
-npx playwright test specs/table-mode.spec.ts specs/display-security.spec.ts --workers=1
+npx playwright test specs/table-mode.spec.ts --reporter=list --workers=1
+
+MONGOMS_SYSTEM_BINARY=<repo>/backend/node_modules/.cache/mongodb-memory-server/mongod-x64-fedora-7.0.24 \
+E2E_CHANNEL=chrome \
+npx playwright test specs/display-security.spec.ts --reporter=list --workers=1
 
 # 5. Preencher a tabela do §7 com a saída real.
 ```
