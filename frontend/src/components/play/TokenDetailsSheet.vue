@@ -115,7 +115,7 @@ onBeforeUnmount(() => {
       <button
         v-if="canOpenSheet"
         type="button"
-        class="details-sheet__open"
+        class="details-sheet__open character-link"
         @click="emit('open-character')"
       >
         Abrir ficha

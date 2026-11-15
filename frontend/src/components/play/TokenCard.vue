@@ -133,7 +133,16 @@ function handleCardKeydown(event: KeyboardEvent) {
       <span v-else class="token-card__initial">{{ initial }}</span>
     </span>
     <div class="token-card__info">
-      <p class="token-card__name">{{ name }}</p>
+      <button
+        v-if="openable"
+        type="button"
+        class="token-card__name character-link"
+        :aria-label="`Abrir ficha de ${name}`"
+        @click.stop="emit('open-sheet')"
+      >
+        {{ name }}
+      </button>
+      <p v-else class="token-card__name">{{ name }}</p>
       <p class="token-card__meta">
         <span v-if="hp !== null" class="token-card__hp" :title="`PV ${hp}`">PV {{ hp }}</span>
         <span v-if="defense !== null" class="token-card__defense" :title="`Defesa ${defense}`">
@@ -231,6 +240,32 @@ function handleCardKeydown(event: KeyboardEvent) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Nome vira link quando a ficha pode ser aberta (QA: .character-link). */
+button.token-card__name.character-link {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-accent-alt);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.token-card__name.character-link:hover,
+button.token-card__name.character-link:focus-visible {
+  text-decoration: underline;
+}
+
+button.token-card__name.character-link:focus-visible {
+  outline: 2px solid var(--color-warning);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .token-card__meta {
