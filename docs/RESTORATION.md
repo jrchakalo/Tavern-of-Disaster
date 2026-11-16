@@ -1,9 +1,9 @@
 # Plano de Restauração — Tavern of Disaster
 
-> Status: em execução. Fases 0–3.1 concluídas; a próxima é **Fase 4 (mídia e
-> cenas)**. O one-shot de OP2/OPSH está jogável.
-> Última atualização: 2026-11-15. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
-> `v0.9.4-phase3`, `v0.9.5-phase3.1`.
+> Status: em execução. Fases 0–4 concluídas; a próxima é **Fase 5 (online e
+> comunicação)**. O one-shot de OP2/OPSH e a mídia/cenas estão jogáveis.
+> Última atualização: 2026-11-16. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
+> `v0.9.4-phase3`, `v0.9.5-phase3.1`, `v0.9.6-phase4`.
 
 ## 1. Diagnóstico em uma frase
 
@@ -43,7 +43,7 @@ main
 │   └── restore/phase-2-qa         1 TV + 5 celulares + display security
 ├── restore/phase-3-sheets-dice    fichas, dados, sistemas (v0.9.4-phase3)
 ├── restore/phase-3-op2            Ordem Paranormal 2 + OPSH (v0.9.5-phase3.1)
-├── restore/phase-4-media-scenes   uploads, cenas, persistência (pausada)
+├── restore/phase-4-media-scenes   uploads, cenas, persistência (v0.9.6-phase4)
 ├── restore/phase-5-online         WebRTC, áudio/vídeo, chat, TURN (online real)
 └── restore/phase-6-beta-ops       deploy free, observabilidade, playtest simulado
 ```
@@ -229,21 +229,25 @@ plataforma; OP2 e OPSH têm o mesmo peso.
 **Saída:** one-shot de OP2 jogável de ponta a ponta e OPSH funcional com o
 suplemento. **Concluída em 2026-11-15** (tag `v0.9.5-phase3.1`).
 
-### Fase 4 — Mídia e cenas (1 semana)
+### Fase 4 — Mídia e cenas (concluída)
 
 Contrato: `docs/MEDIA_SCENES.md`. Branch: `restore/phase-4-media-scenes`.
 
 - [x] Auditar upload/storage, cenas, templates e overlays existentes.
-- [ ] Modelo `Asset` + quota por mesa + endpoint de uso; erros 400/413/403.
-- [ ] Troca/exclusão de mapa, token e avatar apaga o asset anterior; varredura
+- [x] Modelo `Asset` + quota por mesa + endpoint de uso; erros 400/413/403.
+- [x] Troca/exclusão de mapa, token e avatar apaga o asset anterior; varredura
       de órfãos não apaga asset referenciado.
-- [ ] Persistir medições persistentes e auras em Mongo (`SceneOverlay`);
+- [x] Persistir medições persistentes e auras em Mongo (`SceneOverlay`);
       sobrevivem a restart; limpar ao excluir cena/mesa.
-- [ ] Upload de mapa pelo celular do Mestre com progresso e erro visíveis.
-- [ ] Troca de cena online (2 contextos remotos) e presencial, sem travar.
-- [ ] Remover painéis órfãos (`SceneTemplatePanel`, `TokenLibraryPanel`) e
+- [x] Upload de mapa pelo celular do Mestre com progresso e erro visíveis.
+- [x] Troca de cena online (2 contextos remotos) e presencial, sem travar.
+- [x] Remover painéis órfãos (`SceneTemplatePanel`, `TokenLibraryPanel`) e
       separar vendor no build.
-- [ ] E2E de mídia/cenas presencial + online; suíte e caos verdes.
+- [x] E2E de mídia/cenas presencial + online; suíte e caos verdes.
+
+> Evidência: `docs/qa/PHASE4-MEDIA-SCENES-REPORT.md` — backend 204/204,
+> frontend 244/244, E2E 57/57 (novos 12/12), caos 14/14.
+> **Concluída em 2026-11-16** (tag `v0.9.6-phase4`).
 
 > **Online-aware:** upload e troca de cena precisam funcionar para um Mestre
 > remoto, com progresso e erro visíveis.

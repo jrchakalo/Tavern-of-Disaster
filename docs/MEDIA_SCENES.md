@@ -1,6 +1,7 @@
 # Fase 4 — Mídia e cenas: contrato
 
-> Status: **em implementação** (2026-11-16).
+> Status: **implementado e aprovado** em `v0.9.6-phase4` (2026-11-16).
+> Evidência: `docs/qa/PHASE4-MEDIA-SCENES-REPORT.md`.
 > Branch: `restore/phase-4-media-scenes`. Depende de
 > `docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md` e `docs/ONLINE_MODE.md`.
 > Objetivo: o Mestre sobe mapas do celular ou do desktop, troca de cena com
@@ -158,19 +159,19 @@ são assíncronos e devem `await`. O snapshot (`loadSessionState`) também.
 
 ## 6. Critérios de aceite
 
-- [ ] Upload de mapa/token/avatar registra `Asset`, respeita quota e devolve
+- [x] Upload de mapa/token/avatar registra `Asset`, respeita quota e devolve
       uso; erros 400/413/403 visíveis.
-- [ ] Trocar/excluir mapa, token ou avatar apaga o asset anterior; varredura
+- [x] Trocar/excluir mapa, token ou avatar apaga o asset anterior; varredura
       não apaga asset referenciado.
-- [ ] Medições persistentes e auras sobrevivem a restart do backend (Mongo),
+- [x] Medições persistentes e auras sobrevivem a restart do backend (Mongo),
       com snapshot/reconexão idênticos.
-- [ ] Excluir cena/mesa limpa overlays e assets correspondentes.
-- [ ] Mestre sobe mapa pelo celular (390×844) com progresso e erro visíveis;
+- [x] Excluir cena/mesa limpa overlays e assets correspondentes.
+- [x] Mestre sobe mapa pelo celular (390×844) com progresso e erro visíveis;
       jogador e TV recebem a cena nova.
-- [ ] Troca de cena funciona online (2 contextos remotos) e presencial.
-- [ ] Painéis órfãos removidos; build com vendor separado.
-- [ ] D&D/OP2/Cyberpunk e E2E existentes continuam verdes; caos 14/14.
-- [ ] Nenhum PDF/arquivo de referência versionado.
+- [x] Troca de cena funciona online (2 contextos remotos) e presencial.
+- [x] Painéis órfãos removidos; build com vendor separado.
+- [x] D&D/OP2/Cyberpunk e E2E existentes continuam verdes; caos 14/14.
+- [x] Nenhum PDF/arquivo de referência versionado.
 
 ## 7. Quadro de coders
 

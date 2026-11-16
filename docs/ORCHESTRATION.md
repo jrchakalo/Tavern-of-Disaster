@@ -4,13 +4,13 @@
 > skill, designação, branch, revisão, correção e merge entra aqui. Se o contexto
 > da conversa se perder, este arquivo é a fonte da verdade do processo.
 >
-> Última atualização: 2026-11-15. **Fases 1, 2, 3 e 3.1 concluídas e
-> aprovadas**: `v0.9.2-phase1`, `v0.9.3-phase2`, `v0.9.4-phase3` e
-> `v0.9.5-phase3.1`.
-> A Fase 3.1 entregou **Ordem Paranormal 2 + Sobrevivendo ao Horror**:
-> backend 154/154, frontend 223/223, E2E 45/45 (novos 11/11) e caos 14/14.
-> A próxima é a **Fase 4 (mídia e cenas)**. A frente **online** é a Fase 5 em
-> `docs/ONLINE_MODE.md`; o deploy/beta é a Fase 6.
+> Última atualização: 2026-11-16. **Fases 1, 2, 3, 3.1 e 4 concluídas e
+> aprovadas**: `v0.9.2-phase1`, `v0.9.3-phase2`, `v0.9.4-phase3`,
+> `v0.9.5-phase3.1` e `v0.9.6-phase4`.
+> A Fase 4 entregou mídia/cenas: backend 204/204, frontend 244/244,
+> E2E 57/57 (novos 12/12) e caos 14/14.
+> A próxima é a **Fase 5 (online e comunicação)** em `docs/ONLINE_MODE.md`;
+> o deploy/beta é a Fase 6.
 
 ## 1. Modelo de trabalho
 
@@ -516,3 +516,13 @@ Contrato: `docs/MEDIA_SCENES.md`. Branch: `restore/phase-4-media-scenes`.
 | F4-BE-2 | SceneOverlay + store Mongo + async + teste de restart | backend |
 | F4-FE-1 | progresso/câmera, uso/quota, erro de cena, órfãos, vendor | frontend |
 | F4-QA-1 | E2E mídia/cenas presencial + online + gate | QA |
+
+### 17.4 Resultado
+
+- Backend **204/204**, frontend **244/244**, type-check e builds verdes.
+- E2E completo **57/57** (novos `media-scenes` 8/8 e `media-scenes-online`
+  4/4); caos **14/14**, `result: PASS`.
+- Correções de revisão: asset compartilhado não é apagado (409/no-op),
+  overlays vazios são removidos, upload XHR com timeout.
+- Evidência: `docs/qa/PHASE4-MEDIA-SCENES-REPORT.md`.
+- Tag: `v0.9.6-phase4`.
