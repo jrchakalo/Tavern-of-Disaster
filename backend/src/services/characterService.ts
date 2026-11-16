@@ -17,6 +17,7 @@ import Table, { ITable } from '../models/Table.model';
 import System, { ISystem } from '../models/System.model';
 import Token from '../models/Token.model';
 import { ServiceError } from './serviceErrors';
+import { deleteAssetByUrl } from './assetService';
 import type { CreateCharacterPayload, UpdateCharacterPayload } from '../validation/schemas';
 
 class NotFoundError extends ServiceError {
@@ -567,8 +568,16 @@ async function applyCharacterUpdate(
     character.systemKey = payload.systemKey;
   }
 
+  const previousAvatarUrl = character.avatarUrl;
   assignCharacterFields(character, payload);
   await character.save();
+  if (
+    payload.avatarUrl !== undefined &&
+    previousAvatarUrl &&
+    previousAvatarUrl !== character.avatarUrl
+  ) {
+    await deleteAssetByUrl(previousAvatarUrl);
+  }
   return character;
 }
 

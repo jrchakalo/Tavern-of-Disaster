@@ -34,6 +34,7 @@ import { getTableInfo, sendPresenceUpdated } from './services/sessionService';
 import { displayUserId, leavePresence } from './services/presenceService';
 import { resolveDisplayToken } from './services/displayTokenService';
 import { seedSystemsSafe } from './services/systemSeedService';
+import { startAssetOrphanSweep } from './services/assetService';
 
 dotenv.config();
 const log = createLogger({ scope: 'server' });
@@ -235,6 +236,7 @@ export async function startServer(port: number = Number(process.env.PORT) || 300
     log.info({ port }, 'Server iniciado');
   });
   startMeasurementCleanup();
+  startAssetOrphanSweep();
   return { app, server, io };
 }
 

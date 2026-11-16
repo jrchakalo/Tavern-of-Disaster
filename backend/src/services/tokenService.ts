@@ -5,6 +5,7 @@ import Table from '../models/Table.model';
 import System, { ISystem } from '../models/System.model';
 import Character from '../models/Character.model';
 import { assertCondition, ServiceError } from './serviceErrors';
+import { deleteAssetByUrl } from './assetService';
 
 type HydratedToken = IToken & {
   save: () => Promise<IToken>;
@@ -223,6 +224,7 @@ export type TokenUpdatePayload = Partial<Pick<IToken, 'name' | 'movement' | 'ima
 export async function updateToken(tokenId: string, payload: TokenUpdatePayload, options: { resetRemainingMovement?: boolean } = {}) {
   const token = await Token.findById(tokenId);
   assertCondition(!!token, 'Token não encontrado.', 404);
+  const previousImageUrl = token!.imageUrl;
 
   if (payload.name !== undefined) token!.name = payload.name.trim();
   if (payload.movement !== undefined) {
@@ -243,11 +245,18 @@ export async function updateToken(tokenId: string, payload: TokenUpdatePayload, 
   }
 
   await token!.save();
+  if (payload.imageUrl !== undefined && previousImageUrl && previousImageUrl !== token!.imageUrl) {
+    await deleteAssetByUrl(previousImageUrl);
+  }
   return token!.populate('ownerId', '_id username');
 }
 
 export async function deleteToken(tokenId: string) {
+  const token = await Token.findById(tokenId).select('imageUrl');
   await Token.findByIdAndDelete(tokenId);
+  if (token?.imageUrl) {
+    await deleteAssetByUrl(token.imageUrl);
+  }
 }
 
 export async function resetMovementForScene(sceneId: string) {
