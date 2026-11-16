@@ -31,6 +31,10 @@
 - Vercel: página carrega e o bundle referencia a API do Render.
 - E2E `online-call.spec.ts` contra produção (HTTPS, fake media): **10/10** —
   áudio, mute/deafen, câmera, tela, chat, kick, reconexão, loop e authz.
+- E2E `media-scenes.spec.ts` contra produção: **8/8** — upload mobile,
+  Supabase, quota, troca de mapa/cena, overlays e reconexão.
+- O teste de asset antigo aceita 200/404 no Supabase por causa do cache/CDN;
+  a quota e o registro são a fonte de verdade.
 
 ## Observações
 

@@ -1,7 +1,7 @@
 # Plano de Restauração — Tavern of Disaster
 
-> Status: em execução. Fases 0–6 concluídas localmente; **pré-beta pronto**.
-> Falta apenas o deploy externo + smoke online para `v1.0.0-beta`.
+> Status: **beta em produção** em 2026-11-16. Fases 0–6 concluídas.
+> `v1.0.0-beta` tagueado localmente; push remoto pendente da rede.
 > Última atualização: 2026-11-16. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
 > `v0.9.4-phase3`, `v0.9.5-phase3.1`, `v0.9.6-phase4`, `v0.9.7-phase5`,
 > `v0.9.8-phase6`.
@@ -283,12 +283,11 @@ Contrato: `docs/OPERATIONS.md`. Branch: `restore/phase-6-beta-ops`.
 - [x] TURN/LiveKit e `PUBLIC_APP_URL` documentados; HTTPS obrigatório para mídia.
 - [x] Healthcheck, `/metrics` protegido, logs, backup do Atlas (scripts/docs).
 - [x] Playtest simulado completo (presencial + online) e relatório de release.
-- [ ] `v1.0.0-beta` (somente após deploy externo + smoke online; depende das
-      contas/credenciais do usuário).
+- [x] `v1.0.0-beta` (deploy externo + smoke online concluídos; tag local).
 
 > Evidência: `docs/qa/PHASE6-BETA-REPORT.md` — backend 238/238,
 > frontend 308/308, E2E 72/72, caos 14/14, harness PASS.
-> Tag local desta fase: `v0.9.8-phase6`.
+> Tag local desta fase: `v0.9.8-phase6`; release `v1.0.0-beta`.
 
 ## 5. Playtest simulado (substitui a mesa real)
 

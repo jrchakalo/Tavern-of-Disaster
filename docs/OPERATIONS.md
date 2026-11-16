@@ -1,7 +1,7 @@
 # Fase 6 — Operação e beta simulado
 
-> Status: **pré-beta local concluído** (2026-11-16); deploy externo e smoke
-> online pendentes de contas/credenciais. Branch: `restore/phase-6-beta-ops`.
+> Status: **beta em produção** (2026-11-16). App: https://tavernofdisaster.vercel.app
+> API: https://tavern-of-disaster-api.onrender.com. Branch: `restore/phase-6-beta-ops`.
 > Objetivo: operar o beta 100% grátis com saúde observável, deploy reproduzível,
 > backup, CI e um playtest simulado que substitui a mesa real.
 
@@ -156,4 +156,5 @@ log. O relatório final fica em `docs/qa/PHASE6-BETA-REPORT.md`.
 - [x] CI com backend, frontend, E2E fake media e caos.
 - [x] Playtest simulado completo verde + relatório com evidências.
 - [x] Nenhum segredo/credencial em log ou no repositório.
-- [ ] `v1.0.0-beta` só após smoke externo (depende das contas do usuário).
+- [x] `v1.0.0-beta` criado após smoke externo (online 10/10 + mídia 8/8).
+      Push das tags ainda depende da rede/GitHub (ver relatório de produção).
