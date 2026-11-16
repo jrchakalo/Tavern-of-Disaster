@@ -4,6 +4,12 @@ import {
   clearTableMeasurementState,
   clearAllMeasurements,
   clearPersistentMeasurementsForScene,
+  addPersistentMeasurement,
+  removePersistentMeasurement,
+  upsertTokenAura,
+  removeTokenAura,
+  listScenePersistents,
+  listSceneAuras,
 } from '../measurementService';
 import * as measurementStore from '../../socketHandlers/measurementStore';
 import Table from '../../models/Table.model';
@@ -51,6 +57,8 @@ describe('measurementService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedStore.listPersistents.mockResolvedValue([]);
+    mockedStore.listAuras.mockResolvedValue([]);
   });
 
   it('clears persistent measurements of a scene without touching auras', async () => {
@@ -140,8 +148,8 @@ describe('measurementService', () => {
     expect(tables).toEqual(['tableA', 'tableB']);
   });
 
-  it('clears all measurement state for a table', () => {
-    clearTableMeasurementState('table99');
+  it('clears all measurement state for a table', async () => {
+    await clearTableMeasurementState('table99');
     expect(mockedStore.clearAllForTable).toHaveBeenCalledWith('table99');
   });
 
@@ -150,5 +158,94 @@ describe('measurementService', () => {
     expect(mockedStore.clearMeasurementsForScene).toHaveBeenCalledWith('tableX', 'sceneZ');
     expect(mockedStore.clearPersistentsForScene).toHaveBeenCalledWith('tableX', 'sceneZ');
     expect(mockedStore.clearAurasForScene).toHaveBeenCalledWith('tableX', 'sceneZ');
+  });
+
+  function mockDmTable(dmId = 'user1') {
+    const populateMock = jest.fn().mockReturnThis();
+    const tableData = {
+      _id: { toString: () => 'table1' },
+      dm: { _id: { toString: () => dmId } },
+      activeScene: { _id: { toString: () => 'scene1' } },
+      populate: populateMock,
+    };
+    mockedTableModel.findById.mockReturnValue(tableData);
+    return tableData;
+  }
+
+  it('writes persistent measurements through the async store', async () => {
+    mockDmTable();
+
+    const result = await addPersistentMeasurement(
+      { id: 'user1', username: 'DM' },
+      'table1',
+      'scene1',
+      {
+        start: { x: 0, y: 0 },
+        end: { x: 1, y: 1 },
+        distance: '1,5 m',
+        type: 'ruler',
+        affectedSquares: ['sq-0'],
+        color: '#ff8c00',
+        sceneId: 'scene1',
+      }
+    );
+
+    expect(mockedStore.addPersistent).toHaveBeenCalledWith(
+      'table1',
+      'scene1',
+      expect.objectContaining({ id: result.id, userId: 'user1', color: '#3c096c' })
+    );
+  });
+
+  it('loads persistents from the store before removing a measurement', async () => {
+    mockDmTable();
+    mockedStore.listPersistents.mockResolvedValue([
+      { id: 'm1', userId: 'another-user' } as any,
+    ]);
+
+    await removePersistentMeasurement({ id: 'user1', username: 'DM' }, 'table1', 'scene1', 'm1');
+
+    expect(mockedStore.listPersistents).toHaveBeenCalledWith('table1', 'scene1');
+    expect(mockedStore.removePersistent).toHaveBeenCalledWith('table1', 'scene1', 'm1');
+  });
+
+  it('rejects removing a persistent measurement that does not exist', async () => {
+    mockDmTable();
+    mockedStore.listPersistents.mockResolvedValue([]);
+
+    await expect(
+      removePersistentMeasurement({ id: 'user1', username: 'DM' }, 'table1', 'scene1', 'missing')
+    ).rejects.toMatchObject({ status: 404 });
+    expect(mockedStore.removePersistent).not.toHaveBeenCalled();
+  });
+
+  it('awaits aura upsert and removal in the store', async () => {
+    mockDmTable();
+    mockedTokenModel.findById.mockResolvedValue({
+      ownerId: { toString: () => 'user1' },
+    });
+
+    const aura = await upsertTokenAura({ id: 'user1', username: 'DM' }, 'table1', 'scene1', 'token1', {
+      name: 'Aura',
+      color: '#ff8c00',
+      radiusMeters: 3,
+      difficultTerrain: true,
+    });
+
+    expect(mockedStore.upsertAura).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'token1', tokenId: 'token1', radiusMeters: 3, difficultTerrain: true })
+    );
+    expect(aura).toMatchObject({ tokenId: 'token1', sceneId: 'scene1' });
+
+    await removeTokenAura({ id: 'user1', username: 'DM' }, 'table1', 'scene1', 'token1');
+    expect(mockedStore.removeAura).toHaveBeenCalledWith('table1', 'scene1', 'token1');
+  });
+
+  it('exposes async lists from the store', async () => {
+    mockedStore.listPersistents.mockResolvedValue([{ id: 'm1' } as any]);
+    mockedStore.listAuras.mockResolvedValue([{ id: 'a1' } as any]);
+
+    await expect(listScenePersistents('table1', 'scene1')).resolves.toEqual([{ id: 'm1' }]);
+    await expect(listSceneAuras('table1', 'scene1')).resolves.toEqual([{ id: 'a1' }]);
   });
 });

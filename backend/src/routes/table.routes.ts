@@ -453,7 +453,7 @@ router.delete('/:tableId', authMiddleware, (async (req: AuthRequest, res) => {
     if (!table) return res.status(404).json({ message: 'Mesa não encontrada.' });
     if (table.dm.toString() !== userId) return res.status(403).json({ message: 'Apenas o Mestre pode excluir a mesa.' });
     await deleteTableAndDependents(tableId);
-    clearTableMeasurementState(tableId);
+    await clearTableMeasurementState(tableId);
     res.json({ message: 'Mesa excluída.' });
   } catch (error) {
     log.error({ err: error }, 'Erro ao excluir mesa');
