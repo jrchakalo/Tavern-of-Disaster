@@ -337,6 +337,15 @@ async function openChat(page: Page): Promise<void> {
   await expect(page.locator('[data-testid="chat-panel"]')).toBeVisible({ timeout: UI_TIMEOUT_MS });
 }
 
+/** Fecha o bottom sheet mobile para não cobrir o dock de mídia. */
+async function closeChat(page: Page): Promise<void> {
+  const toggle = page.locator('[data-testid="chat-toggle"]').first();
+  if ((await toggle.getAttribute('aria-expanded')) === 'true') {
+    await toggle.click();
+  }
+  await expect(page.locator('[data-testid="chat-panel"]')).toHaveCount(0, { timeout: UI_TIMEOUT_MS });
+}
+
 async function sendChat(page: Page, text: string): Promise<void> {
   const panel = page.locator('[data-testid="chat-panel"]');
   const input = panel.locator('.chat-panel__input');
@@ -754,12 +763,19 @@ test('chat com @todos chega, destaca menção, limpa não lidas e sobrevive a re
   await expect(
     p1Page.locator('[data-testid="chat-panel"] .chat-message', { hasText: CHAT_TEXT }).first(),
   ).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await closeChat(p1Page!);
 });
 
 test('kick de mídia remove o jogador da chamada sem removê-lo da mesa', async () => {
   const w = requireWorld();
 
+  // O reload do chat derrubou a chamada do p1; reentra antes do kick.
+  if ((await mediaDock(p1Page!).locator('.media-dock__count').count()) === 0) {
+    await joinCall(p1Page!);
+  }
   await expectDockCount(p1Page!, 3);
+  await expectDockCount(dmPage!, 3);
+  p1PeerId = await peerIdOf(dmPage!, w.p1.username);
   expect(p2PeerId).toBe(await peerIdOf(dmPage!, w.p2.username));
 
   const beforeSync = await resync(w.dmSocket, w.table._id);
@@ -826,6 +842,8 @@ test('reconectar o jogador volta à chamada mantendo tabuleiro, revisão e hist�
   await expect(
     p1Page.locator('[data-testid="chat-panel"] .chat-message', { hasText: CHAT_TEXT }).first(),
   ).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  // Fecha o sheet antes de voltar a usar o dock no loop acelerado.
+  await closeChat(p1Page!);
 
   // Áudio remoto volta a existir para os 2 peers após a reconexão.
   await waitForRemoteAudio(p1Page);
@@ -836,6 +854,17 @@ test('reconectar o jogador volta à chamada mantendo tabuleiro, revisão e hist�
 
 test('loop acelerado: tabuleiro + chat + mídia sem divergência de revisão', async () => {
   const w = requireWorld();
+
+  // Orçamento de deslocamento do token (9 m) só cobre ~6 casas: eleva para o
+  // loop de 10 movimentos continuar sendo uma ação de tabuleiro canônica.
+  expectAckOk(
+    await emitWithAck(w.dmSocket, 'requestEditToken', {
+      tableId: w.table._id,
+      tokenId: w.tokenP1Id,
+      patch: { movement: 100, resetRemainingMovement: true },
+    }),
+    'requestEditToken(loop)',
+  );
 
   const start = await resync(w.dmSocket, w.table._id);
   const squares = ['sq-40', 'sq-41', 'sq-42', 'sq-43', 'sq-44', 'sq-45', 'sq-46', 'sq-47', 'sq-48', 'sq-49'];
@@ -879,9 +908,15 @@ test('loop acelerado: tabuleiro + chat + mídia sem divergência de revisão', a
   expect(moved?.squareId).toBe(squares[squares.length - 1]);
 
   // Convergência final: DM (socket), /play dos dois e TV leem a mesma revisão.
-  expect(await readHeaderRevision(p1Page!, '.play-header__revision')).toBe(end.revision);
-  expect(await readHeaderRevision(p2Page!, '.play-header__revision')).toBe(end.revision);
-  expect(await readHeaderRevision(displayPage!, '.display-header__revision')).toBe(end.revision);
+  for (const [page, selector] of [
+    [p1Page!, '.play-header__revision'],
+    [p2Page!, '.play-header__revision'],
+    [displayPage!, '.display-header__revision'],
+  ] as Array<[Page, string]>) {
+    await expect
+      .poll(() => readHeaderRevision(page, selector), { timeout: UI_TIMEOUT_MS })
+      .toBe(end.revision);
+  }
 
   // Mídia continua na chamada e sem badge de mute residual.
   await expectDockCount(p1Page!, 3);
