@@ -13,6 +13,8 @@ import { useTableStore } from '../stores/tableStore';
 import { useCharacterStore } from '../stores/characterStore';
 import { useSystemStore } from '../stores/systemStore';
 import { useUserStore } from '../stores/userStore';
+import { useMediaStore } from '../stores/mediaStore';
+import { useChatStore } from '../stores/chatStore';
 
 import MapViewport from '../components/MapViewport.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
@@ -29,6 +31,10 @@ import DiceAnimation from '../components/DiceAnimation.vue';
 import DMSessionControls from '../components/DMSessionControls.vue';
 import SceneManager from '../components/SceneManager.vue';
 import TableSharePanel from '../components/table/TableSharePanel.vue';
+import MediaDock from '../components/media/MediaDock.vue';
+import ParticipantGrid from '../components/media/ParticipantGrid.vue';
+import ChatPanel from '../components/chat/ChatPanel.vue';
+import ChatToggle from '../components/chat/ChatToggle.vue';
 import { readSessionExtras } from '../components/play/sessionMeta';
 import { mergeCharacterSummary } from '../components/character/summary';
 
@@ -141,6 +147,8 @@ const tableStore = useTableStore();
 const systemStore = useSystemStore();
 const characterStore = useCharacterStore();
 const userStore = useUserStore();
+const mediaStore = useMediaStore();
+const chatStore = useChatStore();
 
 const { profile } = storeToRefs(userStore);
 const { selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
@@ -199,6 +207,19 @@ const charactersForTable = computed(() => (tableId ? characterStore.charactersFo
 const sessionExtras = computed(() => readSessionExtras(tableStore));
 const displayConnected = computed(
   () => sessionExtras.value.presence?.some((entry) => entry.role === 'DISPLAY') ?? false,
+);
+
+// Mensagens de sistema locais do chat: presença e novas rolagens. O helper da
+// store faz a linha de base e evita repetição em reconexão.
+watch(
+  () => sessionExtras.value.presence ?? [],
+  (presence) => chatStore.trackPresence(presence, currentUser.value?.id ?? null),
+  { immediate: true },
+);
+watch(
+  () => tableStore.recentRolls ?? [],
+  (rolls) => chatStore.trackRolls(rolls),
+  { immediate: true },
 );
 const activeCharacter = computed(() => {
   let base: Character | null = null;
@@ -308,9 +329,14 @@ const dmRollerExpanded = ref(true);
 
 let intervalId: number | null = null;
 let diceAnimationTimer: number | null = null;
+let offChatMessage: (() => void) | null = null;
 onMounted(() => {
   intervalId = window.setInterval(() => { nowTs.value = Date.now(); }, 500);
   tableStore.registerDiceAnimationHook(triggerDiceAnimation);
+  // Chat: listener ativo mesmo com o painel fechado (badge de não lidas).
+  offChatMessage = socketService.onChatEvent('chatMessage', (message) => chatStore.receive(message));
+  if (typeof offChatMessage !== 'function') offChatMessage = null;
+  void chatStore.loadHistory(tableId);
   if (!profile.value) {
     userStore.fetchProfile().catch((error) => {
       console.warn('[table] não foi possível carregar perfil', error);
@@ -322,6 +348,9 @@ onUnmounted(() => {
   intervalId = null;
   tableStore.registerDiceAnimationHook(null);
   dismissDiceAnimation();
+  offChatMessage?.();
+  offChatMessage = null;
+  chatStore.reset();
 });
 
 // Observa evento de transição vindo do servidor para todos os clientes
@@ -493,6 +522,14 @@ function handleColorSelected(color: string) {
 
 function toggleActionLog() {
   showActionLog.value = !showActionLog.value;
+}
+
+function toggleChat() {
+  if (chatStore.panelOpen) {
+    chatStore.closePanel();
+  } else {
+    chatStore.openPanel();
+  }
 }
 
 function toggleDicePopup() {
@@ -1633,6 +1670,7 @@ watch([selectedPersistentId, () => persistentMeasurements.value.length], ([id]) 
 
 onMounted(() => {
   socketService.connect(tableId);
+  mediaStore.init();
   // Resize janela -> recalcula dimensões imagem
   window.addEventListener('resize', updateImageDimensions);
   window.addEventListener('keydown', handleGlobalKeydown);
@@ -1643,6 +1681,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  // Encerra tracks/PCs e avisa a sala antes de derrubar o socket.
+  void mediaStore.leave();
   socketService.disconnect();
   window.removeEventListener('resize', updateImageDimensions);
   window.removeEventListener('keydown', handleGlobalKeydown);
@@ -2083,6 +2123,13 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       <span v-if="logCount" class="log-badge">{{ logCount }}</span>
     </button>
 
+    <ChatToggle
+      class="chat-toggle-btn"
+      :unread="chatStore.unread"
+      :open="chatStore.panelOpen"
+      @toggle="toggleChat"
+    />
+
     <transition name="log-panel">
       <aside v-if="showActionLog" :class="['action-log-panel surface', { 'mobile-sheet': isMobileLayout }]">
         <header class="log-panel__header">
@@ -2096,6 +2143,14 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         <RollLogPanel :table-id="tableId" :limit="20" />
       </aside>
     </transition>
+
+    <ChatPanel
+      :table-id="tableId"
+      :open="chatStore.panelOpen"
+      :connection-status="connectionStatus"
+      :mobile="isMobileLayout"
+      @close="chatStore.closePanel()"
+    />
 
     <Toolbar 
       v-if="(sessionStatus === 'LIVE' || isDM) && activeScene?.type === 'battlemap'"
@@ -2176,6 +2231,10 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       :payload="diceAnimationPayload"
       @dismiss="dismissDiceAnimation()"
     />
+
+    <!-- Chamada (Fase 5): só DM/jogador; a TV nunca monta estes componentes. -->
+    <ParticipantGrid floating />
+    <MediaDock :table-id="tableId" />
   </div>
 </template>
 
@@ -2231,6 +2290,15 @@ main{
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+.chat-toggle-btn {
+  position: fixed;
+  bottom: 72px;
+  right: 20px;
+  z-index: 71;
+}
+.chat-toggle-btn.is-open {
+  box-shadow: var(--elev-3);
 }
 .action-log-panel {
   position: fixed;
@@ -2318,10 +2386,17 @@ main{
     right: 10px;
     left: auto;
   }
+  .chat-toggle-btn {
+    right: 10px;
+  }
 }
 @media (max-width: 900px) {
   .log-toggle-btn {
     bottom: calc(110px + env(safe-area-inset-bottom, 0));
+    right: 14px;
+  }
+  .chat-toggle-btn {
+    bottom: calc(164px + env(safe-area-inset-bottom, 0));
     right: 14px;
   }
 }

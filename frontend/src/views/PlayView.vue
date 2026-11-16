@@ -11,8 +11,10 @@ import { getMyCharacters } from '../services/characterService';
 import { distanceInSquares, squareIdToGrid } from '../services/gridGeometry';
 import { useTableStore } from '../stores/tableStore';
 import { useCharacterStore } from '../stores/characterStore';
+import { useMediaStore } from '../stores/mediaStore';
+import { useChatStore } from '../stores/chatStore';
 import { mergeCharacterSummary } from '../components/character/summary';
-import type { CharacterDTO, TokenInfo } from '../types';
+import type { CharacterDTO, RollLogEntryDTO, TokenInfo } from '../types';
 
 import PlayerBoard from '../components/play/PlayerBoard.vue';
 import InitiativeStrip from '../components/play/InitiativeStrip.vue';
@@ -22,6 +24,10 @@ import ConnectionPill from '../components/play/ConnectionPill.vue';
 import ActionErrorBanner from '../components/play/ActionErrorBanner.vue';
 import PlayerDicePanel from '../components/play/PlayerDicePanel.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
+import MediaDock from '../components/media/MediaDock.vue';
+import ParticipantGrid from '../components/media/ParticipantGrid.vue';
+import ChatPanel from '../components/chat/ChatPanel.vue';
+import ChatToggle from '../components/chat/ChatToggle.vue';
 import { readSessionExtras, roleLabel } from '../components/play/sessionMeta';
 
 const route = useRoute();
@@ -30,6 +36,8 @@ const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : 
 
 const store = useTableStore();
 const characterStore = useCharacterStore();
+const mediaStore = useMediaStore();
+const chatStore = useChatStore();
 const {
   currentTable,
   activeScene,
@@ -47,6 +55,7 @@ const {
   auras,
   pings,
   isDM,
+  recentRolls,
   characters: characterSummaries,
 } = storeToRefs(store);
 
@@ -57,6 +66,27 @@ const presenceCount = computed(
   () => extras.value.presence?.length ?? currentTable.value?.players?.length ?? 0,
 );
 const role = computed(() => you.value?.role ?? (isDM.value ? 'DM' : 'PLAYER'));
+
+// Chat: presença e rolagens viram mensagens de sistema locais. A store faz a
+// linha de base e não repete linhas em reconexão.
+watch(
+  () => extras.value.presence ?? [],
+  (presence) => chatStore.trackPresence(presence, currentUser.value?.id ?? null),
+  { immediate: true },
+);
+const liveRolls = computed<RollLogEntryDTO[]>(() => {
+  const value = recentRolls as unknown;
+  if (Array.isArray(value)) return value as RollLogEntryDTO[];
+  if (value && typeof value === 'object' && Array.isArray((value as { value?: unknown }).value)) {
+    return (value as { value: RollLogEntryDTO[] }).value;
+  }
+  return [];
+});
+watch(
+  () => liveRolls.value,
+  (rolls) => chatStore.trackRolls(rolls),
+  { immediate: true },
+);
 
 // QR de convite: entra na mesa antes de conectar (Fase 2, §4.1).
 const inviteCode = computed(() => {
@@ -222,6 +252,14 @@ const moveMode = ref(false);
 const diceOpen = ref(false);
 const errorMessage = ref('');
 
+function toggleChat() {
+  if (chatStore.panelOpen) {
+    chatStore.closePanel();
+  } else {
+    chatStore.openPanel();
+  }
+}
+
 watch(isMyTurn, (myTurn) => {
   if (!myTurn) moveMode.value = false;
 });
@@ -300,6 +338,7 @@ type SocketLike = {
 };
 
 let actionErrorListener: ((payload: unknown) => void) | null = null;
+let offChatMessage: (() => void) | null = null;
 
 function isSocketLike(value: unknown): value is SocketLike {
   if (!value || typeof value !== 'object') return false;
@@ -357,6 +396,11 @@ async function bootstrap() {
     joining.value = false;
   }
 
+  // Chat: listener ativo desde o início (badge de não lidas) e histórico REST.
+  offChatMessage = socketService.onChatEvent('chatMessage', (message) => chatStore.receive(message));
+  if (typeof offChatMessage !== 'function') offChatMessage = null;
+  void chatStore.loadHistory(tableId);
+
   socketService.connect(tableId);
   const socket = readSocket();
   if (socket && !actionErrorListener) {
@@ -367,16 +411,22 @@ async function bootstrap() {
 }
 
 onMounted(() => {
+  mediaStore.init();
   void bootstrap();
 });
 
 onBeforeUnmount(() => {
+  // Fecha a chamada antes de derrubar o socket (o emit de leave é síncrono).
+  void mediaStore.leave();
   const socket = readSocket();
   if (socket && actionErrorListener) {
     socket.off('actionError', actionErrorListener);
   }
   actionErrorListener = null;
+  offChatMessage?.();
+  offChatMessage = null;
   socketService.disconnect();
+  chatStore.reset();
 });
 </script>
 
@@ -393,6 +443,13 @@ onBeforeUnmount(() => {
         <span class="play-header__role">{{ roleLabel(role) }}</span>
         <span class="play-header__presence" :title="`${presenceCount} presentes`">
           {{ presenceCount }}
+        </span>
+        <span
+          v-if="mediaStore.joined"
+          class="play-header__media"
+          :title="`${mediaStore.participantCount} na chamada`"
+        >
+          Chamada · {{ mediaStore.participantCount }}
         </span>
       </div>
     </header>
@@ -462,6 +519,8 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="play-controls">
+      <ParticipantGrid compact />
+      <MediaDock :table-id="tableId" variant="inline" compact />
       <TokenCard
         :token="myToken"
         :is-my-turn="isMyTurn"
@@ -499,6 +558,12 @@ onBeforeUnmount(() => {
         >
           Dados
         </button>
+        <ChatToggle
+          class="control-btn--chat"
+          :unread="chatStore.unread"
+          :open="chatStore.panelOpen"
+          @toggle="toggleChat"
+        />
       </div>
     </footer>
 
@@ -518,6 +583,13 @@ onBeforeUnmount(() => {
       :table-id="tableId"
       :current-token-id="currentTurnTokenId"
       @close="diceOpen = false"
+    />
+
+    <ChatPanel
+      :table-id="tableId"
+      :open="chatStore.panelOpen"
+      :connection-status="connectionStatus"
+      @close="chatStore.closePanel()"
     />
 
     <CharacterSheet
@@ -597,13 +669,20 @@ onBeforeUnmount(() => {
 
 .play-header__revision,
 .play-header__role,
-.play-header__presence {
+.play-header__presence,
+.play-header__media {
   padding: 3px 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-surface-alt);
   font-size: 0.7rem;
   white-space: nowrap;
+}
+
+.play-header__media {
+  color: var(--color-success, #2ecc71);
+  border-color: rgba(46, 204, 113, 0.5);
+  font-weight: 600;
 }
 
 .play-header__role {
@@ -703,7 +782,7 @@ onBeforeUnmount(() => {
 
 .play-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr auto auto;
   gap: 8px;
 }
 
@@ -738,6 +817,11 @@ onBeforeUnmount(() => {
 
 .control-btn--dice {
   background: var(--color-surface);
+}
+
+.control-btn--chat {
+  border-radius: 999px;
+  box-shadow: none;
 }
 
 .control-btn:focus-visible,

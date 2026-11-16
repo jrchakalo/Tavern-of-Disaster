@@ -692,3 +692,164 @@ export interface SessionPatch {
   serverNowMs: number;
   changes: SessionPatchChanges;
 }
+
+// ---------------------------------------------------------------------------
+// Fase 5 — mídia (docs/PHASE5_ONLINE_CALL.md §2)
+//
+// Mídia é efêmera: nada aqui incrementa `revision` nem gera `sessionPatch`.
+// Os tipos espelham o contrato do servidor e são usados pela sinalização,
+// pelo mesh WebRTC e pela UI da chamada.
+// ---------------------------------------------------------------------------
+
+/** Estado de mídia publicado por um peer (não persistido). */
+export interface MediaState {
+  mic: 'on' | 'muted';
+  deafened: boolean;
+  camera: 'on' | 'off';
+  screen: boolean;
+  speaking: boolean;
+}
+
+/** Peer presente na sala de mídia, como o servidor o descreve. */
+export interface MediaPeer {
+  peerId: string;
+  userId: string;
+  username: string;
+  mediaState: MediaState;
+}
+
+/** Qualidade observada localmente via `RTCPeerConnection.getStats()`. */
+export type MediaConnectionQuality = 'good' | 'fair' | 'poor';
+
+/** Servidor ICE retornado por `GET /api/tables/:id/ice-servers`. */
+export interface IceServerConfig {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
+export interface MediaIceServersResponse {
+  iceServers: IceServerConfig[];
+  /** Informativo; o cliente deve renovar antes de expirar (3600 s). */
+  ttlSeconds: number;
+  mode: 'mesh';
+  turnConfigured: boolean;
+  maxPeers: number;
+}
+
+export type MediaDeviceKind = 'audioinput' | 'videoinput' | 'audiooutput';
+
+/** Payloads da sinalização WebRTC (Socket.IO). */
+export interface MediaRoomStatePayload {
+  tableId: string;
+  peers: MediaPeer[];
+}
+
+export interface MediaPeerJoinedPayload {
+  tableId: string;
+  peer: MediaPeer;
+}
+
+export interface MediaPeerLeftPayload {
+  tableId: string;
+  peerId: string;
+  userId: string;
+}
+
+export interface MediaSignalPayload {
+  tableId: string;
+  toPeerId: string;
+  sdp: RTCSessionDescriptionInit;
+}
+
+/** Sinal recebido do servidor: o peer remetente vem em `fromPeerId`. */
+export interface MediaIncomingSignalPayload {
+  tableId: string;
+  fromPeerId: string;
+  sdp: RTCSessionDescriptionInit;
+}
+
+export interface MediaIcePayload {
+  tableId: string;
+  toPeerId: string;
+  candidate: RTCIceCandidateInit | null;
+}
+
+export interface MediaIncomingIcePayload {
+  tableId: string;
+  fromPeerId: string;
+  candidate: RTCIceCandidateInit | null;
+}
+
+export interface MediaStateUpdatedPayload {
+  tableId: string;
+  peerId: string;
+  userId: string;
+  mediaState: MediaState;
+}
+
+export interface MediaKickedPayload {
+  tableId: string;
+  reason: string;
+}
+
+export interface MediaErrorPayload {
+  code: string;
+  message: string;
+}
+
+/** Mapa dos eventos server → cliente da chamada. */
+export interface MediaSocketEventMap {
+  mediaRoomState: MediaRoomStatePayload;
+  mediaPeerJoined: MediaPeerJoinedPayload;
+  mediaPeerLeft: MediaPeerLeftPayload;
+  mediaOffer: MediaIncomingSignalPayload;
+  mediaAnswer: MediaIncomingSignalPayload;
+  mediaIce: MediaIncomingIcePayload;
+  mediaStateUpdated: MediaStateUpdatedPayload;
+  mediaKicked: MediaKickedPayload;
+  mediaError: MediaErrorPayload;
+}
+
+export type MediaSocketEventName = keyof MediaSocketEventMap;
+
+/** Peer com estado local de transporte, consumido pela store/UI. */
+export interface MediaPeerView extends MediaPeer {
+  stream: MediaStream | null;
+  connectionState: RTCPeerConnectionState;
+  quality: MediaConnectionQuality;
+}
+
+// ---------------------------------------------------------------------------
+// Fase 5 — chat (docs/PHASE5_ONLINE_CALL.md §3)
+//
+// Chat é efêmero no transporte (não incrementa `revision`), mas as mensagens
+// de usuário são persistidas e recuperadas por REST (TTL 7 dias). Mensagens de
+// sistema são locais nesta fase.
+// ---------------------------------------------------------------------------
+
+export interface ChatMessage {
+  id: string;
+  tableId: string;
+  /** Vazio em mensagens de sistema geradas localmente pelo cliente. */
+  userId: string;
+  username: string;
+  text: string;
+  mentions: string[];
+  kind: 'user' | 'system';
+  createdAt: string;
+}
+
+/** Payload do evento cliente → servidor `requestSendChatMessage`. */
+export interface ChatMessagePayload {
+  tableId: string;
+  text: string;
+  mentions?: string[];
+}
+
+/** Mapa dos eventos server → cliente do chat. */
+export interface ChatSocketEventMap {
+  chatMessage: ChatMessage;
+}
+
+export type ChatSocketEventName = keyof ChatSocketEventMap;

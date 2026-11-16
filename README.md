@@ -20,14 +20,14 @@
 
 Tavern of Disaster is a virtual tabletop where I mix two passions: web development and RPG. The goal is to build a lean, fast real‑time tool for my groups, iterating features as creativity (and playtest) demands.
 
-Restoration status: Phases 3–3.1 integrated realtime sheets and the
-OP2/OPSH systems. **Phase 4 (`v0.9.6-phase4`) added media/scenes**: mobile map
-upload with progress, per-table asset quota/usage, orphan cleanup, Mongo-backed
-persistent measurements/auras surviving restarts, scene load/error feedback
-and online scene switching. D&D 5e remains the platform default, with OP2/OPSH
-at equal weight. The next front is **Phase 5: online voice/video/chat**
-(`docs/ONLINE_MODE.md`); deploy/beta is Phase 6. See
-`docs/MEDIA_SCENES.md`, `docs/qa/PHASE4-MEDIA-SCENES-REPORT.md`,
+Restoration status: **Phases 3–5 are integrated.** Phase 4
+(`v0.9.6-phase4`) added media/scenes (mobile upload, quota, Mongo-backed
+overlays). **Phase 5 (`v0.9.7-phase5`) added the full online table**: WebRTC
+mesh audio-first, mute/deafen, camera, screen share, device selection,
+Socket.IO signaling, TURN/STUN, and persisted table chat — no Discord/Zoom.
+D&D 5e remains the default, with OP2/OPSH at equal weight. The next front is
+**Phase 6: operations and simulated beta**. See `docs/PHASE5_ONLINE_CALL.md`,
+`docs/qa/PHASE5-ONLINE-CALL-REPORT.md`, `docs/MEDIA_SCENES.md`,
 `docs/ORDEM_PARANORMAL.md`, `docs/RESTORATION.md`,
 `docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md`, `docs/SHEETS_DICE.md` and
 `docs/ORCHESTRATION.md`.

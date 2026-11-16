@@ -22,6 +22,10 @@ import sceneTemplateRouter from './routes/sceneTemplate.routes';
 import userRouter from './routes/user.routes';
 import assetRouter from './routes/asset.routes';
 import rollRouter from './routes/roll.routes';
+import mediaRouter from './routes/media.routes';
+import chatRouter from './routes/chat.routes';
+import { registerMediaHandlers } from './socketHandlers/mediaHandlers';
+import { registerChatHandlers } from './socketHandlers/chatHandlers';
 import { createLogger } from './logger';
 import {
   getMetricsSnapshot,
@@ -176,6 +180,8 @@ export function createServer(): { app: express.Express; server: http.Server; io:
   app.use('/api/scene-templates', sceneTemplateRouter);
   app.use('/api/assets', assetRouter);
   app.use('/api', rollRouter);
+  app.use('/api', mediaRouter);
+  app.use('/api', chatRouter);
 
   app.get('/metrics', (_req, res) => {
     res.json(getMetricsSnapshot());
@@ -194,6 +200,8 @@ export function createServer(): { app: express.Express; server: http.Server; io:
     registerMeasurementHandlers(io, socket);
     registerDiceHandlers(io, socket);
     registerCharacterHandlers(io, socket);
+    registerMediaHandlers(io, socket);
+    registerChatHandlers(io, socket);
 
     socket.on('disconnect', () => {
       recordSocketDisconnected(socket.id);

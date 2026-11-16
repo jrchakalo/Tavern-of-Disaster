@@ -2,7 +2,7 @@ import { toast } from './toast';
 import { io, Socket } from 'socket.io-client';
 import { useTableStore, registerResyncRequester } from '../stores/tableStore';
 import { authToken, currentUser, refreshToken } from './authService';
-import { SOCKET_URL } from './apiBase';
+import { API_BASE_URL, SOCKET_URL } from './apiBase';
 import { jwtDecode } from 'jwt-decode';
 import type {
   TokenInfo,
@@ -23,6 +23,24 @@ import type {
   SessionPatch,
   CharacterDTO,
   CharacterSummaryDTO,
+  ChatMessage,
+  ChatMessagePayload,
+  ChatSocketEventMap,
+  ChatSocketEventName,
+  MediaIceServersResponse,
+  MediaIcePayload,
+  MediaIncomingIcePayload,
+  MediaIncomingSignalPayload,
+  MediaKickedPayload,
+  MediaErrorPayload,
+  MediaPeerJoinedPayload,
+  MediaPeerLeftPayload,
+  MediaRoomStatePayload,
+  MediaSignalPayload,
+  MediaSocketEventMap,
+  MediaSocketEventName,
+  MediaStateUpdatedPayload,
+  MediaState,
 } from '../types';
 
 const ACK_TIMEOUT_MS = 5000;
@@ -175,6 +193,23 @@ class SocketService {
   private displayToken: string | null = null;
 
   /**
+   * Callbacks da chamada (Fase 5). Ficam no serviço, mas não conhecem a store
+   * de mídia: o `mediaService`/`mediaStore` se registram em tempo de execução.
+   * Os listeners de socket são recriados a cada conexão e removidos no
+   * teardown; os callbacks sobrevivem para permitir rejoin após reconexão.
+   */
+  private mediaEventHandlers = new Map<MediaSocketEventName, Set<(payload: unknown) => void>>();
+  private socketConnectListeners = new Set<() => void>();
+  private socketDisconnectListeners = new Set<() => void>();
+
+  /**
+   * Callbacks do chat (Fase 5). Mesmo padrão da mídia: a store se registra em
+   * runtime e os listeners de socket são recriados a cada conexão. O chat não
+   * usa `revision` nem `sessionPatch`.
+   */
+  private chatEventHandlers = new Map<ChatSocketEventName, Set<(payload: unknown) => void>>();
+
+  /**
    * O store é resolvido sob demanda: assim o módulo pode ser importado (p.ex.
    * por componentes de ficha) antes de a Pinia estar ativa no app/teste.
    */
@@ -311,6 +346,131 @@ class SocketService {
     return !this.displayMode && this.socket?.connected === true;
   }
 
+  /** Id do socket atual; é também o `peerId` da sala de mídia. */
+  get socketId(): string | null {
+    return this.socket?.id ?? null;
+  }
+
+  /** Alias explícito usado pelo mesh WebRTC. */
+  getPeerId(): string | null {
+    return this.socketId;
+  }
+
+  /** Estado de conexão exposto (mesmo valor de `tableStore.connectionStatus`). */
+  get connectionState(): string {
+    return this.store.connectionStatus;
+  }
+
+  // ------------------------------------------------------------------
+  // Callbacks da chamada (sem acoplamento com a store de mídia)
+  // ------------------------------------------------------------------
+
+  onMediaEvent<K extends MediaSocketEventName>(
+    event: K,
+    handler: (payload: MediaSocketEventMap[K]) => void,
+  ): () => void {
+    const set = this.mediaEventHandlers.get(event) ?? new Set<(payload: unknown) => void>();
+    set.add(handler as (payload: unknown) => void);
+    this.mediaEventHandlers.set(event, set);
+    return () => this.offMediaEvent(event, handler);
+  }
+
+  offMediaEvent<K extends MediaSocketEventName>(
+    event: K,
+    handler: (payload: MediaSocketEventMap[K]) => void,
+  ): void {
+    const set = this.mediaEventHandlers.get(event);
+    set?.delete(handler as (payload: unknown) => void);
+    if (set && set.size === 0) this.mediaEventHandlers.delete(event);
+  }
+
+  /** Remove todos os callbacks de mídia (logout / troca de mesa). */
+  clearMediaEventHandlers(): void {
+    this.mediaEventHandlers.clear();
+  }
+
+  // ------------------------------------------------------------------
+  // Callbacks do chat (sem acoplamento com a store)
+  // ------------------------------------------------------------------
+
+  onChatEvent<K extends ChatSocketEventName>(
+    event: K,
+    handler: (payload: ChatSocketEventMap[K]) => void,
+  ): () => void {
+    const set = this.chatEventHandlers.get(event) ?? new Set<(payload: unknown) => void>();
+    set.add(handler as (payload: unknown) => void);
+    this.chatEventHandlers.set(event, set);
+    return () => this.offChatEvent(event, handler);
+  }
+
+  offChatEvent<K extends ChatSocketEventName>(
+    event: K,
+    handler: (payload: ChatSocketEventMap[K]) => void,
+  ): void {
+    const set = this.chatEventHandlers.get(event);
+    set?.delete(handler as (payload: unknown) => void);
+    if (set && set.size === 0) this.chatEventHandlers.delete(event);
+  }
+
+  /** Remove todos os callbacks de chat (logout / troca de mesa). */
+  clearChatEventHandlers(): void {
+    this.chatEventHandlers.clear();
+  }
+
+  private emitChatEvent<K extends ChatSocketEventName>(
+    event: K,
+    payload: ChatSocketEventMap[K],
+  ): void {
+    const handlers = this.chatEventHandlers.get(event);
+    if (!handlers) return;
+    for (const handler of handlers) {
+      try {
+        handler(payload);
+      } catch {
+        // Um handler com defeito não pode derrubar os demais listeners.
+      }
+    }
+  }
+
+  /** Notifica quando o socket (re)conecta — usado para rejoin da chamada. */
+  onSocketConnect(listener: () => void): () => void {
+    this.socketConnectListeners.add(listener);
+    return () => this.socketConnectListeners.delete(listener);
+  }
+
+  /** Notifica quando o socket cai — a chamada permanece para rejoin. */
+  onSocketDisconnect(listener: () => void): () => void {
+    this.socketDisconnectListeners.add(listener);
+    return () => this.socketDisconnectListeners.delete(listener);
+  }
+
+  private emitMediaEvent<K extends MediaSocketEventName>(
+    event: K,
+    payload: MediaSocketEventMap[K],
+  ): void {
+    const handlers = this.mediaEventHandlers.get(event);
+    if (!handlers) return;
+    for (const handler of handlers) {
+      try {
+        handler(payload);
+      } catch {
+        // Um handler com defeito não pode derrubar a sinalização.
+      }
+    }
+  }
+
+  private notifySocketConnected(): void {
+    for (const listener of this.socketConnectListeners) {
+      try { listener(); } catch {}
+    }
+  }
+
+  private notifySocketDisconnected(): void {
+    for (const listener of this.socketDisconnectListeners) {
+      try { listener(); } catch {}
+    }
+  }
+
   /**
    * Conecta a TV com o token de display. Não usa JWT, não agenda refresh de
    * sessão e nunca chama `refreshToken` (contrato: docs/TABLE_MODE.md §3.3).
@@ -368,7 +528,9 @@ class SocketService {
         return;
       }
       this.scheduleTokenRefresh();
-      void this.joinCurrentTable();
+      // A chamada só pode reentrar depois que o `joinTable` confirmar a
+      // membresia; por isso o aviso de reconexão vem no `finally`.
+      void this.joinCurrentTable().finally(() => this.notifySocketConnected());
     });
 
     socket.io.on('reconnect_attempt', () => {
@@ -381,6 +543,7 @@ class SocketService {
 
     socket.on('disconnect', () => {
       this.store.setConnectionStatus('disconnected');
+      if (!isDisplay) this.notifySocketDisconnected();
     });
 
     socket.on('connect_error', (error: unknown) => {
@@ -514,6 +677,43 @@ class SocketService {
     // Erros específicos
         socket.on('tokenPlacementError', (error: { message?: string }) => toast.error(`Erro ao colocar token: ${error.message || 'erro desconhecido'}`));
         socket.on('diceRollError', this.handleDiceRollError);
+
+    // ---- Chamada de mídia (Fase 5) ----
+    // Sinalização e estado são efêmeros: nenhum destes eventos toca `revision`
+    // nem `sessionPatch`. Os callbacks são resolvidos em runtime.
+    socket.on('mediaRoomState', (payload: MediaRoomStatePayload) => {
+      this.emitMediaEvent('mediaRoomState', payload);
+    });
+    socket.on('mediaPeerJoined', (payload: MediaPeerJoinedPayload) => {
+      this.emitMediaEvent('mediaPeerJoined', payload);
+    });
+    socket.on('mediaPeerLeft', (payload: MediaPeerLeftPayload) => {
+      this.emitMediaEvent('mediaPeerLeft', payload);
+    });
+    socket.on('mediaOffer', (payload: MediaIncomingSignalPayload) => {
+      this.emitMediaEvent('mediaOffer', payload);
+    });
+    socket.on('mediaAnswer', (payload: MediaIncomingSignalPayload) => {
+      this.emitMediaEvent('mediaAnswer', payload);
+    });
+    socket.on('mediaIce', (payload: MediaIncomingIcePayload) => {
+      this.emitMediaEvent('mediaIce', payload);
+    });
+    socket.on('mediaStateUpdated', (payload: MediaStateUpdatedPayload) => {
+      this.emitMediaEvent('mediaStateUpdated', payload);
+    });
+    socket.on('mediaKicked', (payload: MediaKickedPayload) => {
+      this.emitMediaEvent('mediaKicked', payload);
+    });
+    socket.on('mediaError', (payload: MediaErrorPayload) => {
+      this.emitMediaEvent('mediaError', payload);
+    });
+
+    // ---- Chat (Fase 5) ----
+    // Efêmero no transporte: não incrementa `revision` e não gera patch.
+    socket.on('chatMessage', (payload: ChatMessage) => {
+      this.emitChatEvent('chatMessage', payload);
+    });
   }
 
   private async joinCurrentTable() {
@@ -943,6 +1143,90 @@ class SocketService {
 
   updateCharacterHp(payload: { tableId: string; characterId: string; currentHP: number }, ack?: (a: Ack) => void) {
     return this.emitCharacterRequest('requestUpdateCharacterHp', payload, ack);
+  }
+
+  // ------------------------------------------------------------------
+  // Mídia / chamada (docs/PHASE5_ONLINE_CALL.md §2)
+  //
+  // Sem `revision`: as respostas são acks simples e os erros são tratados
+  // pelo `mediaService`/`mediaStore` (não pelo toast genérico de mutação).
+  // ------------------------------------------------------------------
+
+  joinMedia(tableId: string, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaJoin', { tableId }, ack, { silent: true });
+  }
+
+  leaveMedia(tableId: string, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaLeave', { tableId }, ack, { silent: true });
+  }
+
+  sendMediaOffer(payload: { tableId: string; toPeerId: string; sdp: RTCSessionDescriptionInit }, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaOffer', payload, ack, { silent: true });
+  }
+
+  sendMediaAnswer(payload: { tableId: string; toPeerId: string; sdp: RTCSessionDescriptionInit }, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaAnswer', payload, ack, { silent: true });
+  }
+
+  sendMediaIce(payload: { tableId: string; toPeerId: string; candidate: RTCIceCandidateInit | null }, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaIce', payload, ack, { silent: true });
+  }
+
+  updateMediaState(
+    payload: { tableId: string; mic: MediaState['mic']; deafened: boolean; camera: MediaState['camera']; screen: boolean },
+    ack?: (a: Ack) => void,
+  ) {
+    return this.emitRequest('mediaState', payload, ack, { silent: true });
+  }
+
+  /**
+   * Indicador de fala é efêmero e de alta frequência: vai direto no socket,
+   * sem ack, sem toast e sem revision. O `mediaService` já limita a ~4/s.
+   */
+  updateMediaSpeaking(payload: { tableId: string; speaking: boolean }): void {
+    if (!this.socket?.connected) return;
+    this.socket.emit('mediaSpeaking', payload);
+  }
+
+  kickFromMedia(payload: { tableId: string; peerId: string }, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaKick', payload, ack, { silent: true });
+  }
+
+  // ------------------------------------------------------------------
+  // Chat (docs/PHASE5_ONLINE_CALL.md §3)
+  //
+  // Sem `revision`: o ack só confirma o envio; a mensagem canônica chega
+  // pelo broadcast `chatMessage`. O erro é tratado uma única vez pela
+  // `chatStore` (por isso `silent: true`, sem toast duplicado).
+  // ------------------------------------------------------------------
+
+  sendChatMessage(payload: ChatMessagePayload, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestSendChatMessage', payload, ack, { silent: true });
+  }
+
+  /** ICE/TURN autenticado; nunca loga URLs/credenciais TURN. */
+  async fetchIceServers(tableId: string): Promise<MediaIceServersResponse> {
+    const token = authToken.value;
+    if (!token) {
+      throw new Error('Sessão expirada. Entre novamente para usar a chamada.');
+    }
+    const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/ice-servers`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await response.json().catch(() => ({})) as Partial<MediaIceServersResponse> & { message?: string };
+    if (!response.ok) {
+      throw new Error(data.message || 'Não foi possível obter os servidores da chamada.');
+    }
+    if (!Array.isArray(data.iceServers)) {
+      throw new Error('O servidor retornou uma configuração de chamada inválida.');
+    }
+    return {
+      iceServers: data.iceServers,
+      ttlSeconds: typeof data.ttlSeconds === 'number' ? data.ttlSeconds : 3600,
+      mode: 'mesh',
+      turnConfigured: data.turnConfigured === true,
+      maxPeers: typeof data.maxPeers === 'number' ? data.maxPeers : 8,
+    };
   }
 }
 
