@@ -79,6 +79,7 @@ interface MapViewportProps {
   onViewportContextmenu: () => void;
   onShapeContextmenu: (payload: { id: string }) => void;
   onImageLoad?: () => void;
+  onImageError?: () => void;
   onAssignToken: (playerId: string) => void;
   onCloseAssignMenu: () => void;
   onOpenCharacterFromToken?: (characterId: string) => void;
@@ -104,7 +105,8 @@ const props = withDefaults(defineProps<MapViewportProps>(), {
   pings: () => [],
   assignMenuTargetToken: null,
   players: () => [],
-  onOpenCharacterFromToken: undefined
+  onOpenCharacterFromToken: undefined,
+  onImageError: undefined
 });
 
 const hasBattlemap = computed(() => props.currentMapUrl && props.activeSceneType === 'battlemap');
@@ -479,6 +481,7 @@ function findShortestPath(startId: string, endId: string): string[] {
         @dragstart.prevent
         :ref="handleMapImageRef"
         @load="props.onImageLoad && props.onImageLoad()"
+        @error="props.onImageError && props.onImageError()"
       />
       <div v-else class="map-placeholder">
         <p>Nenhum mapa definido para esta cena.</p>
