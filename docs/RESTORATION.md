@@ -1,9 +1,9 @@
 # Plano de Restauração — Tavern of Disaster
 
-> Status: em execução. Fases 0–4 concluídas; a próxima é **Fase 5 (online e
-> comunicação)**. O one-shot de OP2/OPSH e a mídia/cenas estão jogáveis.
+> Status: em execução. Fases 0–5 concluídas; a próxima é **Fase 6 (operação e
+> beta simulado)**. Mesa presencial e online estão funcionais.
 > Última atualização: 2026-11-16. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
-> `v0.9.4-phase3`, `v0.9.5-phase3.1`, `v0.9.6-phase4`.
+> `v0.9.4-phase3`, `v0.9.5-phase3.1`, `v0.9.6-phase4`, `v0.9.7-phase5`.
 
 ## 1. Diagnóstico em uma frase
 
@@ -44,7 +44,7 @@ main
 ├── restore/phase-3-sheets-dice    fichas, dados, sistemas (v0.9.4-phase3)
 ├── restore/phase-3-op2            Ordem Paranormal 2 + OPSH (v0.9.5-phase3.1)
 ├── restore/phase-4-media-scenes   uploads, cenas, persistência (v0.9.6-phase4)
-├── restore/phase-5-online         WebRTC, áudio/vídeo, chat, TURN (online real)
+├── restore/phase-5-online         WebRTC, áudio/vídeo, chat, TURN (v0.9.7-phase5)
 └── restore/phase-6-beta-ops       deploy free, observabilidade, playtest simulado
 ```
 
@@ -252,19 +252,23 @@ Contrato: `docs/MEDIA_SCENES.md`. Branch: `restore/phase-4-media-scenes`.
 > **Online-aware:** upload e troca de cena precisam funcionar para um Mestre
 > remoto, com progresso e erro visíveis.
 
-### Fase 5 — Online e comunicação (1,5–2 semanas)
+### Fase 5 — Online e comunicação (concluída)
 
 Contrato: `docs/ONLINE_MODE.md` + decisões congeladas em
 `docs/PHASE5_ONLINE_CALL.md`. Branch: `restore/phase-5-online`.
 
-- WebRTC mesh (áudio-first) com sinalização no Socket.IO; vídeo opcional.
-- Microfone, mute, **deafen**, câmera, seleção de dispositivo, indicador de fala.
-- Compartilhamento de tela do Mestre.
-- Chat de texto por mesa com histórico e mensagens de sistema.
-- Presença com estado de mídia; DM pode remover peer da chamada.
-- TURN/STUN configuráveis (Metered Open Relay free; coturn opcional).
-- ICE restart/reconexão; indicador de qualidade.
-- E2E online com fake media (2+ clientes) e teste manual em redes diferentes.
+- [x] WebRTC mesh (áudio-first) com sinalização no Socket.IO; vídeo opcional.
+- [x] Microfone, mute, **deafen**, câmera, seleção de dispositivo, indicador de fala.
+- [x] Compartilhamento de tela do Mestre.
+- [x] Chat de texto por mesa com histórico e mensagens de sistema.
+- [x] Presença com estado de mídia; DM pode remover peer da chamada.
+- [x] TURN/STUN configuráveis (Metered Open Relay free; coturn opcional).
+- [x] ICE restart/reconexão; indicador de qualidade.
+- [x] E2E online com fake media (2+ clientes) e teste manual em redes diferentes.
+
+> Evidência: `docs/qa/PHASE5-ONLINE-CALL-REPORT.md` — backend 224/224,
+> frontend 308/308, E2E 67/67 (online 10/10), caos 14/14.
+> **Concluída em 2026-11-16** (tag `v0.9.7-phase5`).
 
 **Saída:** 1 Mestre + 4 jogadores remotos, 30–60 min, áudio/vídeo/chat e
 tabuleiro funcionando sem Discord/Zoom. Sem gravação.

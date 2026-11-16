@@ -4,13 +4,12 @@
 > skill, designação, branch, revisão, correção e merge entra aqui. Se o contexto
 > da conversa se perder, este arquivo é a fonte da verdade do processo.
 >
-> Última atualização: 2026-11-16. **Fases 1, 2, 3, 3.1 e 4 concluídas e
+> Última atualização: 2026-11-16. **Fases 1, 2, 3, 3.1, 4 e 5 concluídas e
 > aprovadas**: `v0.9.2-phase1`, `v0.9.3-phase2`, `v0.9.4-phase3`,
-> `v0.9.5-phase3.1` e `v0.9.6-phase4`.
-> A Fase 4 entregou mídia/cenas: backend 204/204, frontend 244/244,
-> E2E 57/57 (novos 12/12) e caos 14/14.
-> A próxima é a **Fase 5 (online e comunicação)** em `docs/ONLINE_MODE.md`;
-> o deploy/beta é a Fase 6.
+> `v0.9.5-phase3.1`, `v0.9.6-phase4` e `v0.9.7-phase5`.
+> A Fase 5 entregou a chamada online: backend 224/224, frontend 308/308,
+> E2E 67/67 (online 10/10) e caos 14/14.
+> A próxima é a **Fase 6 (operação e beta simulado)**.
 
 ## 1. Modelo de trabalho
 
@@ -551,3 +550,13 @@ Branch: `restore/phase-5-online`.
 | F5-FE-1 | serviço/store de mídia + dock/grid/settings | frontend |
 | F5-FE-2 | chat UI + integração nas views + mobile | frontend |
 | F5-QA-1 | E2E fake media + chat + reconexão + caos | QA |
+
+### 18.3 Resultado
+
+- Backend **224/224**, frontend **308/308**, type-check e builds verdes.
+- E2E completo **67/67** (novo `online-call` 10/10); caos **14/14**.
+- Correção crítica: SDP agora viaja como `{ type, sdp }` (backend e frontend);
+  falha de ack em offer/answer aparece na UI; inbound usa `fromPeerId`.
+- Compartilhamento de tela verificado headless com fake media.
+- Evidência: `docs/qa/PHASE5-ONLINE-CALL-REPORT.md`.
+- Tag: `v0.9.7-phase5`.

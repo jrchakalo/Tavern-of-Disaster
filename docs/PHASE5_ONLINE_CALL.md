@@ -1,6 +1,7 @@
 # Fase 5 — Online e comunicação: contrato
 
-> Status: **em implementação** (2026-11-16).
+> Status: **implementado e aprovado** em `v0.9.7-phase5` (2026-11-16).
+> Evidência: `docs/qa/PHASE5-ONLINE-CALL-REPORT.md`.
 > Branch: `restore/phase-5-online`. Base: `docs/ONLINE_MODE.md`.
 > Objetivo: mesa 100% remota dentro do app — áudio, vídeo opcional, tela, chat,
 > mute/deafen, TURN e reconexão — sem Discord/Zoom.
@@ -172,16 +173,16 @@ permissões de mic/câmera e fake screen share.
 
 ## 6. Critérios de aceite
 
-- [ ] 1 DM + 4 jogadores remotos por 30–60 min sem Discord/Zoom (E2E
+- [x] 1 DM + 4 jogadores remotos por 30–60 min sem Discord/Zoom (E2E
       acelerado com fake media; teste manual fica documentado).
-- [ ] Áudio bidirecional, mute, deafen e indicador de fala.
-- [ ] Câmera opcional e compartilhamento de tela.
-- [ ] Chat com histórico, menções e mensagens de sistema locais.
-- [ ] Reconexão sem perder tabuleiro, chamada ou turno.
-- [ ] TURN configurável; fallback claro sem TURN.
-- [ ] E2E online com fake media no CI para 2+ clientes.
-- [ ] Nenhuma gravação; sem SDP/ICE/credenciais em logs.
-- [ ] D&D/OP2/OPSH e fases anteriores verdes; caos 14/14.
+- [x] Áudio bidirecional, mute, deafen e indicador de fala.
+- [x] Câmera opcional e compartilhamento de tela.
+- [x] Chat com histórico, menções e mensagens de sistema locais.
+- [x] Reconexão sem perder tabuleiro, chamada ou turno.
+- [x] TURN configurável; fallback claro sem TURN.
+- [x] E2E online com fake media no CI para 2+ clientes.
+- [x] Nenhuma gravação; sem SDP/ICE/credenciais em logs.
+- [x] D&D/OP2/OPSH e fases anteriores verdes; caos 14/14.
 
 ## 7. Quadro de coders
 
