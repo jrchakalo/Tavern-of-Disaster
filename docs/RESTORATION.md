@@ -254,7 +254,8 @@ Contrato: `docs/MEDIA_SCENES.md`. Branch: `restore/phase-4-media-scenes`.
 
 ### Fase 5 — Online e comunicação (1,5–2 semanas)
 
-Contrato: `docs/ONLINE_MODE.md`.
+Contrato: `docs/ONLINE_MODE.md` + decisões congeladas em
+`docs/PHASE5_ONLINE_CALL.md`. Branch: `restore/phase-5-online`.
 
 - WebRTC mesh (áudio-first) com sinalização no Socket.IO; vídeo opcional.
 - Microfone, mute, **deafen**, câmera, seleção de dispositivo, indicador de fala.

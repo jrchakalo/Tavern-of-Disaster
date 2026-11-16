@@ -526,3 +526,28 @@ Contrato: `docs/MEDIA_SCENES.md`. Branch: `restore/phase-4-media-scenes`.
   overlays vazios são removidos, upload XHR com timeout.
 - Evidência: `docs/qa/PHASE4-MEDIA-SCENES-REPORT.md`.
 - Tag: `v0.9.6-phase4`.
+
+## 18. Fase 5 — Online e comunicação (em andamento)
+
+Contrato: `docs/PHASE5_ONLINE_CALL.md` (decisões) sobre `docs/ONLINE_MODE.md`.
+Branch: `restore/phase-5-online`.
+
+### 18.1 Decisões
+
+- WebRTC mesh áudio-first, 1 DM + até 4 jogadores, limite duro de 8 peers.
+- Vídeo desligado por padrão; câmera/tela só por ação explícita.
+- TV/display não entra na mídia.
+- Chat em Mongo com TTL de 7 dias; mídia/chat não incrementam `revision`.
+- TURN estático por env no beta (Metered); SFU/LiveKit fica como interface
+  futura.
+- Sem gravação e sem log de SDP/ICE/credenciais.
+
+### 18.2 Quadro
+
+| ID | Entrega | Coder |
+|---|---|---|
+| F5-BE-1 | sinalização mesh, sala, estado, kick, ICE/TURN | backend |
+| F5-BE-2 | chat persistido + REST + rate limit | backend |
+| F5-FE-1 | serviço/store de mídia + dock/grid/settings | frontend |
+| F5-FE-2 | chat UI + integração nas views + mobile | frontend |
+| F5-QA-1 | E2E fake media + chat + reconexão + caos | QA |
