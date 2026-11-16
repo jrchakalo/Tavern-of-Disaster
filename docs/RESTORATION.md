@@ -273,14 +273,16 @@ Contrato: `docs/ONLINE_MODE.md` + decisões congeladas em
 **Saída:** 1 Mestre + 4 jogadores remotos, 30–60 min, áudio/vídeo/chat e
 tabuleiro funcionando sem Discord/Zoom. Sem gravação.
 
-### Fase 6 — Operação e beta simulado (1 semana)
+### Fase 6 — Operação e beta simulado (em andamento)
 
-- Deploy 100% free: Vercel (frontend), Render free + keep-alive (backend),
-  Atlas M0 (Mongo), Supabase free (storage), GitHub Actions (CI).
-- TURN/LiveKit e `PUBLIC_APP_URL` configurados; HTTPS obrigatório para mídia.
-- Healthcheck, `/metrics` protegido, logs, backup do Atlas.
-- Playtest simulado completo (presencial + online) e relatório de release.
-- `v1.0.0-beta`.
+Contrato: `docs/OPERATIONS.md`. Branch: `restore/phase-6-beta-ops`.
+
+- [ ] Deploy 100% free: Vercel (frontend), Render free + keep-alive (backend),
+      Atlas M0 (Mongo), Supabase free (storage), GitHub Actions (CI).
+- [ ] TURN/LiveKit e `PUBLIC_APP_URL` configurados; HTTPS obrigatório para mídia.
+- [ ] Healthcheck, `/metrics` protegido, logs, backup do Atlas.
+- [ ] Playtest simulado completo (presencial + online) e relatório de release.
+- [ ] `v1.0.0-beta` (somente após smoke externo).
 
 ## 5. Playtest simulado (substitui a mesa real)
 

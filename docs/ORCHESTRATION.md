@@ -560,3 +560,12 @@ Branch: `restore/phase-5-online`.
 - Compartilhamento de tela verificado headless com fake media.
 - Evidência: `docs/qa/PHASE5-ONLINE-CALL-REPORT.md`.
 - Tag: `v0.9.7-phase5`.
+
+## 19. Fase 6 — Operação e beta simulado (em andamento)
+
+Contrato: `docs/OPERATIONS.md`. Branch: `restore/phase-6-beta-ops`.
+
+- Deploy externo depende de contas do usuário (Vercel/Render/Atlas/Supabase/TURN).
+- Preparação local: health/ready/metrics protegido, Docker healthcheck,
+  render.yaml, keep-alive, backup, CI com caos e playtest simulado.
+- `v1.0.0-beta` fica para depois do smoke em produção.
