@@ -484,3 +484,35 @@ atendem. **OPSH** é o suplemento de OP1 que a mesa também quer, com peso igual
   nome acessível dos campos.
 - Evidência: `docs/qa/PHASE3.1-OP2-REPORT.md`.
 - Tag: `v0.9.5-phase3.1`.
+
+## 17. Fase 4 — Mídia e cenas (em andamento)
+
+Contrato: `docs/MEDIA_SCENES.md`. Branch: `restore/phase-4-media-scenes`.
+
+### 17.1 Auditoria
+
+- Upload com `sharp`/WebP, driver `local` e `supabase` já existem; faltam quota,
+  registro de assets e limpeza de órfãos.
+- O painel de cenas já sobe arquivo, mas sem progresso real; a câmera do celular
+  precisa de fluxo e erro visível.
+- Medições persistentes/auras vivem em memória (ou Redis opcional), não em
+  Mongo; não sobrevivem a restart sem Redis.
+- `SceneTemplatePanel.vue` e `TokenLibraryPanel.vue` estão órfãos.
+- Views já são lazy; falta separar vendor no build.
+
+### 17.2 Decisões
+
+- `Asset` + quota de 200 MB por mesa; uso exposto por endpoint.
+- `SceneOverlay` no Mongo é a fonte da verdade de medições persistentes/auras;
+  efêmeras continuam em memória.
+- Remover painéis órfãos em vez de religar templates nesta fase.
+- Upload com progresso (XHR) e câmera/galeria; sem `localhost` fixo.
+
+### 17.3 Quadro
+
+| ID | Entrega | Coder |
+|---|---|---|
+| F4-BE-1 | Asset, quota, uso, remoção, hooks, varredura | backend |
+| F4-BE-2 | SceneOverlay + store Mongo + async + teste de restart | backend |
+| F4-FE-1 | progresso/câmera, uso/quota, erro de cena, órfãos, vendor | frontend |
+| F4-QA-1 | E2E mídia/cenas presencial + online + gate | QA |

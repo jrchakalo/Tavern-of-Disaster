@@ -231,13 +231,22 @@ suplemento. **Concluída em 2026-11-15** (tag `v0.9.5-phase3.1`).
 
 ### Fase 4 — Mídia e cenas (1 semana)
 
-- Upload com adapter (`local`/`supabase`), compressão, quotas, limpeza de órfãos.
-- Subir mapa pelo celular do Mestre.
-- Medições e auras persistidas (sobrevivem a restart).
-- Religar templates ou remover painéis órfãos.
-- Code-split do `TableView` e limpeza de mídia pesada.
-- **Online-aware:** upload e troca de cena precisam funcionar para um Mestre
-  remoto, com progresso e erro visíveis.
+Contrato: `docs/MEDIA_SCENES.md`. Branch: `restore/phase-4-media-scenes`.
+
+- [x] Auditar upload/storage, cenas, templates e overlays existentes.
+- [ ] Modelo `Asset` + quota por mesa + endpoint de uso; erros 400/413/403.
+- [ ] Troca/exclusão de mapa, token e avatar apaga o asset anterior; varredura
+      de órfãos não apaga asset referenciado.
+- [ ] Persistir medições persistentes e auras em Mongo (`SceneOverlay`);
+      sobrevivem a restart; limpar ao excluir cena/mesa.
+- [ ] Upload de mapa pelo celular do Mestre com progresso e erro visíveis.
+- [ ] Troca de cena online (2 contextos remotos) e presencial, sem travar.
+- [ ] Remover painéis órfãos (`SceneTemplatePanel`, `TokenLibraryPanel`) e
+      separar vendor no build.
+- [ ] E2E de mídia/cenas presencial + online; suíte e caos verdes.
+
+> **Online-aware:** upload e troca de cena precisam funcionar para um Mestre
+> remoto, com progresso e erro visíveis.
 
 ### Fase 5 — Online e comunicação (1,5–2 semanas)
 
