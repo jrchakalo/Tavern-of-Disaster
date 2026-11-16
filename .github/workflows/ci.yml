@@ -6,9 +6,17 @@ on:
   pull_request:
     branches: ["main", "restore/**"]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: backend
@@ -25,6 +33,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -42,6 +51,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -66,5 +76,53 @@ jobs:
         if: failure()
         with:
           name: playwright-report
-          path: tests/e2e/playwright-report
+          path: |
+            tests/e2e/playwright-report
+            tests/e2e/test-results
           retention-days: 7
+          if-no-files-found: ignore
+
+  chaos:
+    name: chaos (6 clients, headless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            tests/e2e/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - run: npm ci
+        working-directory: tests/e2e
+      # O mongodb-memory-server baixa o binário do Mongo no runner; não há
+      # segredos nem Atlas envolvidos.
+      - name: Run chaos harness
+        working-directory: tests/e2e
+        run: |
+          set -o pipefail
+          node chaos/run.mjs 2>&1 | tee chaos-report.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: chaos-report
+          path: tests/e2e/chaos-report.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+  docker:
+    name: docker (compose config + image builds)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker compose
+        run: docker compose config > /dev/null
+      - name: Build backend image
+        run: docker build --tag tavern-backend:ci ./backend
+      - name: Build frontend image
+        run: docker build --tag tavern-frontend:ci ./frontend
