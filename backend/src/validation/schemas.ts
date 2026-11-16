@@ -801,10 +801,21 @@ export const zMediaSpeakingPayload = z.object({
 export const zMediaSignalPayload = z.object({
   tableId,
   toPeerId: mediaPeerId,
-  sdp: sanitizeText(z.string().min(1).max(SDP_MAX_BYTES)).refine(
-    (value) => Buffer.byteLength(value, 'utf8') <= SDP_MAX_BYTES,
-    { message: 'SDP excede o limite de 64 KB.' }
-  ),
+  /** RTCSessionDescriptionInit: `{ type, sdp }` (mesma forma que o browser usa). */
+  sdp: z
+    .object({
+      type: z.enum(['offer', 'answer']),
+      sdp: sanitizeText(z.string().min(1).max(SDP_MAX_BYTES)),
+    })
+    .superRefine((value, ctx) => {
+      if (Buffer.byteLength(value.sdp, 'utf8') > SDP_MAX_BYTES) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['sdp'],
+          message: 'SDP excede o limite de 64 KB.',
+        });
+      }
+    }),
 });
 
 export const zMediaIcePayload = z

@@ -848,11 +848,14 @@ export class MediaService {
       const offer = await peer.pc.createOffer(iceRestart ? { iceRestart: true } : undefined);
       await peer.pc.setLocalDescription(offer);
       if (!this.tableId) return;
-      await socketService.sendMediaOffer({
+      const ack = await socketService.sendMediaOffer({
         tableId: this.tableId,
         toPeerId: peerId,
         sdp: peer.pc.localDescription ?? offer,
       });
+      if (ack && ack.ok === false) {
+        this.setError(ack.error?.message || 'Falha ao negociar o áudio da chamada.');
+      }
     } catch {
       // Negociação transitória: ICE/next state ou rejoin resolve.
     } finally {
@@ -897,11 +900,14 @@ export class MediaService {
         const answer = await peer.pc.createAnswer();
         await peer.pc.setLocalDescription(answer);
         if (!this.tableId) return;
-        await socketService.sendMediaAnswer({
+        const ack = await socketService.sendMediaAnswer({
           tableId: this.tableId,
           toPeerId: peer.peerId,
           sdp: peer.pc.localDescription ?? answer,
         });
+        if (ack && ack.ok === false) {
+          this.setError(ack.error?.message || 'Falha ao responder a negociação da chamada.');
+        }
       } else {
         peer.isSettingRemoteAnswerPending = true;
         await peer.pc.setRemoteDescription(description);

@@ -311,7 +311,7 @@ describe('media signaling (2+ clients)', () => {
     const offerAck = await emitAck(dmClient, 'mediaOffer', {
       tableId,
       toPeerId: p1.id,
-      sdp: 'v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\n',
+      sdp: { type: 'offer', sdp: 'v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\n' },
     });
     expect(offerAck.ok).toBe(true);
     await sleep(150);
@@ -319,7 +319,7 @@ describe('media signaling (2+ clients)', () => {
     expect(p1Offers[0]).toMatchObject({
       tableId,
       fromPeerId: dmClient.id,
-      sdp: 'v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\n',
+      sdp: { type: 'offer', sdp: 'v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\n' },
     });
     expect(p2Offers).toHaveLength(0);
 
@@ -328,12 +328,16 @@ describe('media signaling (2+ clients)', () => {
     const answerAck = await emitAck(p1, 'mediaAnswer', {
       tableId,
       toPeerId: dmClient.id,
-      sdp: 'v=0\r\nanswer',
+      sdp: { type: 'answer', sdp: 'v=0\r\nanswer' },
     });
     expect(answerAck.ok).toBe(true);
     await sleep(150);
     expect(dmAnswers).toHaveLength(1);
-    expect(dmAnswers[0]).toMatchObject({ tableId, fromPeerId: p1.id, sdp: 'v=0\r\nanswer' });
+    expect(dmAnswers[0]).toMatchObject({
+      tableId,
+      fromPeerId: p1.id,
+      sdp: { type: 'answer', sdp: 'v=0\r\nanswer' },
+    });
     expect(p2Answers).toHaveLength(0);
 
     const p1Ice = collectEvents(p1, 'mediaIce');
@@ -362,7 +366,7 @@ describe('media signaling (2+ clients)', () => {
     const crossTarget = await emitAck(dmClient, 'mediaOffer', {
       tableId,
       toPeerId: otherClient.id,
-      sdp: 'v=0\r\ncross',
+      sdp: { type: 'offer', sdp: 'v=0\r\ncross' },
     });
     expect(crossTarget.ok).toBe(false);
     expect(crossTarget.error.code).toBe('NOT_FOUND');
@@ -370,7 +374,7 @@ describe('media signaling (2+ clients)', () => {
     const notJoined = await emitAck(dmClient, 'mediaOffer', {
       tableId: otherTableId,
       toPeerId: otherClient.id,
-      sdp: 'v=0\r\ncross',
+      sdp: { type: 'offer', sdp: 'v=0\r\ncross' },
     });
     expect(notJoined.ok).toBe(false);
     expect(notJoined.error.code).toBe('CONFLICT');
@@ -388,7 +392,7 @@ describe('media signaling (2+ clients)', () => {
     const hugeSdp = await emitAck(dmClient, 'mediaOffer', {
       tableId,
       toPeerId: p1.id,
-      sdp: 'x'.repeat(64 * 1024 + 1),
+      sdp: { type: 'offer', sdp: 'x'.repeat(64 * 1024 + 1) },
     });
     expect(hugeSdp.ok).toBe(false);
     expect(hugeSdp.error.code).toBe('VALIDATION');
@@ -493,7 +497,7 @@ describe('media signaling (2+ clients)', () => {
     const afterKick = await emitAck(p1, 'mediaOffer', {
       tableId,
       toPeerId: dmClient.id,
-      sdp: 'v=0',
+      sdp: { type: 'offer', sdp: 'v=0' },
     });
     expect(afterKick.ok).toBe(false);
     expect(afterKick.error.code).toBe('CONFLICT');
