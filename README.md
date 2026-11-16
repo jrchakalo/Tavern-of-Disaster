@@ -20,17 +20,17 @@
 
 Tavern of Disaster is a virtual tabletop where I mix two passions: web development and RPG. The goal is to build a lean, fast real‑time tool for my groups, iterating features as creativity (and playtest) demands.
 
-Restoration status: Phase 3 (`v0.9.4-phase3`) integrated realtime sheets, HP
-sync, server-authoritative dice and the roll log. **Phase 3.1
-(`v0.9.5-phase3.1`) added Ordem Paranormal 2 and Sobrevivendo ao Horror**:
-step-dice tests (attribute + skill, RA/RB, dread, critical/fumble), OP2/OPSH
-sheets, injury/trauma tables, PV/PD/armor in tokens/TV and one-shot E2E
-(45/45 + chaos 14/14). D&D 5e remains the platform default, with OP2/OPSH at
-equal weight. The next front is media/scenes (Phase 4); online
-voice/video/chat is Phase 5 (`docs/ONLINE_MODE.md`). See
-`docs/ORDEM_PARANORMAL.md`, `docs/qa/PHASE3.1-OP2-REPORT.md`,
-`docs/RESTORATION.md`, `docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md`,
-`docs/SHEETS_DICE.md` and `docs/ORCHESTRATION.md`.
+Restoration status: Phases 3–3.1 integrated realtime sheets and the
+OP2/OPSH systems. **Phase 4 (`v0.9.6-phase4`) added media/scenes**: mobile map
+upload with progress, per-table asset quota/usage, orphan cleanup, Mongo-backed
+persistent measurements/auras surviving restarts, scene load/error feedback
+and online scene switching. D&D 5e remains the platform default, with OP2/OPSH
+at equal weight. The next front is **Phase 5: online voice/video/chat**
+(`docs/ONLINE_MODE.md`); deploy/beta is Phase 6. See
+`docs/MEDIA_SCENES.md`, `docs/qa/PHASE4-MEDIA-SCENES-REPORT.md`,
+`docs/ORDEM_PARANORMAL.md`, `docs/RESTORATION.md`,
+`docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md`, `docs/SHEETS_DICE.md` and
+`docs/ORCHESTRATION.md`.
 
 Currently implemented core features:
 
