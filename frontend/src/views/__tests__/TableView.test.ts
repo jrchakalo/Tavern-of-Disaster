@@ -37,6 +37,14 @@ vi.mock('../../services/storageService', () => ({
 const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }));
 vi.mock('../../services/toast', () => ({ toast: toastMock }));
 
+vi.mock('../../services/chatService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/chatService')>();
+  return {
+    ...actual,
+    fetchChatHistory: vi.fn(async () => []),
+  };
+});
+
 const authState = vi.hoisted(() => ({
   currentUser: { value: { id: 'user-1', username: 'Tester' } },
   authToken: { value: 'token' },
@@ -300,6 +308,47 @@ describe('TableView scene media feedback', () => {
     await nextTick();
     expect(wrapper.find('.scene-image-error').exists()).toBe(false);
 
+    wrapper.unmount();
+  });
+});
+
+describe('TableView chat', () => {
+  function mountTable() {
+    return shallowMount(TableView, {
+      global: {
+        stubs: {
+          teleport: true,
+          Transition: false,
+        },
+      },
+    });
+  }
+
+  function findStub(wrapper: ReturnType<typeof mountTable>, name: string) {
+    const found = wrapper.findAllComponents({ name });
+    return found.length > 0 ? found[0] : null;
+  }
+
+  it('mostra o botão de chat e abre/fecha o painel', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const toggle = findStub(wrapper, 'ChatToggle');
+    expect(toggle).toBeTruthy();
+    expect(toggle!.props('open')).toBe(false);
+
+    toggle!.vm.$emit('toggle');
+    await nextTick();
+    await flushPromises();
+
+    const panel = findStub(wrapper, 'ChatPanel');
+    expect(panel).toBeTruthy();
+    expect(panel!.props('open')).toBe(true);
+    expect(panel!.props('tableId')).toBe('table-1');
+
+    panel!.vm.$emit('close');
+    await nextTick();
+    expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(false);
     wrapper.unmount();
   });
 });

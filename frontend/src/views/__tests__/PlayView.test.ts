@@ -28,8 +28,18 @@ const socketServiceMock = vi.hoisted(() => ({
   disconnect: vi.fn(),
   moveToken: vi.fn(),
   nextTurn: vi.fn(),
+  sendChatMessage: vi.fn(),
+  onChatEvent: vi.fn(() => () => {}),
 }));
 vi.mock('../../services/socketService', () => ({ socketService: socketServiceMock }));
+
+vi.mock('../../services/chatService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/chatService')>();
+  return {
+    ...actual,
+    fetchChatHistory: vi.fn(async () => []),
+  };
+});
 
 const tableAccessMock = vi.hoisted(() => ({
   joinTableByInvite: vi.fn(async () => ({ tableId: 'table-1' })),
@@ -139,6 +149,10 @@ beforeEach(() => {
   socketServiceMock.moveToken.mockClear();
   socketServiceMock.nextTurn.mockClear();
   socketServiceMock.moveToken.mockResolvedValue({ ok: true, revision: 8, serverNowMs: 0 });
+  socketServiceMock.sendChatMessage.mockReset();
+  socketServiceMock.sendChatMessage.mockResolvedValue({ ok: true, revision: 8, serverNowMs: 0 });
+  socketServiceMock.onChatEvent.mockClear();
+  socketServiceMock.onChatEvent.mockImplementation(() => () => {});
   tableAccessMock.joinTableByInvite.mockClear();
   tableAccessMock.joinTableByInvite.mockResolvedValue({ tableId: 'table-1' });
   characterMock.getMyCharacters.mockClear();
@@ -368,6 +382,22 @@ describe('PlayView', () => {
 
     await wrapper.get('.details-sheet__close').trigger('click');
     expect(wrapper.find('.details-sheet').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('registra o listener de chat e abre o painel pelo toolbar', async () => {
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    expect(socketServiceMock.onChatEvent).toHaveBeenCalledWith('chatMessage', expect.any(Function));
+
+    const toggle = wrapper.get('[data-testid="chat-toggle"]');
+    expect(toggle.text()).toContain('Chat');
+    await toggle.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="chat-panel"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="chat-panel"]').attributes('aria-label')).toBe('Chat da mesa');
     wrapper.unmount();
   });
 });
