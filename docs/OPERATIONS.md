@@ -18,7 +18,8 @@
 | Release | `v1.0.0-beta` **somente após** deploy externo + smoke online |
 
 O deploy externo real depende de contas/credenciais do usuário. Tudo abaixo pode
-ser preparado e testado localmente antes disso.
+ser preparado e testado localmente antes disso. O passo a passo de cada conta
+(com o que colocar em `.env.deploy`) está em `docs/DEPLOY_ACCOUNTS.md`.
 
 ## 2. Health e observabilidade
 
