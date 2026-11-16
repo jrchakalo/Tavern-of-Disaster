@@ -660,8 +660,8 @@ test('DM mobile 390×844 envia mapa; uso aparece e TV/jogador convergem para a U
   const response = await responsePromise;
   expect(response.status(), 'POST /api/assets/maps/:tableId precisa responder 201.').toBe(201);
   const uploaded = (await response.json()) as UploadResponse;
-  expect(uploaded.publicUrl, 'A URL pública do mapa precisa ser /uploads/*.webp.').toMatch(
-    /\/uploads\/.+\.webp$/,
+  expect(uploaded.publicUrl, 'A URL pública do mapa precisa terminar em .webp (local ou Supabase).').toMatch(
+    /(?:\/uploads\/.+\.webp$|^https:\/\/.+\.supabase\.co\/storage\/v1\/object\/public\/.+\.webp$)/,
   );
   expect(uploaded.assetId).toBeTruthy();
 
