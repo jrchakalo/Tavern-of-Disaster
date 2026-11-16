@@ -21,10 +21,19 @@ services:
       MONGO_URI: mongodb://mongo:27017/tavern_of_disaster
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
       STORAGE_DRIVER: local
       LOCAL_UPLOAD_DIR: /app/uploads
       ASSET_BASE_URL: ${ASSET_BASE_URL:-}
+      TABLE_STORAGE_QUOTA_BYTES: ${TABLE_STORAGE_QUOTA_BYTES:-209715200}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      STUN_URLS: ${STUN_URLS:-}
+      TURN_URLS: ${TURN_URLS:-}
+      TURN_URL: ${TURN_URL:-}
+      TURN_USERNAME: ${TURN_USERNAME:-}
+      TURN_CREDENTIAL: ${TURN_CREDENTIAL:-}
+      MEDIA_MAX_PEERS: ${MEDIA_MAX_PEERS:-8}
     volumes:
       - uploads:/app/uploads
     depends_on:
@@ -32,6 +41,19 @@ services:
         condition: service_healthy
     ports:
       - "3001:3001"
+    healthcheck:
+      # Node 22 traz fetch nativo; a imagem slim não tem wget/curl.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
 
   frontend:
     build:
@@ -41,7 +63,8 @@ services:
         VITE_API_URL: ${VITE_API_URL:-}
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "8080:80"
 

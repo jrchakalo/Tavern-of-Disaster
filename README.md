@@ -20,15 +20,17 @@
 
 Tavern of Disaster is a virtual tabletop where I mix two passions: web development and RPG. The goal is to build a lean, fast real‑time tool for my groups, iterating features as creativity (and playtest) demands.
 
-Restoration status: **Phases 3–5 are integrated.** Phase 4
-(`v0.9.6-phase4`) added media/scenes (mobile upload, quota, Mongo-backed
-overlays). **Phase 5 (`v0.9.7-phase5`) added the full online table**: WebRTC
-mesh audio-first, mute/deafen, camera, screen share, device selection,
-Socket.IO signaling, TURN/STUN, and persisted table chat — no Discord/Zoom.
-D&D 5e remains the default, with OP2/OPSH at equal weight. The next front is
-**Phase 6: operations and simulated beta**. See `docs/PHASE5_ONLINE_CALL.md`,
-`docs/qa/PHASE5-ONLINE-CALL-REPORT.md`, `docs/MEDIA_SCENES.md`,
-`docs/ORDEM_PARANORMAL.md`, `docs/RESTORATION.md`,
+Restoration status: **all phases 0–6 are complete locally** (`v0.9.8-phase6`).
+Phases 3–4 delivered realtime sheets + OP2/OPSH and media/scenes; **Phase 5
+(`v0.9.7-phase5`)** added WebRTC mesh audio-first, mute/deafen, camera, screen
+share, TURN/STUN and persisted chat; **Phase 6** added health/ready/protected
+metrics, graceful shutdown, free-tier deploy configs (Render/Vercel/Atlas/
+Supabase/TURN), CI with chaos and a simulated beta playtest (backend 238/238,
+frontend 308/308, E2E 72/72, chaos 14/14). D&D 5e remains the default, with
+OP2/OPSH at equal weight. Only the external deploy + online smoke remain before
+`v1.0.0-beta`; see `docs/OPERATIONS.md` and
+`docs/qa/PHASE6-BETA-REPORT.md`. Other contracts: `docs/PHASE5_ONLINE_CALL.md`,
+`docs/MEDIA_SCENES.md`, `docs/ORDEM_PARANORMAL.md`, `docs/RESTORATION.md`,
 `docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md`, `docs/SHEETS_DICE.md` and
 `docs/ORCHESTRATION.md`.
 

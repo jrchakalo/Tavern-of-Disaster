@@ -24,14 +24,12 @@ import assetRouter from './routes/asset.routes';
 import rollRouter from './routes/roll.routes';
 import mediaRouter from './routes/media.routes';
 import chatRouter from './routes/chat.routes';
+import healthRouter from './routes/health.routes';
 import { registerMediaHandlers } from './socketHandlers/mediaHandlers';
 import { registerChatHandlers } from './socketHandlers/chatHandlers';
 import { createLogger } from './logger';
-import {
-  getMetricsSnapshot,
-  recordSocketConnected,
-  recordSocketDisconnected,
-} from './metrics';
+import { recordSocketConnected, recordSocketDisconnected } from './metrics';
+import { registerShutdownHandlers } from './shutdown';
 import { getTableById } from './services/tableService';
 import { getRevisionSafe } from './services/revisionService';
 import { getTableInfo, sendPresenceUpdated } from './services/sessionService';
@@ -182,10 +180,7 @@ export function createServer(): { app: express.Express; server: http.Server; io:
   app.use('/api', rollRouter);
   app.use('/api', mediaRouter);
   app.use('/api', chatRouter);
-
-  app.get('/metrics', (_req, res) => {
-    res.json(getMetricsSnapshot());
-  });
+  app.use(healthRouter);
 
   io.use(socketAuthMiddleware);
 
@@ -249,8 +244,13 @@ export async function startServer(port: number = Number(process.env.PORT) || 300
 }
 
 if (require.main === module) {
-  startServer().catch((error) => {
-    log.error({ err: error }, 'Falha ao iniciar o servidor');
-    process.exit(1);
-  });
+  startServer()
+    .then(({ server, io }) => {
+      // Só o processo real registra handlers de sinal; imports/testes não.
+      registerShutdownHandlers({ server, io });
+    })
+    .catch((error) => {
+      log.error({ err: error }, 'Falha ao iniciar o servidor');
+      process.exit(1);
+    });
 }

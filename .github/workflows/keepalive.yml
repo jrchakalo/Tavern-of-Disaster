@@ -1,0 +1,42 @@
+name: Keep-alive
+
+# O free tier do Render dorme após ~15 min sem tráfego. O cron do GitHub Actions
+# é best-effort (pode atrasar alguns minutos), então este job complementa — não
+# substitui — um monitor externo (UptimeRobot/cron-job.org) para o beta.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Render /health
+        env:
+          RENDER_HEALTH_URL: ${{ secrets.RENDER_HEALTH_URL }}
+        run: |
+          if [ -z "$RENDER_HEALTH_URL" ]; then
+            echo "::notice title=Keep-alive skipped::RENDER_HEALTH_URL não configurado. Defina o secret em Settings > Secrets and variables > Actions para ativar o ping."
+            exit 0
+          fi
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 30 \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-delay 10 \
+            --user-agent "tavern-of-disaster-keepalive/1.0" \
+            --output /dev/null \
+            "$RENDER_HEALTH_URL"

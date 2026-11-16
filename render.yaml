@@ -1,0 +1,78 @@
+# Render Blueprint — backend free tier.
+#
+# O frontend fica na Vercel; o MongoDB no Atlas M0. Este serviço expõe a API
+# REST/Socket.IO e serve uploads locais quando STORAGE_DRIVER=local. Segredos
+# usam `sync: false` e devem ser preenchidos no dashboard do Render, nunca
+# neste arquivo.
+#
+# Free tier: o serviço dorme após ~15 min sem tráfego. O workflow
+# `.github/workflows/keepalive.yml` mantém `/health` aquecido a cada 10 min.
+services:
+  - type: web
+    name: tavern-of-disaster-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Banco Atlas M0. Ex.: mongodb+srv://user:pass@cluster/tavern_of_disaster
+      - key: MONGO_URI
+        sync: false
+
+      - key: JWT_SECRET
+        sync: false
+
+      # Origem(ns) do frontend na Vercel, em CSV. Ex.: https://app.vercel.app
+      - key: CORS_ORIGIN
+        sync: false
+
+      # Origem usada para montar a URL da TV (/display). Normalmente igual a
+      # CORS_ORIGIN. Vazio cai para CORS_ORIGIN.
+      - key: PUBLIC_APP_URL
+        sync: false
+
+      # `supabase` no deploy (disco do Render free é efêmero); `local` só em
+      # Docker/VPS com volume persistente.
+      - key: STORAGE_DRIVER
+        value: supabase
+
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        sync: false
+
+      # Base pública dos assets. Vazio = URLs relativas servidas pelo backend;
+      # com Supabase, use a URL pública do bucket.
+      - key: ASSET_BASE_URL
+        sync: false
+
+      # 200 MB por mesa.
+      - key: TABLE_STORAGE_QUOTA_BYTES
+        value: "209715200"
+
+      - key: LOG_LEVEL
+        value: info
+
+      # Exigido por /metrics em produção. Sem ele, /metrics responde 404.
+      - key: METRICS_TOKEN
+        sync: false
+
+      # STUN público padrão; TURN é opcional e necessário em NAT restritivo.
+      - key: STUN_URLS
+        value: "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302"
+      - key: TURN_URLS
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
+
+      - key: MEDIA_MAX_PEERS
+        value: "8"
