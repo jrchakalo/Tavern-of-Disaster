@@ -17,6 +17,28 @@ const PERSISTENT_FIELDS = [
   'clearAllForTable',
 ] as const;
 
+const EMPTY_OVERLAY_FILTER = {
+  $and: [
+    {
+      $or: [
+        { measurements: { $exists: false } },
+        { measurements: { $size: 0 } },
+      ],
+    },
+    {
+      $or: [
+        { auras: { $exists: false } },
+        { auras: { $size: 0 } },
+      ],
+    },
+  ],
+};
+
+/** Remove o documento quando as duas listas ficaram vazias. */
+async function deleteIfEmpty(tableId: string, sceneId: string): Promise<void> {
+  await SceneOverlay.deleteOne({ tableId, sceneId, ...EMPTY_OVERLAY_FILTER }).exec();
+}
+
 /**
  * Metade persistente/aura do `IMeasurementStore`: o Mongo é a fonte da verdade.
  * Medições efêmeras continuam no store em memória.
@@ -41,6 +63,7 @@ export class MongoMeasurementStore
       { tableId, sceneId },
       { $pull: { measurements: { id: measurementId } } }
     ).exec();
+    await deleteIfEmpty(tableId, sceneId);
   }
 
   async listPersistents(
@@ -53,6 +76,7 @@ export class MongoMeasurementStore
 
   async clearPersistentsForScene(tableId: string, sceneId: string): Promise<void> {
     await SceneOverlay.updateOne({ tableId, sceneId }, { $set: { measurements: [] } }).exec();
+    await deleteIfEmpty(tableId, sceneId);
   }
 
   /**
@@ -95,6 +119,7 @@ export class MongoMeasurementStore
       { tableId, sceneId },
       { $pull: { auras: { tokenId } } }
     ).exec();
+    await deleteIfEmpty(tableId, sceneId);
   }
 
   async listAuras(tableId: string, sceneId: string): Promise<AuraPayload[]> {
@@ -104,6 +129,7 @@ export class MongoMeasurementStore
 
   async clearAurasForScene(tableId: string, sceneId: string): Promise<void> {
     await SceneOverlay.updateOne({ tableId, sceneId }, { $set: { auras: [] } }).exec();
+    await deleteIfEmpty(tableId, sceneId);
   }
 
   /** Remove todos os overlays da mesa (todas as cenas). */

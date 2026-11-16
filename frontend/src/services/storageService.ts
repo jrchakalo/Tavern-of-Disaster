@@ -121,6 +121,7 @@ function uploadAsset(payload: UploadTarget, onProgress?: ProgressHandler): Promi
     };
 
     xhr.open('POST', url);
+    xhr.timeout = 120_000;
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
     if (xhr.upload) {

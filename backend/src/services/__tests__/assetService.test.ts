@@ -242,6 +242,22 @@ describe('deleteAssetById', () => {
     await expect(deleteAssetById(new Types.ObjectId().toString(), 'invalido'))
       .rejects.toMatchObject({ status: 400 });
   });
+
+  it('recusa remover asset ainda referenciado (409)', async () => {
+    const dm = new Types.ObjectId();
+    const table = await createTable(dm);
+    const { asset } = await createFileAsset({ tableId: table._id, ownerId: dm, kind: 'map' });
+    await Scene.create({
+      tableId: table._id,
+      name: 'Cena com mapa',
+      imageUrl: asset.publicUrl,
+    });
+
+    await expect(deleteAssetById(dm.toString(), asset._id.toString())).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(Asset.findById(asset._id)).resolves.toBeTruthy();
+  });
 });
 
 describe('deleteAssetByUrl', () => {
@@ -259,6 +275,25 @@ describe('deleteAssetByUrl', () => {
   it('não lança para URL vazia ou sem registro', async () => {
     await expect(deleteAssetByUrl(undefined)).resolves.toBe(false);
     await expect(deleteAssetByUrl('/uploads/nao-existe.webp')).resolves.toBe(false);
+  });
+
+  it('não apaga um asset ainda referenciado por uma cena', async () => {
+    const dm = new Types.ObjectId();
+    const table = await createTable(dm);
+    const { asset, absolute } = await createFileAsset({
+      tableId: table._id,
+      ownerId: dm,
+      kind: 'map',
+    });
+    await Scene.create({
+      tableId: table._id,
+      name: 'Cena compartilhada',
+      imageUrl: asset.publicUrl,
+    });
+
+    await expect(deleteAssetByUrl(asset.publicUrl)).resolves.toBe(false);
+    await expect(Asset.findById(asset._id)).resolves.toBeTruthy();
+    await expect(fs.stat(absolute)).resolves.toBeTruthy();
   });
 });
 

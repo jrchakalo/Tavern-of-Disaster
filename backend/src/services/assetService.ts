@@ -167,6 +167,13 @@ export async function deleteAssetById(userId: string, assetId: string): Promise<
     throw new ServiceError('Você não pode remover este asset.', 403);
   }
 
+  // Um asset compartilhado por outra cena/token/avatar não pode ser apagado
+  // por engano; a varredura também respeita referências.
+  const referenced = await collectReferencedUrls([asset.publicUrl]);
+  if (referenced.has(asset.publicUrl)) {
+    throw new ServiceError('Este asset ainda está em uso.', 409);
+  }
+
   const deleted = await removeAssetDocument(asset);
   if (!deleted) {
     throw new ServiceError('Não foi possível remover o arquivo do storage.', 502);
@@ -183,6 +190,10 @@ export async function deleteAssetByUrl(publicUrl: string | undefined | null): Pr
   try {
     const asset = await Asset.findOne({ publicUrl });
     if (!asset) return false;
+    // A URL pode ser compartilhada por outra cena/token/avatar; só apaga quando
+    // não houver mais nenhuma referência.
+    const referenced = await collectReferencedUrls([publicUrl]);
+    if (referenced.has(publicUrl)) return false;
     return await removeAssetDocument(asset);
   } catch (error) {
     log.warn({ err: error, publicUrl }, 'Falha ao remover asset por URL');
