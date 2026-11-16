@@ -1,7 +1,7 @@
 # Fase 6 — Operação e beta simulado
 
-> Status: **em implementação** (2026-11-16).
-> Branch: `restore/phase-6-beta-ops`.
+> Status: **pré-beta local concluído** (2026-11-16); deploy externo e smoke
+> online pendentes de contas/credenciais. Branch: `restore/phase-6-beta-ops`.
 > Objetivo: operar o beta 100% grátis com saúde observável, deploy reproduzível,
 > backup, CI e um playtest simulado que substitui a mesa real.
 
@@ -62,9 +62,13 @@ MEDIA_MAX_PEERS=8
 ### Frontend (Vercel)
 
 ```text
-VITE_API_URL=              # vazio = mesma origem via rewrite/proxy
-VITE_PROXY_TARGET=         # usado só no Vite dev
+# Produção na Vercel: origem absoluta do backend Render.
+# Sem isso, /api, /socket.io e /uploads cairiam na Vercel e retornariam index.html.
+VITE_API_URL=https://<servico>.onrender.com
+VITE_PROXY_TARGET=         # usado só no Vite dev (mesma origem)
 ```
+
+Em Docker/Nginx a mesma origem funciona e `VITE_API_URL` pode ficar vazio.
 
 ### Docker local
 
@@ -83,8 +87,10 @@ Tunnel ou um VPS; Render não hospeda TURN/coturn.
    do backend, health check `/health`, região mais próxima. O free tier dorme;
    configurar keep-alive externo (cron-job.org/UptimeRobot) em `/health`.
 4. **Vercel**: importar o repositório, root `frontend`, build `npm run build`,
-   output `dist`; definir `VITE_API_URL` vazio e o rewrite para o backend no
-   `vercel.json`/proxy. HTTPS é obrigatório para mídia.
+   output `dist`; definir **`VITE_API_URL=https://<servico>.onrender.com`** no
+   build (o `vercel.json` é só SPA fallback; não há proxy de `/api`/`/socket.io`
+   na Vercel). Configurar `CORS_ORIGIN`/`PUBLIC_APP_URL` no Render com a origem
+   da Vercel. HTTPS é obrigatório para mídia.
 5. **TURN**: criar conta Metered Open Relay, copiar URL/username/credential para
    o Render. Sem TURN o app funciona em LAN/STUN e avisa o usuário.
 6. **Smoke online**: abrir mesa, TV, 2 celulares, chamada de áudio, chat,
@@ -143,10 +149,10 @@ log. O relatório final fica em `docs/qa/PHASE6-BETA-REPORT.md`.
 
 ## 9. Critérios de aceite
 
-- [ ] `/health`, `/ready` e `/metrics` protegido funcionando; Docker healthcheck.
-- [ ] `render.yaml`, keep-alive e docs de deploy/Vercel/Atlas/Supabase/TURN.
-- [ ] Backup/restore documentado e script testável.
-- [ ] CI com backend, frontend, E2E fake media e caos.
-- [ ] Playtest simulado completo verde + relatório com evidências.
-- [ ] Nenhum segredo/credencial em log ou no repositório.
-- [ ] `v1.0.0-beta` só após smoke externo.
+- [x] `/health`, `/ready` e `/metrics` protegido funcionando; Docker healthcheck.
+- [x] `render.yaml`, keep-alive e docs de deploy/Vercel/Atlas/Supabase/TURN.
+- [x] Backup/restore documentado e script testável.
+- [x] CI com backend, frontend, E2E fake media e caos.
+- [x] Playtest simulado completo verde + relatório com evidências.
+- [x] Nenhum segredo/credencial em log ou no repositório.
+- [ ] `v1.0.0-beta` só após smoke externo (depende das contas do usuário).

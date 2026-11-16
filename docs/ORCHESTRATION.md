@@ -4,12 +4,10 @@
 > skill, designação, branch, revisão, correção e merge entra aqui. Se o contexto
 > da conversa se perder, este arquivo é a fonte da verdade do processo.
 >
-> Última atualização: 2026-11-16. **Fases 1, 2, 3, 3.1, 4 e 5 concluídas e
-> aprovadas**: `v0.9.2-phase1`, `v0.9.3-phase2`, `v0.9.4-phase3`,
-> `v0.9.5-phase3.1`, `v0.9.6-phase4` e `v0.9.7-phase5`.
-> A Fase 5 entregou a chamada online: backend 224/224, frontend 308/308,
-> E2E 67/67 (online 10/10) e caos 14/14.
-> A próxima é a **Fase 6 (operação e beta simulado)**.
+> Última atualização: 2026-11-16. **Fases 1–6 concluídas localmente**:
+> `v0.9.2-phase1` … `v0.9.7-phase5`, com pré-beta em `v0.9.8-phase6`.
+> Backend 238/238, frontend 308/308, E2E 72/72, caos 14/14.
+> Falta apenas deploy externo + smoke online para `v1.0.0-beta`.
 
 ## 1. Modelo de trabalho
 
@@ -569,3 +567,16 @@ Contrato: `docs/OPERATIONS.md`. Branch: `restore/phase-6-beta-ops`.
 - Preparação local: health/ready/metrics protegido, Docker healthcheck,
   render.yaml, keep-alive, backup, CI com caos e playtest simulado.
 - `v1.0.0-beta` fica para depois do smoke em produção.
+
+### 19.1 Resultado
+
+- Backend **238/238**, frontend **308/308**, E2E **72/72**, caos **14/14**.
+- `scripts/beta-playtest.mjs` PASS (E2E + caos) em ~195.7 s.
+- `/health`, `/ready`, `/metrics` protegido, shutdown gracioso e Docker
+  healthcheck validados; render.yaml/CI/keepalive/backups válidos.
+- Corrigido na documentação: Vercel usa `VITE_API_URL` absoluto para o Render
+  (o `vercel.json` não faz proxy de API).
+- Evidência: `docs/qa/PHASE6-BETA-REPORT.md`.
+- Tag local: `v0.9.8-phase6`.
+- `v1.0.0-beta` pendente de contas (Atlas/Supabase/Render/Vercel/TURN) e smoke
+  online em HTTPS.

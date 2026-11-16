@@ -1,9 +1,10 @@
 # Plano de Restauração — Tavern of Disaster
 
-> Status: em execução. Fases 0–5 concluídas; a próxima é **Fase 6 (operação e
-> beta simulado)**. Mesa presencial e online estão funcionais.
+> Status: em execução. Fases 0–6 concluídas localmente; **pré-beta pronto**.
+> Falta apenas o deploy externo + smoke online para `v1.0.0-beta`.
 > Última atualização: 2026-11-16. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`,
-> `v0.9.4-phase3`, `v0.9.5-phase3.1`, `v0.9.6-phase4`, `v0.9.7-phase5`.
+> `v0.9.4-phase3`, `v0.9.5-phase3.1`, `v0.9.6-phase4`, `v0.9.7-phase5`,
+> `v0.9.8-phase6`.
 
 ## 1. Diagnóstico em uma frase
 
@@ -45,7 +46,7 @@ main
 ├── restore/phase-3-op2            Ordem Paranormal 2 + OPSH (v0.9.5-phase3.1)
 ├── restore/phase-4-media-scenes   uploads, cenas, persistência (v0.9.6-phase4)
 ├── restore/phase-5-online         WebRTC, áudio/vídeo, chat, TURN (v0.9.7-phase5)
-└── restore/phase-6-beta-ops       deploy free, observabilidade, playtest simulado
+└── restore/phase-6-beta-ops       deploy free, observabilidade, playtest (v0.9.8-phase6)
 ```
 
 Cada fase é integrada em `main` com `git merge --no-ff`, preservando a árvore de
@@ -273,16 +274,21 @@ Contrato: `docs/ONLINE_MODE.md` + decisões congeladas em
 **Saída:** 1 Mestre + 4 jogadores remotos, 30–60 min, áudio/vídeo/chat e
 tabuleiro funcionando sem Discord/Zoom. Sem gravação.
 
-### Fase 6 — Operação e beta simulado (em andamento)
+### Fase 6 — Operação e beta simulado (pré-beta local concluído)
 
 Contrato: `docs/OPERATIONS.md`. Branch: `restore/phase-6-beta-ops`.
 
-- [ ] Deploy 100% free: Vercel (frontend), Render free + keep-alive (backend),
-      Atlas M0 (Mongo), Supabase free (storage), GitHub Actions (CI).
-- [ ] TURN/LiveKit e `PUBLIC_APP_URL` configurados; HTTPS obrigatório para mídia.
-- [ ] Healthcheck, `/metrics` protegido, logs, backup do Atlas.
-- [ ] Playtest simulado completo (presencial + online) e relatório de release.
-- [ ] `v1.0.0-beta` (somente após smoke externo).
+- [x] Deploy 100% free preparado: Vercel (frontend), Render free + keep-alive
+      (backend), Atlas M0 (Mongo), Supabase free (storage), GitHub Actions (CI).
+- [x] TURN/LiveKit e `PUBLIC_APP_URL` documentados; HTTPS obrigatório para mídia.
+- [x] Healthcheck, `/metrics` protegido, logs, backup do Atlas (scripts/docs).
+- [x] Playtest simulado completo (presencial + online) e relatório de release.
+- [ ] `v1.0.0-beta` (somente após deploy externo + smoke online; depende das
+      contas/credenciais do usuário).
+
+> Evidência: `docs/qa/PHASE6-BETA-REPORT.md` — backend 238/238,
+> frontend 308/308, E2E 72/72, caos 14/14, harness PASS.
+> Tag local desta fase: `v0.9.8-phase6`.
 
 ## 5. Playtest simulado (substitui a mesa real)
 
