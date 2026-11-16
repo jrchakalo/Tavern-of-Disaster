@@ -33,8 +33,8 @@ Eventos (todos com `tableId`):
 | `mediaRoomState` | servidor → cliente que entrou | `{ tableId, peers: MediaPeer[] }` |
 | `mediaPeerJoined` | servidor → sala | `{ tableId, peer }` |
 | `mediaPeerLeft` | servidor → sala | `{ tableId, peerId, userId }` |
-| `mediaOffer` | peer → peer | `{ tableId, toPeerId, sdp }` |
-| `mediaAnswer` | peer → peer | `{ tableId, toPeerId, sdp }` |
+| `mediaOffer` | peer → peer | `{ tableId, toPeerId, sdp: { type:'offer', sdp:string } }` |
+| `mediaAnswer` | peer → peer | `{ tableId, toPeerId, sdp: { type:'answer', sdp:string } }` |
 | `mediaIce` | peer → peer | `{ tableId, toPeerId, candidate }` |
 | `mediaState` | cliente → servidor | `{ tableId, mic, deafened, camera, screen }` |
 | `mediaSpeaking` | cliente → servidor | `{ tableId, speaking }` |
@@ -58,7 +58,10 @@ Regras:
 - `mediaJoin`/`mediaLeave`/`mediaState`/`mediaSpeaking`: só membro da mesa;
   display → `FORBIDDEN`; `mediaJoin` idempotente; máximo 8 peers.
 - SDP/ICE só são relayados para peer da **mesma** mesa; payloads limitados
-  (SDP ≤ 64 KB, candidate ≤ 4 KB) e sem log de conteúdo.
+  (SDP ≤ 64 KB, candidate ≤ 4 KB) e sem log de conteúdo. O SDP viaja como
+  `RTCSessionDescriptionInit` (`{ type, sdp }`), a mesma forma do browser.
+- Falha de ack em `mediaOffer`/`mediaAnswer` aparece na UI; a chamada não pode
+  ficar “conectada” sem áudio em silêncio.
 - Rate limit de sinalização (120 eventos/10 s por socket) e de estado (20/10 s).
 - `mediaState`/`mediaSpeaking` não incrementam revisão e não geram
   `sessionPatch`.
