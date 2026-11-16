@@ -27,9 +27,9 @@ share, TURN/STUN and persisted chat; **Phase 6** added health/ready/protected
 metrics, graceful shutdown, free-tier deploy configs (Render/Vercel/Atlas/
 Supabase/TURN), CI with chaos and a simulated beta playtest (backend 238/238,
 frontend 308/308, E2E 72/72, chaos 14/14). D&D 5e remains the default, with
-OP2/OPSH at equal weight. Only the external deploy + online smoke remain before
-`v1.0.0-beta`; see `docs/OPERATIONS.md` and
-`docs/qa/PHASE6-BETA-REPORT.md`. Other contracts: `docs/PHASE5_ONLINE_CALL.md`,
+OP2/OPSH at equal weight. The beta is **live** at https://tavernofdisaster.vercel.app (API on Render);
+see `docs/OPERATIONS.md`, `docs/qa/PHASE6-BETA-REPORT.md` and
+`docs/qa/PHASE6-BETA-PRODUCTION.md`. Other contracts: `docs/PHASE5_ONLINE_CALL.md`,
 `docs/MEDIA_SCENES.md`, `docs/ORDEM_PARANORMAL.md`, `docs/RESTORATION.md`,
 `docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md`, `docs/SHEETS_DICE.md` and
 `docs/ORCHESTRATION.md`.

@@ -4,10 +4,10 @@
 > skill, designação, branch, revisão, correção e merge entra aqui. Se o contexto
 > da conversa se perder, este arquivo é a fonte da verdade do processo.
 >
-> Última atualização: 2026-11-16. **Fases 1–6 concluídas localmente**:
-> `v0.9.2-phase1` … `v0.9.7-phase5`, com pré-beta em `v0.9.8-phase6`.
-> Backend 238/238, frontend 308/308, E2E 72/72, caos 14/14.
-> Falta apenas deploy externo + smoke online para `v1.0.0-beta`.
+> Última atualização: 2026-11-16. **Beta em produção**:
+> https://tavernofdisaster.vercel.app (API: https://tavern-of-disaster-api.onrender.com).
+> Backend 238/238, frontend 308/308, E2E local 72/72, caos 14/14;
+> smoke de produção online 10/10 e mídia 8/8. Tag `v1.0.0-beta`.
 
 ## 1. Modelo de trabalho
 
@@ -580,3 +580,13 @@ Contrato: `docs/OPERATIONS.md`. Branch: `restore/phase-6-beta-ops`.
 - Tag local: `v0.9.8-phase6`.
 - `v1.0.0-beta` pendente de contas (Atlas/Supabase/Render/Vercel/TURN) e smoke
   online em HTTPS.
+
+### 19.2 Produção
+
+- Render `srv-dbtoqd5ckfvc7392cin0` (branch `deploy/beta`) e Vercel
+  `tavernofdisaster.vercel.app`; Atlas/Supabase/TURN configurados.
+- Smoke: online 10/10, mídia 8/8, upload Supabase, chat, dados, health/ready e
+  métricas protegidas.
+- Push do `main`/tags remotos pendente: `git push` retornou 408 nesta rede; o
+  deploy usa o branch `deploy/beta` publicado via API.
+- Evidência: `docs/qa/PHASE6-BETA-PRODUCTION.md`.

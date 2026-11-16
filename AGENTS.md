@@ -14,10 +14,10 @@ Vue 3 + Vite + TypeScript + Pinia no frontend.
 
 - `main` contém a antiga branch `expand`, que já incorpora `character`, `rolling`,
   `system`, `polishing` e `fix`.
-- A restauração está organizada em fases. Fases 0–6 concluídas
-  **localmente**; falta apenas o deploy externo + smoke online para
-  `v1.0.0-beta`. Tags: `v0.9.2-phase1`, `v0.9.3-phase2`, `v0.9.4-phase3`,
-  `v0.9.5-phase3.1`, `v0.9.6-phase4`, `v0.9.7-phase5`, `v0.9.8-phase6`.
+- A restauração está organizada em fases. Fases 0–6 concluídas e o beta está
+  **em produção**: https://tavernofdisaster.vercel.app (API no Render). Tags:
+  `v0.9.2-phase1`, `v0.9.3-phase2`, `v0.9.4-phase3`, `v0.9.5-phase3.1`,
+  `v0.9.6-phase4`, `v0.9.7-phase5`, `v0.9.8-phase6`, `v1.0.0-beta`.
 - **D&D 5e é o sistema padrão da plataforma.** OP2 e OPSH têm o mesmo peso;
   Cyberpunk RED é secundário; Call of Cthulhu é futuro.
 - Contratos: `docs/REALTIME_PROTOCOL.md` (tempo real), `docs/TABLE_MODE.md`
