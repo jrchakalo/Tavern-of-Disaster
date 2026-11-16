@@ -81,3 +81,12 @@ Checks operacionais:
 O beta está **pronto localmente e no CI simulado**. A única etapa não executada
 é o deploy externo/smoke em produção, que depende de contas do usuário.
 **Pré-beta local aprovado.**
+
+## 7. Deploy em produção (2026-11-16)
+
+- App: https://tavernofdisaster.vercel.app
+- API: https://tavern-of-disaster-api.onrender.com
+- Render `srv-dbtoqd5ckfvc7392cin0`, branch `deploy/beta`.
+- E2E `online-call` contra produção: **10/10**.
+- Upload Supabase, chat, dados e TURN validados no smoke.
+- Detalhes e limitações de Git/keep-alive em `docs/qa/PHASE6-BETA-PRODUCTION.md`.
