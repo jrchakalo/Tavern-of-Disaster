@@ -77,8 +77,12 @@ export async function loadSessionState(tableId: string): Promise<SessionStateBun
     ? await getSceneWithTokens(activeSceneId)
     : { activeScene: null, tokens: [] as any[] };
   const initiative = activeScene?.initiative ?? [];
-  const measurements = activeSceneId ? listScenePersistents(tableId, activeSceneId) : [];
-  const auras = activeSceneId ? listSceneAuras(tableId, activeSceneId) : [];
+  const [measurements, auras] = activeSceneId
+    ? await Promise.all([
+        listScenePersistents(tableId, activeSceneId),
+        listSceneAuras(tableId, activeSceneId),
+      ])
+    : [[], []];
   const scenes = Array.isArray(tableDoc.scenes) ? (tableDoc.scenes as any) : [];
 
   const characterDocs = await Character.find({ tableId: tableDoc._id }).sort({ createdAt: 1 });
@@ -246,14 +250,16 @@ export function getInitiativeDTO(scene: IScene | null | undefined): InitiativeEn
   return scene.initiative.map(mapInitiativeEntry);
 }
 
-export function getMeasurementsDTO(tableId: string, sceneId: string): MeasurementDTO[] {
-  return listScenePersistents(tableId, sceneId).map((item) =>
+export async function getMeasurementsDTO(tableId: string, sceneId: string): Promise<MeasurementDTO[]> {
+  const persistents = await listScenePersistents(tableId, sceneId);
+  return persistents.map((item) =>
     mapMeasurement(item as Measurement | PersistentMeasurement)
   );
 }
 
-export function getAurasDTO(tableId: string, sceneId: string): AuraDTO[] {
-  return listSceneAuras(tableId, sceneId).map((item) => mapAura(item as Aura));
+export async function getAurasDTO(tableId: string, sceneId: string): Promise<AuraDTO[]> {
+  const auras = await listSceneAuras(tableId, sceneId);
+  return auras.map((item) => mapAura(item as Aura));
 }
 
 export function getTableInfo(table: ITable): TableInfoDTO {

@@ -161,7 +161,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
         return {
           tableId,
           revision,
-          changes: { measurements: getMeasurementsDTO(tableId, scene._id.toString()) },
+          changes: { measurements: await getMeasurementsDTO(tableId, scene._id.toString()) },
         };
       },
     });
@@ -193,7 +193,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
         return {
           tableId,
           revision,
-          changes: { measurements: getMeasurementsDTO(tableId, scene._id.toString()) },
+          changes: { measurements: await getMeasurementsDTO(tableId, scene._id.toString()) },
         };
       },
     });
@@ -226,8 +226,8 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
           tableId,
           revision,
           changes: {
-            measurements: getMeasurementsDTO(tableId, scene._id.toString()),
-            auras: getAurasDTO(tableId, scene._id.toString()),
+            measurements: await getMeasurementsDTO(tableId, scene._id.toString()),
+            auras: await getAurasDTO(tableId, scene._id.toString()),
           },
         };
       },
@@ -270,7 +270,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
         return {
           tableId: data.tableId,
           revision,
-          changes: { auras: getAurasDTO(data.tableId, scene._id.toString()) },
+          changes: { auras: await getAurasDTO(data.tableId, scene._id.toString()) },
         };
       },
     });
@@ -301,7 +301,7 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
         return {
           tableId: data.tableId,
           revision,
-          changes: { auras: getAurasDTO(data.tableId, scene._id.toString()) },
+          changes: { auras: await getAurasDTO(data.tableId, scene._id.toString()) },
         };
       },
     });
