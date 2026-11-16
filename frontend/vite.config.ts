@@ -79,5 +79,30 @@ export default defineConfig(async () => {
       setupFiles: './src/test/setupTests.ts',
       css: false,
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('/vue/') || id.includes('/@vue/') || id.includes('vue-router')) {
+              return 'vendor-vue';
+            }
+            if (id.includes('pinia')) return 'vendor-pinia';
+            if (
+              id.includes('socket.io-client') ||
+              id.includes('socket.io-parser') ||
+              id.includes('engine.io-client') ||
+              id.includes('engine.io-parser') ||
+              id.includes('@socket.io/component-emitter')
+            ) {
+              return 'vendor-socket';
+            }
+            if (id.includes('vuedraggable') || id.includes('sortablejs')) return 'vendor-draggable';
+            if (id.includes('qrcode')) return 'vendor-qrcode';
+            return 'vendor';
+          },
+        },
+      },
+    },
   };
 });

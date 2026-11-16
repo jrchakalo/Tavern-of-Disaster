@@ -6,7 +6,7 @@ import { storeToRefs } from 'pinia';
 import { authToken, currentUser } from '../services/authService';
 import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
-import { uploadMap } from '../services/storageService';
+import { uploadMap, fetchAssetUsage, type AssetUsage } from '../services/storageService';
 import { API_BASE_URL } from '../services/apiBase';
 import { clampGridPoint, pixelToGrid } from '../services/gridGeometry';
 import { useTableStore } from '../stores/tableStore';
@@ -61,6 +61,11 @@ const newSceneName = ref('');
 const newSceneImageUrl = ref('');
 const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena
 const isUploadingMap = ref(false);
+const mapUploadProgress = ref(0);
+const mapUploadError = ref('');
+const assetUsage = ref<AssetUsage | null>(null);
+const sceneLoadError = ref('');
+const isSceneImageLoading = ref(false);
 const isDmPanelCollapsed = ref(false);
 type GridSurfaceExpose = { $el: HTMLElement };
 const gridSurfaceRef = ref<GridSurfaceExpose | null>(null);
@@ -527,24 +532,67 @@ function setMap() {
   }
 }
 
+async function refreshAssetUsage() {
+  if (!tableId || !isDM.value) return;
+  try {
+    assetUsage.value = await fetchAssetUsage(tableId);
+  } catch (error) {
+    // Uso é informativo: não bloqueia o painel, mas fica registrado no console.
+    console.warn('[assets] não foi possível consultar o uso de armazenamento', error);
+  }
+}
+
 async function handleMapFileUpload(file: File) {
   if (!tableId) {
-    toast.error('Mesa inválida para upload de mapa.');
+    mapUploadError.value = 'Mesa inválida para upload de mapa.';
+    toast.error(mapUploadError.value);
     return;
   }
+  mapUploadError.value = '';
+  mapUploadProgress.value = 0;
   try {
     isUploadingMap.value = true;
-    const url = await uploadMap(file, tableId);
+    const url = await uploadMap(file, tableId, (percent) => {
+      mapUploadProgress.value = Math.max(0, Math.min(100, Math.round(percent)));
+    });
+    mapUploadProgress.value = 100;
     mapUrlInput.value = url;
     setMap();
     toast.success('Mapa atualizado com sucesso.');
   } catch (error) {
     console.error('[map-upload] erro ao enviar arquivo', error);
     const message = error instanceof Error ? error.message : 'Não foi possível enviar o mapa.';
+    mapUploadError.value = message;
     toast.error(message);
   } finally {
     isUploadingMap.value = false;
+    await refreshAssetUsage();
   }
+}
+
+// O uso é carregado quando a seção de cenas fica visível (painel desktop ou
+// gaveta mobile) e novamente depois de cada upload.
+watch(
+  [() => isScenesCollapsed.value, () => isDmDrawerOpen.value, () => isMobileLayout.value, () => isDM.value],
+  () => {
+    if (!isDM.value) return;
+    const scenesVisible = isMobileLayout.value ? isDmDrawerOpen.value : !isScenesCollapsed.value;
+    if (scenesVisible) {
+      refreshAssetUsage();
+    }
+  },
+  { immediate: true },
+);
+
+function handleMapImageLoad() {
+  isSceneImageLoading.value = false;
+  sceneLoadError.value = '';
+  updateImageDimensions();
+}
+
+function handleMapImageError() {
+  isSceneImageLoading.value = false;
+  sceneLoadError.value = 'Não foi possível carregar a imagem da cena. Verifique a URL ou envie o arquivo novamente.';
 }
 
 function onSceneDragEnd() {
@@ -1641,9 +1689,17 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
 }
 
-watch(currentMapUrl, () => {
+watch(currentMapUrl, (url) => {
+  // Cada troca de URL recomeça o ciclo de carregamento da imagem da cena.
+  sceneLoadError.value = '';
+  isSceneImageLoading.value = Boolean(url);
   // Recalcula ao trocar imagem
   setTimeout(updateImageDimensions, 50);
+}, { immediate: true });
+
+watch(activeSceneId, () => {
+  // Trocar de cena sem mudar a URL ainda deve limpar o erro anterior.
+  sceneLoadError.value = '';
 });
 
 // Ao finalizar o turno (mudança do token em turno), limpamos medições locais e desselecionamos ferramentas
@@ -1819,6 +1875,9 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           :new-scene-image-url="newSceneImageUrl"
           :new-scene-type="newSceneType"
           :is-uploading-map="isUploadingMap"
+          :upload-progress="mapUploadProgress"
+          :upload-error="mapUploadError"
+          :usage="assetUsage"
           @toggle="isScenesCollapsed = !isScenesCollapsed"
           @set-active-scene="handleSetActiveScene"
           @edit-scene="handleEditScene"
@@ -1960,7 +2019,8 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :on-select-persistent="handleSelectPersistent"
         :on-viewport-contextmenu="handleViewportContextMenu"
         :on-shape-contextmenu="handleShapeContextMenu"
-        :on-image-load="updateImageDimensions"
+        :on-image-load="handleMapImageLoad"
+        :on-image-error="handleMapImageError"
         :on-assign-token="handleAssignToken"
         :on-close-assign-menu="closeAssignMenu"
         :on-open-character-from-token="handleOpenCharacterFromToken"
@@ -1984,6 +2044,21 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             <p>Obrigado por jogar — até a próxima sessão.</p>
           </template>
         </div>
+      </div>
+
+      <div
+        v-if="canUseMap && currentMapUrl && isSceneImageLoading"
+        class="scene-image-status scene-image-loading"
+        role="status"
+      >
+        Carregando cena…
+      </div>
+      <div
+        v-if="canUseMap && sceneLoadError"
+        class="scene-image-status scene-image-error"
+        role="alert"
+      >
+        {{ sceneLoadError }}
       </div>
 
       <!-- Transição curta antes de entrar no LIVE (todos veem) -->
@@ -2290,9 +2365,50 @@ main{
   flex-direction: column;
   align-items: center;
   width: 100%;
+  position: relative;
 }
 .battlemap-main h1 {
   margin-top: 0;
+}
+.scene-image-status {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 65;
+  pointer-events: none;
+  max-width: min(90vw, 520px);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  box-shadow: var(--elev-2);
+  font-size: 0.88rem;
+  text-align: center;
+}
+.scene-image-loading::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border: 2px solid var(--color-accent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: scene-spin 0.8s linear infinite;
+  vertical-align: -1px;
+}
+.scene-image-error {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+  background: rgba(255, 77, 77, 0.12);
+}
+@keyframes scene-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene-image-loading::before { animation: none; }
 }
 .dm-panel {
   transition: width 0.3s ease, padding 0.3s ease;
