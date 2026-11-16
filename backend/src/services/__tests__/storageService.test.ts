@@ -3,10 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 import {
+  deleteStoredAsset,
   uploadAvatarImage,
   uploadTokenImage,
   storageInfo,
 } from '../storageService';
+import { ServiceError } from '../serviceErrors';
 
 describe('storageService (local driver)', () => {
   let uploadDir: string;
@@ -78,5 +80,50 @@ describe('storageService (local driver)', () => {
         mimeType: 'text/plain',
       })
     ).rejects.toThrow(/imagem/i);
+  });
+
+  it('returns bytes, dimensions and mime type of the processed image', async () => {
+    const result = await uploadTokenImage({
+      tableId: 'table-1',
+      ownerId: 'user-1',
+      buffer: await pngBuffer(),
+      mimeType: 'image/png',
+    });
+
+    expect(result.bytes).toBeGreaterThan(0);
+    expect(result.width).toBe(8);
+    expect(result.height).toBe(8);
+    expect(result.mimeType).toBe('image/webp');
+  });
+
+  it('rejects an output above maxOutputBytes before writing to disk', async () => {
+    const promise = uploadTokenImage({
+      tableId: 'table-1',
+      ownerId: 'user-1',
+      buffer: await pngBuffer(),
+      mimeType: 'image/png',
+      maxOutputBytes: 1,
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(ServiceError);
+    await expect(promise).rejects.toMatchObject({ status: 413 });
+    await expect(promise).rejects.toThrow(/limite de armazenamento/i);
+    await expect(fs.readdir(uploadDir)).resolves.toHaveLength(0);
+  });
+
+  it('deletes a stored asset and ignores a missing object', async () => {
+    const result = await uploadTokenImage({
+      tableId: 'table-1',
+      ownerId: 'user-1',
+      buffer: await pngBuffer(),
+      mimeType: 'image/png',
+    });
+    const absolute = path.join(uploadDir, result.objectPath);
+    await expect(fs.stat(absolute)).resolves.toBeTruthy();
+
+    await deleteStoredAsset(result.objectPath);
+    await expect(fs.stat(absolute)).rejects.toThrow();
+
+    await expect(deleteStoredAsset(result.objectPath)).resolves.toBeUndefined();
   });
 });
