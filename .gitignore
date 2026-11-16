@@ -38,6 +38,11 @@ test-results/
 tests/e2e/playwright-report/
 tests/e2e/test-results/
 
+# MongoDB dumps (nunca commitar dados de usuários)
+backups/
+*.archive.gz
+*.dump
+
 # Generated config artifacts (source of truth: *.ts)
 frontend/vite.config.js
 frontend/vite.config.d.ts
