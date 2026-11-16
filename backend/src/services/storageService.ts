@@ -3,6 +3,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomId } from '../utils/id';
+import { ServiceError } from './serviceErrors';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -18,7 +19,16 @@ type AssetProfile = {
   folder: string;
 };
 
-export type StorageUploadResult = { publicUrl: string; objectPath: string };
+export type StorageUploadResult = {
+  publicUrl: string;
+  objectPath: string;
+  bytes: number;
+  width: number;
+  height: number;
+  mimeType: string;
+};
+
+export const STORAGE_QUOTA_EXCEEDED_MESSAGE = 'A mesa atingiu o limite de armazenamento.';
 
 const MB = 1024 * 1024;
 
@@ -124,7 +134,14 @@ function sanitizeSegment(value: string | undefined | null, fallback = 'unknown')
   return safe.replace(/[^a-zA-Z0-9-_]/g, '');
 }
 
-async function processImage(buffer: Buffer, profile: AssetProfile): Promise<Buffer> {
+type ProcessedImage = {
+  buffer: Buffer;
+  width: number;
+  height: number;
+  mimeType: string;
+};
+
+async function processImage(buffer: Buffer, profile: AssetProfile): Promise<ProcessedImage> {
   let pipeline = sharp(buffer, { failOn: 'truncated' });
   pipeline = pipeline.rotate();
   pipeline = pipeline.resize({
@@ -134,11 +151,18 @@ async function processImage(buffer: Buffer, profile: AssetProfile): Promise<Buff
     withoutEnlargement: true,
   });
 
-  const processed = await pipeline.webp({ quality: profile.quality, effort: 4 }).toBuffer();
-  if (processed.length > profile.maxBytes) {
+  const { data, info } = await pipeline
+    .webp({ quality: profile.quality, effort: 4 })
+    .toBuffer({ resolveWithObject: true });
+  if (data.length > profile.maxBytes) {
     throw new Error('Imagem otimizada excede o limite configurado. Tente usar um arquivo menor.');
   }
-  return processed;
+  return {
+    buffer: data,
+    width: info.width ?? 0,
+    height: info.height ?? 0,
+    mimeType: 'image/webp',
+  };
 }
 
 async function pushToLocalStorage(objectPath: string, buffer: Buffer): Promise<void> {
@@ -192,10 +216,17 @@ function buildPath(kind: UploadTarget, identifiers: { tableId?: string; ownerId?
   return `tables/${tableSegment}/${folder}/${ownerSegment}/${stamp}-${random}.webp`;
 }
 
-async function uploadWithProfile(
-  target: UploadTarget,
-  params: { buffer: Buffer; mimeType: string; tableId?: string; ownerId?: string; userId?: string }
-): Promise<StorageUploadResult> {
+type UploadParams = {
+  buffer: Buffer;
+  mimeType: string;
+  tableId?: string;
+  ownerId?: string;
+  userId?: string;
+  /** Quota restante da mesa (bytes). Rejeita 413 antes de gravar se o WebP exceder. */
+  maxOutputBytes?: number;
+};
+
+async function uploadWithProfile(target: UploadTarget, params: UploadParams): Promise<StorageUploadResult> {
   const profile = assetProfiles[target];
   if (!profile) {
     throw new Error(`Perfil de upload desconhecido: ${target}`);
@@ -208,27 +239,61 @@ async function uploadWithProfile(
 
   const driver = resolveDriver();
   const processed = await processImage(params.buffer, profile);
+  if (params.maxOutputBytes !== undefined && processed.buffer.length > params.maxOutputBytes) {
+    throw new ServiceError(STORAGE_QUOTA_EXCEEDED_MESSAGE, 413, { code: 'QUOTA_EXCEEDED' });
+  }
   const objectPath = buildPath(target, params);
 
   if (driver === 'local') {
-    await pushToLocalStorage(objectPath, processed);
+    await pushToLocalStorage(objectPath, processed.buffer);
   } else {
-    await pushToSupabase(objectPath, processed);
+    await pushToSupabase(objectPath, processed.buffer);
   }
 
-  return { publicUrl: buildPublicUrl(driver, objectPath), objectPath };
+  return {
+    publicUrl: buildPublicUrl(driver, objectPath),
+    objectPath,
+    bytes: processed.buffer.length,
+    width: processed.width,
+    height: processed.height,
+    mimeType: processed.mimeType,
+  };
 }
 
-export function uploadMapImage(params: { tableId: string; ownerId: string; buffer: Buffer; mimeType: string }): Promise<StorageUploadResult> {
+export function uploadMapImage(params: UploadParams & { tableId: string; ownerId: string }): Promise<StorageUploadResult> {
   return uploadWithProfile('map', params);
 }
 
-export function uploadTokenImage(params: { tableId: string; ownerId: string; buffer: Buffer; mimeType: string }): Promise<StorageUploadResult> {
+export function uploadTokenImage(params: UploadParams & { tableId: string; ownerId: string }): Promise<StorageUploadResult> {
   return uploadWithProfile('token', params);
 }
 
-export function uploadAvatarImage(params: { userId: string; buffer: Buffer; mimeType: string }): Promise<StorageUploadResult> {
+export function uploadAvatarImage(params: UploadParams & { userId: string }): Promise<StorageUploadResult> {
   return uploadWithProfile('avatar', params);
+}
+
+/**
+ * Remove o objeto do driver ativo. O driver local é best-effort (arquivo
+ * ausente não é erro); o Supabase reporta falha para o chamador decidir se o
+ * registro deve permanecer para nova tentativa.
+ */
+export async function deleteStoredAsset(objectPath: string): Promise<void> {
+  if (!objectPath) return;
+
+  if (resolveDriver() === 'local') {
+    const absolutePath = path.join(getLocalRoot(), objectPath);
+    await fs.rm(absolutePath, { force: true });
+    return;
+  }
+
+  const { error } = await getSupabaseClient()
+    .storage
+    .from(getSupabaseBucket())
+    .remove([objectPath]);
+
+  if (error) {
+    throw new Error(`Falha ao remover arquivo do storage: ${error.message}`);
+  }
 }
 
 export const storageInfo = {

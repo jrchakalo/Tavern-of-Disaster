@@ -4,6 +4,7 @@ import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
 import User from '../models/User.model';
 import { validate } from '../validation/validate';
 import { zUpdateProfilePayload } from '../validation/schemas';
+import { deleteAssetByUrl } from '../services/assetService';
 
 const router = Router();
 function sanitizeUser(user: any) {
@@ -57,6 +58,7 @@ router.put('/me', (async (req: AuthRequest, res) => {
     }
 
     const payload = validate(zUpdateProfilePayload, req.body ?? {});
+    const previousAvatarUrl = user.avatarUrl;
 
     if (payload.displayName !== undefined) {
       user.displayName = payload.displayName ? payload.displayName : undefined;
@@ -90,6 +92,13 @@ router.put('/me', (async (req: AuthRequest, res) => {
     }
 
     await user.save();
+    if (
+      payload.avatarUrl !== undefined &&
+      previousAvatarUrl &&
+      previousAvatarUrl !== user.avatarUrl
+    ) {
+      await deleteAssetByUrl(previousAvatarUrl);
+    }
     res.json(sanitizeUser(user));
   } catch (error) {
     console.error('[user-profile] erro ao atualizar perfil', error);

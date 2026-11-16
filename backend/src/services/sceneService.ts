@@ -3,6 +3,7 @@ import Scene, { IScene } from '../models/Scene.model';
 import Table, { ITable } from '../models/Table.model';
 import Token from '../models/Token.model';
 import { assertCondition } from './serviceErrors';
+import { deleteAssetByUrl } from './assetService';
 
 type HydratedTable = ITable & { save: () => Promise<ITable>; populate: (path: string) => Promise<ITable> };
 
@@ -53,6 +54,8 @@ export async function deleteScene(table: HydratedTable, sceneId: string) {
   const sceneBelongsToTable = table.scenes.some((scene) => scene.toString() === sceneId);
   assertCondition(sceneBelongsToTable, 'Cena não pertence a esta mesa.', 404);
 
+  const sceneToDelete = await Scene.findById(sceneId).select('imageUrl');
+
   const updatedScenes = table.scenes.filter((scene) => scene.toString() !== sceneId);
   table.scenes = updatedScenes as any;
   if (table.activeScene?.toString() === sceneId) {
@@ -62,6 +65,7 @@ export async function deleteScene(table: HydratedTable, sceneId: string) {
 
   await Scene.findByIdAndDelete(sceneId);
   await Token.deleteMany({ sceneId });
+  await deleteAssetByUrl(sceneToDelete?.imageUrl);
   return { activeScene: table.activeScene || null, scenes: table.scenes };
 }
 
@@ -94,7 +98,13 @@ export async function updateSceneScale(sceneId: string, metersPerSquare: number)
 }
 
 export async function updateSceneMap(sceneId: string, mapUrl: string) {
-  return Scene.findByIdAndUpdate(sceneId, { imageUrl: mapUrl }, { new: true });
+  const previousScene = await Scene.findById(sceneId).select('imageUrl');
+  const updatedScene = await Scene.findByIdAndUpdate(sceneId, { imageUrl: mapUrl }, { new: true });
+  const previousUrl = previousScene?.imageUrl;
+  if (previousUrl && previousUrl !== mapUrl) {
+    await deleteAssetByUrl(previousUrl);
+  }
+  return updatedScene;
 }
 
 export async function getSceneWithTokens(sceneId: string) {

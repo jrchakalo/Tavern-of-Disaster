@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import { shallowMount, flushPromises } from '@vue/test-utils';
-import { ref } from 'vue';
+import { ref, nextTick } from 'vue';
 
 vi.mock('pinia', async () => {
   const actual = await vi.importActual<typeof import('pinia')>('pinia');
@@ -24,6 +24,15 @@ const socketServiceMock = vi.hoisted(() => new Proxy({}, {
   },
 }));
 vi.mock('../../services/socketService', () => ({ socketService: socketServiceMock }));
+
+const storageMocks = vi.hoisted(() => ({
+  uploadMap: vi.fn(),
+  fetchAssetUsage: vi.fn(),
+}));
+vi.mock('../../services/storageService', () => ({
+  uploadMap: storageMocks.uploadMap,
+  fetchAssetUsage: storageMocks.fetchAssetUsage,
+}));
 
 const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }));
 vi.mock('../../services/toast', () => ({ toast: toastMock }));
@@ -137,8 +146,19 @@ function mockMatchMedia(matches: boolean) {
   });
 }
 
+const usageFixture = {
+  usedBytes: 52_428_800,
+  quotaBytes: 209_715_200,
+  remainingBytes: 157_286_400,
+  count: 2,
+  byKind: { map: 31_457_280, token: 20_971_520, avatar: 0 },
+};
+
 beforeEach(() => {
   tableStoreStub.__refs = createTableStoreRefs();
+  storageMocks.uploadMap.mockReset();
+  storageMocks.fetchAssetUsage.mockReset();
+  storageMocks.fetchAssetUsage.mockResolvedValue(usageFixture);
   mockMatchMedia(false);
 });
 
@@ -176,6 +196,110 @@ describe('TableView subpanels', () => {
     });
     await flushPromises();
     expect(wrapper.find('.player-initiative-wrapper.bottom-sheet').exists()).toBe(true);
+    wrapper.unmount();
+  });
+});
+
+describe('TableView scene media feedback', () => {
+  function mountTable() {
+    return shallowMount(TableView, {
+      global: {
+        stubs: {
+          teleport: true,
+          Transition: false,
+        },
+      },
+    });
+  }
+
+  function findStub(wrapper: ReturnType<typeof mountTable>, name: string) {
+    const found = wrapper.findAllComponents({ name });
+    return found.length > 0 ? found[0] : null;
+  }
+
+  it('envia mapa com progresso, aplica a URL e atualiza o uso', async () => {
+    let resolveUpload: ((url: string) => void) | null = null;
+    storageMocks.uploadMap.mockImplementation((_file, _tableId, onProgress) => {
+      onProgress?.(37);
+      return new Promise<string>((resolve) => {
+        resolveUpload = resolve;
+      });
+    });
+
+    const wrapper = mountTable();
+    await flushPromises();
+    const manager = findStub(wrapper, 'SceneManager');
+    expect(manager).toBeTruthy();
+
+    const file = new File(['px'], 'map.png', { type: 'image/png' });
+    manager!.vm.$emit('upload-map-file', file);
+    await nextTick();
+
+    expect(storageMocks.uploadMap).toHaveBeenCalledWith(file, 'table-1', expect.any(Function));
+    expect(manager!.props('isUploadingMap')).toBe(true);
+    expect(manager!.props('uploadProgress')).toBe(37);
+
+    resolveUpload!('/uploads/maps/new-map.webp');
+    await flushPromises();
+
+    expect(socketServiceMock.setMap).toHaveBeenCalledWith('table-1', '/uploads/maps/new-map.webp');
+    expect(manager!.props('isUploadingMap')).toBe(false);
+    expect(manager!.props('uploadProgress')).toBe(100);
+    expect(manager!.props('usage')).toEqual(usageFixture);
+    expect(storageMocks.fetchAssetUsage).toHaveBeenCalledTimes(2);
+    expect(toastMock.success).toHaveBeenCalledWith('Mapa atualizado com sucesso.');
+
+    wrapper.unmount();
+  });
+
+  it('mantém o erro de upload visível no painel', async () => {
+    storageMocks.uploadMap.mockRejectedValue(
+      new Error('A mesa atingiu o limite de armazenamento.'),
+    );
+
+    const wrapper = mountTable();
+    await flushPromises();
+    const manager = findStub(wrapper, 'SceneManager');
+    expect(manager).toBeTruthy();
+
+    manager!.vm.$emit('upload-map-file', new File(['px'], 'big.png', { type: 'image/png' }));
+    await flushPromises();
+
+    expect(manager!.props('uploadError')).toBe('A mesa atingiu o limite de armazenamento.');
+    expect(toastMock.error).toHaveBeenCalledWith('A mesa atingiu o limite de armazenamento.');
+
+    wrapper.unmount();
+  });
+
+  it('mostra carregamento e erro ao falhar a imagem da cena', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({
+      currentMapUrl: ref('/uploads/maps/quebrado.webp'),
+    });
+
+    const wrapper = mountTable();
+    await flushPromises();
+
+    expect(wrapper.find('.scene-image-loading').exists()).toBe(true);
+
+    const viewport = findStub(wrapper, 'MapViewport');
+    expect(viewport).toBeTruthy();
+    const onImageError = viewport!.props('onImageError') as (() => void) | undefined;
+    expect(typeof onImageError).toBe('function');
+
+    onImageError!();
+    await nextTick();
+
+    expect(wrapper.find('.scene-image-loading').exists()).toBe(false);
+    const error = wrapper.find('.scene-image-error');
+    expect(error.exists()).toBe(true);
+    expect(error.attributes('role')).toBe('alert');
+    expect(error.text()).toContain('Não foi possível carregar a imagem da cena');
+
+    const onImageLoad = viewport!.props('onImageLoad') as (() => void) | undefined;
+    onImageLoad!();
+    await nextTick();
+    expect(wrapper.find('.scene-image-error').exists()).toBe(false);
+
     wrapper.unmount();
   });
 });

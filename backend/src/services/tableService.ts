@@ -3,6 +3,7 @@ import Table, { ITable, tableStatuses } from '../models/Table.model';
 import Scene from '../models/Scene.model';
 import Token from '../models/Token.model';
 import Character from '../models/Character.model';
+import SceneOverlay from '../models/SceneOverlay.model';
 import { ServiceError, assertCondition } from './serviceErrors';
 
 type HydratedTable = ITable & { save: () => Promise<ITable> };
@@ -90,6 +91,7 @@ export async function deleteTableAndDependents(tableId: string) {
     await Token.deleteMany({ sceneId: sc._id });
   }
   await Scene.deleteMany({ tableId: table!._id });
+  await SceneOverlay.deleteMany({ tableId: table!._id });
   await Character.deleteMany({ tableId: table!._id });
   await Table.findByIdAndDelete(tableId);
 }

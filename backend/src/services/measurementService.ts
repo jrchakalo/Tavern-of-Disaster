@@ -128,32 +128,32 @@ export async function addPersistentMeasurement(
     color,
     sceneId,
   };
-  addPersistent(tableId, sceneId, persistent);
+  await addPersistent(tableId, sceneId, persistent);
   return persistent;
 }
 
 export async function removePersistentMeasurement(user: AuthUser, tableId: string, sceneId: string, measurementId: string) {
   const table = await loadTable(tableId);
   const isDM = table.dm._id.toString() === user.id;
-  const items = listPersistents(tableId, sceneId);
+  const items = await listPersistents(tableId, sceneId);
   const item = items.find((i) => i.id === measurementId);
   assertCondition(!!item, 'Medição não encontrada.', 404);
   assertCondition(isDM || item!.userId === user.id, 'Sem permissão para remover medição.', 403);
-  removePersistent(tableId, sceneId, measurementId);
+  await removePersistent(tableId, sceneId, measurementId);
 }
 
 export async function clearAllMeasurements(tableId: string, sceneId?: string) {
   if (sceneId) {
     clearMeasurementsForScene(tableId, sceneId);
-    clearPersistentsForScene(tableId, sceneId);
-    clearAurasForScene(tableId, sceneId);
+    await clearPersistentsForScene(tableId, sceneId);
+    await clearAurasForScene(tableId, sceneId);
   } else {
     clearMeasurementsForTable(tableId);
   }
 }
 
-export function clearTableMeasurementState(tableId: string) {
-  clearAllForTable(tableId);
+export async function clearTableMeasurementState(tableId: string) {
+  await clearAllForTable(tableId);
 }
 
 export async function upsertTokenAura(user: AuthUser, tableId: string, sceneId: string, tokenId: string, data: { name: string; color: string; radiusMeters: number; difficultTerrain?: boolean }) {
@@ -175,7 +175,7 @@ export async function upsertTokenAura(user: AuthUser, tableId: string, sceneId: 
     radiusMeters: Math.max(0, data.radiusMeters || 0),
     difficultTerrain: !!data.difficultTerrain,
   };
-  upsertAura(aura);
+  await upsertAura(aura);
   return aura;
 }
 
@@ -183,14 +183,14 @@ export async function removeTokenAura(user: AuthUser, tableId: string, sceneId: 
   const table = await loadTable(tableId);
   const isDM = table.dm._id.toString() === user.id;
   assertCondition(isDM, 'Apenas o Mestre pode remover auras.', 403);
-  removeAura(tableId, sceneId, tokenId);
+  await removeAura(tableId, sceneId, tokenId);
 }
 
-export function listScenePersistents(tableId: string, sceneId: string) {
+export async function listScenePersistents(tableId: string, sceneId: string) {
   return listPersistents(tableId, sceneId);
 }
 
-export function listSceneAuras(tableId: string, sceneId: string) {
+export async function listSceneAuras(tableId: string, sceneId: string) {
   return listAuras(tableId, sceneId);
 }
 
