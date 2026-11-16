@@ -771,6 +771,100 @@ export const zSystemIdParams = z.object({
     ).optional(),
   });
 
+// Media (Fase 5) -----------------------------------------------------------
+// Sinalização WebRTC é efêmera: os payloads abaixo não alteram `revision`.
+const mediaPeerId = trimmedString(1, 64);
+const SDP_MAX_BYTES = 64 * 1024;
+const ICE_CANDIDATE_MAX_BYTES = 4 * 1024;
+
+export const zMediaJoinPayload = z.object({
+  tableId,
+});
+
+export const zMediaLeavePayload = z.object({
+  tableId,
+});
+
+export const zMediaStatePayload = z.object({
+  tableId,
+  mic: z.enum(['on', 'muted']),
+  deafened: z.boolean(),
+  camera: z.enum(['on', 'off']),
+  screen: z.boolean(),
+});
+
+export const zMediaSpeakingPayload = z.object({
+  tableId,
+  speaking: z.boolean(),
+});
+
+export const zMediaSignalPayload = z.object({
+  tableId,
+  toPeerId: mediaPeerId,
+  sdp: sanitizeText(z.string().min(1).max(SDP_MAX_BYTES)).refine(
+    (value) => Buffer.byteLength(value, 'utf8') <= SDP_MAX_BYTES,
+    { message: 'SDP excede o limite de 64 KB.' }
+  ),
+});
+
+export const zMediaIcePayload = z
+  .object({
+    tableId,
+    toPeerId: mediaPeerId,
+    /** RTCIceCandidateInit (objeto), string ou null (fim dos candidatos). */
+    candidate: z.unknown(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.candidate === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['candidate'],
+        message: 'Candidate ICE ausente.',
+      });
+      return;
+    }
+    let size = Number.POSITIVE_INFINITY;
+    try {
+      size = Buffer.byteLength(JSON.stringify(value.candidate ?? null) ?? '', 'utf8');
+    } catch {
+      size = Number.POSITIVE_INFINITY;
+    }
+    if (!Number.isFinite(size) || size > ICE_CANDIDATE_MAX_BYTES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['candidate'],
+        message: 'Candidate ICE excede o limite de 4 KB.',
+      });
+    }
+  });
+
+export const zMediaKickPayload = z.object({
+  tableId,
+  peerId: mediaPeerId,
+});
+
+// Chat (Fase 5) ------------------------------------------------------------
+// Texto puro: o servidor nunca renderiza HTML; o cliente escapa na exibição.
+export const zSendChatMessagePayload = z.object({
+  tableId,
+  text: trimmedString(1, 1000),
+  mentions: z.array(trimmedString(1, 64)).max(10).optional(),
+});
+
+export const zChatHistoryQuery = z.object({
+  limit: coerceQueryValue(z.coerce.number().int().min(1).max(100)).optional(),
+  /** Paginação por cursor: mensagens estritamente mais antigas que este instante. */
+  before: coerceQueryValue(
+    z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => !Number.isNaN(Date.parse(value)), {
+        message: 'Data "before" inválida.',
+      })
+  ).optional(),
+});
+
 // Types --------------------------------------------------------------------
 export type LoginRequest = z.infer<typeof zLoginRequest>;
 export type RegisterRequest = z.infer<typeof zRegisterRequest>;
@@ -827,6 +921,15 @@ export type SystemIdParams = z.infer<typeof zSystemIdParams>;
 export type SystemDTO = z.infer<typeof zSystemDTO>;
 export type TableIdParams = z.infer<typeof zTableIdParams>;
 export type RollHistoryQuery = z.infer<typeof zRollHistoryQuery>;
+export type MediaJoinPayload = z.infer<typeof zMediaJoinPayload>;
+export type MediaLeavePayload = z.infer<typeof zMediaLeavePayload>;
+export type MediaStatePayload = z.infer<typeof zMediaStatePayload>;
+export type MediaSpeakingPayload = z.infer<typeof zMediaSpeakingPayload>;
+export type MediaSignalPayload = z.infer<typeof zMediaSignalPayload>;
+export type MediaIcePayload = z.infer<typeof zMediaIcePayload>;
+export type MediaKickPayload = z.infer<typeof zMediaKickPayload>;
+export type SendChatMessagePayload = z.infer<typeof zSendChatMessagePayload>;
+export type ChatHistoryQuery = z.infer<typeof zChatHistoryQuery>;
 
 export const schemas = {
   zLoginRequest,
@@ -878,4 +981,13 @@ export const schemas = {
   zSystemDTO,
   zTableIdParams,
   zRollHistoryQuery,
+  zMediaJoinPayload,
+  zMediaLeavePayload,
+  zMediaStatePayload,
+  zMediaSpeakingPayload,
+  zMediaSignalPayload,
+  zMediaIcePayload,
+  zMediaKickPayload,
+  zSendChatMessagePayload,
+  zChatHistoryQuery,
 };
