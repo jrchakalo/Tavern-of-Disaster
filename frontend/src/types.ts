@@ -819,3 +819,37 @@ export interface MediaPeerView extends MediaPeer {
   connectionState: RTCPeerConnectionState;
   quality: MediaConnectionQuality;
 }
+
+// ---------------------------------------------------------------------------
+// Fase 5 — chat (docs/PHASE5_ONLINE_CALL.md §3)
+//
+// Chat é efêmero no transporte (não incrementa `revision`), mas as mensagens
+// de usuário são persistidas e recuperadas por REST (TTL 7 dias). Mensagens de
+// sistema são locais nesta fase.
+// ---------------------------------------------------------------------------
+
+export interface ChatMessage {
+  id: string;
+  tableId: string;
+  /** Vazio em mensagens de sistema geradas localmente pelo cliente. */
+  userId: string;
+  username: string;
+  text: string;
+  mentions: string[];
+  kind: 'user' | 'system';
+  createdAt: string;
+}
+
+/** Payload do evento cliente → servidor `requestSendChatMessage`. */
+export interface ChatMessagePayload {
+  tableId: string;
+  text: string;
+  mentions?: string[];
+}
+
+/** Mapa dos eventos server → cliente do chat. */
+export interface ChatSocketEventMap {
+  chatMessage: ChatMessage;
+}
+
+export type ChatSocketEventName = keyof ChatSocketEventMap;

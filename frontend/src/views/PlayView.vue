@@ -12,8 +12,9 @@ import { distanceInSquares, squareIdToGrid } from '../services/gridGeometry';
 import { useTableStore } from '../stores/tableStore';
 import { useCharacterStore } from '../stores/characterStore';
 import { useMediaStore } from '../stores/mediaStore';
+import { useChatStore } from '../stores/chatStore';
 import { mergeCharacterSummary } from '../components/character/summary';
-import type { CharacterDTO, TokenInfo } from '../types';
+import type { CharacterDTO, RollLogEntryDTO, TokenInfo } from '../types';
 
 import PlayerBoard from '../components/play/PlayerBoard.vue';
 import InitiativeStrip from '../components/play/InitiativeStrip.vue';
@@ -25,6 +26,8 @@ import PlayerDicePanel from '../components/play/PlayerDicePanel.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
 import MediaDock from '../components/media/MediaDock.vue';
 import ParticipantGrid from '../components/media/ParticipantGrid.vue';
+import ChatPanel from '../components/chat/ChatPanel.vue';
+import ChatToggle from '../components/chat/ChatToggle.vue';
 import { readSessionExtras, roleLabel } from '../components/play/sessionMeta';
 
 const route = useRoute();
@@ -34,6 +37,7 @@ const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : 
 const store = useTableStore();
 const characterStore = useCharacterStore();
 const mediaStore = useMediaStore();
+const chatStore = useChatStore();
 const {
   currentTable,
   activeScene,
@@ -51,6 +55,7 @@ const {
   auras,
   pings,
   isDM,
+  recentRolls,
   characters: characterSummaries,
 } = storeToRefs(store);
 
@@ -61,6 +66,27 @@ const presenceCount = computed(
   () => extras.value.presence?.length ?? currentTable.value?.players?.length ?? 0,
 );
 const role = computed(() => you.value?.role ?? (isDM.value ? 'DM' : 'PLAYER'));
+
+// Chat: presença e rolagens viram mensagens de sistema locais. A store faz a
+// linha de base e não repete linhas em reconexão.
+watch(
+  () => extras.value.presence ?? [],
+  (presence) => chatStore.trackPresence(presence, currentUser.value?.id ?? null),
+  { immediate: true },
+);
+const liveRolls = computed<RollLogEntryDTO[]>(() => {
+  const value = recentRolls as unknown;
+  if (Array.isArray(value)) return value as RollLogEntryDTO[];
+  if (value && typeof value === 'object' && Array.isArray((value as { value?: unknown }).value)) {
+    return (value as { value: RollLogEntryDTO[] }).value;
+  }
+  return [];
+});
+watch(
+  () => liveRolls.value,
+  (rolls) => chatStore.trackRolls(rolls),
+  { immediate: true },
+);
 
 // QR de convite: entra na mesa antes de conectar (Fase 2, §4.1).
 const inviteCode = computed(() => {
@@ -226,6 +252,14 @@ const moveMode = ref(false);
 const diceOpen = ref(false);
 const errorMessage = ref('');
 
+function toggleChat() {
+  if (chatStore.panelOpen) {
+    chatStore.closePanel();
+  } else {
+    chatStore.openPanel();
+  }
+}
+
 watch(isMyTurn, (myTurn) => {
   if (!myTurn) moveMode.value = false;
 });
@@ -304,6 +338,7 @@ type SocketLike = {
 };
 
 let actionErrorListener: ((payload: unknown) => void) | null = null;
+let offChatMessage: (() => void) | null = null;
 
 function isSocketLike(value: unknown): value is SocketLike {
   if (!value || typeof value !== 'object') return false;
@@ -361,6 +396,11 @@ async function bootstrap() {
     joining.value = false;
   }
 
+  // Chat: listener ativo desde o início (badge de não lidas) e histórico REST.
+  offChatMessage = socketService.onChatEvent('chatMessage', (message) => chatStore.receive(message));
+  if (typeof offChatMessage !== 'function') offChatMessage = null;
+  void chatStore.loadHistory(tableId);
+
   socketService.connect(tableId);
   const socket = readSocket();
   if (socket && !actionErrorListener) {
@@ -383,7 +423,10 @@ onBeforeUnmount(() => {
     socket.off('actionError', actionErrorListener);
   }
   actionErrorListener = null;
+  offChatMessage?.();
+  offChatMessage = null;
   socketService.disconnect();
+  chatStore.reset();
 });
 </script>
 
@@ -515,6 +558,12 @@ onBeforeUnmount(() => {
         >
           Dados
         </button>
+        <ChatToggle
+          class="control-btn--chat"
+          :unread="chatStore.unread"
+          :open="chatStore.panelOpen"
+          @toggle="toggleChat"
+        />
       </div>
     </footer>
 
@@ -534,6 +583,13 @@ onBeforeUnmount(() => {
       :table-id="tableId"
       :current-token-id="currentTurnTokenId"
       @close="diceOpen = false"
+    />
+
+    <ChatPanel
+      :table-id="tableId"
+      :open="chatStore.panelOpen"
+      :connection-status="connectionStatus"
+      @close="chatStore.closePanel()"
     />
 
     <CharacterSheet
@@ -726,7 +782,7 @@ onBeforeUnmount(() => {
 
 .play-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr auto auto;
   gap: 8px;
 }
 
@@ -761,6 +817,11 @@ onBeforeUnmount(() => {
 
 .control-btn--dice {
   background: var(--color-surface);
+}
+
+.control-btn--chat {
+  border-radius: 999px;
+  box-shadow: none;
 }
 
 .control-btn:focus-visible,

@@ -23,6 +23,10 @@ import type {
   SessionPatch,
   CharacterDTO,
   CharacterSummaryDTO,
+  ChatMessage,
+  ChatMessagePayload,
+  ChatSocketEventMap,
+  ChatSocketEventName,
   MediaIceServersResponse,
   MediaIcePayload,
   MediaIncomingIcePayload,
@@ -197,6 +201,13 @@ class SocketService {
   private mediaEventHandlers = new Map<MediaSocketEventName, Set<(payload: unknown) => void>>();
   private socketConnectListeners = new Set<() => void>();
   private socketDisconnectListeners = new Set<() => void>();
+
+  /**
+   * Callbacks do chat (Fase 5). Mesmo padrão da mídia: a store se registra em
+   * runtime e os listeners de socket são recriados a cada conexão. O chat não
+   * usa `revision` nem `sessionPatch`.
+   */
+  private chatEventHandlers = new Map<ChatSocketEventName, Set<(payload: unknown) => void>>();
 
   /**
    * O store é resolvido sob demanda: assim o módulo pode ser importado (p.ex.
@@ -376,6 +387,49 @@ class SocketService {
   /** Remove todos os callbacks de mídia (logout / troca de mesa). */
   clearMediaEventHandlers(): void {
     this.mediaEventHandlers.clear();
+  }
+
+  // ------------------------------------------------------------------
+  // Callbacks do chat (sem acoplamento com a store)
+  // ------------------------------------------------------------------
+
+  onChatEvent<K extends ChatSocketEventName>(
+    event: K,
+    handler: (payload: ChatSocketEventMap[K]) => void,
+  ): () => void {
+    const set = this.chatEventHandlers.get(event) ?? new Set<(payload: unknown) => void>();
+    set.add(handler as (payload: unknown) => void);
+    this.chatEventHandlers.set(event, set);
+    return () => this.offChatEvent(event, handler);
+  }
+
+  offChatEvent<K extends ChatSocketEventName>(
+    event: K,
+    handler: (payload: ChatSocketEventMap[K]) => void,
+  ): void {
+    const set = this.chatEventHandlers.get(event);
+    set?.delete(handler as (payload: unknown) => void);
+    if (set && set.size === 0) this.chatEventHandlers.delete(event);
+  }
+
+  /** Remove todos os callbacks de chat (logout / troca de mesa). */
+  clearChatEventHandlers(): void {
+    this.chatEventHandlers.clear();
+  }
+
+  private emitChatEvent<K extends ChatSocketEventName>(
+    event: K,
+    payload: ChatSocketEventMap[K],
+  ): void {
+    const handlers = this.chatEventHandlers.get(event);
+    if (!handlers) return;
+    for (const handler of handlers) {
+      try {
+        handler(payload);
+      } catch {
+        // Um handler com defeito não pode derrubar os demais listeners.
+      }
+    }
   }
 
   /** Notifica quando o socket (re)conecta — usado para rejoin da chamada. */
@@ -653,6 +707,12 @@ class SocketService {
     });
     socket.on('mediaError', (payload: MediaErrorPayload) => {
       this.emitMediaEvent('mediaError', payload);
+    });
+
+    // ---- Chat (Fase 5) ----
+    // Efêmero no transporte: não incrementa `revision` e não gera patch.
+    socket.on('chatMessage', (payload: ChatMessage) => {
+      this.emitChatEvent('chatMessage', payload);
     });
   }
 
@@ -1130,6 +1190,18 @@ class SocketService {
 
   kickFromMedia(payload: { tableId: string; peerId: string }, ack?: (a: Ack) => void) {
     return this.emitRequest('mediaKick', payload, ack, { silent: true });
+  }
+
+  // ------------------------------------------------------------------
+  // Chat (docs/PHASE5_ONLINE_CALL.md §3)
+  //
+  // Sem `revision`: o ack só confirma o envio; a mensagem canônica chega
+  // pelo broadcast `chatMessage`. O erro é tratado uma única vez pela
+  // `chatStore` (por isso `silent: true`, sem toast duplicado).
+  // ------------------------------------------------------------------
+
+  sendChatMessage(payload: ChatMessagePayload, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestSendChatMessage', payload, ack, { silent: true });
   }
 
   /** ICE/TURN autenticado; nunca loga URLs/credenciais TURN. */
