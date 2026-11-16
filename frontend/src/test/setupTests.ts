@@ -1,4 +1,9 @@
 import { vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+
+// Componentes de mídia usam stores Pinia. Em testes que montam views sem
+// instalar o plugin, a Pinia ativa padrão evita `getActivePinia()` indefinido.
+setActivePinia(createPinia());
 
 declare global {
   interface Window {
@@ -32,8 +37,10 @@ if (typeof window !== 'undefined' && !window.scrollTo) {
   window.scrollTo = () => {};
 }
 
-if (typeof HTMLMediaElement !== 'undefined' && !HTMLMediaElement.prototype.play) {
+if (typeof HTMLMediaElement !== 'undefined') {
+  // jsdom implementa `play()` apenas como stub que lança "Not implemented".
   HTMLMediaElement.prototype.play = vi.fn().mockResolvedValue(undefined);
+  HTMLMediaElement.prototype.pause = vi.fn();
 }
 
 if (typeof window !== 'undefined') {

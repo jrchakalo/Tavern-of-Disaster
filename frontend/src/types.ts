@@ -692,3 +692,117 @@ export interface SessionPatch {
   serverNowMs: number;
   changes: SessionPatchChanges;
 }
+
+// ---------------------------------------------------------------------------
+// Fase 5 — mídia (docs/PHASE5_ONLINE_CALL.md §2)
+//
+// Mídia é efêmera: nada aqui incrementa `revision` nem gera `sessionPatch`.
+// Os tipos espelham o contrato do servidor e são usados pela sinalização,
+// pelo mesh WebRTC e pela UI da chamada.
+// ---------------------------------------------------------------------------
+
+/** Estado de mídia publicado por um peer (não persistido). */
+export interface MediaState {
+  mic: 'on' | 'muted';
+  deafened: boolean;
+  camera: 'on' | 'off';
+  screen: boolean;
+  speaking: boolean;
+}
+
+/** Peer presente na sala de mídia, como o servidor o descreve. */
+export interface MediaPeer {
+  peerId: string;
+  userId: string;
+  username: string;
+  mediaState: MediaState;
+}
+
+/** Qualidade observada localmente via `RTCPeerConnection.getStats()`. */
+export type MediaConnectionQuality = 'good' | 'fair' | 'poor';
+
+/** Servidor ICE retornado por `GET /api/tables/:id/ice-servers`. */
+export interface IceServerConfig {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
+export interface MediaIceServersResponse {
+  iceServers: IceServerConfig[];
+  /** Informativo; o cliente deve renovar antes de expirar (3600 s). */
+  ttlSeconds: number;
+  mode: 'mesh';
+  turnConfigured: boolean;
+  maxPeers: number;
+}
+
+export type MediaDeviceKind = 'audioinput' | 'videoinput' | 'audiooutput';
+
+/** Payloads da sinalização WebRTC (Socket.IO). */
+export interface MediaRoomStatePayload {
+  tableId: string;
+  peers: MediaPeer[];
+}
+
+export interface MediaPeerJoinedPayload {
+  tableId: string;
+  peer: MediaPeer;
+}
+
+export interface MediaPeerLeftPayload {
+  tableId: string;
+  peerId: string;
+  userId: string;
+}
+
+export interface MediaSignalPayload {
+  tableId: string;
+  toPeerId: string;
+  sdp: RTCSessionDescriptionInit;
+}
+
+export interface MediaIcePayload {
+  tableId: string;
+  toPeerId: string;
+  candidate: RTCIceCandidateInit | null;
+}
+
+export interface MediaStateUpdatedPayload {
+  tableId: string;
+  peerId: string;
+  userId: string;
+  mediaState: MediaState;
+}
+
+export interface MediaKickedPayload {
+  tableId: string;
+  reason: string;
+}
+
+export interface MediaErrorPayload {
+  code: string;
+  message: string;
+}
+
+/** Mapa dos eventos server → cliente da chamada. */
+export interface MediaSocketEventMap {
+  mediaRoomState: MediaRoomStatePayload;
+  mediaPeerJoined: MediaPeerJoinedPayload;
+  mediaPeerLeft: MediaPeerLeftPayload;
+  mediaOffer: MediaSignalPayload;
+  mediaAnswer: MediaSignalPayload;
+  mediaIce: MediaIcePayload;
+  mediaStateUpdated: MediaStateUpdatedPayload;
+  mediaKicked: MediaKickedPayload;
+  mediaError: MediaErrorPayload;
+}
+
+export type MediaSocketEventName = keyof MediaSocketEventMap;
+
+/** Peer com estado local de transporte, consumido pela store/UI. */
+export interface MediaPeerView extends MediaPeer {
+  stream: MediaStream | null;
+  connectionState: RTCPeerConnectionState;
+  quality: MediaConnectionQuality;
+}

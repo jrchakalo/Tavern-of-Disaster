@@ -11,6 +11,7 @@ import { getMyCharacters } from '../services/characterService';
 import { distanceInSquares, squareIdToGrid } from '../services/gridGeometry';
 import { useTableStore } from '../stores/tableStore';
 import { useCharacterStore } from '../stores/characterStore';
+import { useMediaStore } from '../stores/mediaStore';
 import { mergeCharacterSummary } from '../components/character/summary';
 import type { CharacterDTO, TokenInfo } from '../types';
 
@@ -22,6 +23,8 @@ import ConnectionPill from '../components/play/ConnectionPill.vue';
 import ActionErrorBanner from '../components/play/ActionErrorBanner.vue';
 import PlayerDicePanel from '../components/play/PlayerDicePanel.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
+import MediaDock from '../components/media/MediaDock.vue';
+import ParticipantGrid from '../components/media/ParticipantGrid.vue';
 import { readSessionExtras, roleLabel } from '../components/play/sessionMeta';
 
 const route = useRoute();
@@ -30,6 +33,7 @@ const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : 
 
 const store = useTableStore();
 const characterStore = useCharacterStore();
+const mediaStore = useMediaStore();
 const {
   currentTable,
   activeScene,
@@ -367,10 +371,13 @@ async function bootstrap() {
 }
 
 onMounted(() => {
+  mediaStore.init();
   void bootstrap();
 });
 
 onBeforeUnmount(() => {
+  // Fecha a chamada antes de derrubar o socket (o emit de leave é síncrono).
+  void mediaStore.leave();
   const socket = readSocket();
   if (socket && actionErrorListener) {
     socket.off('actionError', actionErrorListener);
@@ -393,6 +400,13 @@ onBeforeUnmount(() => {
         <span class="play-header__role">{{ roleLabel(role) }}</span>
         <span class="play-header__presence" :title="`${presenceCount} presentes`">
           {{ presenceCount }}
+        </span>
+        <span
+          v-if="mediaStore.joined"
+          class="play-header__media"
+          :title="`${mediaStore.participantCount} na chamada`"
+        >
+          Chamada · {{ mediaStore.participantCount }}
         </span>
       </div>
     </header>
@@ -462,6 +476,8 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="play-controls">
+      <ParticipantGrid compact />
+      <MediaDock :table-id="tableId" variant="inline" compact />
       <TokenCard
         :token="myToken"
         :is-my-turn="isMyTurn"
@@ -597,13 +613,20 @@ onBeforeUnmount(() => {
 
 .play-header__revision,
 .play-header__role,
-.play-header__presence {
+.play-header__presence,
+.play-header__media {
   padding: 3px 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-surface-alt);
   font-size: 0.7rem;
   white-space: nowrap;
+}
+
+.play-header__media {
+  color: var(--color-success, #2ecc71);
+  border-color: rgba(46, 204, 113, 0.5);
+  font-weight: 600;
 }
 
 .play-header__role {

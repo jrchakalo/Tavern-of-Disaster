@@ -291,4 +291,72 @@ describe('socketService — transporte, acks e resync', () => {
     expect(useTableStore().connectionStatus).toBe('error');
     socketService.disconnect();
   });
+
+  it('expõe o peerId e encaminha eventos de mídia sem tocar revision', () => {
+    const store = useTableStore();
+    const revisionBefore = store.revision;
+    socketService.connect('table-1');
+    expect(socketService.getPeerId()).toBe('sock-1');
+
+    const handler = vi.fn();
+    const off = socketService.onMediaEvent('mediaPeerJoined', handler);
+    emitToSocket('mediaPeerJoined', {
+      tableId: 'table-1',
+      peer: {
+        peerId: 'peer-2',
+        userId: 'user-2',
+        username: 'Lyra',
+        mediaState: { mic: 'on', deafened: false, camera: 'off', screen: false, speaking: false },
+      },
+    });
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ tableId: 'table-1' }));
+
+    socketService.updateMediaState({
+      tableId: 'table-1',
+      mic: 'muted',
+      deafened: false,
+      camera: 'off',
+      screen: false,
+    });
+    expect(store.revision).toBe(revisionBefore);
+    expect(current.emissions.find((entry) => entry.event === 'mediaState')).toBeDefined();
+
+    off();
+    socketService.disconnect();
+  });
+
+  it('actionError de sinalização de mídia vira toast e não quebra', () => {
+    socketService.connect('table-1');
+    expect(() => emitToSocket('actionError', {
+      event: 'mediaOffer',
+      error: { code: 'RATE_LIMITED', message: 'Muitas ações na chamada.' },
+    })).not.toThrow();
+    expect(toastMock.error).toHaveBeenCalledWith('Muitas ações na chamada.');
+    socketService.disconnect();
+  });
+
+  it('fetchIceServers usa o endpoint autenticado e devolve TURN', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        iceServers: [{ urls: ['stun:stun.example.org:19302'] }],
+        ttlSeconds: 3600,
+        mode: 'mesh',
+        turnConfigured: true,
+        maxPeers: 8,
+      }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const config = await socketService.fetchIceServers('table-1');
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/tables/table-1/ice-servers'),
+        expect.objectContaining({ headers: { Authorization: 'Bearer token' } }),
+      );
+      expect(config.turnConfigured).toBe(true);
+      expect(config.maxPeers).toBe(8);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
