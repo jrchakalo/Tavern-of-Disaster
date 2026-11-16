@@ -13,6 +13,7 @@ import { useTableStore } from '../stores/tableStore';
 import { useCharacterStore } from '../stores/characterStore';
 import { useSystemStore } from '../stores/systemStore';
 import { useUserStore } from '../stores/userStore';
+import { useMediaStore } from '../stores/mediaStore';
 
 import MapViewport from '../components/MapViewport.vue';
 import TokenCreationForm from '../components/TokenCreationForm.vue';
@@ -29,6 +30,8 @@ import DiceAnimation from '../components/DiceAnimation.vue';
 import DMSessionControls from '../components/DMSessionControls.vue';
 import SceneManager from '../components/SceneManager.vue';
 import TableSharePanel from '../components/table/TableSharePanel.vue';
+import MediaDock from '../components/media/MediaDock.vue';
+import ParticipantGrid from '../components/media/ParticipantGrid.vue';
 import { readSessionExtras } from '../components/play/sessionMeta';
 import { mergeCharacterSummary } from '../components/character/summary';
 
@@ -141,6 +144,7 @@ const tableStore = useTableStore();
 const systemStore = useSystemStore();
 const characterStore = useCharacterStore();
 const userStore = useUserStore();
+const mediaStore = useMediaStore();
 
 const { profile } = storeToRefs(userStore);
 const { selectedCharacterId: selectedCharacterStoreId } = storeToRefs(characterStore);
@@ -1633,6 +1637,7 @@ watch([selectedPersistentId, () => persistentMeasurements.value.length], ([id]) 
 
 onMounted(() => {
   socketService.connect(tableId);
+  mediaStore.init();
   // Resize janela -> recalcula dimensões imagem
   window.addEventListener('resize', updateImageDimensions);
   window.addEventListener('keydown', handleGlobalKeydown);
@@ -1643,6 +1648,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  // Encerra tracks/PCs e avisa a sala antes de derrubar o socket.
+  void mediaStore.leave();
   socketService.disconnect();
   window.removeEventListener('resize', updateImageDimensions);
   window.removeEventListener('keydown', handleGlobalKeydown);
@@ -2176,6 +2183,10 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       :payload="diceAnimationPayload"
       @dismiss="dismissDiceAnimation()"
     />
+
+    <!-- Chamada (Fase 5): só DM/jogador; a TV nunca monta estes componentes. -->
+    <ParticipantGrid floating />
+    <MediaDock :table-id="tableId" />
   </div>
 </template>
 
