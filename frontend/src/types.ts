@@ -762,9 +762,22 @@ export interface MediaSignalPayload {
   sdp: RTCSessionDescriptionInit;
 }
 
+/** Sinal recebido do servidor: o peer remetente vem em `fromPeerId`. */
+export interface MediaIncomingSignalPayload {
+  tableId: string;
+  fromPeerId: string;
+  sdp: RTCSessionDescriptionInit;
+}
+
 export interface MediaIcePayload {
   tableId: string;
   toPeerId: string;
+  candidate: RTCIceCandidateInit | null;
+}
+
+export interface MediaIncomingIcePayload {
+  tableId: string;
+  fromPeerId: string;
   candidate: RTCIceCandidateInit | null;
 }
 
@@ -790,9 +803,9 @@ export interface MediaSocketEventMap {
   mediaRoomState: MediaRoomStatePayload;
   mediaPeerJoined: MediaPeerJoinedPayload;
   mediaPeerLeft: MediaPeerLeftPayload;
-  mediaOffer: MediaSignalPayload;
-  mediaAnswer: MediaSignalPayload;
-  mediaIce: MediaIcePayload;
+  mediaOffer: MediaIncomingSignalPayload;
+  mediaAnswer: MediaIncomingSignalPayload;
+  mediaIce: MediaIncomingIcePayload;
   mediaStateUpdated: MediaStateUpdatedPayload;
   mediaKicked: MediaKickedPayload;
   mediaError: MediaErrorPayload;

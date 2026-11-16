@@ -25,6 +25,8 @@ import type {
   CharacterSummaryDTO,
   MediaIceServersResponse,
   MediaIcePayload,
+  MediaIncomingIcePayload,
+  MediaIncomingSignalPayload,
   MediaKickedPayload,
   MediaErrorPayload,
   MediaPeerJoinedPayload,
@@ -634,13 +636,13 @@ class SocketService {
     socket.on('mediaPeerLeft', (payload: MediaPeerLeftPayload) => {
       this.emitMediaEvent('mediaPeerLeft', payload);
     });
-    socket.on('mediaOffer', (payload: MediaSignalPayload) => {
+    socket.on('mediaOffer', (payload: MediaIncomingSignalPayload) => {
       this.emitMediaEvent('mediaOffer', payload);
     });
-    socket.on('mediaAnswer', (payload: MediaSignalPayload) => {
+    socket.on('mediaAnswer', (payload: MediaIncomingSignalPayload) => {
       this.emitMediaEvent('mediaAnswer', payload);
     });
-    socket.on('mediaIce', (payload: MediaIcePayload) => {
+    socket.on('mediaIce', (payload: MediaIncomingIcePayload) => {
       this.emitMediaEvent('mediaIce', payload);
     });
     socket.on('mediaStateUpdated', (payload: MediaStateUpdatedPayload) => {

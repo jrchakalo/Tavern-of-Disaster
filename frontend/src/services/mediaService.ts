@@ -861,15 +861,15 @@ export class MediaService {
   }
 
   private async handleSignal(
-    payload: { tableId: string; toPeerId: string; sdp: RTCSessionDescriptionInit },
+    payload: { tableId: string; fromPeerId: string; sdp: RTCSessionDescriptionInit },
     kind: 'offer' | 'answer',
   ): Promise<void> {
     if (!this.tableId || payload.tableId !== this.tableId) return;
-    let peer = this.peers.get(payload.toPeerId);
+    let peer = this.peers.get(payload.fromPeerId);
     if (!peer && kind === 'offer') {
       // `mediaPeerJoined` pode ter sido perdido: cria um peer mínimo.
       peer = this.ensurePeer({
-        peerId: payload.toPeerId,
+        peerId: payload.fromPeerId,
         userId: '',
         username: 'Participante',
         mediaState: defaultMediaState(),
@@ -912,9 +912,9 @@ export class MediaService {
     }
   }
 
-  private async handleIce(payload: { tableId: string; toPeerId: string; candidate: RTCIceCandidateInit | null }): Promise<void> {
+  private async handleIce(payload: { tableId: string; fromPeerId: string; candidate: RTCIceCandidateInit | null }): Promise<void> {
     if (!this.tableId || payload.tableId !== this.tableId || !payload.candidate) return;
-    const peer = this.peers.get(payload.toPeerId);
+    const peer = this.peers.get(payload.fromPeerId);
     if (!peer) return;
     try {
       await peer.pc.addIceCandidate(payload.candidate);

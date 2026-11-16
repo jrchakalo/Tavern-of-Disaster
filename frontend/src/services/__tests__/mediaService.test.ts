@@ -221,7 +221,7 @@ describe('mediaService — mesh WebRTC', () => {
 
     socketState.handlers.mediaOffer({
       tableId: 'table-1',
-      toPeerId: 'peer-new',
+      fromPeerId: 'peer-new',
       sdp: { type: 'offer', sdp: 'remote-offer' },
     });
     await flush();
