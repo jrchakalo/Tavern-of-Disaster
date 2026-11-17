@@ -129,6 +129,7 @@ function pickColor(hex: string) {
 
 function onColorPicked(event: Event) {
   const value = (event.target as HTMLInputElement).value
+  form.measurementColorEnabled = true
   form.measurementColorHex = value
   clearFieldError('measurementColorHex')
 }
@@ -492,15 +493,28 @@ function cancelLeave() {
                   class="color-custom"
                   :class="{ 'color-custom--error': errors.measurementColorHex }"
                 >
-                  <label for="profile-color-custom">Cor personalizada</label>
-                  <input
-                    id="profile-color-custom"
-                    type="color"
-                    :value="form.measurementColorHex"
-                    :disabled="saving"
-                    @input="onColorPicked"
-                  />
-                  <span class="mono">{{ form.measurementColorHex.toUpperCase() }}</span>
+                  <label for="profile-color-custom">Escolher outra cor</label>
+                  <div class="color-custom__controls">
+                    <input
+                      id="profile-color-custom"
+                      type="color"
+                      :value="form.measurementColorHex"
+                      :disabled="saving"
+                      aria-describedby="profile-color-current"
+                      @input="onColorPicked"
+                    />
+                    <span id="profile-color-current" class="color-custom__current">
+                      <span
+                        class="color-custom__chip"
+                        :style="{ backgroundColor: form.measurementColorHex }"
+                        aria-hidden="true"
+                      />
+                      <span>
+                        Selecionada
+                        <span class="mono">{{ form.measurementColorHex.toUpperCase() }}</span>
+                      </span>
+                    </span>
+                  </div>
                 </div>
 
                 <p v-if="errors.measurementColorHex" class="field-error" role="alert">
@@ -864,12 +878,30 @@ function cancelLeave() {
 
 .color-custom {
   display: flex;
-  align-items: center;
-  gap: var(--s-3);
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--ink-0);
+}
+
+.color-custom--error {
+  border-color: var(--danger);
 }
 
 .color-custom label {
   margin: 0;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.color-custom__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
 }
 
 .color-custom input[type='color'] {
@@ -879,11 +911,23 @@ function cancelLeave() {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-xs);
   background: var(--ink-0);
+  cursor: pointer;
 }
 
-.color-custom span {
+.color-custom__current {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
   color: var(--text-muted);
   font-size: var(--text-xs);
+}
+
+.color-custom__chip {
+  flex: none;
+  inline-size: 14px;
+  block-size: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
 }
 
 .dm-note {

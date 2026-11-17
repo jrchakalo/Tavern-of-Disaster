@@ -31,7 +31,6 @@ interface NavItem {
 const navItems = computed<NavItem[]>(() =>
   isAuthenticated.value
     ? [
-        { to: '/', label: 'Início' },
         { to: '/tables', label: 'Mesas' },
         { to: '/systems', label: 'Sistemas' },
         { to: '/profile', label: 'Perfil' },

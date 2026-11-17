@@ -16,8 +16,10 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: HomeView, // Landing page when logged out; dashboard when authenticated
+      component: HomeView, // Landing page only; quem está autenticado vai para o lobby.
       meta: { title: 'Início', shell: 'app' },
+      // Uma única superfície de mesas: `/tables`. Evita a Home duplicada.
+      beforeEnter: () => (authToken.value ? { name: 'tables' } : true),
     },
     {
       path: '/login',
