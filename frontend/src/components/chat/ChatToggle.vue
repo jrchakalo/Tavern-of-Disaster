@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import Icon from '../Icon.vue';
+
 const props = withDefaults(
   defineProps<{
     unread?: number;
@@ -32,6 +34,7 @@ const ariaLabel = computed(() => {
     data-testid="chat-toggle"
     @click="emit('toggle')"
   >
+    <Icon name="message" :size="18" class="chat-toggle__icon" aria-hidden="true" />
     <span class="chat-toggle__label">{{ label }}</span>
     <span v-if="unread > 0" class="chat-toggle__badge" aria-hidden="true">{{ badge }}</span>
   </button>
@@ -65,6 +68,10 @@ const ariaLabel = computed(() => {
   background: var(--raised);
   border-color: var(--line-strong);
   color: var(--text);
+}
+
+.chat-toggle__icon {
+  flex: none;
 }
 
 .chat-toggle:active {

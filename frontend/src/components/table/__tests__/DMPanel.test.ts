@@ -25,10 +25,7 @@ function props(overrides: Record<string, unknown> = {}) {
     currentTurnTokenId: null,
     gridWidth: 30,
     gridHeight: 30,
-    systemOptions: [],
-    selectedSystemId: '',
     characters: [],
-    currentSystem: null,
     round: 1,
     createScene: vi.fn(async () => undefined),
     deleteScene: vi.fn(async () => undefined),
@@ -144,27 +141,27 @@ describe('DMPanel', () => {
     wrapper.unmount();
   });
 
-  it('usa D&D 5e como padrão visível quando a mesa não tem sistema', async () => {
-    const wrapper = mountPanel({ activeTab: 'session', selectedSystemId: '' });
+  it('não repete sistema nem fichas na aba Sessão', async () => {
+    const wrapper = mountPanel({ activeTab: 'session' });
     await flushPromises();
-    expect(wrapper.text()).toContain('Padrão da plataforma (D&D 5e)');
-    expect(wrapper.text()).toContain('D&D 5e vale como padrão');
+    expect(wrapper.text()).toContain('Resumo');
+    expect(wrapper.text()).not.toContain('Sistema da mesa');
+    expect(wrapper.text()).not.toContain('Fichas da mesa');
+    expect(wrapper.find('#table-system-select').exists()).toBe(false);
     wrapper.unmount();
   });
 
-  it('abre a biblioteca de fichas pela aba Sessão', async () => {
-    const wrapper = mountPanel({
-      activeTab: 'session',
-      characters: [{ _id: 'char-1', name: 'Lyra', ownerId: 'u-2', tableId: 'table-1' }],
-      tokensOnMap: [],
-    });
+  it('expõe uma única ação de criar token no painel', async () => {
+    const wrapper = mountPanel({ activeTab: 'initiative' });
 
-    const open = wrapper.findAll('button').find((button) => button.text() === 'Abrir fichas');
-    expect(open).toBeTruthy();
-    await open!.trigger('click');
+    const addButtons = wrapper
+      .findAll('button')
+      .filter((button) => button.text().includes('＋ Token'));
+    expect(addButtons).toHaveLength(1);
+    expect(addButtons[0]!.classes()).toContain('dm-panel__add');
 
-    expect(wrapper.emitted('open-character-library')).toHaveLength(1);
-    expect(wrapper.text()).toContain('1 ficha · 1 sem token nesta cena');
+    await addButtons[0]!.trigger('click');
+    expect(wrapper.emitted('add-token')).toHaveLength(1);
     wrapper.unmount();
   });
 
