@@ -10,7 +10,7 @@ export interface ProfileForm {
 }
 
 export const DEFAULT_MEASUREMENT_COLOR = '#7FB6C9'
-/** O Mestre usa roxo fixo no tabuleiro; jogador não pode escolher essa cor. */
+/** O Mestre usa manila fixo no tabuleiro; jogador não pode escolher essa cor. */
 export const DM_MEASUREMENT_COLOR = '#D9B45B'
 
 export const MEASUREMENT_SWATCHES = [
@@ -90,7 +90,7 @@ export function validateProfileForm(form: ProfileForm): ProfileErrors {
     const color = normalizeHexColor(form.measurementColorHex)
     if (!/^#[0-9a-f]{6}$/.test(color)) {
       errors.measurementColorHex = 'Escolha uma cor no formato #RRGGBB.'
-    } else if (color === DM_MEASUREMENT_COLOR) {
+    } else if (color === DM_MEASUREMENT_COLOR.toLowerCase()) {
       errors.measurementColorHex =
         'Este tom é reservado ao Mestre no tabuleiro. Escolha outra cor para a sua régua.'
     }
