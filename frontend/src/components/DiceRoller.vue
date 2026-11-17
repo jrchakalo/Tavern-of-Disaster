@@ -7,6 +7,7 @@ import { currentUser } from '../services/authService';
 import { rollLocalDice } from '../services/localDiceEngine';
 import { useTableStore } from '../stores/tableStore';
 import { useSystemStore } from '../stores/systemStore';
+import BaseDialog from './ui/BaseDialog.vue';
 
 const props = withDefaults(defineProps<{
   tableId: string;
@@ -40,6 +41,8 @@ type DiceStatus = { kind: 'idle' | 'pending' | 'success' | 'error'; text: string
 const expression = ref(props.defaultExpression ?? '1d20');
 const savedPresets = ref<DicePreset[]>([]);
 const selectedPresetId = ref<string | null>(null);
+const presetDialogOpen = ref(false);
+const presetName = ref('');
 const selectedBindingKey = ref('none');
 const status = ref<DiceStatus>({ kind: 'idle', text: '' });
 
@@ -217,12 +220,19 @@ function savePreset() {
     toast.error('Informe uma expressão para salvar.');
     return;
   }
-  const name = window.prompt('Nome do preset:', 'Nova rolagem');
-  if (!name) return;
+  presetName.value = 'Nova rolagem';
+  presetDialogOpen.value = true;
+}
+
+function confirmPreset() {
+  const expr = expression.value.trim();
+  const name = presetName.value.trim();
+  if (!expr || !name) return;
   const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `preset-${Date.now()}`;
-  const preset: DicePreset = { id, name: name.trim(), expression: expr };
+  const preset: DicePreset = { id, name, expression: expr };
   savedPresets.value = [...savedPresets.value, preset];
   selectedPresetId.value = id;
+  presetDialogOpen.value = false;
   persistPresets();
   emit('saved-profile', preset);
   toast.success('Preset salvo.');
@@ -461,6 +471,29 @@ function roll() {
         </li>
       </ul>
     </div>
+
+    <BaseDialog
+      :open="presetDialogOpen"
+      title="Salvar rolagem"
+      @close="presetDialogOpen = false"
+    >
+      <form class="preset-dialog" @submit.prevent="confirmPreset">
+        <label class="field-label" for="dice-preset-name">Nome do preset</label>
+        <input
+          id="dice-preset-name"
+          v-model="presetName"
+          class="preset-dialog__input"
+          type="text"
+          maxlength="80"
+          data-autofocus
+        />
+        <p class="preset-dialog__hint">Expressão: <code>{{ expression.trim() || '—' }}</code></p>
+        <div class="preset-dialog__actions">
+          <button type="button" class="btn btn-sm alt" @click="presetDialogOpen = false">Cancelar</button>
+          <button type="submit" class="btn btn-sm" :disabled="!presetName.trim()">Salvar</button>
+        </div>
+      </form>
+    </BaseDialog>
   </section>
 </template>
 
@@ -675,4 +708,9 @@ function roll() {
   cursor: pointer;
   padding: 0 8px;
 }
+.preset-dialog { display:flex; flex-direction:column; gap:var(--s-3); }
+.preset-dialog__input { min-height:44px; padding:8px 10px; border:1px solid var(--line-strong); border-radius:var(--radius-sm); background:var(--ink-0); color:var(--text); font-family:var(--font-sans); font-size:var(--text-md); }
+.preset-dialog__hint { margin:0; color:var(--text-muted); font-size:var(--text-xs); }
+.preset-dialog__hint code { color:var(--text); font-family:var(--font-data); }
+.preset-dialog__actions { display:flex; justify-content:flex-end; gap:var(--s-2); margin-top:var(--s-2); }
 </style>
