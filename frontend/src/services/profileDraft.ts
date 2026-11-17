@@ -13,15 +13,26 @@ export const DEFAULT_MEASUREMENT_COLOR = '#7FB6C9'
 /** O Mestre usa manila fixo no tabuleiro; jogador não pode escolher essa cor. */
 export const DM_MEASUREMENT_COLOR = '#D9B45B'
 
+/**
+ * Paleta da régua do jogador, ordenada por matiz. A manila do Mestre
+ * (#D9B45B) fica de fora de propósito: ela é reservada ao tabuleiro.
+ */
 export const MEASUREMENT_SWATCHES = [
   '#f44336',
   '#ff9800',
   '#facc15',
+  '#84cc16',
   '#22c55e',
+  '#14b8a6',
   '#06b6d4',
   '#3b82f6',
+  '#a855f7',
+  '#c026d3',
   '#ec4899',
+  '#f43f5e',
   '#795548',
+  '#94a3b8',
+  '#e7e2d4',
 ] as const
 
 export function profileFormFromProfile(profile: UserProfileDTO | null | undefined): ProfileForm {

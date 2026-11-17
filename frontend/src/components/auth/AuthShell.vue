@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Shell dividido das telas de autenticação. O lado esquerdo é o "índice do
- * arquivo": a mesa tem três telas, uma conta serve para as três. O lado
+ * arquivo": a mesa é a mesma na sala ou online, com TV opcional. O lado
  * direito recebe o formulário e é a única área com h1.
  */
 withDefaults(
@@ -15,16 +15,26 @@ withDefaults(
 
 <template>
   <div class="auth-shell">
-    <aside class="auth-shell__index" aria-label="A mesa em três telas">
+    <aside class="auth-shell__index" aria-label="A mesa e seus papéis">
       <div class="auth-shell__brand">
         <p class="auth-shell__kicker">Arquivo de mesa</p>
-        <p class="auth-shell__wordmark">
-          <span>Tavern</span>
-          <span class="auth-shell__of">of</span>
-          <span>Disaster</span>
-        </p>
+        <div class="auth-shell__brand-row">
+          <img
+            class="auth-shell__mark"
+            src="/logotof.png"
+            alt="Tavern of Disaster"
+            width="64"
+            height="64"
+            decoding="async"
+          />
+          <p class="auth-shell__wordmark">
+            <span>Tavern</span>
+            <span class="auth-shell__of">of</span>
+            <span>Disaster</span>
+          </p>
+        </div>
         <p class="auth-shell__tagline">
-          A TV é o tabuleiro. O celular é o controle. A sessão fica registrada.
+          A mesa é a mesma na sala ou na tela. O celular é o controle de cada jogador.
         </p>
       </div>
 
@@ -38,8 +48,8 @@ withDefaults(
           <dd>Move o token e rola pelo celular</dd>
         </div>
         <div class="auth-shell__route">
-          <dt>TV da sala</dt>
-          <dd>Mostra o tabuleiro para todos</dd>
+          <dt>TV opcional</dt>
+          <dd>Para a sala, quando houver uma</dd>
         </div>
       </dl>
 
@@ -78,6 +88,20 @@ withDefaults(
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
+}
+
+.auth-shell__brand-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  min-width: 0;
+}
+
+.auth-shell__mark {
+  flex: none;
+  inline-size: 64px;
+  block-size: 64px;
+  object-fit: contain;
 }
 
 .auth-shell__kicker {

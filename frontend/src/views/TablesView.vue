@@ -259,7 +259,7 @@ watch(
         <p class="tables-head__kicker">Mesas</p>
         <h1>Suas mesas</h1>
         <p class="tables-head__lead">
-          Abra como Mestre ou Jogador, copie o convite e ajuste a mesa. A TV é sempre uma tela só de
+          Abra como Mestre ou Jogador, copie o convite e ajuste a mesa. A TV é opcional e só de
           leitura.
         </p>
       </div>
@@ -317,7 +317,7 @@ watch(
           <li>Crie a mesa e escolha o sistema.</li>
           <li>Mostre o código ou o link para os jogadores.</li>
           <li>Crie a cena, a grade e os tokens.</li>
-          <li>Inicie a sessão e abra a TV na sala.</li>
+          <li>Inicie a sessão; a TV é opcional, para a sala.</li>
         </ol>
       </div>
       <div class="empty-actions">

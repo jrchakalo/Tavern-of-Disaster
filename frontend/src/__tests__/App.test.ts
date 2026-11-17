@@ -104,4 +104,28 @@ describe('App shell', () => {
     expect(authMock.clearAuthToken).toHaveBeenCalledTimes(1);
     expect(routerMock.push).toHaveBeenCalledWith({ name: 'login' });
   });
+
+  it('não oferece “Início” a quem está autenticado', () => {
+    authToken.value = 'jwt-de-teste';
+    routeState.path = '/tables';
+    routeState.fullPath = '/tables';
+
+    const wrapper = mountApp();
+    const labels = wrapper.findAll('.app-nav__link').map((link) => link.text());
+
+    expect(labels).toEqual(expect.arrayContaining(['Mesas', 'Sistemas', 'Perfil', 'Sair']));
+    expect(labels).not.toContain('Início');
+
+    wrapper.unmount();
+  });
+
+  it('mantém “Início” na landing de quem está deslogado', () => {
+    const wrapper = mountApp();
+    const labels = wrapper
+      .findAll('.app-nav--desktop .app-nav__link')
+      .map((link) => link.text());
+
+    expect(labels).toContain('Início');
+    expect(labels).not.toContain('Mesas');
+  });
 });
