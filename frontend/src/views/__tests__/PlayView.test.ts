@@ -55,24 +55,33 @@ const characterMock = vi.hoisted(() => ({
 }));
 vi.mock('../../services/characterService', () => characterMock);
 
-const characterStoreMock = vi.hoisted(() => ({
-  useCharacterStore: () => ({
-    charactersForTable: vi.fn(() => []),
-    selectedCharacter: vi.fn(() => null),
-    setSelectedCharacter: vi.fn(),
-    fetchForTable: vi.fn(async () => []),
+const characterStoreMock = vi.hoisted(() => {
+  const methods = {
     createCharacter: vi.fn(async () => null),
     updateCharacter: vi.fn(async () => null),
     deleteCharacter: vi.fn(async () => undefined),
     updateHp: vi.fn(async () => undefined),
-    charactersByTable: {},
-    selectedCharacterId: null,
-    loadingByTable: {},
-    errorByTable: {},
-    setCharacters: vi.fn(),
-  }),
-}));
-vi.mock('../../stores/characterStore', characterStoreMock);
+  };
+  return {
+    ...methods,
+    useCharacterStore: () => ({
+      charactersForTable: vi.fn(() => []),
+      selectedCharacter: vi.fn(() => null),
+      setSelectedCharacter: vi.fn(),
+      fetchForTable: vi.fn(async () => []),
+      createCharacter: methods.createCharacter,
+      updateCharacter: methods.updateCharacter,
+      deleteCharacter: methods.deleteCharacter,
+      updateHp: methods.updateHp,
+      charactersByTable: {},
+      selectedCharacterId: null,
+      loadingByTable: {},
+      errorByTable: {},
+      setCharacters: vi.fn(),
+    }),
+  };
+});
+vi.mock('../../stores/characterStore', () => characterStoreMock);
 
 const toastMock = vi.hoisted(() => ({
   success: vi.fn(),
@@ -165,6 +174,11 @@ beforeEach(() => {
   tableAccessMock.joinTableByInvite.mockResolvedValue({ tableId: 'table-1' });
   characterMock.getMyCharacters.mockClear();
   characterMock.getMyCharacters.mockResolvedValue([]);
+  characterStoreMock.createCharacter.mockReset();
+  characterStoreMock.createCharacter.mockResolvedValue(null);
+  characterStoreMock.updateCharacter.mockReset();
+  characterStoreMock.updateCharacter.mockResolvedValue(null);
+  characterStoreMock.deleteCharacter.mockReset();
   Object.values(toastMock).forEach((fn) => fn.mockClear());
 });
 
@@ -513,6 +527,74 @@ describe('PlayView — shell do jogador', () => {
     await wrapper.get('[data-tab="chamada"]').trigger('click');
     await flushPromises();
     expect(wrapper.get('[data-tab="chamada"]').attributes('aria-current')).toBe('page');
+    wrapper.unmount();
+  });
+
+  it('mostra a lista da própria ficha e abre pelo botão Abrir ficha', async () => {
+    characterMock.getMyCharacters.mockResolvedValue([
+      {
+        _id: 'char-1',
+        ownerId: 'user-1',
+        tableId: 'table-1',
+        name: 'Lyra',
+        systemKey: 'dnd5e',
+        stats: { currentHP: 18, maxHP: 24, defense: 15 },
+      },
+    ]);
+
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    await wrapper.get('[data-tab="ficha"]').trigger('click');
+    await flushPromises();
+
+    const item = wrapper.get('.character-list__item');
+    expect(item.text()).toContain('Lyra');
+    expect(item.text()).toContain('PV 18 / 24');
+    expect(item.text()).toContain('CA 15');
+
+    await wrapper.get('.character-list__open').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('.character-sheet').text()).toContain('Lyra');
+    wrapper.unmount();
+  });
+
+  it('cria ficha pelo diálogo com nome e sistema da mesa e abre a ficha criada', async () => {
+    const created = {
+      _id: 'char-new',
+      ownerId: 'user-1',
+      tableId: 'table-1',
+      name: 'Lyra',
+      systemKey: 'dnd5e',
+      stats: { currentHP: 0, maxHP: 0, defense: 0 },
+    };
+    characterStoreMock.createCharacter.mockResolvedValue(created);
+    characterMock.getMyCharacters.mockResolvedValue([]);
+
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    await wrapper.get('[data-tab="ficha"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Nenhuma ficha nesta mesa');
+
+    characterMock.getMyCharacters.mockResolvedValue([created]);
+    await wrapper.get('.character-list__create').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.character-create').exists()).toBe(true);
+
+    await wrapper.get('#character-create-name').setValue('Lyra');
+    await wrapper.get('#character-create-class').setValue('Ladina');
+    await wrapper.get('#character-create-level').setValue('3');
+    await wrapper.get('form.character-create').trigger('submit');
+    await flushPromises();
+
+    expect(characterStoreMock.createCharacter).toHaveBeenCalledWith('table-1', {
+      name: 'Lyra',
+      systemKey: 'dnd5e',
+      profile: { className: 'Ladina', level: 3 },
+    });
+    expect(wrapper.get('.character-sheet').text()).toContain('Lyra');
     wrapper.unmount();
   });
 

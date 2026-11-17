@@ -15,7 +15,7 @@ import { useCharacterStore } from '../stores/characterStore';
 import { useMediaStore } from '../stores/mediaStore';
 import { useChatStore } from '../stores/chatStore';
 import { mergeCharacterSummary } from '../components/character/summary';
-import type { CharacterDTO, IInitiativeEntry, RollLogEntryDTO, TokenInfo } from '../types';
+import type { CharacterDTO, DiceRolledPayload, IInitiativeEntry, RollLogEntryDTO, TokenInfo } from '../types';
 
 import PlayerBoard from '../components/play/PlayerBoard.vue';
 import InitiativeStrip from '../components/play/InitiativeStrip.vue';
@@ -31,6 +31,9 @@ import PlayerTurnBar from '../components/player/PlayerTurnBar.vue';
 import PlayerEmptyActions from '../components/player/PlayerEmptyActions.vue';
 import PlayerChatSheet from '../components/player/PlayerChatSheet.vue';
 import PlayerCallSheet from '../components/player/PlayerCallSheet.vue';
+import CharacterCreateDialog from '../components/character/CharacterCreateDialog.vue';
+import CharacterList from '../components/character/CharacterList.vue';
+import type { CharacterCreatePayload } from '../components/character/characterCreateTypes';
 import { readSessionExtras } from '../components/play/sessionMeta';
 import type { PlayerTab } from '../components/player/tabs';
 
@@ -109,6 +112,35 @@ const myCharacters = ref<CharacterDTO[]>([]);
 const charactersLoading = ref(false);
 const detailsToken = ref<TokenInfo | null>(null);
 const creatingCharacter = ref(false);
+const createOpen = ref(false);
+const createError = ref('');
+const sheetSaving = ref(false);
+const characterSheetRef = ref<{
+  notifySaved?: () => void;
+  notifySaveError?: (message: string) => void;
+} | null>(null);
+/** Ponto de integração da onda D5: overlay-assinatura pode consumir este payload. */
+const playerDiceResult = ref<DiceRolledPayload | null>(null);
+
+const SYSTEM_NAMES: Record<string, string> = {
+  dnd5e: 'D&D 5e',
+  'cyberpunk-red': 'Cyberpunk RED',
+  'ordem-paranormal-2': 'Ordem Paranormal 2',
+  'ordem-paranormal-sobrevivendo-ao-horror': 'Sobrevivendo ao Horror',
+};
+const tableSystemKey = computed(() => currentTable.value?.systemKey || 'dnd5e');
+const tableSystemName = computed(() => {
+  const name = currentTable.value?.systemName;
+  if (name) return name;
+  return SYSTEM_NAMES[tableSystemKey.value] ?? (tableSystemKey.value || 'D&D 5e');
+});
+
+const myCharactersWithSummary = computed(() =>
+  myCharacters.value.map((character) => {
+    const summary = (characterSummaries?.value ?? []).find((entry) => entry._id === character._id);
+    return mergeCharacterSummary(character, summary);
+  }),
+);
 
 function ownerIdOf(token: TokenInfo): string | null {
   const owner: unknown = token.ownerId;
@@ -193,24 +225,31 @@ function closeCharacterSheet() {
 
 async function handleCharacterSave(payload: Partial<CharacterDTO>) {
   if (!tableId || !activeCharacterId.value) return;
+  sheetSaving.value = true;
   try {
     const updated = await characterStore.updateCharacter(tableId, activeCharacterId.value, payload);
     if (updated) {
       myCharacters.value = myCharacters.value.map((character) =>
         character._id === updated._id ? updated : character,
       );
+    } else {
+      myCharacters.value = myCharacters.value.map((character) =>
+        character._id === activeCharacterId.value ? { ...character, ...payload } : character,
+      );
     }
+    characterSheetRef.value?.notifySaved?.();
     toast.success('Ficha atualizada.');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Não foi possível salvar a ficha.';
+    characterSheetRef.value?.notifySaveError?.(message);
     toast.error(message);
+  } finally {
+    sheetSaving.value = false;
   }
 }
 
 async function handleCharacterDelete() {
   if (!tableId || !activeCharacterId.value) return;
-  const confirmed = window.confirm('Remover esta ficha? Esta ação não pode ser desfeita.');
-  if (!confirmed) return;
   try {
     await characterStore.deleteCharacter(tableId, activeCharacterId.value);
     myCharacters.value = myCharacters.value.filter(
@@ -341,10 +380,6 @@ watch(activeTab, (tab) => {
   if (tab !== 'ficha') fichaSheetOpen.value = false;
 });
 
-watch(myCharacter, (character) => {
-  if (character && fichaSheetOpen.value) openCharacterSheet(character._id);
-});
-
 function closeTab() {
   activeTab.value = 'mesa';
   fichaSheetOpen.value = false;
@@ -357,11 +392,8 @@ async function selectTab(tab: PlayerTab) {
   }
   activeTab.value = tab;
   if (tab === 'ficha') {
-    if (myCharacter.value) openCharacterSheet(myCharacter.value._id);
-    else {
-      fichaSheetOpen.value = true;
-      await loadMyCharacters();
-    }
+    fichaSheetOpen.value = true;
+    await loadMyCharacters();
   }
 }
 
@@ -589,7 +621,9 @@ async function sendMasterRequest(message: string) {
 function askMaster() {
   const detail = myCharacter.value
     ? 'minha ficha ainda não tem token'
-    : 'ainda não tenho ficha no tabuleiro';
+    : myCharacters.value.length
+      ? 'já criei minha ficha, mas ela ainda não tem token'
+      : 'ainda não tenho ficha no tabuleiro';
   void sendMasterRequest(`@Mestre, ${detail}. Pode me ajudar a entrar no jogo?`);
 }
 
@@ -600,25 +634,55 @@ function requestFreeToken(token: TokenInfo) {
   );
 }
 
-async function handleCreateCharacter() {
+function handleCreateCharacter() {
+  if (!tableId) return;
+  createError.value = '';
+  onboardingOpen.value = false;
+  fichaSheetOpen.value = false;
+  createOpen.value = true;
+}
+
+function closeCreateDialog() {
+  if (creatingCharacter.value) return;
+  createOpen.value = false;
+  createError.value = '';
+  if (activeTab.value === 'ficha') fichaSheetOpen.value = true;
+}
+
+async function submitCreateCharacter(payload: CharacterCreatePayload) {
   if (!tableId || creatingCharacter.value) return;
   creatingCharacter.value = true;
+  createError.value = '';
   try {
-    const defaultName = 'Novo personagem';
-    const created = await characterStore.createCharacter(tableId, { name: defaultName });
+    const created = await characterStore.createCharacter(tableId, {
+      name: payload.name,
+      systemKey: payload.systemKey,
+      ...(payload.profile ? { profile: payload.profile } : {}),
+      ...(payload.notes ? { notes: payload.notes } : {}),
+    });
     await loadMyCharacters();
-    const targetId = created?._id ?? myCharacters.value[myCharacters.value.length - 1]?._id ?? null;
+    const target =
+      created ??
+      myCharacters.value.find((character) => character.name === payload.name) ??
+      myCharacters.value[myCharacters.value.length - 1] ??
+      null;
+    createOpen.value = false;
     onboardingOpen.value = false;
     fichaSheetOpen.value = false;
-    if (targetId) {
-      openCharacterSheet(targetId);
-      toast.success('Ficha criada. Ajuste o nome, PV e os detalhes da ficha.');
+    if (target) {
+      openCharacterSheet(target._id);
+      toast.success(
+        freeTokens.value.length
+          ? 'Ficha criada. Há um token livre no tabuleiro — peça ao Mestre para vinculá-lo.'
+          : 'Ficha criada. Peça ao Mestre para vincular seu token quando a sessão começar.',
+      );
     } else {
+      fichaSheetOpen.value = true;
       toast.warning('A ficha foi criada, mas ainda não chegou ao seu cliente. Tente abrir a aba Ficha.');
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Não foi possível criar a ficha.';
-    toast.error(message);
+    createError.value =
+      error instanceof Error ? error.message : 'Não foi possível criar a ficha.';
   } finally {
     creatingCharacter.value = false;
   }
@@ -626,7 +690,11 @@ async function handleCreateCharacter() {
 
 function openFicha() {
   if (myCharacter.value) openCharacterSheet(myCharacter.value._id);
-  else fichaSheetOpen.value = true;
+  else {
+    activeTab.value = 'ficha';
+    fichaSheetOpen.value = true;
+    void loadMyCharacters();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -729,6 +797,14 @@ function centerUnavailable() {
 function openCharacterFromInitiative(characterId: string) {
   initiativeOpen.value = false;
   nextTick(() => openCharacterSheet(characterId));
+}
+
+/**
+ * A rolagem do dado já aparece no próprio tray. A onda D5 pode usar este
+ * payload para o overlay-assinatura sem tocar no motor/contrato de rolagem.
+ */
+function handlePlayerDiceResult(payload: DiceRolledPayload) {
+  playerDiceResult.value = payload;
 }
 
 // ---------------------------------------------------------------------------
@@ -1132,27 +1208,49 @@ onBeforeUnmount(() => {
     </BaseSheet>
 
     <BaseSheet :open="fichaSheetOpen" title="Ficha" @close="closeTab">
-      <div class="ficha-empty">
-        <TokenCard
-          v-if="myToken"
-          :token="myToken"
-          :is-my-turn="isMyTurn"
-          :character="myCharacter"
-          :meters-per-square="metersPerSquare"
-          :table-id="tableId"
-        />
-        <PlayerEmptyActions
-          :has-character="Boolean(myCharacter)"
-          :has-token="Boolean(myToken)"
-          :free-token-count="freeTokens.length"
-          :creating="creatingCharacter || charactersLoading"
-          @create-character="handleCreateCharacter"
-          @open-sheet="openFicha"
-          @link-token="onboardingOpen = true"
+      <div class="ficha-list" aria-label="Fichas do jogador">
+        <p class="ficha-list__system">
+          Sistema da mesa: <strong>{{ tableSystemName }}</strong>
+        </p>
+        <CharacterList
+          :characters="myCharactersWithSummary"
+          :loading="charactersLoading"
+          :table-system-name="tableSystemName"
+          empty-title="Nenhuma ficha nesta mesa"
+          empty-text="Você pode criar a ficha agora e vincular a um token depois. O Mestre faz o vínculo."
+          @open="openCharacterSheet"
+          @create="handleCreateCharacter"
           @ask-master="askMaster"
         />
+        <p v-if="freeTokens.length" class="ficha-list__note">
+          Há {{ freeTokens.length }} {{ freeTokens.length === 1 ? 'token livre' : 'tokens livres' }}
+          no tabuleiro. Peça ao Mestre para vincular sua ficha — só ele pode fazer essa ligação.
+        </p>
+        <p v-else class="ficha-list__note">
+          A ficha não precisa de token para existir. Peça ao Mestre para colocar e vincular seu token
+          quando a sessão começar.
+        </p>
+        <button
+          v-if="myCharactersWithSummary.length"
+          type="button"
+          class="btn secondary ficha-list__create"
+          @click="handleCreateCharacter"
+        >
+          Criar outra ficha
+        </button>
       </div>
     </BaseSheet>
+
+    <CharacterCreateDialog
+      :open="createOpen"
+      :system-key="tableSystemKey"
+      :system-name="tableSystemName"
+      :owner-name="currentUser?.username ?? 'Você'"
+      :submitting="creatingCharacter"
+      :error="createError"
+      @submit="submitCreateCharacter"
+      @cancel="closeCreateDialog"
+    />
 
     <TokenDetailsSheet
       v-if="detailsToken"
@@ -1167,14 +1265,20 @@ onBeforeUnmount(() => {
     />
 
     <PlayerDicePanel
+      v-if="activeTab === 'dados'"
       :open="activeTab === 'dados'"
       :table-id="tableId"
       :current-token-id="currentTurnTokenId"
+      :characters="myCharactersWithSummary"
+      :active-character-id="myCharacter?._id ?? null"
       :recent-rolls="liveRolls"
+      :connection-status="connectionStatus"
       @close="closeTab"
+      @roll-result="handlePlayerDiceResult"
     />
 
     <PlayerChatSheet
+      v-if="activeTab === 'chat'"
       :open="activeTab === 'chat'"
       :table-id="tableId"
       :connection-status="connectionStatus"
@@ -1188,11 +1292,13 @@ onBeforeUnmount(() => {
     />
 
     <CharacterSheet
+      ref="characterSheetRef"
       :open="showCharacterSheet"
       :character="sheetCharacter"
       :isDM="isDM"
       :isOwner="sheetIsOwner"
       :system="null"
+      :saving="sheetSaving"
       @close="closeCharacterSheet"
       @save="handleCharacterSave"
       @delete="handleCharacterDelete"
@@ -1720,10 +1826,31 @@ onBeforeUnmount(() => {
 
 .link-token,
 .ficha-empty,
+.ficha-list,
 .leave-dialog {
   display: flex;
   flex-direction: column;
   gap: var(--s-4);
+}
+
+.ficha-list__system {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+}
+
+.ficha-list__note {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  border-left: 2px solid var(--manila);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.ficha-list__create {
+  width: 100%;
+  min-height: 48px;
 }
 
 .link-token__intro {
