@@ -26,7 +26,7 @@ async function loginByUi(page: Page, identifier: string, password: string) {
   await page.fill('#identifier', identifier);
   await page.fill('#password', password);
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-  await page.waitForURL('**/');
+  await page.waitForURL('**/tables', { timeout: 30_000 });
 }
 
 interface TableDto {
