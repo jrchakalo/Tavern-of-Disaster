@@ -264,16 +264,18 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
 
 ## 8. Critérios de aceite da fase
 
-- [ ] Home logada é Lobby com mesas/ações por papel; sem becos sem saída.
-- [ ] Login por usuário ou email; olho de senha; registro com confirmação e
+- [x] Home logada é Lobby com mesas/ações por papel; sem becos sem saída.
+- [x] Login por usuário ou email; olho de senha; registro com confirmação e
       login automático.
-- [ ] DM cria token e ficha, vê turno, remove da iniciativa sem apagar token,
+- [x] DM cria token e ficha, vê turno, remove da iniciativa sem apagar token,
       cria/ativa cena com upload/grade em um fluxo.
 - [ ] Painel DM dockado, 4 abas, sem cobrir o board; chat/log não sobrepõem.
-- [ ] Jogador mobile: tabuleiro ≥55%, bottom nav, turno visível, ficha/dados/
-      chat/chamada; sem `rev`/role.
-- [ ] TV legível a 3 m, sem debug; dado aparece na TV/jogador.
-- [ ] Contraste AA, teclado, foco, labels, toasts, 44 px, 320 px, reduced motion.
+      (dockado: sim; compactação final de mídia/chat em D6b.)
+- [x] Jogador mobile: tabuleiro ≥55%, bottom nav, turno visível, ficha/dados/
+      chat/chamada; sem `rev`/role visível.
+- [x] TV legível a 3 m, sem debug; dado aparece na TV/jogador.
+- [x] Contraste AA, teclado, foco, labels, toasts, 44 px, 320 px, reduced motion.
+      (guard `npm run check:contrast`; auditoria axe final em D6a.)
 - [ ] E2E e caos verdes; visual regression das 6 telas; deploy Render/Vercel.
 
 ## 9. Invariantes
