@@ -1,86 +1,240 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { setAuthToken } from '../services/authService';
-import { toast } from '../services/toast';
-import { resolveSafeRedirect } from '../services/safeRedirect';
-import { API_BASE_URL } from '../services/apiBase';
+import { computed, ref } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import AuthShell from '../components/auth/AuthShell.vue'
+import PasswordField from '../components/auth/PasswordField.vue'
+import Icon from '../components/Icon.vue'
+import { setAuthToken } from '../services/authService'
+import { toast } from '../services/toast'
+import { resolveSafeRedirect } from '../services/safeRedirect'
+import { API_BASE_URL } from '../services/apiBase'
 
-const email = ref('');
-const password = ref('');
-const route = useRoute();
-const router = useRouter();
+const identifier = ref('')
+const password = ref('')
+const errors = ref<{ identifier?: string; password?: string }>({})
+const formError = ref('')
+const submitting = ref(false)
+
+const route = useRoute()
+const router = useRouter()
+
+const redirectTarget = computed(() => resolveSafeRedirect(route.query.redirect, ''))
+const hasRedirect = computed(() => Boolean(redirectTarget.value))
+const registerTarget = computed(() =>
+  redirectTarget.value
+    ? { path: '/register', query: { redirect: redirectTarget.value } }
+    : '/register',
+)
+
+function validate(): boolean {
+  const next: { identifier?: string; password?: string } = {}
+  if (!identifier.value.trim()) {
+    next.identifier = 'Informe seu usuário ou e-mail.'
+  }
+  if (!password.value) {
+    next.password = 'Informe sua senha.'
+  }
+  errors.value = next
+  return Object.keys(next).length === 0
+}
+
+function clearError(field: 'identifier' | 'password') {
+  if (errors.value[field]) {
+    errors.value = { ...errors.value, [field]: undefined }
+  }
+  formError.value = ''
+}
 
 async function handleLogin() {
+  if (submitting.value) return
+  formError.value = ''
+  if (!validate()) return
+
+  submitting.value = true
   try {
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: email.value,
+        identifier: identifier.value.trim(),
         password: password.value,
       }),
-    });
+    })
 
-    const data = await response.json();
+    const data = (await response.json().catch(() => null)) as {
+      token?: string
+      message?: string
+    } | null
 
-    if (response.ok) {
-      // Salvar o token no navegador
-      localStorage.setItem('authToken', data.token);
-      setAuthToken(data.token); // Atualiza o token de autenticação global
-
-      // Sucesso: sem modal/alert intrusivo. Toast opcional curto ou nenhum.
-      toast.success(data.message || 'Login realizado.');
-      // Volta para a rota pedida (ex.: QR do jogador em /play/:id?invite=…);
-      // só caminhos internos passam — ver resolveSafeRedirect.
-      router.push(resolveSafeRedirect(route.query.redirect));
-    } else {
-      toast.error(data.message || 'Erro no login.');
+    if (response.ok && data?.token) {
+      localStorage.setItem('authToken', data.token)
+      setAuthToken(data.token)
+      toast.success('Você entrou.')
+      router.push(resolveSafeRedirect(route.query.redirect))
+      return
     }
-  } catch (error) {
-    console.error('Falha na requisição de login:', error);
-    toast.error('Não foi possível conectar ao servidor. Tente novamente mais tarde.');
+
+    if (response.status === 429) {
+      formError.value =
+        'Muitas tentativas de login. Aguarde alguns minutos antes de tentar de novo.'
+    } else if (response.status === 400 || response.status === 401) {
+      formError.value =
+        'Credenciais inválidas. Confira o usuário ou e-mail e a senha e tente de novo.'
+    } else if (response.ok) {
+      formError.value = 'O servidor aceitou o login, mas não devolveu uma sessão. Tente de novo.'
+    } else {
+      formError.value = data?.message || 'Não foi possível entrar agora. Tente de novo.'
+    }
+  } catch {
+    formError.value =
+      'Não foi possível conectar ao servidor. Verifique sua conexão e tente de novo.'
+  } finally {
+    submitting.value = false
   }
 }
 </script>
 
 <template>
-  <div class="auth-container">
-    <form class="auth-form" @submit.prevent="handleLogin">
-      <h1>Login</h1>
+  <AuthShell :note="hasRedirect ? 'Depois de entrar, você volta para a mesa do convite.' : ''">
+    <form class="auth-form" novalidate @submit.prevent="handleLogin">
+      <header class="auth-form__head">
+        <p class="auth-form__kicker">Acesso à mesa</p>
+        <h1>Entrar</h1>
+        <p class="auth-form__intro">
+          Use o seu login ou e-mail. A mesma conta abre as suas mesas de Mestre e de Jogador.
+        </p>
+      </header>
 
-      <label for="email">Email:</label>
-      <input id="email" v-model="email" type="email" required />
+      <p v-if="hasRedirect" class="auth-form__context">
+        <Icon name="link" :size="16" />
+        Você está a um passo de voltar para a mesa do convite.
+      </p>
 
-      <label for="password">Senha:</label>
-      <input id="password" v-model="password" type="password" required />
+      <p v-if="formError" class="auth-form__alert" role="alert">{{ formError }}</p>
 
-      <button type="submit">Entrar</button>
+      <div class="field-group" :class="{ 'field-group--error': errors.identifier }">
+        <label for="identifier">Usuário ou e-mail</label>
+        <input
+          id="identifier"
+          v-model="identifier"
+          type="text"
+          autocomplete="username"
+          autocapitalize="off"
+          spellcheck="false"
+          :disabled="submitting"
+          :aria-invalid="errors.identifier ? 'true' : undefined"
+          :aria-describedby="errors.identifier ? 'identifier-error' : undefined"
+          data-autofocus
+          @input="clearError('identifier')"
+        />
+        <p v-if="errors.identifier" id="identifier-error" class="field-error" role="alert">
+          {{ errors.identifier }}
+        </p>
+      </div>
+
+      <PasswordField
+        id="password"
+        v-model="password"
+        label="Senha"
+        autocomplete="current-password"
+        :error="errors.password"
+        :disabled="submitting"
+        @input="clearError('password')"
+      />
+
+      <button type="submit" class="btn block" :disabled="submitting">
+        {{ submitting ? 'Entrando…' : 'Entrar' }}
+      </button>
+
+      <p class="auth-form__alt">
+        Ainda não tem conta?
+        <RouterLink :to="registerTarget">Criar conta</RouterLink>
+      </p>
     </form>
-  </div>
+  </AuthShell>
 </template>
 
 <style scoped>
-.auth-container {
-  display: grid;
-  place-items: center;
-  padding: 24px 12px 40px;
-  width: 100%;
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
 }
-.auth-form { display:flex; flex-direction:column; gap:14px; padding:20px; background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); border-radius:var(--radius-md); width:100%; max-width:360px; border:1px solid var(--color-border); box-shadow:var(--elev-2); }
-h1 { color:var(--color-accent); margin-top:0; }
-label {
-  text-align: left;
-  font-weight: bold;
-}
-input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface-alt); color:var(--color-text); font-size:0.95rem; }
-input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
-button { padding:10px; border:1px solid var(--color-border-strong); border-radius:var(--radius-sm); background:var(--color-accent); color:var(--color-text); font-weight:600; font-size:0.95rem; cursor:pointer; margin-top:8px; }
-button:hover { background:var(--color-accent-alt); }
 
-@media (max-width: 420px) {
-  .auth-form { max-width: 320px; padding:16px; gap:12px; }
+.auth-form__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.auth-form__kicker {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+}
+
+.auth-form h1 {
+  margin: 0;
+  font-size: clamp(1.9rem, 1.4rem + 1.6vw, 2.4rem);
+}
+
+.auth-form__intro {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  line-height: 1.55;
+}
+
+.auth-form__context {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+  border-left: 2px solid var(--accent-ink);
+  background: rgb(47 108 132 / 0.1);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.auth-form__context :deep(svg) {
+  margin-top: 2px;
+  color: var(--accent-ink);
+}
+
+.auth-form__alert {
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+  border-left: 2px solid var(--danger);
+  background: rgb(178 58 50 / 0.12);
+  color: var(--danger-ink);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.field-group--error input {
+  border-color: var(--danger);
+}
+
+.field-group input {
+  min-height: 44px;
+}
+
+.field-error {
+  margin: var(--s-2) 0 0;
+  color: var(--danger-ink);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.auth-form__alt {
+  margin: 0;
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 </style>

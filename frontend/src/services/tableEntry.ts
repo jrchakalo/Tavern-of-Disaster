@@ -23,6 +23,22 @@ export function isTableDm(table: Pick<ITable, 'dm'> | null | undefined, userId: 
   return Boolean(dmId && userId && dmId === userId);
 }
 
+/**
+ * Resolve a rota depois de um convite (`POST /tables/join`) usando a lista de
+ * mesas do usuário para descobrir o papel. Se a lista ainda não contém a mesa
+ * (corrida entre join e refresh), cai em `/play/:id`: o pior caso é o jogador
+ * entrar no produto de jogador, nunca o contrário.
+ */
+export function resolveJoinedTableEntry(
+  tableId: string | null | undefined,
+  tables: Array<Pick<ITable, '_id' | 'dm' | 'players'>> | null | undefined,
+  userId: string | null | undefined,
+): string | null {
+  if (!tableId) return null;
+  const table = (tables ?? []).find((entry) => entry._id === tableId);
+  return table ? resolveTableEntry(table, userId) : `/play/${tableId}`;
+}
+
 function idOf(person: PlayerInfo | string | null | undefined): string | null {
   if (!person) return null;
   return typeof person === 'string' ? person : person._id || null;
