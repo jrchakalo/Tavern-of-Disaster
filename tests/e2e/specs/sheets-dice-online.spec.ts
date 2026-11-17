@@ -285,6 +285,12 @@ async function expectCard(page: Page, hp: number) {
 }
 
 async function ensureDmInitiativeTab(page: Page): Promise<void> {
+  // O Histórico/Fichas agora são <dialog> modais (BaseDialog). Fecha antes de
+  // interagir com o painel, que fica `inert` enquanto o modal está aberto.
+  if (await page.locator('dialog[open]').count()) {
+    await page.keyboard.press('Escape');
+    await expect(page.locator('dialog[open]')).toHaveCount(0, { timeout: 5_000 }).catch(() => undefined);
+  }
   const tab = page.locator('.dm-panel .dm-panel__tab', { hasText: 'Iniciativa' }).first();
   if (await tab.count()) await tab.click().catch(() => undefined);
 }

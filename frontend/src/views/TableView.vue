@@ -3204,8 +3204,8 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           </template>
           <template v-else>Ninguém na chamada ainda.</template>
         </p>
-        <ParticipantGrid />
-        <MediaDock :table-id="tableId" variant="inline" />
+        <ParticipantGrid v-if="callDialogOpen" />
+        <MediaDock v-if="callDialogOpen" :table-id="tableId" variant="inline" />
       </div>
       <template #footer>
         <button type="button" class="btn btn-sm" @click="closeCallDialog">Fechar</button>
