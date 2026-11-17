@@ -185,12 +185,27 @@ Aqui ficam só os itens que bloqueiam a fase e a onda responsável.
 - Upload de token/avatar com progresso e retry.
 
 ### 4.3 Remover/encerrar agora
-
 - Paleta de cor do DM no toolbar (controle morto; jogador pode escolher roxo).
 - Superfície de dados duplicada no DM (popup + embutida).
 - Pills flutuantes de Chat/Log sobre o painel.
 - `rev`, role e telemetria no `/play` e na TV.
 - Micro-labels em caixa alta e emoji como ícone.
+
+### 4.4 Varredura final D6 (componentes legados)
+
+Ainda carregam gradiente/blur/emoji ou modal sem foco e precisam da passagem
+final antes do deploy:
+
+- `DiceAnimation.vue` (D5a), `DiceRoller.vue` (painel DM/TV) e
+  `DiceSandboxView.vue`.
+- `chat/ChatPanel.vue`, `chat/ChatToggle.vue`.
+- `media/MediaDock.vue`, `media/ParticipantGrid.vue`.
+- `character/VitalsBar.vue`.
+- `AuraDialog.vue` (modal em `div`, sem foco/Esc).
+- `SceneManager`/`DMSessionControls`/`TableSharePanel` restos de estilo antigo
+  (D3b).
+- Garantir que nenhum `linear-gradient`/`radial-gradient`/`backdrop-filter`
+  sobre em UI (exceto os aliases inertes do `main.css`).
 
 ## 5. Acessibilidade (não negociável)
 
