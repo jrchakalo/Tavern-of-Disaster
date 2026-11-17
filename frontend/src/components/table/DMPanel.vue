@@ -368,7 +368,6 @@ const characterSummary = computed(() => {
               <button
                 type="button"
                 class="token-list__main"
-                :aria-label="`Abrir inspetor de ${token.name}`"
                 @click="emit('select-token', token._id)"
               >
                 <span class="token-dot" :style="{ background: token.color || 'var(--text-faint)' }" aria-hidden="true" />

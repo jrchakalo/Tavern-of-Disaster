@@ -137,7 +137,7 @@ function toggleCollapse() {
       </button>
 
       <hr class="divider" />
-      <button class="tool-button" type="button" :class="{ active: !!persistentMode }" :aria-pressed="!!persistentMode" @click="togglePersistent" title="Fixar" aria-label="Alternar medições persistentes">
+      <button class="tool-button" type="button" :class="{ active: !!persistentMode }" :aria-pressed="!!persistentMode" @click="togglePersistent" title="Fixar" aria-label="Fixar medições persistentes">
         <Icon name="pin" />
         <span class="tool-label">Fixar</span>
       </button>
@@ -171,7 +171,7 @@ function toggleCollapse() {
       </button>
 
       <hr class="divider" />
-      <button class="tool-button" type="button" title="Rolagens" aria-label="Abrir rolagens" @click="$emit('toggle-dice-roller')">
+      <button class="tool-button" type="button" title="Dados" aria-label="Dados" @click="$emit('toggle-dice-roller')">
         <Icon name="dice" />
         <span class="tool-label">Dados</span>
       </button>

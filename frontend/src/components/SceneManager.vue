@@ -164,6 +164,11 @@ function onFileChange(event: Event) {
   const input = event.target as HTMLInputElement | null;
   const file = input?.files?.[0] ?? null;
   if (file) {
+    if (!file.type.startsWith('image/')) {
+      formError.value = 'Envie um arquivo de imagem (PNG, JPG ou WebP).';
+      if (input) input.value = '';
+      return;
+    }
     formError.value = '';
     setFilePreview(file);
   }
@@ -530,7 +535,10 @@ onBeforeUnmount(() => {
           id="scene-image-url"
           v-model="imageUrl"
           class="scene-input"
-          type="url"
+          type="text"
+          inputmode="url"
+          autocomplete="off"
+          spellcheck="false"
           placeholder="URL da imagem (opcional)"
           :disabled="pending"
         />

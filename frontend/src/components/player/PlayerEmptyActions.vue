@@ -109,7 +109,7 @@ const primaryLabel = computed(() => (props.hasCharacter ? 'Abrir ficha' : 'Criar
 
 .player-empty__eyebrow {
   margin: 0 0 var(--s-2);
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-family: var(--font-data);
   font-size: var(--text-2xs);
 }

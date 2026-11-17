@@ -588,7 +588,7 @@ function formatRollDice(payload: DiceRolledPayload): string {
 .dice-tray__hint,
 .dice-tray__notice {
   margin: 0;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: var(--text-2xs);
 }
 
@@ -840,7 +840,7 @@ function formatRollDice(payload: DiceRolledPayload): string {
 }
 
 .dice-tray__time {
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-family: var(--font-data);
   font-size: var(--text-2xs);
 }

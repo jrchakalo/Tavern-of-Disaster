@@ -151,7 +151,7 @@ function confirmReset() {
               <button
                 type="button"
                 class="action-link"
-                :aria-label="`Remover ${entry.characterName} do turno (o token permanece no mapa)`"
+                :aria-label="`Remover do turno: ${entry.characterName} (o token permanece no mapa)`"
                 @click="emit('remove-entry', entry._id)"
               >Remover do turno</button>
             </div>

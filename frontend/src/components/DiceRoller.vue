@@ -390,7 +390,7 @@ function roll() {
         type="text"
         placeholder="Ex.: 2d6+3"
       />
-      <select v-model="selectedBindingKey">
+      <select v-model="selectedBindingKey" aria-label="Ficha ou sistema da rolagem">
         <option v-for="option in bindingOptions" :key="option.key" :value="option.key">
           {{ option.label }}
         </option>

@@ -75,7 +75,7 @@ watch(
 
     <header v-if="showHeader" class="app-header">
       <div class="app-header__inner">
-        <RouterLink to="/" class="app-wordmark" aria-label="Tavern of Disaster, página inicial">
+        <RouterLink to="/" class="app-wordmark">
           <span class="app-wordmark__tavern">Tavern</span>
           <span class="app-wordmark__of">of</span>
           <span class="app-wordmark__disaster">Disaster</span>

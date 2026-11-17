@@ -1594,7 +1594,14 @@ function handlePointerDown(event: PointerEvent) {
 
   if (isMeasuring.value) return;
 
-  const shouldPan = isTouch || isMiddleButton || (isPrimaryButton && activeTool.value !== 'select');
+  // Mouse: clique esquerdo seleciona/coloca token. Pan com botão do meio ou
+  // Alt+arrastar; no toque, pan só fora do modo de posicionamento. Sem isso o
+  // `setPointerCapture` engolia o clique no quadrado e impedia criar/selecionar
+  // tokens com o mouse.
+  const shouldPan =
+    isMiddleButton ||
+    (isTouch && activeTool.value !== 'select' && !placementMode.value) ||
+    (isPrimaryButton && event.altKey);
   if (!shouldPan) return;
   if ((event.target as HTMLElement).closest('button, .token')) return;
   activePointers.value.push(event);
@@ -3324,7 +3331,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   border-left: 1px solid var(--line);
 }
 .scene-switch__label {
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: var(--text-2xs);
 }
 .scene-switch__button {
@@ -3607,7 +3614,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   min-width: 0;
 }
 .turn-bar__eyebrow {
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: var(--text-2xs);
   line-height: 1.2;
 }

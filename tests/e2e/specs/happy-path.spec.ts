@@ -153,12 +153,11 @@ test('DM e jogador percorrem o fluxo principal no redesign', async ({ browser, r
   // (o overlay de "personagem no tabuleiro" cobre o board até existir token).
   await expect(playerPage.locator('.session-overlay .player-empty')).toBeVisible({ timeout: 20_000 });
 
-  // DM coloca o token pelo botão do rail (não só por clique direito) e já o
-  // atribui ao jogador no formulário. "Usar primeiro livre" evita depender do
-  // clique no quadrado, que hoje é capturado pelo pan do viewport (bug reportado).
+  // DM coloca o token pelo botão do rail e clicando num quadrado do mapa
+  // (o clique não pode ser engolido pelo pan do viewport).
   await dmPage.locator('.rail-add').click();
   await expect(dmPage.locator('.placement-banner')).toBeVisible();
-  await dmPage.getByRole('button', { name: 'Usar primeiro livre' }).click();
+  await dmPage.locator('.grid-square').nth(20).click();
   const tokenForm = dmPage.locator('.token-form');
   await expect(tokenForm).toBeVisible();
   await tokenForm.locator('#token-name').fill(tokenName);
@@ -229,7 +228,10 @@ test('DM e jogador percorrem o fluxo principal no redesign', async ({ browser, r
   await expect(diceTray.locator('.dice-tray__recent')).toContainText(playerExpression, {
     timeout: 20_000,
   });
-  await expect(diceTray.locator('.dice-tray__result')).toBeVisible({ timeout: 20_000 });
+  // O momento assinatura fecha a aba Dados para ficar acionável sobre o board;
+  // o resultado continua no histórico recente quando a aba reabrir.
+  await expect(playerPage.locator('.dice-moment')).toBeVisible({ timeout: 20_000 });
+  await expect(playerPage.locator('.dice-slip__total-value')).not.toBeEmpty();
 
   await dmContext.close();
   await playerContext.close();
