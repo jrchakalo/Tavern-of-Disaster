@@ -220,6 +220,12 @@ Aqui ficam só os itens que bloqueiam a fase e a onda responsável.
 | Lighthouse a11y | 100 (mín. 98) |
 | axe serious+ | 0 nas 8 rotas + estados |
 
+Estado após a otimização (`coder/assets`, `4c0f64b`): logo 45 KB PNG +
+`logo-256.webp`/`.avif` ~19 KB; favicons 2,9–60 KB; vídeos 118–384 KB com
+posters JPG. `frontend/public` caiu de ~18 MB para 1,6 MB. As telas novas devem
+usar `/logo-256.webp`, `<video preload="none" poster="/media/x.jpg">` e nunca
+autoplay infinito sem `prefers-reduced-motion`.
+
 ## 7. Ondas de implementação
 
 | Onda | Entrega | Responsável |
