@@ -66,6 +66,7 @@ watch(
 <style scoped>
 .sheet-tabs {
   display: flex;
+  flex: 0 0 auto;
   gap: var(--s-2);
   max-width: 100%;
   overflow-x: auto;
