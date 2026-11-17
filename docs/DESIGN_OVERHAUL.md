@@ -248,10 +248,12 @@ autoplay infinito sem `prefers-reduced-motion`.
 | D1 | tokens, base CSS, fontes, shell, Toast, Icon, BaseDialog/Sheet | design-foundation |
 | D2 | Home/Lobby, Login, Registro, Mesas, Perfil, Sistemas | frontend-auth-home |
 | D3a | layout 3 zonas, top bar, rail, painel 4 abas, turn bar, token (criar/editar/excluir) | frontend-dm-shell |
-| D3b | cena em um passo, grade, iniciativa, sessão/convidar, dados/log, fichas | frontend-dm |
+| D3b | cena em um passo, grade, convite/TV e sessão | frontend-dm |
+| D3c | fichas do Mestre (criar/listar/vincular) e histórico único | frontend-dm |
 | D4a | shell do jogador, bottom nav, turn bar, câmera do tabuleiro, saída | frontend-player-shell |
 | D4b | ficha (criar/listar), dados, chat/chamada no nav | frontend-player |
-| D5 | TV, dado assinatura, chat/vídeo/fichas compartilhadas | frontend-shared-tv |
+| D5a | TV em 3 zonas + dado assinatura (SVG, papel, sem loop) | frontend-tv |
+| D5b | integração do dado no DM/jogador, medição do jogador e limpeza de mídia | frontend-shared |
 | D6 | QA visual/a11y/E2E, correções e deploy | QA |
 | D7 | backend: iniciativa não destrutiva + `requestDeleteToken` | concluído (`4e8798b`) |
 
