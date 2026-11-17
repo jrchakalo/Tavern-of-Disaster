@@ -908,6 +908,17 @@ onBeforeUnmount(() => {
   color: var(--danger-ink);
 }
 
+@media (max-width: 1024px) {
+  .scene-icon-btn {
+    width: 44px;
+    min-height: 44px;
+  }
+
+  .scene-actions {
+    gap: var(--s-2);
+  }
+}
+
 .scene-error {
   margin: 0;
   padding: var(--s-2) var(--s-3);
