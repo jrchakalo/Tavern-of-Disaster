@@ -79,6 +79,7 @@ vi.mock('../../stores/userStore', () => ({ useUserStore: () => userStoreStub }))
 
 const tableStoreStub = {
   __refs: createTableStoreRefs(),
+  recentRolls: [] as unknown[],
   registerDiceAnimationHook: vi.fn(),
 };
 vi.mock('../../stores/tableStore', () => ({ useTableStore: () => tableStoreStub }));
@@ -578,6 +579,107 @@ describe('TableView fichas do Mestre e histórico', () => {
       'u-2',
     );
     expect(toastMock.success).toHaveBeenCalledWith('Ficha criada para Ana.');
+    wrapper.unmount();
+  });
+});
+
+describe('TableView cockpit D6b (mídia, chat e dados)', () => {
+  function mountTable() {
+    return shallowMount(TableView, {
+      global: { stubs: { teleport: true, Transition: false } },
+    });
+  }
+
+  function findStub(wrapper: ReturnType<typeof mountTable>, name: string) {
+    const found = wrapper.findAllComponents({ name });
+    return found.length > 0 ? found[0] : null;
+  }
+
+  function findByTitle(wrapper: ReturnType<typeof mountTable>, title: string) {
+    return wrapper
+      .findAllComponents({ name: 'BaseDialog' })
+      .find((dialog) => dialog.props('title') === title) ?? null;
+  }
+
+  it('usa o DiceTray do painel e a ação Dados não abre popup', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const toolbar = findStub(wrapper, 'Toolbar');
+    expect(toolbar).toBeTruthy();
+    toolbar!.vm.$emit('toggle-dice-roller');
+    await nextTick();
+
+    const panel = findStub(wrapper, 'DMPanel');
+    expect(panel!.props('activeTab')).toBe('initiative');
+    expect(wrapper.find('.dice-popup-overlay').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('mostra o momento do DM como card compacto (variant dm)', async () => {
+    let hook: ((payload: unknown) => void) | null = null;
+    tableStoreStub.registerDiceAnimationHook = vi.fn((handler) => {
+      hook = handler;
+    });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    expect(hook).toBeTypeOf('function');
+    hook!({
+      tableId: 'table-1',
+      userId: 'user-1',
+      username: 'Tester',
+      expression: '1d20+5',
+      total: 17,
+      modifier: 5,
+      rolls: [{ value: 12, kept: 'kept', sides: 20 }],
+      tags: [],
+      createdAt: new Date().toISOString(),
+    });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await nextTick();
+
+    const moment = findStub(wrapper, 'DiceAnimation');
+    expect(moment).toBeTruthy();
+    expect(moment!.props('variant')).toBe('dm');
+    expect(moment!.props('payload')).toMatchObject({ total: 17 });
+    wrapper.unmount();
+  });
+
+  it('abre a grade completa da chamada e fecha o chat (uma sobreposição por vez)', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const chatToggle = findStub(wrapper, 'ChatToggle');
+    chatToggle!.vm.$emit('toggle');
+    await nextTick();
+    expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(true);
+
+    const mediaDock = findStub(wrapper, 'MediaDock');
+    expect(mediaDock).toBeTruthy();
+    expect(mediaDock!.props('variant')).toBe('inline');
+    mediaDock!.vm.$emit('expand');
+    await nextTick();
+
+    expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(false);
+    expect(findByTitle(wrapper, 'Chamada')!.props('open')).toBe(true);
+    expect(wrapper.find('.media-bar').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('fecha o chat quando o histórico abre', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    findStub(wrapper, 'ChatToggle')!.vm.$emit('toggle');
+    await nextTick();
+    expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(true);
+
+    await wrapper.find('.dm-panel__dock .log-toggle-btn').trigger('click');
+    await nextTick();
+
+    expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(false);
+    expect(findStub(wrapper, 'HistoryDrawer')!.props('open')).toBe(true);
     wrapper.unmount();
   });
 });

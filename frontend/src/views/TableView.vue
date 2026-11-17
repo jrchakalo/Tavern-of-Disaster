@@ -24,8 +24,8 @@ import Icon from '../components/Icon.vue';
 import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
-import DiceRoller from '../components/DiceRoller.vue';
 import DiceAnimation from '../components/DiceAnimation.vue';
+import DiceTray from '../components/dice/DiceTray.vue';
 import DMPanel, { type DmPanelTab } from '../components/table/DMPanel.vue';
 import CharacterLibrary from '../components/table/CharacterLibrary.vue';
 import HistoryDrawer from '../components/table/HistoryDrawer.vue';
@@ -203,11 +203,15 @@ const createCharacterError = ref('');
 const reopenLibraryAfterCreate = ref(false);
 /** Ficha escolhida antes de tocar no mapa para criar o token. */
 const pendingCharacterIdForToken = ref<string | null>(null);
-const showDicePopup = ref(false);
+/** Grade completa da chamada (a barra mostra só uma prévia compacta). */
+const callDialogOpen = ref(false);
+/** `/table` é rota do Mestre; o sheet só existe se um jogador legado abrir Dados. */
+const showPlayerDiceSheet = ref(false);
 const diceAnimationVisible = ref(false);
 const diceAnimationPayload = ref<DiceRolledPayload | null>(null);
 const diceAnimationId = ref(0);
-const DICE_ANIMATION_DURATION = 4600;
+/** O momento do Mestre é compacto: card no canto, não modal de tela cheia. */
+const DICE_ANIMATION_DURATION = 3200;
 
 const charactersForTable = computed(() => (tableId ? characterStore.charactersForTable(tableId) : []));
 const charactersLoading = computed(() =>
@@ -607,6 +611,7 @@ async function handleCharacterDelete() {
 
 function openCharacterLibrary() {
   showActionLog.value = false;
+  callDialogOpen.value = false;
   chatStore.closePanel();
   isMobilePanelOpen.value = false;
   isMobileToolsOpen.value = false;
@@ -843,6 +848,7 @@ function openInviteTab() {
   isDmPanelCollapsed.value = false;
   closeSessionMenu();
   showActionLog.value = false;
+  callDialogOpen.value = false;
   chatStore.closePanel();
   if (isMobileLayout.value) isMobilePanelOpen.value = true;
 }
@@ -852,6 +858,7 @@ function openMobilePanel(tab: DmPanelTab = activePanelTab.value) {
   isMobilePanelOpen.value = true;
   isMobileToolsOpen.value = false;
   showActionLog.value = false;
+  callDialogOpen.value = false;
   chatStore.closePanel();
 }
 
@@ -859,6 +866,7 @@ function openMobileTools() {
   isMobileToolsOpen.value = true;
   isMobilePanelOpen.value = false;
   showActionLog.value = false;
+  callDialogOpen.value = false;
   chatStore.closePanel();
 }
 
@@ -868,7 +876,7 @@ function handleToolSelectedFromSheet(tool: ToolMode) {
 }
 
 function handleDiceFromSheet() {
-  toggleDicePopup();
+  openDiceSurface();
   isMobileToolsOpen.value = false;
 }
 
@@ -916,6 +924,7 @@ function toggleActionLog() {
   const willOpen = !showActionLog.value;
   showActionLog.value = willOpen;
   if (willOpen) {
+    callDialogOpen.value = false;
     chatStore.closePanel();
     isMobilePanelOpen.value = false;
     isMobileToolsOpen.value = false;
@@ -928,13 +937,45 @@ function toggleChat() {
   } else {
     chatStore.openPanel();
     showActionLog.value = false;
+    callDialogOpen.value = false;
     isMobilePanelOpen.value = false;
     isMobileToolsOpen.value = false;
   }
 }
 
-function toggleDicePopup() {
-  showDicePopup.value = !showDicePopup.value;
+/**
+ * Um único acesso a dados no cockpit. No desktop, a aba Iniciativa do painel
+ * dockado é a superfície canônica; no mobile, a folha do Painel. A ação
+ * “Dados” da toolbar apenas revela/rola até o DiceTray — não abre popup.
+ */
+function openDiceSurface() {
+  if (isDM.value) {
+    selectPanelTab('initiative');
+    if (isMobileLayout.value) {
+      isMobilePanelOpen.value = true;
+      isMobileToolsOpen.value = false;
+    }
+    void nextTick(() => {
+      const input = document.getElementById('dice-expression') as HTMLInputElement | null;
+      input?.scrollIntoView?.({ block: 'center', behavior: 'auto' });
+      if (!isMobileLayout.value) input?.focus?.({ preventScroll: true });
+    });
+    return;
+  }
+  showPlayerDiceSheet.value = true;
+  isMobileToolsOpen.value = false;
+}
+
+function openCallDialog() {
+  chatStore.closePanel();
+  showActionLog.value = false;
+  isMobilePanelOpen.value = false;
+  isMobileToolsOpen.value = false;
+  callDialogOpen.value = true;
+}
+
+function closeCallDialog() {
+  callDialogOpen.value = false;
 }
 
 function dismissDiceAnimation(options: { clearPayload?: boolean } = {}) {
@@ -2202,6 +2243,22 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   const key = e.key.toLowerCase();
 
   if (e.key === 'Escape') {
+    if (callDialogOpen.value) {
+      callDialogOpen.value = false;
+      return;
+    }
+    if (chatStore.panelOpen) {
+      chatStore.closePanel();
+      return;
+    }
+    if (showActionLog.value) {
+      showActionLog.value = false;
+      return;
+    }
+    if (showPlayerDiceSheet.value) {
+      showPlayerDiceSheet.value = false;
+      return;
+    }
     if (placementMode.value) {
       placementMode.value = false;
       return;
@@ -2551,7 +2608,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           @delete-selected="handleDeleteSelectedPersistent"
           @remove-aura="handleToolbarRemoveAura"
           @edit-aura="handleToolbarEditAura"
-          @toggle-dice-roller="toggleDicePopup"
+          @toggle-dice-roller="openDiceSurface"
         />
       </nav>
 
@@ -2726,8 +2783,21 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           @delete-selected="handleDeleteSelectedPersistent"
           @remove-aura="handleToolbarRemoveAura"
           @edit-aura="handleToolbarEditAura"
-          @toggle-dice-roller="toggleDicePopup"
+          @toggle-dice-roller="openDiceSurface"
         />
+
+        <!--
+          Barra de chamada em fluxo (não flutua sobre o mapa). Fora da chamada
+          é uma pílula de 44 px; dentro, uma barra de 56 px com prévia compacta
+          dos participantes. Clicar em “Na chamada” abre a grade completa.
+        -->
+        <div class="media-bar" aria-label="Chamada da mesa">
+          <MediaDock :table-id="tableId" variant="inline" @expand="openCallDialog">
+            <template v-if="!callDialogOpen" #preview>
+              <ParticipantGrid preview />
+            </template>
+          </MediaDock>
+        </div>
       </section>
 
       <aside
@@ -2786,6 +2856,8 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             :characters="charactersForTable"
             :current-system="currentSystem"
             :round="roundNumber"
+            :recent-rolls="tableStore.recentRolls"
+            :connection-status="connectionStatus"
             :create-scene="handleCreateScene"
             :delete-scene="handleDeleteScene"
             :rename-scene="handleRenameScene"
@@ -2809,6 +2881,28 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             @select-token="handleOpenTokenInspector"
           />
         </template>
+
+        <!-- Dock de chat/histórico: fica no painel, não flutua sobre o mapa. -->
+        <div class="dm-panel__dock" :class="{ 'is-collapsed': isDmPanelCollapsed }">
+          <ChatToggle
+            class="chat-toggle-btn dm-panel__dock-item"
+            :unread="chatStore.unread"
+            :open="chatStore.panelOpen"
+            @toggle="toggleChat"
+          />
+          <button
+            class="log-toggle-btn dm-panel__dock-item"
+            :class="{ open: showActionLog }"
+            type="button"
+            aria-label="Alternar histórico"
+            :aria-expanded="showActionLog"
+            @click="toggleActionLog"
+          >
+            <Icon name="book" :size="16" aria-hidden="true" />
+            <span class="dm-panel__dock-label">{{ showActionLog ? 'Fechar histórico' : 'Histórico' }}</span>
+            <span v-if="logCount" class="log-badge">{{ logCount }}</span>
+          </button>
+        </div>
       </aside>
     </div>
 
@@ -2831,7 +2925,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       />
     </div>
 
-    <div v-if="!isMobileLayout" class="board-dock" :class="{ 'board-dock--player': !isDM }">
+    <div v-if="!isMobileLayout && !isDM" class="board-dock board-dock--player">
       <ChatToggle
         class="chat-toggle-btn"
         :unread="chatStore.unread"
@@ -2932,6 +3026,8 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :characters="charactersForTable"
         :current-system="currentSystem"
         :round="roundNumber"
+        :recent-rolls="tableStore.recentRolls"
+        :connection-status="connectionStatus"
         :create-scene="handleCreateScene"
         :delete-scene="handleDeleteScene"
         :rename-scene="handleRenameScene"
@@ -3078,26 +3174,55 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @cancel="closeCharacterCreate"
     />
 
-    <transition name="dice-roller">
-      <div v-if="showDicePopup" class="dice-popup-overlay" @click.self="toggleDicePopup">
-        <DiceRoller
-          :tableId="tableId"
-          :availableCharacters="charactersForTable"
-          :currentTokenId="currentTurnTokenId"
-          :activeCharacterId="activeCharacterId"
-          :system="currentSystem"
-          mode="popup"
-          @close="toggleDicePopup"
-        />
-      </div>
-    </transition>
-
     <DiceAnimation
       v-if="diceAnimationVisible && diceAnimationPayload"
       :key="diceAnimationId"
       :payload="diceAnimationPayload"
+      variant="dm"
       @dismiss="dismissDiceAnimation()"
     />
+
+    <BaseDialog
+      :open="callDialogOpen"
+      title="Chamada"
+      :variant="isMobileLayout ? 'sheet' : 'dialog'"
+      @update:open="callDialogOpen = $event"
+      @close="closeCallDialog"
+    >
+      <div class="call-dialog">
+        <p class="call-dialog__summary" role="status">
+          <template v-if="mediaStore.participantCount">
+            {{ mediaStore.participantCount }}
+            {{ mediaStore.participantCount === 1 ? 'participante na chamada' : 'participantes na chamada' }}
+          </template>
+          <template v-else>Ninguém na chamada ainda.</template>
+        </p>
+        <ParticipantGrid />
+        <MediaDock :table-id="tableId" variant="inline" />
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-sm" @click="closeCallDialog">Fechar</button>
+      </template>
+    </BaseDialog>
+
+    <BaseSheet
+      v-if="showPlayerDiceSheet && !isDM"
+      :open="true"
+      title="Dados"
+      @update:open="showPlayerDiceSheet = $event"
+      @close="showPlayerDiceSheet = false"
+    >
+      <div class="dice-sheet">
+        <DiceTray
+          :table-id="tableId"
+          :current-token-id="currentTurnTokenId"
+          :characters="charactersForTable"
+          :active-character-id="activeCharacterId"
+          :recent-rolls="tableStore.recentRolls"
+          :connection-status="connectionStatus"
+        />
+      </div>
+    </BaseSheet>
 
     <BaseDialog
       :open="pendingSessionEnd"
@@ -3114,10 +3239,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         <button type="button" class="btn btn-sm danger" @click="confirmEndSession">Encerrar sessão</button>
       </div>
     </BaseDialog>
-
-    <!-- Chamada (Fase 5): só DM/jogador; a TV nunca monta estes componentes. -->
-    <ParticipantGrid floating />
-    <MediaDock :table-id="tableId" />
   </div>
 </template>
 
@@ -3650,36 +3771,60 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 .dm-panel.collapsed .toggle-button { width: 44px; padding: 0; }
 .dm-panel.collapsed .toggle-button span { display: none; }
 
-/* Dock de chat/histórico no desktop ------------------------------------ */
+/* Dock de chat/histórico no desktop (Mestre: rodapé do painel). ------- */
 .board-dock {
   position: fixed;
-  right: calc(var(--dm-panel-w) + var(--s-4));
-  bottom: var(--s-4);
+  right: var(--s-4);
+  top: calc(56px + var(--s-4));
   z-index: 70;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: var(--s-2);
 }
-.table-view-layout.is-player .board-dock {
-  right: var(--s-4);
-  top: calc(56px + var(--s-4));
-  bottom: auto;
+.dm-panel__dock {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border-top: 1px solid var(--line);
+  background: var(--panel);
 }
-.board-dock :deep(.chat-toggle) {
-  min-height: 40px;
-  padding: 0 var(--s-4);
+.dm-panel__dock .dm-panel__dock-item { flex: 1 1 0; min-width: 0; min-height: 44px; }
+.dm-panel__dock :deep(.chat-toggle) {
+  min-height: 44px;
+  padding: 0 var(--s-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
-  background: var(--panel);
+  background: var(--raised);
   box-shadow: none;
   color: var(--text);
   font-size: var(--text-xs);
   font-weight: 500;
 }
-.board-dock :deep(.chat-toggle:hover) { background: var(--raised); }
-.board-dock :deep(.chat-toggle.is-open) { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.board-dock :deep(.chat-toggle__badge) { min-width: 18px; height: 18px; background: var(--danger); font-size: var(--text-2xs); }
+.dm-panel__dock :deep(.chat-toggle:hover) { background: var(--raised-2); }
+.dm-panel__dock :deep(.chat-toggle.is-open) { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.dm-panel__dock :deep(.chat-toggle__badge) { min-width: 18px; height: 18px; background: var(--danger); font-size: var(--text-2xs); }
+.dm-panel__dock .log-toggle-btn {
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+}
+.dm-panel__dock .log-toggle-btn:hover { background: var(--raised-2); }
+.dm-panel__dock.is-collapsed {
+  flex-direction: column;
+  padding: var(--s-1);
+}
+.dm-panel__dock.is-collapsed .dm-panel__dock-item {
+  flex: none;
+  width: 44px;
+  padding: 0;
+}
+.dm-panel__dock.is-collapsed .dm-panel__dock-label,
+.dm-panel__dock.is-collapsed :deep(.chat-toggle__label) { display: none; }
 .log-toggle-btn {
   display: inline-flex;
   align-items: center;
@@ -3722,12 +3867,19 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 }
 .table-view-layout :deep(.chat-panel--desktop) {
   right: calc(var(--dm-panel-w) + var(--s-4));
+  bottom: calc(var(--s-4) + 56px);
+  width: min(390px, calc(100vw - var(--dm-panel-w) - var(--s-8)));
+  max-height: min(60vh, 520px);
 }
-.table-view-layout.is-player :deep(.chat-panel--desktop) { right: var(--s-4); }
+.table-view-layout.is-player :deep(.chat-panel--desktop) {
+  right: var(--s-4);
+  width: min(390px, calc(100vw - var(--s-8)));
+}
 .table-view-layout :deep(.chat-panel--mobile) {
   right: var(--s-2);
   left: var(--s-2);
   bottom: calc(var(--mobile-bar-h) + var(--s-3) + env(safe-area-inset-bottom, 0px));
+  max-height: min(60dvh, 460px);
   border-radius: var(--radius-lg);
 }
 
@@ -3762,20 +3914,38 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   background: rgb(4 6 7 / 0.72);
 }
 
-/* Popup de dados ------------------------------------------------------- */
-.dice-popup-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 110;
+/* Chamada e dados ------------------------------------------------ */
+.media-bar {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(4 6 7 / 0.72);
+  flex: none;
+  min-width: 0;
 }
-.dice-roller-enter-active,
-.dice-roller-leave-active { transition: opacity var(--dur-pop) var(--ease-out), transform var(--dur-pop) var(--ease-out); }
-.dice-roller-enter-from,
-.dice-roller-leave-to { opacity: 0; transform: translateY(10px); }
+.media-bar :deep(.media-dock) {
+  width: 100%;
+}
+
+.call-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+}
+.call-dialog__summary {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+}
+.call-dialog :deep(.participant-grid) {
+  max-height: 52dvh;
+  overflow-y: auto;
+}
+.dice-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+}
 
 /* Barra mobile e FAB --------------------------------------------------- */
 .mobile-bar {
@@ -3849,7 +4019,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 .mobile-fab {
   position: fixed;
   right: var(--s-4);
-  bottom: calc(var(--mobile-bar-h) + var(--s-4) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--mobile-bar-h) + 64px + var(--s-3) + env(safe-area-inset-bottom, 0px));
   z-index: 60;
   display: inline-flex;
   align-items: center;
@@ -3872,20 +4042,13 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 .mobile-panel-content { max-height: min(72dvh, 640px); }
 .mobile-panel-content :deep(.dm-panel__add) { display: none; }
 
-/* Mídia: o card flutuante não pode cobrir o rail nem o FAB. */
-.table-view-layout :deep(.media-dock--floating) {
-  left: calc(104px + var(--s-4));
-  bottom: var(--s-4);
-  z-index: 72;
-  max-width: min(240px, calc(100vw - 104px - var(--dm-panel-w) - var(--s-8)));
-  padding: var(--s-2) var(--s-3);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  background: var(--panel);
-  box-shadow: var(--shadow-overlay);
+/* Mídia: barra em fluxo no rodapé do tabuleiro (nunca card sobre o mapa). */
+.media-bar :deep(.media-dock) {
   color: var(--text);
 }
-.table-view-layout.is-player :deep(.media-dock--floating) { left: var(--s-4); }
+.media-bar :deep(.media-dock__preview) {
+  max-width: 232px;
+}
 
 /* Player: iniciativa flutuante ---------------------------------------- */
 .player-initiative-wrapper {
@@ -3906,6 +4069,8 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   .scene-switch__label { display: none; }
   .scene-switch__name { max-width: 150px; }
   .connection-label { display: none; }
+  /* Barra de 56 px cabe em uma linha: a prévia fica no diálogo da chamada. */
+  .media-bar :deep(.media-dock__preview) { display: none; }
 }
 
 @media (max-width: 1023px) {
@@ -3943,30 +4108,29 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   .turn-bar__actions { grid-area: actions; gap: var(--s-1); }
   .turn-bar__movement { display: none; }
   .turn-bar__round { font-size: 10px; }
-  .board-wrap { min-height: 55dvh; }
+  .board-wrap { min-height: 50dvh; }
   .board-wrap :deep(.viewport) { height: 100%; }
-  .player-initiative-wrapper { right: var(--s-3); bottom: calc(var(--mobile-bar-h) + var(--s-3)); }
+  .player-initiative-wrapper { right: var(--s-3); bottom: calc(var(--mobile-bar-h) + 64px + var(--s-3)); }
   .player-initiative-wrapper.bottom-sheet {
     right: var(--s-3);
     left: var(--s-3);
-    bottom: calc(var(--mobile-bar-h) + var(--s-3) + env(safe-area-inset-bottom, 0px));
+    bottom: calc(var(--mobile-bar-h) + 64px + var(--s-3) + env(safe-area-inset-bottom, 0px));
   }
   .placement-banner { flex-wrap: wrap; }
   .placement-banner__actions { margin-left: 0; }
   .board-recenter { min-height: 32px; top: var(--s-2); left: var(--s-2); }
   .board-recenter span { display: none; }
-  .table-view-layout :deep(.media-dock--floating) {
-    left: var(--s-3);
-    right: auto;
-    bottom: calc(var(--mobile-bar-h) + var(--s-4) + env(safe-area-inset-bottom, 0px));
-    max-width: calc(100vw - 132px);
-    padding: 0;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
+  /* Uma faixa só: pílula de 44 px fora da chamada, barra de 56 px dentro. */
+  .media-bar {
+    margin-top: calc(var(--s-1) * -1);
   }
-  .table-view-layout :deep(.media-dock--floating .media-dock__status) { display: none; }
-  .table-view-layout :deep(.media-dock--floating .media-btn--join) { flex: 0 0 auto; }
+  .media-bar :deep(.media-dock) {
+    border-radius: var(--radius-sm);
+  }
+  .media-bar :deep(.media-dock--pill) {
+    border: 0;
+    border-radius: 0;
+  }
 }
 
 @media (max-width: 520px) {

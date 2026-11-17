@@ -166,4 +166,35 @@ describe('DMPanel', () => {
     expect(wrapper.text()).toContain('1 ficha · 1 sem token nesta cena');
     wrapper.unmount();
   });
+
+  it('usa o DiceTray (uma superfície) dentro do hook .dice-roller da aba Iniciativa', async () => {
+    const wrapper = mountPanel({
+      activeTab: 'initiative',
+      currentTurnTokenId: 'token-1',
+      tokensOnMap: [
+        { _id: 'token-1', name: 'Ghoul', ownerId: null, color: '#fff', characterId: 'char-1' },
+      ],
+      characters: [{ _id: 'char-1', name: 'Lyra', ownerId: 'u-2', tableId: 'table-1' }],
+      recentRolls: [
+        {
+          userId: 'dm-1',
+          username: 'DM',
+          expression: '1d20',
+          total: 14,
+          createdAt: '2026-01-01T10:00:00.000Z',
+        },
+      ],
+    });
+    await flushPromises();
+
+    const surface = wrapper.get('.dice-roller');
+    expect(wrapper.findComponent({ name: 'DiceRoller' }).exists()).toBe(false);
+    const tray = wrapper.findComponent({ name: 'DiceTray' });
+    expect(tray.exists()).toBe(true);
+    expect(surface.find('#dice-expression').exists()).toBe(true);
+    expect(tray.props('currentTokenId')).toBe('token-1');
+    expect(tray.props('activeCharacterId')).toBe('char-1');
+    expect(tray.props('recentRolls')).toHaveLength(1);
+    wrapper.unmount();
+  });
 });

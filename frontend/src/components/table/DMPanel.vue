@@ -5,14 +5,16 @@ import SceneManager, { type SceneCreatePayload } from '../SceneManager.vue';
 import DMSessionControls from '../DMSessionControls.vue';
 import TableSharePanel from './TableSharePanel.vue';
 import InitiativePanel from '../InitiativePanel.vue';
-import DiceRoller from '../DiceRoller.vue';
+import DiceTray from '../dice/DiceTray.vue';
 import BaseDialog from '../ui/BaseDialog.vue';
 import type { AssetUsage } from '../../services/storageService';
 import type {
   Character,
+  DiceRolledPayload,
   IInitiativeEntry,
   IScene,
   PlayerInfo,
+  RollLogEntryDTO,
   SystemDTO,
   TokenInfo,
 } from '../../types';
@@ -49,6 +51,8 @@ interface Props {
   characters: Character[];
   currentSystem: SystemDTO | null;
   round: number | null;
+  recentRolls?: RollLogEntryDTO[];
+  connectionStatus?: string;
   createScene?: (payload: SceneCreatePayload) => Promise<void>;
   deleteScene?: (sceneId: string) => Promise<void>;
   renameScene?: (sceneId: string, name: string) => Promise<void>;
@@ -56,6 +60,8 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  recentRolls: () => [],
+  connectionStatus: 'connected',
   createScene: async () => undefined,
   deleteScene: async () => undefined,
   renameScene: async () => undefined,
@@ -81,6 +87,7 @@ const emit = defineEmits<{
   (e: 'open-character-library'): void;
   (e: 'add-token'): void;
   (e: 'select-token', tokenId: string): void;
+  (e: 'roll-result', payload: DiceRolledPayload): void;
 }>();
 
 const tabs: Array<{ key: DmPanelTab; label: string; icon: string }> = [
@@ -147,6 +154,16 @@ const tokensOutsideDraft = computed(() => {
 
 const rowCount = computed(() => props.initiativeList.length);
 const currentEntry = computed(() => props.initiativeList.find((entry) => entry.isCurrentTurn) ?? null);
+
+/**
+ * A ficha do turno alimenta os presets do DiceTray; sem token/ficha vinculada,
+ * o tray segue com os presets do sistema e a expressão livre.
+ */
+const diceCharacterId = computed(() => {
+  if (!props.currentTurnTokenId) return null;
+  const token = props.tokensOnMap.find((entry) => entry._id === props.currentTurnTokenId);
+  return token?.characterId ?? null;
+});
 
 const tabButtonRefs = ref<HTMLButtonElement[]>([]);
 
@@ -393,14 +410,18 @@ const characterSummary = computed(() => {
           <p class="panel-hint">
             {{ currentEntry ? `Rolagem no turno de ${currentEntry.characterName}.` : 'Nenhum turno ativo.' }}
           </p>
-          <DiceRoller
-            :table-id="tableId"
-            :available-characters="characters"
-            :current-token-id="currentTurnTokenId"
-            :active-character-id="null"
-            :system="currentSystem"
-            mode="embedded"
-          />
+          <!-- `.dice-roller` permanece como hook do cockpit/E2E; a superfície é o DiceTray. -->
+          <div class="dice-roller dice-surface">
+            <DiceTray
+              :table-id="tableId"
+              :current-token-id="currentTurnTokenId"
+              :characters="characters"
+              :active-character-id="diceCharacterId"
+              :recent-rolls="recentRolls"
+              :connection-status="connectionStatus"
+              @roll-result="emit('roll-result', $event)"
+            />
+          </div>
         </section>
       </section>
 
@@ -675,10 +696,15 @@ const characterSummary = computed(() => {
   white-space: nowrap;
 }
 :deep(.dice-roller) {
+  min-width: 0;
+}
+.dice-surface {
   padding: var(--s-3);
   border-radius: var(--radius-md);
   background: var(--raised);
-  min-width: 0;
+}
+.dice-surface :deep(.dice-tray) {
+  gap: var(--s-3);
 }
 .grid-dialog-copy {
   margin: 0 0 var(--s-3);
