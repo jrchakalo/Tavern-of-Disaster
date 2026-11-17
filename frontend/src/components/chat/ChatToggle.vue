@@ -42,33 +42,50 @@ const ariaLabel = computed(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--s-3);
   min-width: 44px;
   min-height: 44px;
-  padding: 10px 16px;
-  border: 1px solid var(--color-border, #4b3a44);
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--color-surface, #463641), var(--color-surface-alt, #3a2c34));
-  color: var(--color-text, #f3e9ef);
-  font: inherit;
-  font-weight: 600;
-  font-size: 0.92rem;
+  padding: 0 var(--s-5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1;
   cursor: pointer;
-  box-shadow: var(--elev-2, 0 10px 24px rgba(0, 0, 0, 0.35));
+  box-shadow: none;
+  transition: background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
 }
 
 .chat-toggle:hover {
-  background: var(--color-surface-alt, #3a2c34);
+  background: var(--raised);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.chat-toggle:active {
+  transform: translateY(1px);
+  transition-duration: var(--dur-press);
 }
 
 .chat-toggle.is-open {
-  background: var(--color-accent, #c8a2c8);
-  border-color: var(--color-accent, #c8a2c8);
-  color: #0f0f15;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.chat-toggle.is-open:hover {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  color: var(--on-accent);
 }
 
 .chat-toggle:focus-visible {
-  outline: 2px solid var(--color-warning, #f5a524);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -76,19 +93,25 @@ const ariaLabel = computed(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--color-danger, #e53935);
-  color: #fff;
-  font-size: 0.72rem;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--s-1);
+  border-radius: var(--radius-xs);
+  background: var(--danger);
+  color: var(--on-danger);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  font-weight: 500;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
 .chat-toggle.has-unread {
-  border-color: rgba(229, 57, 53, 0.65);
+  border-color: var(--danger);
+}
+
+.chat-toggle.is-open.has-unread {
+  border-color: var(--accent);
 }
 
 @media (prefers-reduced-motion: reduce) {

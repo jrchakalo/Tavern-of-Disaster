@@ -92,100 +92,165 @@ function clearLogs() {
 
 <style scoped>
 .dice-sandbox-view {
+  width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 40px 20px 80px;
-  color: var(--color-text, #f5f2ff);
+  padding: var(--s-7) var(--s-5) var(--s-9);
+  color: var(--text);
 }
+
 .hero {
+  margin-bottom: var(--s-7);
   text-align: center;
-  margin-bottom: 32px;
 }
+
 .hero__eyebrow {
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  font-size: 0.75rem;
   margin: 0;
-  color: var(--color-text-muted, #c3bdd8);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
+
 .hero h1 {
-  margin: 6px 0 12px;
-  font-size: clamp(2rem, 4vw, 3rem);
+  margin: var(--s-2) 0 var(--s-3);
+  font-size: clamp(2rem, 4vw, 2.75rem);
 }
+
 .hero__lead {
+  max-width: 60ch;
   margin: 0 auto;
-  max-width: 640px;
-  color: var(--color-text-muted, #cfc7e2);
+  color: var(--text-muted);
+  font-size: var(--text-lg);
+  line-height: 1.55;
 }
+
 .sandbox-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 24px;
+  gap: var(--s-6);
   align-items: flex-start;
 }
+
 .surface {
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.15));
-  border-radius: 24px;
-  background: linear-gradient(180deg, rgba(19, 14, 25, 0.95), rgba(7, 5, 10, 0.96));
-  box-shadow: var(--elev-2, 0 10px 30px rgba(0, 0, 0, 0.35));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  box-shadow: none;
 }
+
 .roller-card {
-  padding: 24px;
+  padding: var(--s-5);
 }
+
 .helper-text {
-  margin-top: 16px;
-  font-size: 0.9rem;
-  color: var(--color-text-muted, #cbc3da);
+  margin-top: var(--s-4);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
 }
+
 .helper-text code {
-  background: rgba(255, 255, 255, 0.07);
-  padding: 2px 6px;
-  border-radius: 6px;
+  padding: 1px var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
 }
+
 .log-card {
-  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--s-4);
+  padding: var(--s-5);
 }
+
 .log-card__header {
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
+  justify-content: space-between;
+  gap: var(--s-4);
 }
+
 .eyebrow {
   margin: 0;
-  text-transform: uppercase;
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  color: var(--color-text-muted, #c3bdd8);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
+
 .log-card h2 {
-  margin: 4px 0 0;
-  font-size: 1.2rem;
+  margin: var(--s-1) 0 0;
+  font-size: var(--text-xl);
 }
+
 .clear-btn {
-  border-radius: 999px;
-  padding: 8px 16px;
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.15));
-  background: transparent;
-  color: inherit;
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  font-weight: 500;
   cursor: pointer;
+  transition: background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out);
 }
+
+.clear-btn:hover:not(:disabled) {
+  background: var(--raised-2);
+}
+
+.clear-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  transition-duration: var(--dur-press);
+}
+
+.clear-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .clear-btn:disabled {
-  opacity: 0.5;
+  border-color: var(--line);
+  background: transparent;
+  color: var(--text-muted);
   cursor: not-allowed;
 }
+
 .log-empty {
+  margin: var(--s-8) 0;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
   text-align: center;
-  color: var(--color-text-muted, #c3bdd8);
-  margin: 40px 0;
 }
+
 @media (max-width: 640px) {
   .roller-card,
   .log-card {
-    padding: 20px;
+    padding: var(--s-4);
+  }
+
+  .clear-btn {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clear-btn {
+    transition: none;
   }
 }
 </style>

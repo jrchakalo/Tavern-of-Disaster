@@ -216,66 +216,81 @@ function connectionTitle(tile: ParticipantTile): string {
 </template>
 
 <style scoped>
+/* Superfície de ficha: painel sólido, sem vidro. */
 .participant-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid var(--color-border, #4b3a44);
-  border-radius: 14px;
-  background: rgba(24, 18, 22, 0.72);
-  backdrop-filter: blur(4px);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
 }
 
 .participant-grid--floating {
   position: fixed;
   left: 16px;
-  bottom: 126px;
+  bottom: 176px;
   z-index: 71;
-  width: min(480px, calc(100vw - 32px));
-  max-height: min(42vh, 360px);
+  display: flex;
+  flex-wrap: wrap;
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
+  max-height: min(42vh, 380px);
   overflow-y: auto;
   box-sizing: border-box;
+  box-shadow: none;
+}
+
+.participant-grid--floating .media-tile {
+  flex: 0 0 176px;
+  width: 176px;
+}
+
+/* Compartilhamento de tela ocupa a linha inteira também na barra flutuante. */
+.participant-grid--floating .media-tile.is-screen {
+  flex: 0 0 100%;
+  width: auto;
 }
 
 .participant-grid--compact {
-  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
-  max-height: 170px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  max-height: 220px;
   overflow-y: auto;
 }
 
 .media-tile {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 92px;
+  display: block;
+  aspect-ratio: 16 / 9;
+  min-height: 0;
   overflow: hidden;
   border: 2px solid transparent;
-  border-radius: 12px;
-  background: #241b20;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  border-radius: var(--radius-md);
+  background: var(--ink-0);
+  transition: border-color var(--dur-hover) var(--ease-out);
 }
 
 .media-tile.is-screen {
   grid-column: 1 / -1;
-  min-height: 180px;
-}
-
-.media-tile.is-speaking {
-  border-color: var(--color-success, #2ecc71);
-  box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.25);
 }
 
 .media-tile.is-local {
-  border-color: rgba(200, 162, 200, 0.4);
+  border-color: var(--line-strong);
+}
+
+/* Anel de fala: 2 px de sucesso, independente de seleção. */
+.media-tile.is-speaking {
+  border-color: var(--success-ink);
 }
 
 .media-tile__video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  min-height: 92px;
   object-fit: cover;
-  background: #171015;
+  background: var(--ink-0);
   transform: scaleX(-1);
 }
 
@@ -285,15 +300,15 @@ function connectionTitle(tile: ParticipantTile): string {
 }
 
 .media-tile__placeholder {
+  position: absolute;
+  inset: 0;
   display: flex;
-  flex: 1;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  min-height: 92px;
-  padding: 8px;
-  background: radial-gradient(circle at 50% 30%, #42313a, #221920 75%);
+  gap: var(--s-1);
+  padding: var(--s-2) var(--s-2) var(--s-6);
+  background: var(--raised);
   text-align: center;
 }
 
@@ -301,78 +316,98 @@ function connectionTitle(tile: ParticipantTile): string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--raised-2);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.participant-grid--compact .media-tile__initials {
+  width: 28px;
+  height: 28px;
 }
 
 .media-tile__hint {
-  font-size: 0.66rem;
-  color: var(--color-text-muted, #b7aab1);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: 1.3;
 }
 
 .media-tile__footer {
   position: absolute;
   inset: auto 0 0;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  padding: 14px 6px 5px;
-  background: linear-gradient(180deg, transparent, rgba(10, 7, 9, 0.88));
+  gap: var(--s-2);
+  padding: 2px var(--s-2);
+  border-top: 1px solid var(--line);
+  background: var(--ink-0);
   pointer-events: none;
 }
 
 .media-tile__name {
-  max-width: 70%;
+  min-width: 0;
+  max-width: 45%;
   overflow: hidden;
-  color: #f5eef2;
-  font-size: 0.7rem;
-  font-weight: 600;
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .media-tile__badges {
   display: inline-flex;
-  gap: 3px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  gap: 2px;
   justify-content: flex-end;
 }
 
 .media-tile__badge {
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: rgba(229, 57, 53, 0.8);
-  color: #fff;
-  font-size: 0.58rem;
-  font-weight: 700;
+  padding: 0 var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--raised);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: 1.5;
   white-space: nowrap;
 }
 
 .media-tile__badge--muted {
-  background: rgba(90, 70, 82, 0.9);
+  background: var(--raised);
+  color: var(--text-muted);
 }
 
 .media-tile__badge--screen {
-  background: rgba(46, 125, 200, 0.9);
+  border-color: rgb(47 108 132 / 0.55);
+  background: rgb(47 108 132 / 0.16);
+  color: var(--accent-ink);
 }
 
 @media (max-width: 900px) {
   .participant-grid--floating {
     left: 8px;
-    right: 8px;
+    right: auto;
     bottom: calc(214px + env(safe-area-inset-bottom, 0px));
-    width: auto;
+    width: max-content;
+    max-width: calc(100vw - 16px);
     max-height: 34vh;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .media-tile { transition: none; }
+  .media-tile {
+    transition: none;
+  }
 }
 </style>
