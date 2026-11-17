@@ -269,14 +269,28 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
       login automático.
 - [x] DM cria token e ficha, vê turno, remove da iniciativa sem apagar token,
       cria/ativa cena com upload/grade em um fluxo.
-- [ ] Painel DM dockado, 4 abas, sem cobrir o board; chat/log não sobrepõem.
-      (dockado: sim; compactação final de mídia/chat em D6b.)
+- [x] Painel DM dockado, 4 abas, sem cobrir o board; mídia compacta e chat/log em dock.
 - [x] Jogador mobile: tabuleiro ≥55%, bottom nav, turno visível, ficha/dados/
       chat/chamada; sem `rev`/role visível.
 - [x] TV legível a 3 m, sem debug; dado aparece na TV/jogador.
 - [x] Contraste AA, teclado, foco, labels, toasts, 44 px, 320 px, reduced motion.
       (guard `npm run check:contrast`; auditoria axe final em D6a.)
-- [ ] E2E e caos verdes; visual regression das 6 telas; deploy Render/Vercel.
+- [x] E2E (81/81), caos, axe (9/9 rotas), unitários e build verdes.
+- [ ] Deploy Render/Vercel e smoke de produção.
+
+### 8.1 Resultados dos gates (2026-11-17)
+
+| Gate | Resultado |
+|---|---|
+| Backend (Jest) | **265/265** |
+| Frontend (Vitest) | **479/479** |
+| Type-check + build | verdes |
+| ESLint (frontend) | 0 erros |
+| Contraste (`check:contrast`) | 45/45 pares AA |
+| E2E (Playwright, Chrome) | **81/81** |
+| axe (9 rotas) | **0 critical/serious** |
+| Caos (6 clientes) | **PASS** |
+| Assets públicos | 1,6 MB (logo 45 KB, vídeos 118–384 KB) |
 
 ## 9. Invariantes
 
