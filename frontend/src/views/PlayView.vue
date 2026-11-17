@@ -888,10 +888,10 @@ onBeforeUnmount(() => {
         :aria-expanded="menuOpen"
         @click="menuOpen = !menuOpen"
       >
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <circle cx="12" cy="5" r="1.4" />
-          <circle cx="12" cy="12" r="1.4" />
-          <circle cx="12" cy="19" r="1.4" />
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.8" fill="currentColor" />
+          <circle cx="12" cy="12" r="1.8" fill="currentColor" />
+          <circle cx="12" cy="19" r="1.8" fill="currentColor" />
         </svg>
       </button>
 
