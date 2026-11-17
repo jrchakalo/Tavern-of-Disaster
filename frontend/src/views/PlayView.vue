@@ -23,6 +23,7 @@ import TokenCard from '../components/play/TokenCard.vue';
 import TokenDetailsSheet from '../components/play/TokenDetailsSheet.vue';
 import ActionErrorBanner from '../components/play/ActionErrorBanner.vue';
 import PlayerDicePanel from '../components/play/PlayerDicePanel.vue';
+import DiceAnimation from '../components/DiceAnimation.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
 import BaseDialog from '../components/ui/BaseDialog.vue';
 import BaseSheet from '../components/ui/BaseSheet.vue';
@@ -801,11 +802,22 @@ function openCharacterFromInitiative(characterId: string) {
 }
 
 /**
- * A rolagem do dado já aparece no próprio tray. A onda D5 pode usar este
- * payload para o overlay-assinatura sem tocar no motor/contrato de rolagem.
+ * Momento assinatura do jogador. O DiceTray é a única superfície de rolagem do
+ * `/play`, então o payload chega uma vez por rolagem. A rolagem nova substitui
+ * a anterior sem fila (o próprio DiceAnimation reinicia a coreografia).
  */
 function handlePlayerDiceResult(payload: DiceRolledPayload) {
+  if (payload.tableId && payload.tableId !== tableId) return;
+  if (payload.userId !== currentUser.value?.id) return;
   playerDiceResult.value = payload;
+  // O sheet de Dados é um <dialog> modal: para o bilhete ficar acionável e
+  // acima da nav, a aba volta ao tabuleiro. O painel continua montado (oculto)
+  // com a expressão e o resultado intactos para a próxima abertura.
+  if (activeTab.value === 'dados') closeTab();
+}
+
+function dismissPlayerDice() {
+  playerDiceResult.value = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1267,7 +1279,6 @@ onBeforeUnmount(() => {
     />
 
     <PlayerDicePanel
-      v-if="activeTab === 'dados'"
       :open="activeTab === 'dados'"
       :table-id="tableId"
       :current-token-id="currentTurnTokenId"
@@ -1277,6 +1288,13 @@ onBeforeUnmount(() => {
       :connection-status="connectionStatus"
       @close="closeTab"
       @roll-result="handlePlayerDiceResult"
+    />
+
+    <DiceAnimation
+      v-if="playerDiceResult"
+      :payload="playerDiceResult"
+      variant="player"
+      @dismiss="dismissPlayerDice"
     />
 
     <PlayerChatSheet

@@ -36,6 +36,8 @@ function stubReducedMotion(matches: boolean) {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
+  delete (navigator as { vibrate?: unknown }).vibrate;
 });
 
 describe('DiceAnimation (signature moment)', () => {
@@ -161,6 +163,139 @@ describe('DiceAnimation (signature moment)', () => {
     expect(wrapper.findAll('.die-art')).toHaveLength(0);
     expect(wrapper.text()).toContain('Sem dados nesta rolagem');
     expect(wrapper.text()).toContain('3');
+    wrapper.unmount();
+  });
+});
+
+function stubVibration() {
+  const vibrate = vi.fn();
+  Object.defineProperty(navigator, 'vibrate', {
+    value: vibrate,
+    configurable: true,
+    writable: true,
+  });
+  return vibrate;
+}
+
+function mountPlayer(overrides: Partial<DiceRolledPayload> = {}) {
+  return mount(DiceAnimation, {
+    props: { payload: payload(overrides), variant: 'player' as const },
+  });
+}
+
+describe('DiceAnimation — momento do jogador', () => {
+  it('renderiza o bilhete compacto com o total, sem teatro de tela cheia', () => {
+    const wrapper = mountPlayer();
+
+    expect(wrapper.find('.dice-moment--player').exists()).toBe(true);
+    expect(wrapper.get('.dice-slip__total-value').text()).toBe('19');
+    expect(wrapper.text()).toContain('Toque ou Esc para fechar');
+    wrapper.unmount();
+  });
+
+  it('fecha sozinho dentro da janela de 2,6–3,2 s', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const wrapper = mountPlayer();
+
+    vi.advanceTimersByTime(2700);
+    expect(wrapper.emitted('dismiss')).toBeUndefined();
+
+    vi.advanceTimersByTime(100);
+    expect(wrapper.emitted('dismiss')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('a rolagem nova substitui a anterior e reinicia o relógio', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const wrapper = mountPlayer();
+
+    vi.advanceTimersByTime(2000);
+    await wrapper.setProps({
+      payload: payload({
+        expression: '2d6',
+        rolls: [
+          { die: 6, value: 3, kept: 'kept' },
+          { die: 6, value: 4, kept: 'kept' },
+        ],
+        modifier: 0,
+        total: 7,
+        metadata: 'Dano',
+      }),
+    });
+
+    expect(wrapper.text()).not.toContain('1d20+5');
+    expect(wrapper.text()).toContain('2d6');
+    expect(wrapper.get('.dice-slip__total-value').text()).toBe('7');
+
+    vi.advanceTimersByTime(800);
+    expect(wrapper.emitted('dismiss')).toBeUndefined();
+
+    vi.advanceTimersByTime(2000);
+    expect(wrapper.emitted('dismiss')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('não fecha sozinho no DM nem na TV', () => {
+    for (const variant of ['card', 'tv'] as const) {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const wrapper = mount(DiceAnimation, { props: { payload: payload(), variant } });
+      vi.advanceTimersByTime(10_000);
+      expect(wrapper.emitted('dismiss')).toBeUndefined();
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('anuncia o resultado com aria-live sem roubar o foco', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const wrapper = mountPlayer();
+
+    expect(document.activeElement).toBe(trigger);
+    const live = wrapper.get('[role="status"]');
+    expect(live.attributes('aria-live')).toBe('polite');
+    expect(live.text()).toContain('Tester rolou 19 em 1d20+5');
+
+    wrapper.unmount();
+    trigger.remove();
+  });
+
+  it('vibra 20 ms apenas no celular e sem reduced motion', () => {
+    const vibrate = stubVibration();
+    const wrapper = mountPlayer();
+    expect(vibrate).toHaveBeenCalledWith(20);
+    wrapper.unmount();
+
+    vibrate.mockClear();
+    stubReducedMotion(true);
+    const reduced = mountPlayer();
+    expect(reduced.find('.dice-moment.is-reduced').exists()).toBe(true);
+    expect(vibrate).not.toHaveBeenCalled();
+    reduced.unmount();
+
+    vi.restoreAllMocks();
+    vibrate.mockClear();
+    const card = mount(DiceAnimation, { props: { payload: payload(), variant: 'card' } });
+    expect(vibrate).not.toHaveBeenCalled();
+    card.unmount();
+  });
+
+  it('mostra o estado final imediato com reduced motion', () => {
+    stubReducedMotion(true);
+    const wrapper = mountPlayer();
+
+    expect(wrapper.find('.dice-moment.is-reduced').exists()).toBe(true);
+    expect(wrapper.get('.dice-slip__total-value').text()).toBe('19');
+    expect(wrapper.findAll('.die-art')).toHaveLength(2);
+    wrapper.unmount();
+  });
+
+  it('fecha com um toque em qualquer lugar do bilhete no celular', async () => {
+    const wrapper = mountPlayer();
+    await wrapper.get('.dice-slip').trigger('click');
+    expect(wrapper.emitted('dismiss')).toHaveLength(1);
     wrapper.unmount();
   });
 });

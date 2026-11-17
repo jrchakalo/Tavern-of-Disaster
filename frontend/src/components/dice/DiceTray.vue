@@ -46,6 +46,8 @@ const resultRef = ref<HTMLElement | null>(null);
 let pendingExpression: string | null = null;
 let pendingAt = 0;
 let ackTimer: ReturnType<typeof setTimeout> | null = null;
+/** Restauração vinda do log não deve rolar o painel até o resultado. */
+let skipNextResultScroll = false;
 
 const isOffline = computed(() => props.connectionStatus !== 'connected');
 
@@ -227,6 +229,10 @@ function acceptOwnRoll(payload: DiceRolledPayload) {
 
 watch(ownResult, async (value) => {
   if (!value) return;
+  if (skipNextResultScroll) {
+    skipNextResultScroll = false;
+    return;
+  }
   await nextTick();
   const reduced =
     typeof window !== 'undefined' &&
@@ -281,6 +287,29 @@ watch(
     const match = rolls.find((roll) => isOwnPendingRoll(roll));
     if (match) acceptOwnRoll(match);
   },
+);
+
+/**
+ * O resultado próprio continua na aba Dados quando o jogador volta para ela
+ * (troca de aba desmonta o tray). A fonte é o log canônico da mesa e o
+ * `roll-result` não é reemitido — o momento assinatura não reaparece sozinho.
+ */
+watch(
+  () => props.recentRolls,
+  (rolls) => {
+    if (ownResult.value) return;
+    const userId = currentUser.value?.id;
+    if (!userId) return;
+    const mine = [...rolls]
+      .filter(
+        (roll) => roll.userId === userId && (!roll.tableId || roll.tableId === props.tableId),
+      )
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+    if (!mine) return;
+    skipNextResultScroll = true;
+    ownResult.value = mine;
+  },
+  { immediate: true },
 );
 
 async function roll() {
