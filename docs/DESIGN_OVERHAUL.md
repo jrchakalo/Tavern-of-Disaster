@@ -282,8 +282,8 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
 
 | Gate | Resultado |
 |---|---|
-| Backend (Jest) | **265/265** |
-| Frontend (Vitest) | **512/512** |
+| Backend (Jest) | **268/268** |
+| Frontend (Vitest) | **517/517** |
 | Type-check + build | verdes |
 | ESLint (frontend) | 0 erros |
 | Contraste (`check:contrast`) | 45/45 pares AA |
@@ -306,6 +306,8 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
 - Um único `＋ Token` por superfície; Convidar/Sessão/Fichas/Dados sem duplicatas.
 - TV/jogador: cena de imagem sem grade, tokens, iniciativa ou turno; batalha inalterada.
 - Seletor de cena e botão “Mesas” visíveis; sistema da mesa só nas configurações do lobby.
+- Cena atual com nome, tipo, grade, escala e imagem; “Nova cena” em popup com
+  “Ativar ao criar”; “Próxima cena” ao lado de “Criar cena”.
 
 ## 9. Invariantes
 
