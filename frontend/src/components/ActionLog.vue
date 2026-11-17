@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import type { LogEntry, LogEntryType } from '../types';
+import Icon from './Icon.vue';
 
 import type { ActionLogCategory } from './table/historyTypes';
 
@@ -88,6 +89,17 @@ function labelFor(type: LogEntryType) {
     default: return type;
   }
 }
+
+/** Ícone decorativo do tipo: dá leitura rápida na aba Ações. */
+function iconFor(type: LogEntryType) {
+  switch (type) {
+    case 'roll': return 'dice';
+    case 'system': return 'info';
+    case 'movement': return 'drag';
+    case 'chat': return 'message';
+    default: return 'info';
+  }
+}
 </script>
 
 <template>
@@ -129,10 +141,13 @@ function labelFor(type: LogEntryType) {
           :data-type="entry.type"
         >
           <header class="log-entry__header">
-            <span class="log-type">{{ labelFor(entry.type) }}</span>
+            <span class="log-type">
+              <Icon :name="iconFor(entry.type)" :size="14" />
+              {{ labelFor(entry.type) }}
+            </span>
             <span class="log-time">{{ formatTime(entry.createdAt) }}</span>
           </header>
-          <p class="log-author">{{ entry.authorName || 'Sistema' }}</p>
+          <p v-if="entry.authorName" class="log-author">{{ entry.authorName }}</p>
           <p class="log-content">{{ entry.content }}</p>
         </article>
       </template>
@@ -224,6 +239,9 @@ function labelFor(type: LogEntryType) {
 }
 
 .log-type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
   font-weight: 500;
 }
 

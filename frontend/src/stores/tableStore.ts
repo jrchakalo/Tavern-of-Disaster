@@ -33,6 +33,17 @@ const DEFAULT_GRID = 30;
 const DEFAULT_METERS_PER_SQUARE = 1.5;
 const LOG_CAP = 200;
 const RECENT_ROLLS_CAP = 50;
+// Um patch pode tocar vários campos; o histórico de Ações não deve virar
+// despejo de estado. No máximo três entradas por revisão.
+const ACTION_LOG_MAX_PER_PATCH = 3;
+// Campos de ficha com significado na mesa (nome, vida e defesa).
+const CHARACTER_LOG_FIELDS = ['name', 'currentHP', 'maxHP', 'defense'] as const;
+const SESSION_STATUS_LABELS: Record<string, string> = {
+    PREPARING: 'Preparando',
+    LIVE: 'Ao vivo',
+    PAUSED: 'Pausado',
+    ENDED: 'Encerrado',
+};
 type MeasurementShape = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
 type PersistentMeasurement = {
     id: string;
@@ -276,6 +287,14 @@ export const useTableStore = defineStore('table', () => {
     const logs: Ref<LogEntry[]> = ref([]);
     const diceAnimationHook: Ref<((payload: DiceRolledPayload) => void) | null> = ref(null);
 
+    // Linha de base das ações. O servidor ainda emite eventos legados
+    // (`sessionStateUpdated`, `characterUpdated`, `initiativeTurnAdvanced`)
+    // ANTES do `sessionPatch`; comparar com o estado local esconderia a
+    // mudança. Estes marcadores só avançam em snapshot/patch canônicos.
+    let canonicalSceneId: string | null = null;
+    let canonicalTurnId: string | null = null;
+    const characterLogBaseline = new Map<string, Partial<CharacterSummaryDTO>>();
+
     // ---- Estado do protocolo realtime (revision-aware) ----
     const revision: Ref<number> = ref(0);
     const lastSyncAt: Ref<number> = ref(0);
@@ -403,6 +422,8 @@ export const useTableStore = defineStore('table', () => {
         applySessionSnapshot(snapshot);
         sharedMeasurements.value = {};
         pings.value = [];
+        canonicalSceneId = activeSceneId.value;
+        canonicalTurnId = initiativeList.value.find((entry) => entry.isCurrentTurn)?._id ?? null;
     }
 
     function setConnectionStatus(status: ConnectionStatus) {
@@ -423,6 +444,49 @@ export const useTableStore = defineStore('table', () => {
 
     function clearLogs() {
         logs.value = [];
+    }
+
+    /** Autor das mutações de mesa: só o DM muda cena, status e turno. */
+    function dmLogAuthor(): { authorId?: string; authorName?: string } {
+        const dm = currentTable.value?.dm;
+        return dm ? { authorId: dm._id, authorName: dm.username } : {};
+    }
+
+    /**
+     * Entrada de ação com id estável por revisão + tipo (+ chave). O id é o que
+     * impede duplicar a mesma mudança caso o patch seja reprocessado.
+     */
+    function buildActionLogEntry(
+        revision: number,
+        kind: string,
+        type: LogEntry['type'],
+        content: string,
+        options: { key?: string; authorId?: string; authorName?: string; raw?: unknown } = {},
+    ): LogEntry {
+        return {
+            id: `action-${revision}-${kind}${options.key ? `-${options.key}` : ''}`,
+            type,
+            authorId: options.authorId,
+            authorName: options.authorName,
+            createdAt: new Date().toISOString(),
+            content,
+            raw: options.raw,
+        };
+    }
+
+    /** Aplica as ações de um patch de uma vez, sem duplicar ids e com cap. */
+    function commitActionLogs(entries: LogEntry[]) {
+        if (entries.length === 0) return;
+        const seen = new Set(logs.value.map((entry) => entry.id));
+        const fresh: LogEntry[] = [];
+        for (const entry of entries) {
+            if (seen.has(entry.id)) continue;
+            seen.add(entry.id);
+            fresh.push(entry);
+            if (fresh.length >= ACTION_LOG_MAX_PER_PATCH) break;
+        }
+        if (fresh.length === 0) return;
+        logs.value = [...logs.value.slice(-(LOG_CAP - fresh.length)), ...fresh];
     }
 
     function buildRollLogEntry(payload: DiceRolledPayload): LogEntry {
@@ -467,7 +531,8 @@ export const useTableStore = defineStore('table', () => {
         if (previousSceneId !== newSceneId) {
             sharedMeasurements.value = {};
             pings.value = [];
-            logs.value = [];
+            // O histórico de Ações é da sessão inteira: trocar de cena não
+            // apaga o que já aconteceu (o patch canônico registra a troca).
         }
     }
 
@@ -504,6 +569,9 @@ export const useTableStore = defineStore('table', () => {
         revision.value = snapshot.revision;
         clockSkewMs.value = snapshot.serverNowMs - Date.now();
         lastSyncAt.value = Date.now();
+        canonicalSceneId = nextActiveSceneId;
+        canonicalTurnId = initiativeList.value.find((entry) => entry.isCurrentTurn)?._id ?? null;
+        syncCharacterLogBaseline(snapshot.characters ?? []);
         // Ephemeral state is rebuilt from the authoritative snapshot
         sharedMeasurements.value = {};
         pings.value = [];
@@ -529,8 +597,23 @@ export const useTableStore = defineStore('table', () => {
         isApplyingPatch.value = true;
         try {
             const changes = patch.changes;
+            // Ações não-rolagem viram entradas do Histórico (aba Ações).
+            // O snapshot inicial nunca passa por aqui.
+            const pendingLogs: LogEntry[] = [];
+            const dmAuthor = dmLogAuthor();
             if (changes.table) {
+                const previousStatus = currentTable.value.status;
+                const nextStatus = changes.table.status;
                 currentTable.value = { ...currentTable.value, ...changes.table };
+                if (nextStatus && nextStatus !== previousStatus) {
+                    pendingLogs.push(buildActionLogEntry(
+                        patch.revision,
+                        'status',
+                        'system',
+                        `Sessão: ${SESSION_STATUS_LABELS[nextStatus] ?? nextStatus}`,
+                        { key: nextStatus, ...dmAuthor },
+                    ));
+                }
             }
             if (changes.scenes) {
                 scenes.value = changes.scenes.map(mapSceneDTO);
@@ -548,6 +631,10 @@ export const useTableStore = defineStore('table', () => {
                         scenes.value = [...scenes.value, mapped];
                     }
                     const isSceneSwitch = activeSceneId.value !== mapped._id;
+                    // O evento legado pode já ter aplicado a cena; o log compara
+                    // com a última cena vista por snapshot/patch.
+                    const sceneChangedForLog = mapped._id !== canonicalSceneId;
+                    canonicalSceneId = mapped._id;
                     const newWidth = mapped.gridWidth ?? DEFAULT_GRID;
                     const newHeight = mapped.gridHeight ?? DEFAULT_GRID;
                     activeSceneId.value = mapped._id;
@@ -563,6 +650,15 @@ export const useTableStore = defineStore('table', () => {
                         // Resize da mesma cena: preserva os tokens atuais
                         // (tokens fora dos novos limites caem fora do grid).
                         _rebuildGridRectangular(newWidth, newHeight, tokensOnMap.value);
+                    }
+                    if (sceneChangedForLog) {
+                        pendingLogs.push(buildActionLogEntry(
+                            patch.revision,
+                            'scene',
+                            'system',
+                            `Cena ativa: ${mapped.name}`,
+                            { key: mapped._id, ...dmAuthor },
+                        ));
                     }
                 } else {
                     activeSceneId.value = null;
@@ -591,13 +687,49 @@ export const useTableStore = defineStore('table', () => {
                         const target = squares.value.find((sq) => sq.id === token.squareId);
                         if (target) target.token = token;
                     }
+                    // O evento legado `tokenMoved` chega antes e já moveu o token;
+                    // por isso a presença de `squareId` no patch — não o diff local —
+                    // é o sinal de movimento. O servidor só manda `squareId` aqui
+                    // quando houve movimento/undo.
+                    if (typeof targetSquareId === 'string') {
+                        pendingLogs.push(buildActionLogEntry(
+                            patch.revision,
+                            'token-move',
+                            'movement',
+                            `Token ${token.name} moveu para ${token.squareId}`,
+                            { key: token._id },
+                        ));
+                    }
                 });
             }
             if (changes.tokensRemoved) {
-                changes.tokensRemoved.forEach((tokenId) => removeToken(tokenId));
+                changes.tokensRemoved.forEach((tokenId) => {
+                    removeToken(tokenId);
+                    pendingLogs.push(buildActionLogEntry(
+                        patch.revision,
+                        'token-removed',
+                        'system',
+                        'Token removido',
+                        { key: tokenId, ...dmAuthor },
+                    ));
+                });
             }
             if (changes.initiative) {
-                initiativeList.value = changes.initiative.map(mapInitiativeDTO);
+                const nextInitiative = changes.initiative.map(mapInitiativeDTO);
+                initiativeList.value = nextInitiative;
+                const currentTurn = nextInitiative.find((entry) => entry.isCurrentTurn);
+                // Só registra quando o turno mudou desde o último snapshot/patch
+                // (o evento legado pode ter atualizado a lista antes).
+                if (currentTurn && currentTurn._id !== canonicalTurnId) {
+                    pendingLogs.push(buildActionLogEntry(
+                        patch.revision,
+                        'turn',
+                        'system',
+                        `Turno de ${currentTurn.characterName}`,
+                        { key: currentTurn._id, ...dmAuthor },
+                    ));
+                }
+                canonicalTurnId = currentTurn?._id ?? null;
             }
             if (changes.measurements) {
                 setPersistentsFromDTO(changes.measurements, activeSceneId.value);
@@ -607,6 +739,9 @@ export const useTableStore = defineStore('table', () => {
             }
             if (changes.characters) {
                 setCharacterSummaries(changes.characters);
+                // Lista completa (criação/remoção) não vira ação de ficha, mas
+                // reinicia a base de comparação.
+                syncCharacterLogBaseline(changes.characters);
             }
             if (changes.characterUpdates) {
                 changes.characterUpdates.forEach((update) => {
@@ -622,6 +757,34 @@ export const useTableStore = defineStore('table', () => {
                         ownerId: existing?.ownerId ?? '',
                         ...cleanPatch,
                     });
+                    // Só nome/vida/defesa contam como mudança de ficha; tokenId,
+                    // systemKey e level não poluem o histórico. A comparação usa
+                    // a base canônica, porque o evento legado `characterUpdated`
+                    // já pode ter atualizado o resumo local.
+                    const baseline = characterLogBaseline.get(update.characterId);
+                    const changed = CHARACTER_LOG_FIELDS.some((field) => {
+                        const nextValue = update.patch[field];
+                        return nextValue !== undefined && nextValue !== baseline?.[field];
+                    });
+                    if (changed) {
+                        const name = update.patch.name ?? existing?.name ?? update.characterId;
+                        pendingLogs.push(buildActionLogEntry(
+                            patch.revision,
+                            'character',
+                            'system',
+                            `Ficha ${name} atualizada`,
+                            { key: update.characterId },
+                        ));
+                    }
+                    const merged = characterSummary(update.characterId);
+                    if (merged) {
+                        characterLogBaseline.set(update.characterId, {
+                            name: merged.name,
+                            currentHP: merged.currentHP,
+                            maxHP: merged.maxHP,
+                            defense: merged.defense,
+                        });
+                    }
                 });
             }
             if (changes.charactersRemoved) {
@@ -646,6 +809,7 @@ export const useTableStore = defineStore('table', () => {
             revision.value = patch.revision;
             clockSkewMs.value = patch.serverNowMs - Date.now();
             lastSyncAt.value = Date.now();
+            commitActionLogs(pendingLogs);
             return true;
         } finally {
             isApplyingPatch.value = false;
@@ -681,6 +845,20 @@ export const useTableStore = defineStore('table', () => {
     function removeCharacterSummaries(ids: string[]) {
         const removeSet = new Set(ids);
         characters.value = characters.value.filter((c) => !removeSet.has(c._id));
+        ids.forEach((id) => characterLogBaseline.delete(id));
+    }
+
+    /** Reinicia a base de comparação de fichas sem gerar entradas de ação. */
+    function syncCharacterLogBaseline(list: CharacterSummaryDTO[]) {
+        characterLogBaseline.clear();
+        list.forEach((summary) => {
+            characterLogBaseline.set(summary._id, {
+                name: summary.name,
+                currentHP: summary.currentHP,
+                maxHP: summary.maxHP,
+                defense: summary.defense,
+            });
+        });
     }
 
     /** Helper de leitura para a UX (token card, TV, /play). */
