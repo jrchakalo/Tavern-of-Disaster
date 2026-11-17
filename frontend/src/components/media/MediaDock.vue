@@ -12,7 +12,11 @@ const props = withDefaults(
   { variant: 'floating', compact: false },
 );
 
-const emit = defineEmits<{ (e: 'expand'): void }>();
+const emit = defineEmits<{
+  (e: 'expand'): void;
+  /** Fora da chamada: o dono do cockpit confirma a entrada (pré-chamada). */
+  (e: 'join-requested'): void;
+}>();
 
 const store = useMediaStore();
 const settingsOpen = ref(false);
@@ -41,9 +45,11 @@ const deafenLabel = computed(() => (store.deafened ? 'Ouvir a chamada' : 'Ensurd
 const cameraLabel = computed(() => (store.camera === 'on' ? 'Desligar câmera' : 'Ligar câmera'));
 const screenLabel = computed(() => (store.screen ? 'Parar compartilhamento de tela' : 'Compartilhar tela'));
 
-async function handleJoin(): Promise<void> {
+function handleJoin(): void {
   if (!props.tableId || store.connecting) return;
-  await store.join(props.tableId);
+  // A entrada passa pela pré-chamada: o dono da view decide quando pedir
+  // permissão de microfone/câmera.
+  emit('join-requested');
 }
 
 async function handleLeave(): Promise<void> {

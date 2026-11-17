@@ -34,6 +34,8 @@ type PingInfo = { id: string; userId: string; username: string; sceneId: string;
 
 interface MapViewportProps {
   isMeasuring: boolean;
+  /** Prévia de handout: apenas a imagem, sem grade, tokens, medições ou pings. */
+  imageOnly?: boolean;
   viewTransform: { scale: number; x: number; y: number };
   currentMapUrl?: string | null;
   activeSceneType?: 'battlemap' | 'image';
@@ -87,6 +89,7 @@ interface MapViewportProps {
 
 const props = withDefaults(defineProps<MapViewportProps>(), {
   currentMapUrl: '',
+  imageOnly: false,
   activeSceneType: 'battlemap',
   rulerStartPoint: null,
   rulerEndPoint: null,
@@ -110,6 +113,7 @@ const props = withDefaults(defineProps<MapViewportProps>(), {
 });
 
 const hasBattlemap = computed(() => props.currentMapUrl && props.activeSceneType === 'battlemap');
+const showGrid = computed(() => Boolean(hasBattlemap.value) && !props.imageOnly);
 
 const viewportRef = ref<HTMLDivElement | null>(null);
 const mapImageRef = ref<HTMLImageElement | null>(null);
@@ -128,6 +132,12 @@ function handleMapImageRef(el: Element | ComponentPublicInstance | null) {
 
 function handleMouseLeave(event: MouseEvent) {
   props.onPointerUp(event as unknown as PointerEvent);
+}
+
+/** Em prévia de imagem não há ping nem grade: o botão do meio não faz nada. */
+function handleMiddleClick(event: MouseEvent) {
+  if (props.imageOnly) return;
+  props.onMiddleClick(event);
 }
 
 watch(() => gridOverlayRef.value, (el) => {
@@ -459,7 +469,7 @@ function findShortestPath(startId: string, endId: string): string[] {
 <template>
   <div
     class="viewport"
-    :class="{ measuring: props.isMeasuring }"
+    :class="{ measuring: props.isMeasuring && !props.imageOnly, 'image-only': props.imageOnly }"
     :ref="handleViewportRef"
     @wheel.prevent="props.onWheel"
     @pointerdown="props.onPointerDown"
@@ -469,7 +479,7 @@ function findShortestPath(startId: string, endId: string): string[] {
   >
     <div
       class="map-stage"
-      @mousedown.middle.prevent="props.onMiddleClick"
+      @mousedown.middle.prevent="handleMiddleClick"
       :style="{ transform: `translate(${props.viewTransform.x}px, ${props.viewTransform.y}px) scale(${props.viewTransform.scale})` }"
     >
       <img
@@ -489,7 +499,7 @@ function findShortestPath(startId: string, endId: string): string[] {
       </div>
 
       <div
-        v-if="hasBattlemap"
+        v-if="showGrid"
         class="grid-overlay"
         :style="{ width: `${gridPixelWidth}px`, height: `${gridPixelHeight}px` }"
         ref="gridOverlayRef"
@@ -557,7 +567,7 @@ function findShortestPath(startId: string, endId: string): string[] {
     </div>
 
     <div
-      v-if="props.showAssignMenu"
+      v-if="props.showAssignMenu && !props.imageOnly"
       class="context-menu"
       :style="{ top: `${props.assignMenuPosition.y}px`, left: `${props.assignMenuPosition.x}px` }"
       @click.stop
@@ -602,6 +612,16 @@ function findShortestPath(startId: string, endId: string): string[] {
 }
 .viewport:active { cursor: grabbing; }
 .viewport.measuring { cursor: crosshair; }
+/* Prévia de handout: só a imagem, sem grade/tokens. O fundo escuro isola o
+   recorte da cena como uma página apoiada na mesa. */
+.viewport.image-only {
+  border-color: var(--line);
+  background: var(--ink-0);
+}
+.viewport.image-only .map-image {
+  width: 100%;
+  height: 100%;
+}
 .map-stage {
   width: 100%;
   height: 100%;

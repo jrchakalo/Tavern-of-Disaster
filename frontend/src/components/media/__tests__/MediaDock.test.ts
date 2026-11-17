@@ -87,7 +87,7 @@ describe('MediaDock', () => {
     });
   });
 
-  it('fora da chamada mostra uma pílula única com o rótulo Chamada', async () => {
+  it('fora da chamada mostra uma pílula única que pede a pré-chamada antes de entrar', async () => {
     const wrapper = mountDock();
     expect(wrapper.get('.media-dock').classes()).toContain('media-dock--pill');
     expect(wrapper.get('.media-dock__label').text()).toBe('Chamada');
@@ -99,7 +99,9 @@ describe('MediaDock', () => {
     await join.trigger('click');
     await flushPromises();
 
-    expect(store().join).toHaveBeenCalledWith('table-1');
+    // A pílula não pede microfone direto: o cockpit abre a pré-chamada.
+    expect(wrapper.emitted('join-requested')).toHaveLength(1);
+    expect(store().join).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 

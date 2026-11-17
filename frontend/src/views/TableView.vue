@@ -203,6 +203,9 @@ const reopenLibraryAfterCreate = ref(false);
 const pendingCharacterIdForToken = ref<string | null>(null);
 /** Grade completa da chamada (a barra mostra só uma prévia compacta). */
 const callDialogOpen = ref(false);
+/** Confirmação de entrada: só pede microfone/câmera depois do "Entrar". */
+const preCallOpen = ref(false);
+const preCallJoining = ref(false);
 /** `/table` é rota do Mestre; o sheet só existe se um jogador legado abrir Dados. */
 const showPlayerDiceSheet = ref(false);
 const diceAnimationVisible = ref(false);
@@ -295,6 +298,27 @@ const canGoNextScene = computed(
   () => sceneIndex.value >= 0 && sceneIndex.value < scenes.value.length - 1,
 );
 const isBattlemapScene = computed(() => activeScene.value?.type !== 'image');
+/** Cena de imagem: o tabuleiro do Mestre vira prévia de handout, sem grade. */
+const isImageScene = computed(() => activeScene.value?.type === 'image');
+
+// Handout não mede nem arrasta token: ao entrar numa cena de imagem, encerra
+// ferramenta ativa, colocação e seleção de grade. Voltar ao battlemap restaura
+// as ferramentas (elas continuam disponíveis na rail).
+watch(
+  isImageScene,
+  (imageOnly) => {
+    if (!imageOnly) return;
+    if (activeTool.value !== 'none') handleToolSelected('none');
+    previewMeasurement.value = null;
+    placementMode.value = false;
+    isMobileToolsOpen.value = false;
+    showAssignMenu.value = false;
+    selectedTokenId.value = null;
+    selectedPersistentId.value = null;
+    persistentMode.value = false;
+  },
+  { immediate: true },
+);
 
 const currentTurnEntry = computed(
   () => initiativeList.value.find((entry) => entry.isCurrentTurn) ?? null,
@@ -902,6 +926,44 @@ function openCallDialog() {
 function closeCallDialog() {
   callDialogOpen.value = false;
 }
+
+/** "Chamada" fora da chamada: pergunta antes de pedir permissão de mídia. */
+function openPreCallDialog() {
+  mediaStore.clearError();
+  preCallOpen.value = true;
+}
+
+function closePreCallDialog() {
+  if (preCallJoining.value || mediaStore.connecting) return;
+  preCallOpen.value = false;
+  mediaStore.clearError();
+}
+
+/** Sair pelo diálogo da chamada deixa a pílula: reentrar volta à pré-chamada. */
+function requestJoinFromCallDialog() {
+  callDialogOpen.value = false;
+  openPreCallDialog();
+}
+
+/**
+ * Entra na chamada a partir da pré-chamada. `muted` entra com o microfone
+ * desligado (mesmo caminho do jogador: entra com áudio e alterna em seguida).
+ */
+async function joinFromPreCall(muted: boolean): Promise<void> {
+  if (!tableId || preCallJoining.value || mediaStore.connecting) return;
+  preCallJoining.value = true;
+  mediaStore.clearError();
+  try {
+    await mediaStore.join(tableId);
+    if (!mediaStore.joined) return;
+    if (muted && mediaStore.mic === 'on') mediaStore.toggleMic();
+    preCallOpen.value = false;
+  } finally {
+    preCallJoining.value = false;
+  }
+}
+
+const preCallBusy = computed(() => preCallJoining.value || mediaStore.connecting);
 
 function dismissDiceAnimation(options: { clearPayload?: boolean } = {}) {
   if (diceAnimationTimer) {
@@ -2466,8 +2528,8 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       >Painel</button>
     </header>
 
-    <div class="cockpit-body">
-      <nav v-if="isDM && !isMobileLayout" class="tool-rail" aria-label="Ferramentas do Mestre">
+    <div class="cockpit-body" :class="{ 'no-rail': isDM && isImageScene }">
+      <nav v-if="isDM && !isMobileLayout && !isImageScene" class="tool-rail" aria-label="Ferramentas do Mestre">
         <Toolbar
           variant="rail"
           :showDiceAction="false"
@@ -2489,7 +2551,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       </nav>
 
       <section class="board-zone" aria-label="Tabuleiro">
-        <div v-if="canUseMap" class="turn-bar" role="status" aria-live="polite">
+        <div v-if="canUseMap && !isImageScene" class="turn-bar" role="status" aria-live="polite">
           <div class="turn-bar__scene">
             <span class="turn-bar__eyebrow">Cena</span>
             <strong :title="activeScene?.name || 'Nenhuma cena ativa'">{{ activeScene?.name || 'Nenhuma cena ativa' }}</strong>
@@ -2532,7 +2594,8 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         <div class="board-wrap">
           <MapViewport
             v-if="canUseMap"
-            :is-measuring="isMeasuring"
+            :is-measuring="isImageScene ? false : isMeasuring"
+            :image-only="isImageScene"
             :view-transform="viewTransform"
             :current-map-url="currentMapUrl"
             :active-scene-type="activeScene?.type"
@@ -2665,7 +2728,12 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           dos participantes. Clicar em “Na chamada” abre a grade completa.
         -->
         <div class="media-bar" aria-label="Chamada da mesa">
-          <MediaDock :table-id="tableId" variant="inline" @expand="openCallDialog">
+          <MediaDock
+            :table-id="tableId"
+            variant="inline"
+            @expand="openCallDialog"
+            @join-requested="openPreCallDialog"
+          >
             <template v-if="!callDialogOpen" #preview>
               <ParticipantGrid preview />
             </template>
@@ -2829,7 +2897,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         <Icon name="users" :size="20" aria-hidden="true" />
         <span>Fichas</span>
       </button>
-      <button v-if="isDM" type="button" class="mobile-bar__item" @click="openMobileTools">
+      <button v-if="isDM && !isImageScene" type="button" class="mobile-bar__item" @click="openMobileTools">
         <Icon name="ruler" :size="20" aria-hidden="true" />
         <span>Ferramentas</span>
       </button>
@@ -2855,7 +2923,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </nav>
 
     <button
-      v-if="isDM && isMobileLayout"
+      v-if="isDM && isMobileLayout && !isImageScene"
       type="button"
       class="mobile-fab"
       aria-label="Adicionar token"
@@ -2918,7 +2986,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </BaseSheet>
 
     <BaseSheet
-      v-if="isMobileToolsOpen && isDM"
+      v-if="isMobileToolsOpen && isDM && !isImageScene"
       :open="true"
       title="Ferramentas"
       @update:open="isMobileToolsOpen = $event"
@@ -3048,6 +3116,53 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     />
 
     <BaseDialog
+      :open="preCallOpen"
+      title="Entrar na chamada"
+      :variant="isMobileLayout ? 'sheet' : 'dialog'"
+      :dismissible="!preCallBusy"
+      :close-on-backdrop="!preCallBusy"
+      :close-on-esc="!preCallBusy"
+      @update:open="preCallOpen = $event"
+      @close="closePreCallDialog"
+    >
+      <div class="precall">
+        <p class="precall__intro">
+          A chamada usa o microfone deste dispositivo e o navegador pede permissão ao
+          entrar. A câmera é opcional e só liga quando você mandar.
+        </p>
+        <p class="precall__hint">
+          Em mesa presencial, prefira “Entrar mudo” para evitar eco entre os celulares.
+        </p>
+        <p v-if="!mediaStore.turnConfigured" class="precall__note">
+          Sem TURN configurado: redes restritas podem falhar.
+        </p>
+        <p v-if="mediaStore.error" class="precall__error" role="alert">
+          {{ mediaStore.error }}
+        </p>
+      </div>
+      <template #footer>
+        <button
+          type="button"
+          class="btn btn-sm btn-ghost"
+          :disabled="preCallBusy"
+          @click="closePreCallDialog"
+        >Cancelar</button>
+        <button
+          type="button"
+          class="btn btn-sm alt"
+          :disabled="preCallBusy"
+          @click="joinFromPreCall(true)"
+        >{{ preCallBusy ? 'Conectando…' : 'Entrar mudo' }}</button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          :disabled="preCallBusy"
+          @click="joinFromPreCall(false)"
+        >{{ preCallBusy ? 'Conectando…' : 'Entrar com microfone' }}</button>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog
       :open="callDialogOpen"
       title="Chamada"
       :variant="isMobileLayout ? 'sheet' : 'dialog'"
@@ -3063,7 +3178,12 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           <template v-else>Ninguém na chamada ainda.</template>
         </p>
         <ParticipantGrid v-if="callDialogOpen" />
-        <MediaDock v-if="callDialogOpen" :table-id="tableId" variant="inline" />
+        <MediaDock
+          v-if="callDialogOpen"
+          :table-id="tableId"
+          variant="inline"
+          @join-requested="requestJoinFromCallDialog"
+        />
       </div>
       <template #footer>
         <button type="button" class="btn btn-sm" @click="closeCallDialog">Fechar</button>
@@ -3441,6 +3561,10 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 .table-view-layout.is-player .cockpit-body {
   grid-template-columns: minmax(0, 1fr);
 }
+/* Sem a rail (cenas de imagem), o tabuleiro ocupa a coluna que sobra. */
+.cockpit-body.no-rail {
+  grid-template-columns: minmax(0, 1fr) var(--dm-panel-w);
+}
 
 /* Rail esquerdo --------------------------------------------------------- */
 .tool-rail {
@@ -3813,6 +3937,40 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   flex-direction: column;
   gap: var(--s-4);
   min-width: 0;
+}
+
+/* Pré-chamada do Mestre: explica a permissão antes do prompt do navegador. */
+.precall {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+}
+.precall__intro,
+.precall__hint,
+.precall__note,
+.precall__error {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+.precall__intro {
+  color: var(--text);
+}
+.precall__hint {
+  color: var(--text-muted);
+}
+.precall__note {
+  color: var(--manila);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+}
+.precall__error {
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid rgb(178 58 50 / 0.45);
+  border-radius: var(--radius-xs);
+  background: rgb(178 58 50 / 0.1);
+  color: var(--danger-ink);
 }
 .call-dialog__summary {
   margin: 0;
