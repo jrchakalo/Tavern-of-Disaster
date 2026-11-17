@@ -648,6 +648,77 @@ describe('PlayView — shell do jogador', () => {
     expect(routerMock.push).toHaveBeenCalledWith({ name: 'tables' });
     wrapper.unmount();
   });
+
+  it('shows only the scene image for an image scene', async () => {
+    tableStoreStub.__refs = createRefs({
+      activeScene: ref({ _id: 'scene-2', tableId: 'table-1', name: 'Carta do Porto', type: 'image' }),
+      currentMapUrl: ref('https://example.test/porto.png'),
+      myActiveToken: ref(baseToken),
+      currentTurnTokenId: ref('tok-1'),
+      initiativeList: ref([
+        { _id: 'init-1', characterName: 'Lyra', tokenId: 'tok-1', isCurrentTurn: true },
+      ]),
+    });
+
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    expect(wrapper.find('.player-image').exists()).toBe(true);
+    expect(wrapper.get('.player-image__img').attributes('src')).toBe('https://example.test/porto.png');
+    expect(wrapper.text()).toContain('Imagem da cena');
+
+    // Sem tabuleiro, turno, iniciativa, ficha de token ou "Mover".
+    expect(wrapper.findComponent(PlayerBoard).exists()).toBe(false);
+    expect(wrapper.find('.play-initiative').exists()).toBe(false);
+    expect(wrapper.find('.turn-bar').exists()).toBe(false);
+    expect(wrapper.find('.token-card').exists()).toBe(false);
+    expect(wrapper.find('.initiative-line').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Mover');
+
+    // Header e bottom nav continuam funcionando.
+    expect(wrapper.find('.play-header').exists()).toBe(true);
+    expect(wrapper.get('.play-header__title').text()).toBe('Taverna do Destino');
+    expect(wrapper.find('.player-nav').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('explains an image scene without an image', async () => {
+    tableStoreStub.__refs = createRefs({
+      activeScene: ref({ _id: 'scene-2', tableId: 'table-1', name: 'Carta', type: 'image' }),
+      currentMapUrl: ref(null),
+    });
+
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('O Mestre ainda não definiu esta imagem');
+    expect(wrapper.find('.player-image__img').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('restores the battlemap when the scene switches back', async () => {
+    tableStoreStub.__refs = createRefs({
+      activeScene: ref({ _id: 'scene-2', tableId: 'table-1', name: 'Carta', type: 'image' }),
+      currentMapUrl: ref('https://example.test/carta.png'),
+    });
+
+    const wrapper = mountPlay();
+    await flushPromises();
+    expect(wrapper.find('.player-image').exists()).toBe(true);
+
+    tableStoreStub.__refs.activeScene.value = {
+      _id: 'scene-1',
+      tableId: 'table-1',
+      name: 'Salão Principal',
+      type: 'battlemap',
+    };
+    tableStoreStub.__refs.currentMapUrl.value = 'https://example.test/salao.png';
+    await flushPromises();
+
+    expect(wrapper.find('.player-image').exists()).toBe(false);
+    expect(wrapper.findComponent(PlayerBoard).exists()).toBe(true);
+    wrapper.unmount();
+  });
 });
 
 describe('PlayView — momento assinatura do dado', () => {

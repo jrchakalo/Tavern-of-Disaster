@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
 
-const props = defineProps<{
-  tabs: Array<{ key: string; label: string }>;
-  modelValue: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    tabs: Array<{ key: string; label: string }>;
+    modelValue: string;
+    /** Quebra em duas linhas em vez de rolar na horizontal (fichas com 4 seções). */
+    wrap?: boolean;
+    idPrefix?: string;
+    label?: string;
+  }>(),
+  { wrap: false, idPrefix: 'sheet-tab', label: 'Seções da ficha' },
+);
 
 const emit = defineEmits<{ (e: 'update:modelValue', key: string): void }>();
 
@@ -18,11 +25,20 @@ function prefersReducedMotion(): boolean {
   );
 }
 
+function tabId(key: string): string {
+  return `${props.idPrefix}-${key}`;
+}
+
+async function focusTab(index: number) {
+  await nextTick();
+  stripRef.value?.querySelectorAll<HTMLElement>('[role="tab"]')[index]?.focus();
+}
+
 /** Mantém a aba ativa visível sem esconder as demais: o trilho rola na horizontal. */
 async function revealActiveTab() {
   await nextTick();
   const strip = stripRef.value;
-  if (!strip) return;
+  if (!strip || props.wrap) return;
   const active = strip.querySelector<HTMLElement>('[aria-selected="true"]');
   if (!active) return;
   const left = active.offsetLeft;
@@ -43,18 +59,54 @@ watch(
   },
   { immediate: true },
 );
+
+function select(index: number) {
+  const tab = props.tabs[index];
+  if (!tab || tab.key === props.modelValue) {
+    void focusTab(index);
+    return;
+  }
+  emit('update:modelValue', tab.key);
+  void focusTab(index);
+}
+
+function onKeydown(event: KeyboardEvent) {
+  const total = props.tabs.length;
+  if (!total) return;
+  const current = Math.max(
+    0,
+    props.tabs.findIndex((tab) => tab.key === props.modelValue),
+  );
+  let next: number | null = null;
+  if (event.key === 'ArrowRight') next = (current + 1) % total;
+  else if (event.key === 'ArrowLeft') next = (current - 1 + total) % total;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = total - 1;
+  if (next === null) return;
+  event.preventDefault();
+  select(next);
+}
 </script>
 
 <template>
-  <div ref="stripRef" class="sheet-tabs" role="tablist" aria-label="Seções da ficha">
+  <div
+    ref="stripRef"
+    class="sheet-tabs"
+    :class="{ 'sheet-tabs--wrap': wrap }"
+    role="tablist"
+    :aria-label="label"
+    @keydown="onKeydown"
+  >
     <button
       v-for="tab in tabs"
       :key="tab.key"
+      :id="tabId(tab.key)"
       type="button"
       role="tab"
       class="sheet-tabs__tab"
       :class="{ 'is-active': tab.key === modelValue }"
       :aria-selected="tab.key === modelValue ? 'true' : 'false'"
+      :tabindex="tab.key === modelValue ? 0 : -1"
       :data-tab-key="tab.key"
       @click="emit('update:modelValue', tab.key)"
     >
@@ -77,6 +129,19 @@ watch(
   scroll-snap-type: x proximity;
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Fichas com poucas seções: todas visíveis, em duas colunas no celular. */
+.sheet-tabs--wrap {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+.sheet-tabs--wrap .sheet-tabs__tab {
+  width: 100%;
+  text-align: center;
 }
 
 .sheet-tabs__tab {

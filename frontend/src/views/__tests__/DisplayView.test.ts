@@ -386,6 +386,81 @@ describe('DisplayView', () => {
     expect(writeButtons).toHaveLength(0);
     wrapper.unmount();
   });
+
+  it('turns an image scene into a clean full-bleed viewer', async () => {
+    setDisplayToken('#token=tv-secret');
+    tableStoreStub.__refs = createRefs({
+      activeScene: ref({
+        _id: 'scene-2',
+        tableId: 'display-1',
+        name: 'Mapa do Porto',
+        type: 'image',
+      }),
+      currentMapUrl: ref('https://example.test/porto.png'),
+    });
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    expect(wrapper.find('.display-body--image').exists()).toBe(true);
+    expect(wrapper.get('.display-image__img').attributes('src')).toBe('https://example.test/porto.png');
+
+    // Nada de tabuleiro: sem grade, tokens, iniciativa, ticker ou turno.
+    expect(wrapper.find('.display-board-area').exists()).toBe(false);
+    expect(wrapper.find('.display-rail').exists()).toBe(false);
+    expect(wrapper.find('.display-ticker').exists()).toBe(false);
+    expect(wrapper.find('.tv-turn-strip').exists()).toBe(false);
+    expect(wrapper.findAll('.display-board__token')).toHaveLength(0);
+
+    // A barra mínima continua: mesa, cena, status e conexão.
+    expect(wrapper.find('.display-header').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Mesa da TV');
+    expect(wrapper.text()).toContain('Mapa do Porto');
+    expect(wrapper.text()).toContain('Conectado');
+    wrapper.unmount();
+  });
+
+  it('explains an image scene without an image', async () => {
+    setDisplayToken('#token=tv-secret');
+    tableStoreStub.__refs = createRefs({
+      activeScene: ref({ _id: 'scene-2', tableId: 'display-1', name: 'Handout', type: 'image' }),
+      currentMapUrl: ref(null),
+    });
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Imagem da cena ainda não definida');
+    expect(wrapper.find('.display-image__img').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('returns to the battlemap layout when the scene switches back', async () => {
+    setDisplayToken('#token=tv-secret');
+    tableStoreStub.__refs = createRefs({
+      activeScene: ref({ _id: 'scene-2', tableId: 'display-1', name: 'Handout', type: 'image' }),
+      currentMapUrl: ref('https://example.test/handout.png'),
+    });
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+    expect(wrapper.find('.display-body--image').exists()).toBe(true);
+
+    tableStoreStub.__refs.activeScene.value = {
+      _id: 'scene-1',
+      tableId: 'display-1',
+      name: 'Salão Principal',
+      type: 'battlemap',
+    };
+    tableStoreStub.__refs.currentMapUrl.value = 'https://example.test/salao.png';
+    await flushPromises();
+
+    expect(wrapper.find('.display-body--image').exists()).toBe(false);
+    expect(wrapper.find('.display-body').exists()).toBe(true);
+    expect(wrapper.find('.display-rail').exists()).toBe(true);
+    expect(wrapper.find('.display-ticker').exists()).toBe(true);
+    wrapper.unmount();
+  });
 });
 
 describe('DisplayBoard read-only board', () => {

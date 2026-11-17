@@ -10,6 +10,7 @@ import { useTableStore } from '../stores/tableStore';
 import type { DiceRolledPayload, LogEntry } from '../types';
 
 import DisplayBoard from '../components/display/DisplayBoard.vue';
+import DisplayImageScene from '../components/display/DisplayImageScene.vue';
 import DisplayInitiative from '../components/display/DisplayInitiative.vue';
 import DisplayWaiting from '../components/display/DisplayWaiting.vue';
 import RollTicker from '../components/display/RollTicker.vue';
@@ -186,6 +187,12 @@ const round = computed(() => extras.value.round ?? null);
 
 const tableName = computed(() => currentTable.value?.name ?? 'Mesa');
 const sceneName = computed(() => activeScene.value?.name ?? 'Nenhuma cena ativa');
+/**
+ * Cena de imagem é handout/exploração: a TV vira um visualizador full-bleed,
+ * sem grade, tokens, iniciativa, ticker ou turno. Cenas de batalha seguem
+ * exatamente o layout atual.
+ */
+const isImageScene = computed(() => activeScene.value?.type === 'image');
 const isLive = computed(() => sessionStatus.value === 'LIVE');
 
 const sessionStatusLabel = computed(() => {
@@ -556,7 +563,26 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <div class="display-body">
+      <div v-if="isImageScene" class="display-body display-body--image">
+        <section class="display-image-area" aria-label="Imagem da cena">
+          <DisplayImageScene :image-url="currentMapUrl" :scene-name="sceneName" />
+
+          <div v-if="sceneSwitching" class="tv-scene-switch" role="status">
+            Trocando cena…
+          </div>
+
+          <DisplayWaiting
+            v-if="!isLive"
+            :status="sessionStatus"
+            :table-name="tableName"
+            :invite-code="inviteCode"
+            :qr-data-url="inviteQr"
+            :pause-label="pauseLabel"
+          />
+        </section>
+      </div>
+
+      <div v-else class="display-body">
         <section class="display-board-area" aria-label="Tabuleiro">
           <DisplayBoard
             :squares="squares"
@@ -756,6 +782,18 @@ onBeforeUnmount(() => {
   grid-template-areas:
     'board rail'
     'ticker rail';
+}
+
+.display-body--image {
+  display: flex;
+  padding: 0;
+}
+
+.display-image-area {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 .display-board-area {
