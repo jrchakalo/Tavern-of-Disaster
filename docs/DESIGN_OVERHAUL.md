@@ -232,11 +232,13 @@ autoplay infinito sem `prefers-reduced-motion`.
 |---|---|---|
 | D1 | tokens, base CSS, fontes, shell, Toast, Icon, BaseDialog/Sheet | design-foundation |
 | D2 | Home/Lobby, Login, Registro, Mesas, Perfil, Sistemas | frontend-auth-home |
-| D3 | cockpit DM, rail, turn bar, painel 4 abas, cena/grid/token/iniciativa | frontend-dm |
-| D4 | jogador mobile, bottom nav, ficha, dados, chat/chamada, turno | frontend-player |
+| D3a | layout 3 zonas, top bar, rail, painel 4 abas, turn bar, token (criar/editar/excluir) | frontend-dm-shell |
+| D3b | cena em um passo, grade, iniciativa, sessão/convidar, dados/log, fichas | frontend-dm |
+| D4a | shell do jogador, bottom nav, turn bar, câmera do tabuleiro, saída | frontend-player-shell |
+| D4b | ficha (criar/listar), dados, chat/chamada no nav | frontend-player |
 | D5 | TV, dado assinatura, chat/vídeo/fichas compartilhadas | frontend-shared-tv |
 | D6 | QA visual/a11y/E2E, correções e deploy | QA |
-| D7 | backend: iniciativa não destrutiva, criação de ficha/token se necessário | backend |
+| D7 | backend: iniciativa não destrutiva + `requestDeleteToken` | concluído (`4e8798b`) |
 
 Cada onda tem branch/worktree própria a partir de `design/overhaul-v1`, revisão
 do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
