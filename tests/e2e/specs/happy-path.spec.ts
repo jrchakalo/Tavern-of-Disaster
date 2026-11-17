@@ -109,9 +109,15 @@ test('DM e jogador percorrem o fluxo principal no redesign', async ({ browser, r
   await joinDialog.getByRole('button', { name: 'Entrar na mesa' }).click();
   await playerPage.waitForURL(`**/play/${table._id}`);
 
-  // Cena em um passo: imagem, grade e "Ativar ao criar" (marcado por padrão).
-  const sceneForm = dmPage.locator('.create-scene-form');
-  await expect(sceneForm).toBeVisible({ timeout: 60_000 });
+  // Cena em um passo, agora em diálogo: abre "Criar cena", preenche e confirma.
+  await dmPage
+    .locator('.scene-manager__head')
+    .getByRole('button', { name: 'Criar cena', exact: true })
+    .click();
+  const sceneDialog = dmPage.getByRole('dialog', { name: 'Nova cena' });
+  await expect(sceneDialog).toBeVisible({ timeout: 60_000 });
+  const sceneForm = sceneDialog.locator('form.create-scene-form');
+  await expect(sceneForm).toBeVisible();
   await sceneForm.locator('#scene-name').fill(sceneName);
   await sceneForm.locator('#scene-image-url').fill(SCENE_IMAGE_URL);
   await sceneForm.locator('#scene-columns').fill('12');
@@ -126,7 +132,7 @@ test('DM e jogador percorrem o fluxo principal no redesign', async ({ browser, r
       response.url().includes(`/api/tables/${table._id}/scenes`),
     { timeout: 30_000 },
   );
-  await sceneForm.getByRole('button', { name: 'Criar cena' }).click();
+  await sceneDialog.getByRole('button', { name: 'Criar cena agora', exact: true }).click();
   expect((await createSceneResponse).status()).toBe(201);
 
   const sceneEntry = dmPage.locator('.scene-list li', { hasText: sceneName }).first();

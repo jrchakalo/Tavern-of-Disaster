@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 
-import SceneManager, { type SceneCreatePayload } from '../SceneManager.vue';
+import SceneManager, { type SceneCreatePayload, type SceneUpdatePatch } from '../SceneManager.vue';
 import DMSessionControls from '../DMSessionControls.vue';
 import TableSharePanel from './TableSharePanel.vue';
 import InitiativePanel from '../InitiativePanel.vue';
 import DiceTray from '../dice/DiceTray.vue';
-import BaseDialog from '../ui/BaseDialog.vue';
 import type { AssetUsage } from '../../services/storageService';
 import type {
   Character,
@@ -19,11 +18,6 @@ import type {
 } from '../../types';
 
 export type DmPanelTab = 'scene' | 'initiative' | 'session' | 'invite';
-
-const MIN_GRID = 1;
-const MAX_GRID = 200;
-const MIN_SCALE = 0.1;
-const MAX_SCALE = 50;
 
 interface Props {
   activeTab: DmPanelTab;
@@ -50,6 +44,7 @@ interface Props {
   recentRolls?: RollLogEntryDTO[];
   connectionStatus?: string;
   createScene?: (payload: SceneCreatePayload) => Promise<void>;
+  updateScene?: (sceneId: string, patch: SceneUpdatePatch) => Promise<void>;
   deleteScene?: (sceneId: string) => Promise<void>;
   renameScene?: (sceneId: string, name: string) => Promise<void>;
   activateScene?: (sceneId: string) => Promise<void>;
@@ -60,6 +55,7 @@ const props = withDefaults(defineProps<Props>(), {
   recentRolls: () => [],
   connectionStatus: 'connected',
   createScene: async () => undefined,
+  updateScene: async () => undefined,
   deleteScene: async () => undefined,
   renameScene: async () => undefined,
   activateScene: async () => undefined,
@@ -73,7 +69,6 @@ const emit = defineEmits<{
   (e: 'start-session'): void;
   (e: 'set-active-scene', sceneId: string): void;
   (e: 'reorder-scenes', scenes: IScene[]): void;
-  (e: 'apply-grid', value: { width: number; height: number; metersPerSquare: number }): void;
   (e: 'edit-token', tokenId: string): void;
   (e: 'remove-entry', entryId: string): void;
   (e: 'reorder-initiative', order: IInitiativeEntry[]): void;
@@ -95,58 +90,6 @@ const tabs: Array<{ key: DmPanelTab; label: string; icon: string }> = [
 
 const activeScene = computed(() => props.scenes.find((scene) => scene._id === props.activeSceneId) ?? null);
 const isBattlemap = computed(() => activeScene.value?.type !== 'image');
-
-const gridWidthDraft = ref(props.gridWidth);
-const gridHeightDraft = ref(props.gridHeight);
-const scaleDraft = ref(props.metersPerSquare);
-const gridConfirmOpen = ref(false);
-const gridFeedback = ref('');
-
-watch(() => props.gridWidth, (value) => { gridWidthDraft.value = value; });
-watch(() => props.gridHeight, (value) => { gridHeightDraft.value = value; });
-watch(() => props.metersPerSquare, (value) => { scaleDraft.value = value; });
-
-function clampInt(value: unknown, min: number, max: number, fallback: number): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(min, Math.min(max, Math.round(parsed)));
-}
-
-function clampScale(value: unknown): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return props.metersPerSquare;
-  return Math.max(MIN_SCALE, Math.min(MAX_SCALE, parsed));
-}
-
-const nextGrid = computed(() => ({
-  width: clampInt(gridWidthDraft.value, MIN_GRID, MAX_GRID, props.gridWidth),
-  height: clampInt(gridHeightDraft.value, MIN_GRID, MAX_GRID, props.gridHeight),
-  metersPerSquare: clampScale(scaleDraft.value),
-}));
-
-const gridDirty = computed(
-  () =>
-    nextGrid.value.width !== props.gridWidth ||
-    nextGrid.value.height !== props.gridHeight ||
-    Math.abs(nextGrid.value.metersPerSquare - props.metersPerSquare) > 0.0001,
-);
-
-const gridShrinks = computed(
-  () => nextGrid.value.width < props.gridWidth || nextGrid.value.height < props.gridHeight,
-);
-
-const tokensOutsideDraft = computed(() => {
-  if (!gridShrinks.value) return 0;
-  const width = Math.max(1, props.gridWidth);
-  return props.tokensOnMap.filter((token) => {
-    const match = /^sq-(\d+)$/.exec(token.squareId ?? '');
-    if (!match) return false;
-    const index = Number(match[1]);
-    const x = index % width;
-    const y = Math.floor(index / width);
-    return x >= nextGrid.value.width || y >= nextGrid.value.height;
-  }).length;
-});
 
 const rowCount = computed(() => props.initiativeList.length);
 const currentEntry = computed(() => props.initiativeList.find((entry) => entry.isCurrentTurn) ?? null);
@@ -181,32 +124,6 @@ async function onTabKeydown(event: KeyboardEvent, index: number) {
   selectTab(nextTab.key);
   await nextTick();
   tabButtonRefs.value[nextIndex]?.focus();
-}
-
-function requestApplyGrid() {
-  gridFeedback.value = '';
-  const value = nextGrid.value;
-  gridWidthDraft.value = value.width;
-  gridHeightDraft.value = value.height;
-  scaleDraft.value = value.metersPerSquare;
-  if (!gridDirty.value) {
-    gridFeedback.value = 'A grade já está com esses valores.';
-    return;
-  }
-  gridConfirmOpen.value = true;
-}
-
-function confirmApplyGrid() {
-  gridConfirmOpen.value = false;
-  gridFeedback.value = '';
-  emit('apply-grid', nextGrid.value);
-}
-
-function discardGridDraft() {
-  gridWidthDraft.value = props.gridWidth;
-  gridHeightDraft.value = props.gridHeight;
-  scaleDraft.value = props.metersPerSquare;
-  gridFeedback.value = '';
 }
 
 function isInTurn(token: TokenInfo): boolean {
@@ -260,66 +177,14 @@ function tokenOwnerName(token: TokenInfo): string {
           :table-id="tableId"
           :usage="assetUsage"
           :create-scene="createScene"
+          :update-scene="updateScene"
+          :tokens-on-map="tokensOnMap"
           :delete-scene="deleteScene"
           :rename-scene="renameScene"
           :activate-scene="activateScene"
           :reorder-scenes="(list: IScene[]) => emit('reorder-scenes', list)"
           :replace-scene-image="replaceSceneImage"
         />
-
-        <section v-if="activeScene" class="panel-block" aria-labelledby="grid-title">
-          <h4 id="grid-title">Grade</h4>
-          <p class="panel-hint">
-            Grade atual: <strong>{{ gridWidth }} × {{ gridHeight }}</strong> ·
-            {{ metersPerSquare.toFixed(1) }} m por quadrado.
-          </p>
-
-          <div v-if="isBattlemap" class="grid-fields">
-            <div class="grid-row">
-              <label for="grid-columns">
-                <span>Colunas</span>
-                <input id="grid-columns" v-model.number="gridWidthDraft" class="input-sm grid-input" type="number" inputmode="numeric" min="1" max="200" step="1" />
-              </label>
-              <label for="grid-rows">
-                <span>Linhas</span>
-                <input id="grid-rows" v-model.number="gridHeightDraft" class="input-sm grid-input" type="number" inputmode="numeric" min="1" max="200" step="1" />
-              </label>
-            </div>
-            <label class="grid-scale" for="grid-scale">
-              <span>Escala (m por quadrado)</span>
-              <input id="grid-scale" v-model.number="scaleDraft" class="input-sm grid-input" type="number" inputmode="decimal" step="0.1" min="0.1" max="50" />
-            </label>
-
-            <p class="panel-warning" role="note">
-              Alterar a grade pode deslocar tokens que ficarem fora dos novos limites.
-              <template v-if="tokensOutsideDraft">
-                <strong>{{ tokensOutsideDraft }} token(s)</strong> desta cena ficariam fora.
-              </template>
-            </p>
-
-            <p class="panel-hint">
-              Alinhamento fino (offset) ainda não está disponível: ajuste a arte da imagem
-              para casar com a grade antes de enviar.
-            </p>
-
-            <div class="grid-actions">
-              <button type="button" class="btn btn-sm" @click="requestApplyGrid">Aplicar grade</button>
-              <button
-                v-if="gridDirty"
-                type="button"
-                class="btn btn-sm btn-ghost"
-                @click="discardGridDraft"
-              >Descartar</button>
-            </div>
-            <p v-if="gridFeedback" class="panel-hint" role="status">{{ gridFeedback }}</p>
-          </div>
-          <p v-else class="panel-hint">
-            Cenas do tipo imagem não usam grade. Troque o tipo na criação ou em outra cena.
-          </p>
-        </section>
-        <p v-else class="panel-hint">
-          Crie e ative uma cena para calibrar a grade.
-        </p>
       </section>
 
       <section
@@ -442,29 +307,6 @@ function tokenOwnerName(token: TokenInfo): string {
       </section>
     </div>
 
-    <BaseDialog
-      :open="gridConfirmOpen"
-      title="Aplicar grade?"
-      @update:open="gridConfirmOpen = $event"
-      @close="gridConfirmOpen = false"
-    >
-      <p class="grid-dialog-copy">
-        A grade de <strong>“{{ activeScene?.name || 'cena ativa' }}”</strong> passará de
-        <strong>{{ gridWidth }} × {{ gridHeight }}</strong> para
-        <strong>{{ nextGrid.width }} × {{ nextGrid.height }}</strong>
-        ({{ nextGrid.metersPerSquare.toFixed(1) }} m por quadrado).
-      </p>
-      <p v-if="tokensOutsideDraft" class="grid-dialog-warning" role="alert">
-        {{ tokensOutsideDraft }} token(s) ficariam fora da nova grade e podem perder a posição.
-      </p>
-      <p v-else class="grid-dialog-copy">
-        Os tokens dentro dos novos limites mantêm a posição.
-      </p>
-      <template #footer>
-        <button type="button" class="btn btn-sm alt" @click="gridConfirmOpen = false">Cancelar</button>
-        <button type="button" class="btn btn-sm" @click="confirmApplyGrid">Aplicar grade</button>
-      </template>
-    </BaseDialog>
   </div>
 </template>
 
@@ -558,24 +400,6 @@ function tokenOwnerName(token: TokenInfo): string {
   font-size: var(--text-2xs);
   line-height: var(--leading-body);
 }
-.grid-fields { display: flex; flex-direction: column; min-width: 0; }
-.grid-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s-3);
-}
-.grid-row label,
-.grid-scale {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-1);
-  margin: 0 0 var(--s-3);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-.grid-input { width: 100%; min-width: 0; min-height: 44px; font-size: 16px; }
-.grid-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
-.grid-actions .btn { min-height: 44px; }
 .token-list {
   display: flex;
   flex-direction: column;

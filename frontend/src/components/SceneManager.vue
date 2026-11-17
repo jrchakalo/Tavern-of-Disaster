@@ -4,7 +4,7 @@ import draggable from 'vuedraggable';
 
 import Icon from './Icon.vue';
 import BaseDialog from './ui/BaseDialog.vue';
-import type { IScene } from '../types';
+import type { IScene, TokenInfo } from '../types';
 import { uploadMap, type AssetUsage } from '../services/storageService';
 
 export type SceneCreatePayload = {
@@ -17,6 +17,14 @@ export type SceneCreatePayload = {
   activate: boolean;
 };
 
+export type SceneUpdatePatch = {
+  name?: string;
+  type?: 'battlemap' | 'image';
+  gridWidth?: number;
+  gridHeight?: number;
+  metersPerSquare?: number;
+};
+
 const MIN_GRID = 1;
 const MAX_GRID = 200;
 const MIN_SCALE = 0.1;
@@ -27,7 +35,9 @@ const props = withDefaults(defineProps<{
   activeSceneId: string | null;
   tableId: string;
   usage?: AssetUsage | null;
+  tokensOnMap?: TokenInfo[];
   createScene?: (payload: SceneCreatePayload) => Promise<void>;
+  updateScene?: (sceneId: string, patch: SceneUpdatePatch) => Promise<void>;
   deleteScene?: (sceneId: string) => Promise<void>;
   renameScene?: (sceneId: string, name: string) => Promise<void>;
   activateScene?: (sceneId: string) => Promise<void>;
@@ -35,7 +45,9 @@ const props = withDefaults(defineProps<{
   replaceSceneImage?: (sceneId: string, imageUrl: string) => Promise<void>;
 }>(), {
   usage: null,
+  tokensOnMap: () => [],
   createScene: async () => undefined,
+  updateScene: async () => undefined,
   deleteScene: async () => undefined,
   renameScene: async () => undefined,
   activateScene: async () => undefined,
@@ -47,13 +59,25 @@ const activeScene = computed(
   () => props.scenes.find((scene) => scene._id === props.activeSceneId) ?? null,
 );
 
-/** Rascunho do formulário: nasce da cena ativa para não repetir valores. */
+/** Editor da cena ativa: rascunho separado para aplicar tudo de uma vez. */
+const editName = ref('');
+const editType = ref<'battlemap' | 'image'>('battlemap');
+const editColumns = ref(30);
+const editRows = ref(30);
+const editScale = ref(1.5);
+const editorPending = ref(false);
+const editorError = ref('');
+const editorStatus = ref('');
+let hydratedSceneId = '';
+
+/** Rascunho do formulário de criação: nasce da cena ativa para não repetir valores. */
+const createOpen = ref(false);
 const name = ref('');
 const imageUrl = ref('');
 const sceneType = ref<'battlemap' | 'image'>('battlemap');
-const columns = ref(clampInt(activeScene.value?.gridWidth, 1, 200, 30));
-const rows = ref(clampInt(activeScene.value?.gridHeight, 1, 200, 30));
-const scale = ref(clampNumber(activeScene.value?.metersPerSquare, MIN_SCALE, MAX_SCALE, 1.5));
+const columns = ref(30);
+const rows = ref(30);
+const scale = ref(1.5);
 const activateOnCreate = ref(true);
 
 const pendingFile = ref<File | null>(null);
@@ -95,7 +119,8 @@ const imageError = ref('');
 const imageInputRef = ref<HTMLInputElement | null>(null);
 
 const displayProgress = computed(() => Math.max(0, Math.min(100, Math.round(progress.value))));
-const isBattlemap = computed(() => sceneType.value === 'battlemap');
+const isCreateBattlemap = computed(() => sceneType.value === 'battlemap');
+const isEditBattlemap = computed(() => editType.value === 'battlemap');
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
   const parsed = Number(value);
@@ -108,6 +133,93 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
 }
+
+function sceneGrid(scene: IScene | null) {
+  return {
+    width: clampInt(scene?.gridWidth, MIN_GRID, MAX_GRID, 30),
+    height: clampInt(scene?.gridHeight, MIN_GRID, MAX_GRID, 30),
+    scale: clampNumber(scene?.metersPerSquare, MIN_SCALE, MAX_SCALE, 1.5),
+  };
+}
+
+function hydrateEditor() {
+  const scene = activeScene.value;
+  if (!scene) {
+    editName.value = '';
+    editType.value = 'battlemap';
+    editColumns.value = 30;
+    editRows.value = 30;
+    editScale.value = 1.5;
+    return;
+  }
+  const grid = sceneGrid(scene);
+  editName.value = scene.name;
+  editType.value = scene.type === 'image' ? 'image' : 'battlemap';
+  editColumns.value = grid.width;
+  editRows.value = grid.height;
+  editScale.value = grid.scale;
+}
+
+watch(
+  () => [
+    activeScene.value?._id,
+    activeScene.value?.name,
+    activeScene.value?.type,
+    activeScene.value?.gridWidth,
+    activeScene.value?.gridHeight,
+    activeScene.value?.metersPerSquare,
+  ],
+  () => {
+    const id = activeScene.value?._id ?? '';
+    if (id !== hydratedSceneId) {
+      hydratedSceneId = id;
+      editorError.value = '';
+      editorStatus.value = '';
+    }
+    hydrateEditor();
+  },
+  { immediate: true },
+);
+
+const editDirty = computed(() => {
+  const scene = activeScene.value;
+  if (!scene) return false;
+  if (editName.value.trim() !== scene.name) return true;
+  if (editType.value !== (scene.type === 'image' ? 'image' : 'battlemap')) return true;
+  if (editType.value === 'image') return false;
+  const grid = sceneGrid(scene);
+  return (
+    clampInt(editColumns.value, MIN_GRID, MAX_GRID, grid.width) !== grid.width ||
+    clampInt(editRows.value, MIN_GRID, MAX_GRID, grid.height) !== grid.height ||
+    Math.abs(clampNumber(editScale.value, MIN_SCALE, MAX_SCALE, grid.scale) - grid.scale) > 0.0001
+  );
+});
+
+const editorTokensOutside = computed(() => {
+  const scene = activeScene.value;
+  if (!scene || scene.type === 'image' || editType.value === 'image') return 0;
+  const currentWidth = clampInt(scene.gridWidth, MIN_GRID, MAX_GRID, 30);
+  const currentHeight = clampInt(scene.gridHeight, MIN_GRID, MAX_GRID, 30);
+  const targetWidth = clampInt(editColumns.value, MIN_GRID, MAX_GRID, currentWidth);
+  const targetHeight = clampInt(editRows.value, MIN_GRID, MAX_GRID, currentHeight);
+  if (targetWidth >= currentWidth && targetHeight >= currentHeight) {
+    return 0;
+  }
+  return props.tokensOnMap.filter((token) => {
+    const match = /^sq-(\d+)$/.exec(token.squareId ?? '');
+    if (!match) return false;
+    const index = Number(match[1]);
+    return index % currentWidth >= targetWidth || Math.floor(index / currentWidth) >= targetHeight;
+  }).length;
+});
+
+/** Próxima cena da lista, voltando à primeira depois da última. */
+const nextScene = computed<IScene | null>(() => {
+  if (orderedScenes.value.length < 2) return null;
+  const index = orderedScenes.value.findIndex((scene) => scene._id === props.activeSceneId);
+  const nextIndex = index === -1 ? 0 : (index + 1) % orderedScenes.value.length;
+  return orderedScenes.value[nextIndex] ?? null;
+});
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
@@ -209,11 +321,28 @@ function onDragLeave() {
 }
 
 function resetForm() {
+  const grid = sceneGrid(activeScene.value);
   name.value = '';
   clearImage();
+  sceneType.value = 'battlemap';
+  columns.value = grid.width;
+  rows.value = grid.height;
+  scale.value = grid.scale;
+  activateOnCreate.value = true;
   progress.value = 0;
   retryPayload.value = null;
   formError.value = '';
+}
+
+function openCreate() {
+  resetForm();
+  createOpen.value = true;
+}
+
+function closeCreate() {
+  if (pending.value) return;
+  createOpen.value = false;
+  resetForm();
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -262,6 +391,7 @@ async function handleSubmit() {
     };
     retryPayload.value = payload;
     await props.createScene(payload);
+    createOpen.value = false;
     resetForm();
   } catch (error) {
     formError.value = errorMessage(error, 'Não foi possível criar a cena.');
@@ -281,12 +411,66 @@ async function retryCreate() {
   pending.value = true;
   try {
     await props.createScene(payload);
+    createOpen.value = false;
     resetForm();
   } catch (error) {
     formError.value = errorMessage(error, 'Não foi possível criar a cena.');
   } finally {
     pending.value = false;
   }
+}
+
+async function applyChanges() {
+  const scene = activeScene.value;
+  if (!scene || editorPending.value) return;
+  editorError.value = '';
+  editorStatus.value = '';
+
+  const trimmedName = editName.value.trim();
+  if (!trimmedName) {
+    editorError.value = 'O nome da cena não pode ficar vazio.';
+    return;
+  }
+
+  const patch: SceneUpdatePatch = {};
+  if (trimmedName !== scene.name) patch.name = trimmedName;
+
+  const currentType = scene.type === 'image' ? 'image' : 'battlemap';
+  if (editType.value !== currentType) patch.type = editType.value;
+
+  if (editType.value === 'battlemap') {
+    const grid = sceneGrid(scene);
+    const width = clampInt(editColumns.value, MIN_GRID, MAX_GRID, grid.width);
+    const height = clampInt(editRows.value, MIN_GRID, MAX_GRID, grid.height);
+    const perSquare = clampNumber(editScale.value, MIN_SCALE, MAX_SCALE, grid.scale);
+    editColumns.value = width;
+    editRows.value = height;
+    editScale.value = perSquare;
+    if (width !== grid.width) patch.gridWidth = width;
+    if (height !== grid.height) patch.gridHeight = height;
+    if (Math.abs(perSquare - grid.scale) > 0.0001) patch.metersPerSquare = perSquare;
+  }
+
+  if (!Object.keys(patch).length) {
+    editorStatus.value = 'A cena já está com esses valores.';
+    return;
+  }
+
+  editorPending.value = true;
+  try {
+    await props.updateScene(scene._id, patch);
+    editorStatus.value = 'Alterações aplicadas.';
+  } catch (error) {
+    editorError.value = errorMessage(error, 'Não foi possível atualizar a cena.');
+  } finally {
+    editorPending.value = false;
+  }
+}
+
+function discardEdit() {
+  hydrateEditor();
+  editorError.value = '';
+  editorStatus.value = '';
 }
 
 async function activate(scene: IScene) {
@@ -300,6 +484,12 @@ async function activate(scene: IScene) {
   } finally {
     activatingId.value = null;
   }
+}
+
+async function activateNext() {
+  const target = nextScene.value;
+  if (!target) return;
+  await activate(target);
 }
 
 function openDelete(scene: IScene) {
@@ -483,305 +673,472 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="scene-manager">
-    <header class="scene-manager__head">
-      <h4>Cenas</h4>
-      <span v-if="scenes.length" class="scene-count">{{ scenes.length }}</span>
-    </header>
-
-    <div v-if="!scenes.length" class="scene-empty">
-      <p><strong>Nenhuma cena ainda.</strong></p>
-      <p>
-        Crie a primeira abaixo com nome, imagem e grade. Com <em>Ativar ao criar</em>
-        marcado, ela já aparece no tabuleiro do Mestre, dos jogadores e da TV.
-      </p>
-    </div>
-
-    <draggable
-      v-model="orderedScenes"
-      tag="ul"
-      class="scene-list"
-      item-key="_id"
-      handle=".drag-handle"
-      @end="onDragEnd"
+    <!-- Cena atual: identidade, imagem e edição em um único bloco. -->
+    <section
+      v-if="activeScene"
+      class="scene-current"
+      aria-labelledby="scene-current-title"
     >
-      <template #item="{ element: scene, index }">
-        <li :class="{ 'active-scene': scene._id === activeSceneId }">
-          <span class="drag-handle" aria-hidden="true" title="Arrastar para reordenar">
-            <Icon name="drag" :size="16" />
-          </span>
+      <div class="scene-current__hero">
+        <div class="scene-current__thumb">
+          <img v-if="activeScene.imageUrl" :src="activeScene.imageUrl" alt="" loading="lazy" />
+          <Icon v-else :name="activeScene.type === 'image' ? 'book' : 'square'" :size="28" />
+        </div>
+        <div class="scene-current__identity">
+          <p class="scene-current__eyebrow">
+            <span id="scene-current-title" class="scene-current__label">Cena atual</span>
+            <span class="badge badge--active">Ativa</span>
+          </p>
+          <p class="scene-current__name" :title="activeScene.name">{{ activeScene.name }}</p>
+          <p class="scene-current__type">{{ sceneTypeLabel(activeScene) }}</p>
+        </div>
+        <button
+          type="button"
+          class="btn btn-sm alt scene-current__image"
+          :aria-label="`Trocar imagem da cena ${activeScene.name}`"
+          @click="openImageDialog(activeScene)"
+        >
+          <Icon name="upload" :size="14" aria-hidden="true" />
+          <span>Trocar imagem</span>
+        </button>
+      </div>
 
+      <form class="scene-edit" @submit.prevent="applyChanges">
+        <div class="scene-field">
+          <label for="scene-current-name">Nome da cena</label>
+          <input
+            id="scene-current-name"
+            v-model="editName"
+            class="scene-input"
+            type="text"
+            autocomplete="off"
+            :disabled="editorPending"
+          />
+        </div>
+
+        <fieldset class="scene-field">
+          <legend class="scene-field-label">Tipo de cena</legend>
+          <label class="scene-radio">
+            <input v-model="editType" type="radio" value="battlemap" :disabled="editorPending" />
+            <span>
+              <strong>Cena de batalha</strong>
+              <small>Grade, tokens, iniciativa e ferramentas.</small>
+            </span>
+          </label>
+          <label class="scene-radio">
+            <input v-model="editType" type="radio" value="image" :disabled="editorPending" />
+            <span>
+              <strong>Imagem</strong>
+              <small>Ilustração ou handout, sem grade nem iniciativa.</small>
+            </span>
+          </label>
+        </fieldset>
+
+        <p v-if="!isEditBattlemap" class="scene-type-note">
+          Imagem não usa grade nem iniciativa. Tokens e medidas ficam guardados para
+          quando a cena voltar a ser de batalha.
+        </p>
+
+        <div v-else class="scene-grid-fields">
+          <div class="scene-field">
+            <label for="scene-current-columns">Colunas</label>
+            <input
+              id="scene-current-columns"
+              v-model.number="editColumns"
+              class="scene-input"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="200"
+              step="1"
+              :disabled="editorPending"
+            />
+          </div>
+          <div class="scene-field">
+            <label for="scene-current-rows">Linhas</label>
+            <input
+              id="scene-current-rows"
+              v-model.number="editRows"
+              class="scene-input"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="200"
+              step="1"
+              :disabled="editorPending"
+            />
+          </div>
+          <div class="scene-field">
+            <label for="scene-current-scale">Metros por quadrado</label>
+            <input
+              id="scene-current-scale"
+              v-model.number="editScale"
+              class="scene-input"
+              type="number"
+              inputmode="decimal"
+              min="0.1"
+              max="50"
+              step="0.1"
+              :disabled="editorPending"
+            />
+          </div>
+        </div>
+
+        <p v-if="isEditBattlemap" class="scene-field-hint">
+          A grade vale de 1 a 200 colunas/linhas e de 0,1 a 50 m por quadrado.
+        </p>
+
+        <p v-if="editorTokensOutside" class="scene-warning" role="note">
+          <strong>{{ editorTokensOutside }} token(s)</strong> desta cena ficariam fora
+          da nova grade e podem perder a posição.
+        </p>
+
+        <p v-if="editorError" class="upload-error" role="alert">{{ editorError }}</p>
+        <p v-if="editorStatus" class="scene-status" role="status">{{ editorStatus }}</p>
+
+        <div class="scene-form-actions">
+          <button type="submit" class="btn btn-sm" :disabled="editorPending || !editDirty">
+            {{ editorPending ? 'Aplicando…' : 'Aplicar alterações' }}
+          </button>
+          <button
+            v-if="editDirty"
+            type="button"
+            class="btn btn-sm btn-ghost"
+            :disabled="editorPending"
+            @click="discardEdit"
+          >Descartar</button>
+        </div>
+      </form>
+    </section>
+
+    <section v-else class="scene-current scene-current--empty">
+      <p><strong>Nenhuma cena ativa.</strong></p>
+      <p>
+        Use <strong>Criar cena</strong> no cabeçalho de <strong>Cenas</strong> para
+        criar a primeira, ou ative uma da lista abaixo. A cena ativa é a que
+        aparece no tabuleiro do Mestre, dos jogadores e da TV.
+      </p>
+    </section>
+
+    <!-- Biblioteca de cenas: criar, avançar e organizar. -->
+    <section class="scene-library" aria-labelledby="scene-library-title">
+      <header class="scene-manager__head">
+        <h4 id="scene-library-title">
+          Cenas
+          <span v-if="scenes.length" class="scene-count">{{ scenes.length }}</span>
+        </h4>
+        <div class="scene-manager__actions">
           <button
             type="button"
-            class="scene-thumb"
-            :aria-label="`Ativar cena ${scene.name}`"
-            :disabled="scene._id === activeSceneId || activatingId !== null"
-            @click="activate(scene)"
+            class="btn btn-sm alt scene-next-btn"
+            :disabled="!nextScene || activatingId !== null"
+            @click="activateNext"
           >
-            <img v-if="scene.imageUrl" :src="scene.imageUrl" alt="" loading="lazy" />
-            <Icon v-else :name="scene.type === 'image' ? 'book' : 'square'" :size="20" />
+            <Icon name="chevronRight" :size="14" aria-hidden="true" />
+            <span>{{ activatingId && activatingId === nextScene?._id ? 'Ativando…' : 'Próxima cena' }}</span>
           </button>
+          <button
+            type="button"
+            class="btn btn-sm scene-create-btn"
+            @click="openCreate"
+          >Criar cena</button>
+        </div>
+      </header>
 
-          <div class="scene-info">
-            <span class="scene-name" :title="scene.name">{{ scene.name }}</span>
-            <span v-if="scene._id === activeSceneId" class="badge badge--active">Ativa</span>
-          </div>
+      <div v-if="!scenes.length" class="scene-empty">
+        <p><strong>Nenhuma cena ainda.</strong></p>
+        <p>
+          Crie a primeira com nome, imagem e grade. Com <em>Ativar ao criar</em>
+          marcado, ela já aparece no tabuleiro do Mestre, dos jogadores e da TV.
+        </p>
+      </div>
 
-          <span class="scene-meta">{{ sceneMeta(scene) }}</span>
+      <draggable
+        v-model="orderedScenes"
+        tag="ul"
+        class="scene-list"
+        item-key="_id"
+        handle=".drag-handle"
+        @end="onDragEnd"
+      >
+        <template #item="{ element: scene, index }">
+          <li :class="{ 'active-scene': scene._id === activeSceneId }">
+            <span class="drag-handle" aria-hidden="true" title="Arrastar para reordenar">
+              <Icon name="drag" :size="16" />
+            </span>
 
-          <div class="scene-actions">
             <button
-              v-if="scene._id === activeSceneId"
               type="button"
-              class="btn btn-xs scene-replace"
-              :aria-label="`Trocar imagem da cena ${scene.name}`"
-              @click="openImageDialog(scene)"
+              class="scene-thumb"
+              :aria-label="`Ativar cena ${scene.name}`"
+              :disabled="scene._id === activeSceneId || activatingId !== null"
+              @click="activate(scene)"
             >
-              <Icon name="upload" :size="14" aria-hidden="true" />
-              <span class="scene-replace__label">Trocar imagem</span>
+              <img v-if="scene.imageUrl" :src="scene.imageUrl" alt="" loading="lazy" />
+              <Icon v-else :name="scene.type === 'image' ? 'book' : 'square'" :size="20" />
             </button>
 
-            <button
-              v-if="scene._id !== activeSceneId"
-              type="button"
-              class="btn btn-xs scene-activate"
-              :aria-describedby="`scene-name-${scene._id}`"
-              :disabled="activatingId !== null"
-              @click="activate(scene)"
-            >{{ activatingId === scene._id ? 'Ativando…' : 'Ativar' }}</button>
+            <div class="scene-info">
+              <span class="scene-name" :title="scene.name">{{ scene.name }}</span>
+              <span v-if="scene._id === activeSceneId" class="badge badge--active">Ativa</span>
+            </div>
 
-            <div class="scene-move">
+            <span class="scene-meta">{{ sceneMeta(scene) }}</span>
+
+            <div class="scene-actions">
+              <button
+                v-if="scene._id !== activeSceneId"
+                type="button"
+                class="btn btn-xs scene-activate"
+                :aria-describedby="`scene-name-${scene._id}`"
+                :disabled="activatingId !== null"
+                @click="activate(scene)"
+              >{{ activatingId === scene._id ? 'Ativando…' : 'Ativar' }}</button>
+
+              <div class="scene-move">
+                <button
+                  type="button"
+                  class="scene-icon-btn"
+                  :aria-label="`Mover cena ${scene.name} para cima`"
+                  :disabled="index === 0"
+                  @click="moveScene(index, -1)"
+                >
+                  <Icon name="chevronUp" :size="16" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  class="scene-icon-btn"
+                  :aria-label="`Mover cena ${scene.name} para baixo`"
+                  :disabled="index === orderedScenes.length - 1"
+                  @click="moveScene(index, 1)"
+                >
+                  <Icon name="chevronDown" :size="16" aria-hidden="true" />
+                </button>
+              </div>
+
               <button
                 type="button"
                 class="scene-icon-btn"
-                :aria-label="`Mover cena ${scene.name} para cima`"
-                :disabled="index === 0"
-                @click="moveScene(index, -1)"
+                :aria-label="`Renomear cena ${scene.name}`"
+                @click="openRename(scene)"
               >
-                <Icon name="chevronUp" :size="16" aria-hidden="true" />
+                <Icon name="edit" :size="16" aria-hidden="true" />
               </button>
               <button
                 type="button"
-                class="scene-icon-btn"
-                :aria-label="`Mover cena ${scene.name} para baixo`"
-                :disabled="index === orderedScenes.length - 1"
-                @click="moveScene(index, 1)"
+                class="scene-icon-btn scene-icon-btn--danger"
+                :aria-label="`Excluir cena ${scene.name}`"
+                @click="openDelete(scene)"
               >
-                <Icon name="chevronDown" :size="16" aria-hidden="true" />
+                <Icon name="delete" :size="16" aria-hidden="true" />
               </button>
             </div>
 
-            <button
-              type="button"
-              class="scene-icon-btn"
-              :aria-label="`Renomear cena ${scene.name}`"
-              @click="openRename(scene)"
-            >
-              <Icon name="edit" :size="16" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              class="scene-icon-btn scene-icon-btn--danger"
-              :aria-label="`Excluir cena ${scene.name}`"
-              @click="openDelete(scene)"
-            >
-              <Icon name="delete" :size="16" aria-hidden="true" />
-            </button>
-          </div>
+            <span :id="`scene-name-${scene._id}`" class="sr-only">{{ scene.name }}</span>
+          </li>
+        </template>
+      </draggable>
 
-          <span :id="`scene-name-${scene._id}`" class="sr-only">{{ scene.name }}</span>
-        </li>
-      </template>
-    </draggable>
+      <p v-if="activateError" class="scene-error" role="alert">{{ activateError }}</p>
+    </section>
 
-    <p v-if="activateError" class="scene-error" role="alert">{{ activateError }}</p>
+    <BaseDialog
+      :open="createOpen"
+      title="Nova cena"
+      @update:open="(open) => { if (!open) closeCreate(); }"
+      @close="closeCreate"
+    >
+      <form id="create-scene-form" class="create-scene-form" @submit.prevent="handleSubmit">
+        <p class="scene-form-hint">
+          Escolha a imagem, confira a grade e crie. A cena entra ativa por padrão.
+        </p>
 
-    <form class="create-scene-form" @submit.prevent="handleSubmit">
-      <h5>Nova cena</h5>
-      <p class="scene-form-hint">
-        Um passo: escolha a imagem, confira a grade e crie. A cena entra ativa por padrão.
-      </p>
+        <div class="scene-field">
+          <label for="scene-name">Nome da cena</label>
+          <input
+            id="scene-name"
+            ref="nameInputRef"
+            v-model="name"
+            class="scene-input"
+            type="text"
+            placeholder="Nome da Cena"
+            autocomplete="off"
+            data-autofocus
+            :disabled="pending"
+          />
+        </div>
 
-      <div class="scene-field">
-        <label for="scene-name">Nome da cena</label>
-        <input
-          id="scene-name"
-          ref="nameInputRef"
-          v-model="name"
-          class="scene-input"
-          type="text"
-          placeholder="Nome da Cena"
-          autocomplete="off"
-          :disabled="pending"
-        />
-      </div>
+        <div class="scene-field">
+          <span class="scene-field-label">Imagem da cena</span>
+          <div
+            class="image-drop"
+            :class="{ 'is-dragging': dragActive, 'has-image': Boolean(previewUrl()) }"
+            @dragover.prevent="onDragOver"
+            @dragleave.prevent="onDragLeave"
+            @drop.prevent="onDrop"
+          >
+            <img v-if="previewUrl()" class="image-drop__preview" :src="previewUrl()" alt="Prévia da imagem da nova cena" />
+            <div v-else class="image-drop__empty">
+              <Icon name="plus" :size="20" aria-hidden="true" />
+              <span>Arraste uma imagem aqui</span>
+            </div>
 
-      <div class="scene-field">
-        <span class="scene-field-label">Imagem da cena</span>
-        <div
-          class="image-drop"
-          :class="{ 'is-dragging': dragActive, 'has-image': Boolean(previewUrl()) }"
-          @dragover.prevent="onDragOver"
-          @dragleave.prevent="onDragLeave"
-          @drop.prevent="onDrop"
-        >
-          <img v-if="previewUrl()" class="image-drop__preview" :src="previewUrl()" alt="Prévia da imagem da nova cena" />
-          <div v-else class="image-drop__empty">
-            <Icon name="plus" :size="20" aria-hidden="true" />
-            <span>Arraste uma imagem aqui</span>
-          </div>
-
-          <div class="image-drop__actions">
-            <label class="btn btn-sm alt image-drop__picker">
-              <span>{{ pendingFile ? 'Trocar arquivo' : 'Escolher arquivo' }}</span>
-              <input
-                class="file-input"
-                type="file"
-                accept="image/*"
+            <div class="image-drop__actions">
+              <label class="btn btn-sm alt image-drop__picker">
+                <span>{{ pendingFile ? 'Trocar arquivo' : 'Escolher arquivo' }}</span>
+                <input
+                  class="file-input"
+                  type="file"
+                  accept="image/*"
+                  :disabled="pending"
+                  @change="onFileChange"
+                />
+              </label>
+              <button
+                v-if="previewUrl()"
+                type="button"
+                class="btn btn-sm btn-ghost"
                 :disabled="pending"
-                @change="onFileChange"
-              />
-            </label>
-            <button
-              v-if="previewUrl()"
-              type="button"
-              class="btn btn-sm btn-ghost"
-              :disabled="pending"
-              @click="clearImage"
-            >Remover</button>
+                @click="clearImage"
+              >Remover</button>
+            </div>
+
+            <p v-if="pendingFile" class="image-drop__filename" :title="pendingFile.name">
+              {{ pendingFile.name }}
+            </p>
           </div>
 
-          <p v-if="pendingFile" class="image-drop__filename" :title="pendingFile.name">
-            {{ pendingFile.name }}
+          <label class="scene-field-label" for="scene-image-url">Ou cole uma URL</label>
+          <input
+            id="scene-image-url"
+            v-model="imageUrl"
+            class="scene-input"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="URL da imagem (opcional)"
+            :disabled="pending"
+          />
+          <p class="scene-field-hint">O arquivo escolhido tem prioridade sobre a URL.</p>
+        </div>
+
+        <fieldset class="scene-field">
+          <legend class="scene-field-label">Tipo de cena</legend>
+          <label class="scene-radio">
+            <input v-model="sceneType" type="radio" value="battlemap" :disabled="pending" />
+            <span>
+              <strong>Cena de batalha</strong>
+              <small>Grade, tokens, iniciativa e ferramentas.</small>
+            </span>
+          </label>
+          <label class="scene-radio">
+            <input v-model="sceneType" type="radio" value="image" :disabled="pending" />
+            <span>
+              <strong>Imagem</strong>
+              <small>Ilustração ou handout, sem grade nem iniciativa.</small>
+            </span>
+          </label>
+        </fieldset>
+
+        <div v-if="isCreateBattlemap" class="scene-grid-fields">
+          <div class="scene-field">
+            <label for="scene-columns">Colunas</label>
+            <input
+              id="scene-columns"
+              v-model.number="columns"
+              class="scene-input"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="200"
+              step="1"
+              :disabled="pending"
+            />
+          </div>
+          <div class="scene-field">
+            <label for="scene-rows">Linhas</label>
+            <input
+              id="scene-rows"
+              v-model.number="rows"
+              class="scene-input"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="200"
+              step="1"
+              :disabled="pending"
+            />
+          </div>
+          <div class="scene-field">
+            <label for="scene-scale">Metros por quadrado</label>
+            <input
+              id="scene-scale"
+              v-model.number="scale"
+              class="scene-input"
+              type="number"
+              inputmode="decimal"
+              min="0.1"
+              max="50"
+              step="0.1"
+              :disabled="pending"
+            />
+          </div>
+        </div>
+
+        <p v-if="isCreateBattlemap" class="scene-field-hint">
+          A grade vale de 1 a 200 colunas/linhas e de 0,1 a 50 m por quadrado.
+        </p>
+        <p v-else class="scene-type-note">Imagem não usa grade nem iniciativa.</p>
+
+        <label class="scene-check">
+          <input v-model="activateOnCreate" type="checkbox" :disabled="pending" />
+          <span>
+            <strong>Ativar ao criar</strong>
+            <small>O tabuleiro troca para esta cena assim que ela for criada.</small>
+          </span>
+        </label>
+
+        <div
+          v-if="pending"
+          class="upload-progress"
+          role="progressbar"
+          aria-label="Progresso da nova cena"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          :aria-valuenow="displayProgress"
+        >
+          <div class="upload-progress__bar" :style="{ width: `${displayProgress}%` }"></div>
+          <span class="upload-progress__label">{{ displayProgress }}%</span>
+        </div>
+
+        <p v-if="formError" class="upload-error" role="alert">{{ formError }}</p>
+
+        <div v-if="usage" class="usage-info">
+          <small class="usage-summary" :class="{ low: lowSpace }">
+            Armazenamento: {{ usageText }}
+          </small>
+          <p v-if="lowSpace" class="usage-warning" role="status">
+            Pouco espaço restante: {{ remainingText }}.
           </p>
         </div>
-
-        <label class="scene-field-label" for="scene-image-url">Ou cole uma URL</label>
-        <input
-          id="scene-image-url"
-          v-model="imageUrl"
-          class="scene-input"
-          type="text"
-          inputmode="url"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="URL da imagem (opcional)"
-          :disabled="pending"
-        />
-        <p class="scene-field-hint">O arquivo escolhido tem prioridade sobre a URL.</p>
-      </div>
-
-      <fieldset class="scene-field">
-        <legend class="scene-field-label">Tipo de cena</legend>
-        <label class="scene-radio">
-          <input v-model="sceneType" type="radio" value="battlemap" :disabled="pending" />
-          <span>
-            <strong>Cena de batalha</strong>
-            <small>Grade, tokens, iniciativa e ferramentas.</small>
-          </span>
-        </label>
-        <label class="scene-radio">
-          <input v-model="sceneType" type="radio" value="image" :disabled="pending" />
-          <span>
-            <strong>Imagem</strong>
-            <small>Ilustração ou handout, sem grade nem iniciativa.</small>
-          </span>
-        </label>
-      </fieldset>
-
-      <div v-if="isBattlemap" class="scene-grid-fields">
-        <div class="scene-field">
-          <label for="scene-columns">Colunas</label>
-          <input
-            id="scene-columns"
-            v-model.number="columns"
-            class="scene-input"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            max="200"
-            step="1"
-            :disabled="pending"
-          />
-        </div>
-        <div class="scene-field">
-          <label for="scene-rows">Linhas</label>
-          <input
-            id="scene-rows"
-            v-model.number="rows"
-            class="scene-input"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            max="200"
-            step="1"
-            :disabled="pending"
-          />
-        </div>
-        <div class="scene-field">
-          <label for="scene-scale">Metros por quadrado</label>
-          <input
-            id="scene-scale"
-            v-model.number="scale"
-            class="scene-input"
-            type="number"
-            inputmode="decimal"
-            min="0.1"
-            max="50"
-            step="0.1"
-            :disabled="pending"
-          />
-        </div>
-      </div>
-
-      <p v-if="isBattlemap" class="scene-field-hint">
-        A grade vale de 1 a 200 colunas/linhas e de 0,1 a 50 m por quadrado.
-      </p>
-
-      <label class="scene-check">
-        <input v-model="activateOnCreate" type="checkbox" :disabled="pending" />
-        <span>
-          <strong>Ativar ao criar</strong>
-          <small>O tabuleiro troca para esta cena assim que ela for criada.</small>
-        </span>
-      </label>
-
-      <div
-        v-if="pending"
-        class="upload-progress"
-        role="progressbar"
-        aria-label="Progresso da nova cena"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        :aria-valuenow="displayProgress"
-      >
-        <div class="upload-progress__bar" :style="{ width: `${displayProgress}%` }"></div>
-        <span class="upload-progress__label">{{ displayProgress }}%</span>
-      </div>
-
-      <p v-if="formError" class="upload-error" role="alert">{{ formError }}</p>
-
-      <div class="scene-form-actions">
-        <button type="submit" class="btn" :disabled="pending">
-          {{ pending ? 'Criando cena…' : 'Criar cena' }}
+      </form>
+      <template #footer>
+        <button type="button" class="btn btn-sm alt" :disabled="pending" @click="closeCreate">
+          Cancelar
         </button>
         <button
           v-if="formError && (retryPayload || pendingFile)"
           type="button"
-          class="btn alt"
+          class="btn btn-sm alt"
           :disabled="pending"
           @click="retryCreate"
         >Tentar de novo</button>
-      </div>
-
-      <div v-if="usage" class="usage-info">
-        <small class="usage-summary" :class="{ low: lowSpace }">
-          Armazenamento: {{ usageText }}
-        </small>
-        <p v-if="lowSpace" class="usage-warning" role="status">
-          Pouco espaço restante: {{ remainingText }}.
-        </p>
-      </div>
-    </form>
+        <button type="submit" form="create-scene-form" class="btn btn-sm" :disabled="pending">
+          {{ pending ? 'Criando cena…' : 'Criar cena agora' }}
+        </button>
+      </template>
+    </BaseDialog>
 
     <BaseDialog
       :open="Boolean(imageTarget)"
@@ -946,18 +1303,176 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.scene-manager__head {
+/* --- Cena atual ------------------------------------------------------- */
+.scene-current {
   display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  min-width: 0;
+}
+
+.scene-current__hero {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
   align-items: center;
   gap: var(--s-3);
+  min-width: 0;
+}
+
+.scene-current__thumb {
+  grid-row: span 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  background: var(--ink-0);
+  color: var(--text-faint);
+}
+
+.scene-current__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scene-current__identity {
+  min-width: 0;
+}
+
+.scene-current__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 2px;
+}
+
+.scene-current__label {
+  color: var(--accent-ink);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.scene-current__name {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-current__type {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.scene-current__image {
+  grid-column: 2;
+  justify-self: start;
+}
+
+.scene-current--empty {
+  align-items: flex-start;
+  gap: var(--s-2);
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: var(--raised);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+
+.scene-current--empty p {
+  margin: 0;
+}
+
+.scene-current--empty .btn {
+  margin-top: var(--s-2);
+}
+
+.scene-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+.scene-type-note {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  border-left: 2px solid var(--accent-ink);
+  background: var(--raised);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-body);
+}
+
+.scene-warning {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid rgb(217 180 91 / 0.45);
+  border-radius: var(--radius-xs);
+  background: rgb(217 180 91 / 0.08);
+  color: var(--manila);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-body);
+}
+
+.scene-status {
+  margin: 0;
+  color: var(--success-ink);
+  font-size: var(--text-2xs);
+}
+
+/* --- Biblioteca ------------------------------------------------------- */
+.scene-library {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.scene-manager__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
 }
 
 .scene-manager__head h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
   margin: 0;
   color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   font-weight: 600;
+}
+
+.scene-manager__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-left: auto;
 }
 
 .scene-count {
@@ -1107,11 +1622,6 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.scene-replace {
-  gap: var(--s-1);
-  white-space: nowrap;
-}
-
 .scene-move {
   display: flex;
   flex-direction: column;
@@ -1149,17 +1659,6 @@ onBeforeUnmount(() => {
   color: var(--danger-ink);
 }
 
-@media (max-width: 1024px) {
-  .scene-icon-btn {
-    width: 44px;
-    min-height: 44px;
-  }
-
-  .scene-actions {
-    gap: var(--s-2);
-  }
-}
-
 .scene-error {
   margin: 0;
   padding: var(--s-2) var(--s-3);
@@ -1174,18 +1673,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
-  margin-top: var(--s-2);
-  padding-top: var(--s-4);
-  border-top: 1px solid var(--line);
   min-width: 0;
-}
-
-.create-scene-form h5 {
-  margin: 0;
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-size: var(--text-sm);
-  font-weight: 600;
 }
 
 .scene-form-hint {
@@ -1462,6 +1950,26 @@ onBeforeUnmount(() => {
   .scene-activate {
     min-height: 44px;
   }
+
+  .scene-current__hero {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .scene-current__thumb {
+    width: 64px;
+    height: 64px;
+  }
+
+  .scene-current__image {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    min-height: 44px;
+  }
+
+  .scene-next-btn,
+  .scene-create-btn {
+    min-height: 44px;
+  }
 }
 
 @media (max-width: 380px) {
@@ -1472,6 +1980,11 @@ onBeforeUnmount(() => {
 
   .scene-grid-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .scene-manager__actions {
+    width: 100%;
+    margin-left: 0;
   }
 }
 </style>

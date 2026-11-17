@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
-import { nextTick, ref } from 'vue';
+import { ref } from 'vue';
 import DMPanel from '../DMPanel.vue';
-import BaseDialog from '../../ui/BaseDialog.vue';
 
 function props(overrides: Record<string, unknown> = {}) {
   return {
@@ -43,12 +42,6 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
   });
 }
 
-function gridDialog(wrapper: ReturnType<typeof mountPanel>) {
-  return wrapper
-    .findAllComponents(BaseDialog)
-    .find((dialog) => dialog.props('title') === 'Aplicar grade?');
-}
-
 describe('DMPanel', () => {
   it('troca de aba ao clicar e ao navegar pelo teclado', async () => {
     const wrapper = mountPanel();
@@ -75,69 +68,6 @@ describe('DMPanel', () => {
     expect(tokenButton.attributes('aria-label')).toBeUndefined();
     await tokenButton.trigger('click');
     expect(wrapper.emitted('select-token')?.[0]).toEqual(['token-1']);
-    wrapper.unmount();
-  });
-
-  it('não aplica grade ao digitar; só emite depois da confirmação', async () => {
-    const wrapper = mountPanel();
-    await wrapper.get('#grid-columns').setValue(20);
-    await nextTick();
-
-    expect(wrapper.emitted('apply-grid')).toBeUndefined();
-
-    const request = wrapper.findAll('button').find((button) => button.text() === 'Aplicar grade');
-    expect(request).toBeTruthy();
-    await request!.trigger('click');
-    await nextTick();
-
-    expect(wrapper.emitted('apply-grid')).toBeUndefined();
-    const dialog = gridDialog(wrapper);
-    expect(dialog?.props('open')).toBe(true);
-    expect(dialog?.text()).toContain('30 × 30');
-    expect(dialog?.text()).toContain('20 × 30');
-
-    const confirm = wrapper
-      .findAll('button')
-      .filter((button) => button.text() === 'Aplicar grade')
-      .at(-1);
-    await confirm!.trigger('click');
-    await nextTick();
-
-    expect(wrapper.emitted('apply-grid')?.[0]).toEqual([
-      { width: 20, height: 30, metersPerSquare: 1.5 },
-    ]);
-    wrapper.unmount();
-  });
-
-  it('clampa a grade antes de confirmar e avisa sobre tokens fora dos limites', async () => {
-    const wrapper = mountPanel({
-      tokensOnMap: [
-        { _id: 'token-1', name: 'Ghoul', squareId: 'sq-899', ownerId: null, color: '#fff' },
-      ],
-    });
-    await wrapper.get('#grid-columns').setValue(0);
-    await wrapper.get('#grid-rows').setValue(999);
-    await wrapper.get('#grid-scale').setValue(999);
-
-    await wrapper.findAll('button').find((button) => button.text() === 'Aplicar grade')!.trigger('click');
-    await nextTick();
-
-    const dialog = gridDialog(wrapper);
-    expect(dialog?.text()).toContain('1 × 200');
-    expect(dialog?.text()).toContain('fora da nova grade');
-    wrapper.unmount();
-  });
-
-  it('avisa que a grade atual e a escala vêm da cena real', () => {
-    const wrapper = mountPanel({
-      gridWidth: 24,
-      gridHeight: 18,
-      metersPerSquare: 1.5,
-      scenes: [{ _id: 'scene-1', tableId: 'table-1', name: 'Cripta', type: 'battlemap', gridWidth: 24, gridHeight: 18, metersPerSquare: 1.5 }],
-    });
-    const text = wrapper.text();
-    expect(text).toContain('Grade atual: 24 × 18');
-    expect(text).toContain('1.5 m por quadrado');
     wrapper.unmount();
   });
 

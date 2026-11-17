@@ -665,7 +665,13 @@ test('DM mobile 390×844 cria cena com upload; uso aparece e TV/jogador converge
   await openScenePanelTab(page);
   await expect(page.locator('.scene-manager')).toBeVisible({ timeout: UI_TIMEOUT_MS });
 
-  const form = page.locator('.scene-manager .create-scene-form');
+  await page
+    .locator('.scene-manager__head')
+    .getByRole('button', { name: 'Criar cena', exact: true })
+    .click();
+  const createDialog = page.getByRole('dialog', { name: 'Nova cena' });
+  await expect(createDialog).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  const form = createDialog.locator('form.create-scene-form');
   await form.locator('#scene-name').fill(CENA_UPLOAD);
   const input = form.locator('input[type=file]');
   await expect(input, 'SceneManager precisa do input de arquivo (docs/MEDIA_SCENES.md §5).').toHaveCount(1);
@@ -679,7 +685,7 @@ test('DM mobile 390×844 cria cena com upload; uso aparece e TV/jogador converge
       response.url().includes(`/api/assets/maps/${w.table._id}`),
     { timeout: UI_TIMEOUT_MS },
   );
-  await form.getByRole('button', { name: 'Criar cena', exact: true }).click();
+  await createDialog.getByRole('button', { name: 'Criar cena agora', exact: true }).click();
   const response = await responsePromise;
   expect(response.status(), 'POST /api/assets/maps/:tableId precisa responder 201.').toBe(201);
   const uploaded = (await response.json()) as UploadResponse;
@@ -727,8 +733,13 @@ test('arquivo não-imagem não muda a cena; excluir a cena apaga o asset e o uso
   const page = dmMobilePage!;
   const currentUrl = w.mapOneUrl;
 
-  const form = page.locator('.scene-manager .create-scene-form');
-  await expect(form).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await page
+    .locator('.scene-manager__head')
+    .getByRole('button', { name: 'Criar cena', exact: true })
+    .click();
+  const createDialog = page.getByRole('dialog', { name: 'Nova cena' });
+  await expect(createDialog).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  const form = createDialog.locator('form.create-scene-form');
   await form.locator('#scene-name').fill('Cena inválida');
   await form
     .locator('input[type=file]')
@@ -743,6 +754,9 @@ test('arquivo não-imagem não muda a cena; excluir a cena apaga o asset e o uso
   await expect(page.locator('.upload-error')).toBeVisible({ timeout: UI_TIMEOUT_MS });
   await expect(page.locator('.upload-error')).toContainText(/imagem|inválid|arquivo/i);
   await expect(page.locator('.scene-switch__name')).toContainText(CENA_UPLOAD);
+  // Fecha o diálogo para a lista voltar a receber cliques.
+  await createDialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await expect(createDialog).toBeHidden({ timeout: UI_TIMEOUT_MS });
   await expect(tvPage!.locator('.display-board__map')).toHaveAttribute('src', currentUrl);
   await expect(playerPage!.locator('.board-map')).toHaveAttribute('src', currentUrl);
 
@@ -801,12 +815,17 @@ test('troca de cena: DM ativa a segunda cena, TV/jogador convergem; voltar resta
 
   await openScenePanelTab(page);
   const before = await resync(w.dmSocket, w.table._id);
-  const form = page.locator('.scene-manager .create-scene-form');
-  await expect(form).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await page
+    .locator('.scene-manager__head')
+    .getByRole('button', { name: 'Criar cena', exact: true })
+    .click();
+  const createDialog = page.getByRole('dialog', { name: 'Nova cena' });
+  await expect(createDialog).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  const form = createDialog.locator('form.create-scene-form');
   await form.locator('#scene-name').fill(SCENE_TWO_NAME);
   await form.locator('#scene-image-url').fill(thirdAbsolute);
   await expect(form.locator('.scene-check input[type="checkbox"]')).toBeChecked();
-  await form.getByRole('button', { name: 'Criar cena', exact: true }).click();
+  await createDialog.getByRole('button', { name: 'Criar cena agora', exact: true }).click();
   const sceneTwoRow = sceneRow(page, SCENE_TWO_NAME);
   await expect(sceneTwoRow, 'A segunda cena precisa aparecer na lista.').toBeVisible({
     timeout: UI_TIMEOUT_MS,
