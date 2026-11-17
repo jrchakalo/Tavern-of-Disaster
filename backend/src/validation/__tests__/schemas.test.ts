@@ -4,6 +4,7 @@ import {
   zRollDicePayload,
   zCharacterStats,
   zCreateCharacter,
+  zLoginRequest,
 } from '../schemas';
 
 const baseTokenPayload = {
@@ -46,6 +47,52 @@ describe('schemas de URL opcional', () => {
       imageUrl: '',
     });
     expect(parsed.imageUrl).toBeUndefined();
+  });
+});
+
+describe('zLoginRequest (identificador novo ou email legado)', () => {
+  it('normaliza { identifier, password } para o formato canônico', () => {
+    const parsed = zLoginRequest.parse({ identifier: '  Alice  ', password: 'senha123' });
+    expect(parsed).toEqual({ identifier: 'Alice', password: 'senha123' });
+  });
+
+  it('mantém compatibilidade com o formato legado { email, password }', () => {
+    const parsed = zLoginRequest.parse({ email: 'alice@test.dev', password: 'senha123' });
+    expect(parsed).toEqual({ identifier: 'alice@test.dev', password: 'senha123' });
+  });
+
+  it('dá prioridade a identifier quando os dois campos vêm juntos', () => {
+    const parsed = zLoginRequest.parse({
+      identifier: 'alice',
+      email: 'alice@test.dev',
+      password: 'senha123',
+    });
+    expect(parsed.identifier).toBe('alice');
+  });
+
+  it('rejeita identifier vazio, curto ou longo demais', () => {
+    expect(() => zLoginRequest.parse({ identifier: '', password: 'senha123' })).toThrow();
+    expect(() => zLoginRequest.parse({ identifier: '   ', password: 'senha123' })).toThrow();
+    expect(() => zLoginRequest.parse({ identifier: 'ab', password: 'senha123' })).toThrow();
+    expect(() =>
+      zLoginRequest.parse({ identifier: 'a'.repeat(255), password: 'senha123' })
+    ).toThrow();
+  });
+
+  it('rejeita payload sem identifier e sem email', () => {
+    expect(() => zLoginRequest.parse({ password: 'senha123' })).toThrow();
+  });
+
+  it('rejeita senha ausente ou curta', () => {
+    expect(() => zLoginRequest.parse({ identifier: 'alice' })).toThrow();
+    expect(() => zLoginRequest.parse({ identifier: 'alice', password: '123' })).toThrow();
+    expect(() => zLoginRequest.parse({ email: 'alice@test.dev' })).toThrow();
+  });
+
+  it('rejeita email legado malformado', () => {
+    expect(() =>
+      zLoginRequest.parse({ email: 'não-é-email', password: 'senha123' })
+    ).toThrow();
   });
 });
 

@@ -1,5 +1,6 @@
 import { Router, RequestHandler } from 'express';
 import User from '../models/User.model';
+import type { IUser } from '../models/User.model';
 import bcrypt from 'bcryptjs';
 import authMiddleware, { AuthRequest } from '../middleware/auth.middleware';
 import { signUserToken } from '../utils/jwt';
@@ -16,13 +17,49 @@ import { limitCreate, limitLogin } from '../middleware/rateLimit';
 const router = Router();
 const log = createLogger({ scope: 'auth-routes' });
 
+/**
+ * Escapa metacaracteres de regex. O identificador de login é entrada do
+ * usuário; nunca interpolamos o valor cru em uma expressão regular.
+ */
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Resolve login por email OU nome de usuário.
+ * - Email: normalizado para minúsculas, com fallback case-insensitive para
+ *   documentos antigos gravados antes da normalização.
+ * - Username: match exato primeiro, depois fallback case-insensitive seguro.
+ * O retorno é sempre o mesmo (ou null), sem revelar qual campo casou.
+ */
+async function findUserByIdentifier(rawIdentifier: string): Promise<IUser | null> {
+  const identifier = rawIdentifier.trim();
+
+  if (identifier.includes('@')) {
+    const normalizedEmail = identifier.toLowerCase();
+    const byEmail = await User.findOne({ email: normalizedEmail });
+    if (byEmail) return byEmail;
+
+    const byEmailCaseInsensitive = await User.findOne({
+      email: { $regex: `^${escapeRegex(normalizedEmail)}$`, $options: 'i' },
+    });
+    if (byEmailCaseInsensitive) return byEmailCaseInsensitive;
+  }
+
+  const byUsername = await User.findOne({ username: identifier });
+  if (byUsername) return byUsername;
+
+  return User.findOne({
+    username: { $regex: `^${escapeRegex(identifier)}$`, $options: 'i' },
+  });
+}
+
 const registerUserHandler: RequestHandler = async (req, res) => {
-  const requestLog = log.child({ route: 'register', email: req.body?.email, username: req.body?.username });
+  const requestLog = log.child({ route: 'register' });
   try {
     const { username, email, password } = validate(zRegisterRequest, req.body);
+    const normalizedEmail = email.toLowerCase();
 
     // Verifica se o usuário ou email já existem
-    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    const existingUser = await User.findOne({ $or: [{ email: normalizedEmail }, { username }] });
     if (existingUser) {
       recordAuthFailure();
       requestLog.warn('Usuário ou email já cadastrados');
@@ -37,7 +74,7 @@ const registerUserHandler: RequestHandler = async (req, res) => {
     // Cria um novo usuário
     const newUser = new User({
       username,
-      email,
+      email: normalizedEmail,
       passwordHash, // Salva o hash, não a senha!
     });
 
@@ -67,15 +104,16 @@ const registerUserHandler: RequestHandler = async (req, res) => {
 };
 
 const loginUserHandler: RequestHandler = async (req, res) => {
-  const requestLog = log.child({ route: 'login', email: req.body?.email });
+  const requestLog = log.child({ route: 'login' });
   try {
-    const { email, password } = validate(zLoginRequest, req.body);
+    const { identifier, password } = validate(zLoginRequest, req.body);
 
-    // Encontrar o usuário pelo email
-    const user = await User.findOne({ email });
+    // Encontrar o usuário pelo email ou nome de usuário
+    const user = await findUserByIdentifier(identifier);
     if (!user) {
       recordAuthFailure();
-      requestLog.warn('Usuário não encontrado para email informado');
+      // Mensagem genérica: não revela se o identificador existe.
+      requestLog.warn('Credenciais inválidas');
       res.status(400).json({ message: 'Credenciais inválidas.' });
       return;
     }
@@ -85,7 +123,7 @@ const loginUserHandler: RequestHandler = async (req, res) => {
     if (!isMatch) {
       // Mesma mensagem genérica
       recordAuthFailure();
-      requestLog.warn('Senha inválida');
+      requestLog.warn('Credenciais inválidas');
       res.status(400).json({ message: 'Credenciais inválidas.' });
       return;
     }
