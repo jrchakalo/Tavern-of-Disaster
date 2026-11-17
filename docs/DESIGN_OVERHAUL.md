@@ -283,7 +283,7 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
 | Gate | Resultado |
 |---|---|
 | Backend (Jest) | **268/268** |
-| Frontend (Vitest) | **517/517** |
+| Frontend (Vitest) | **559/559** |
 | Type-check + build | verdes |
 | ESLint (frontend) | 0 erros |
 | Contraste (`check:contrast`) | 45/45 pares AA |
@@ -308,6 +308,8 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
 - Seletor de cena e botão “Mesas” visíveis; sistema da mesa só nas configurações do lobby.
 - Cena atual com nome, tipo, grade, escala e imagem; “Nova cena” em popup com
   “Ativar ao criar”; “Próxima cena” ao lado de “Criar cena”.
+- Pós-beta: régua/ping no celular, pré-chamada no cockpit, Histórico › Ações
+  populado, prévia de cena de imagem no DM e nome de preset em diálogo.
 
 ## 9. Invariantes
 
