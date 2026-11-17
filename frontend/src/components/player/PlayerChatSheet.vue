@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import BaseSheet from '../ui/BaseSheet.vue';
 import { useChatStore } from '../../stores/chatStore';
+import { useTableStore } from '../../stores/tableStore';
 import { currentUser } from '../../services/authService';
 import {
   CHAT_TEXT_MAX,
@@ -23,10 +24,18 @@ const props = withDefaults(
 const emit = defineEmits<{ (e: 'close'): void }>();
 
 const store = useChatStore();
+let tableStore: ReturnType<typeof useTableStore> | null = null;
+try {
+  tableStore = useTableStore();
+} catch {
+  tableStore = null;
+}
 const draft = ref('');
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 const listRef = ref<HTMLElement | null>(null);
 const hasNew = ref(false);
+const retryVisible = ref(false);
+const viewportHeight = ref(0);
 
 const isOffline = computed(() => props.connectionStatus !== 'connected');
 const canSend = computed(
@@ -37,6 +46,55 @@ const canSend = computed(
     draft.value.length <= CHAT_TEXT_MAX,
 );
 const remaining = computed(() => CHAT_TEXT_MAX - draft.value.length);
+
+const chatHeight = computed(() => {
+  if (!viewportHeight.value) return undefined;
+  return `${Math.max(200, Math.min(viewportHeight.value - 230, 520))}px`;
+});
+
+const mentionCandidates = computed<string[]>(() => {
+  const table = tableStore?.currentTable;
+  if (!table) return ['todos'];
+  const names = [
+    table.dm?.username,
+    ...(table.players ?? []).map((player) => player.username),
+    'todos',
+  ].filter((name): name is string => Boolean(name && name.trim()));
+  return Array.from(new Set(names));
+});
+
+const mentionQuery = computed<string | null>(() => {
+  const match = draft.value.match(/@([A-Za-zÀ-ÖØ-öø-ÿ0-9_.-]*)$/);
+  return match ? match[1] : null;
+});
+
+const mentionSuggestions = computed(() => {
+  if (mentionQuery.value === null) return [];
+  const query = mentionQuery.value.toLocaleLowerCase();
+  return mentionCandidates.value
+    .filter((name) => name.toLocaleLowerCase().startsWith(query))
+    .slice(0, 5);
+});
+
+const showMentions = computed(
+  () => mentionQuery.value !== null && mentionSuggestions.value.length > 0,
+);
+
+function applyMention(name: string) {
+  draft.value = draft.value.replace(
+    /@[A-Za-zÀ-ÖØ-öø-ÿ0-9_.-]*$/,
+    `@${name} `,
+  );
+  void nextTick(() => inputRef.value?.focus());
+}
+
+function handleComposerEnter() {
+  if (showMentions.value) {
+    applyMention(mentionSuggestions.value[0]);
+    return;
+  }
+  void submit();
+}
 
 function ensureHistory() {
   if (!props.tableId || store.historyLoaded || store.loading) return;
@@ -92,19 +150,28 @@ function handleComposerFocus() {
 
 let viewportHandler: (() => void) | null = null;
 
+function refreshViewport() {
+  if (typeof window === 'undefined') return;
+  viewportHeight.value = window.visualViewport?.height ?? window.innerHeight ?? 0;
+}
+
 onMounted(() => {
+  refreshViewport();
   if (typeof window !== 'undefined' && window.visualViewport) {
     viewportHandler = () => {
+      refreshViewport();
       if (props.open) void scrollToBottom();
     };
     window.visualViewport.addEventListener('resize', viewportHandler);
   }
+  window.addEventListener('resize', refreshViewport);
 });
 
 onBeforeUnmount(() => {
   if (viewportHandler && window.visualViewport) {
     window.visualViewport.removeEventListener('resize', viewportHandler);
   }
+  window.removeEventListener('resize', refreshViewport);
   viewportHandler = null;
 });
 
@@ -134,7 +201,11 @@ async function submit() {
   if (!canSend.value) return;
   const text = draft.value;
   const ok = await store.send(props.tableId, text);
-  if (!ok) return;
+  if (!ok) {
+    retryVisible.value = true;
+    return;
+  }
+  retryVisible.value = false;
   draft.value = '';
   await scrollToBottom();
   inputRef.value?.focus();
@@ -148,7 +219,12 @@ async function submit() {
     label="Chat da mesa"
     @close="emit('close')"
   >
-    <div class="player-chat" data-testid="chat-panel" aria-label="Chat da mesa">
+    <div
+      class="player-chat"
+      data-testid="chat-panel"
+      aria-label="Chat da mesa"
+      :style="chatHeight ? { height: chatHeight } : undefined"
+    >
       <div class="player-chat__status-row">
         <span class="player-chat__status" :class="{ 'is-offline': isOffline }">
           {{ isOffline ? 'Sem conexão' : 'Conectado' }}
@@ -159,7 +235,18 @@ async function submit() {
       <p v-if="isOffline" class="player-chat__notice" role="status">
         O chat volta quando a mesa reconectar.
       </p>
-      <p v-if="store.error" class="player-chat__error" role="alert">{{ store.error }}</p>
+      <div v-if="store.error" class="player-chat__error-row">
+        <p class="player-chat__error" role="alert">{{ store.error }}</p>
+        <button
+          v-if="retryVisible && draft.trim()"
+          type="button"
+          class="player-chat__retry"
+          :disabled="store.sending || isOffline"
+          @click="submit"
+        >
+          Tentar de novo
+        </button>
+      </div>
       <p v-else-if="store.loading" class="player-chat__notice" role="status">Carregando histórico…</p>
 
       <div
@@ -209,6 +296,25 @@ async function submit() {
 
     <template #footer>
       <form class="player-chat__composer" @submit.prevent="submit">
+        <div
+          v-if="showMentions"
+          id="player-chat-mentions"
+          class="player-chat__mentions"
+          role="listbox"
+          aria-label="Mencionar alguém da mesa"
+        >
+          <button
+            v-for="name in mentionSuggestions"
+            :key="name"
+            type="button"
+            role="option"
+            class="player-chat__mention-option"
+            :aria-label="`Mencionar ${name}`"
+            @click="applyMention(name)"
+          >
+            @{{ name }}
+          </button>
+        </div>
         <label class="player-chat__field">
           <span class="sr-only">Mensagem</span>
           <textarea
@@ -220,8 +326,11 @@ async function submit() {
             :disabled="store.sending || isOffline"
             placeholder="Escreva uma mensagem…"
             aria-label="Escreva uma mensagem"
+            aria-autocomplete="list"
+            :aria-expanded="showMentions"
+            :aria-controls="showMentions ? 'player-chat-mentions' : undefined"
             @focus="handleComposerFocus"
-            @keydown.enter.exact.prevent="submit"
+            @keydown.enter.exact.prevent="handleComposerEnter"
           ></textarea>
         </label>
         <div class="player-chat__send-row">
@@ -244,6 +353,7 @@ async function submit() {
   flex-direction: column;
   min-height: 0;
   height: min(52dvh, 520px);
+  max-height: calc(var(--chat-viewport-height, 100dvh) - 200px);
 }
 
 .player-chat__status-row {
@@ -299,6 +409,29 @@ async function submit() {
   border-left: 2px solid var(--danger);
   background: rgb(178 58 50 / 0.12);
   color: var(--danger-ink);
+}
+
+.player-chat__error-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+
+.player-chat__error-row .player-chat__error {
+  flex: 1 1 160px;
+  margin-bottom: 0;
+}
+
+.player-chat__retry {
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--danger-ink);
+  border-radius: var(--radius-sm);
+  color: var(--danger-ink);
+  font-size: var(--text-xs);
+  font-weight: 600;
 }
 
 .player-chat__list {
@@ -413,6 +546,32 @@ async function submit() {
   display: block;
   width: 100%;
   margin: 0;
+}
+
+.player-chat__mentions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+}
+
+.player-chat__mention-option {
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--accent-ink);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+}
+
+.player-chat__mention-option:hover {
+  border-color: var(--accent-ink);
+  color: var(--text);
 }
 
 .player-chat__input {
