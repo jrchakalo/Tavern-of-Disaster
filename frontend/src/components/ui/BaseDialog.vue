@@ -316,9 +316,9 @@ onBeforeUnmount(() => {
   flex: none;
   align-items: center;
   justify-content: center;
-  inline-size: 36px;
-  block-size: 36px;
-  margin: -6px -6px 0 auto;
+  inline-size: 44px;
+  block-size: 44px;
+  margin: -8px -8px 0 auto;
   border-radius: var(--radius-xs);
   color: var(--text-muted);
 }
