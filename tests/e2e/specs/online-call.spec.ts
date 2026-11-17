@@ -490,7 +490,7 @@ test.beforeAll(async ({ browser }) => {
   const dmSession = await openContext(browser, dm, { width: 1440, height: 900 });
   dmPage = dmSession.page;
   await dmPage.goto(`${getBaseUrl()}/table/${table._id}`);
-  await expect(dmPage.locator('.media-dock')).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await expect(mediaDock(dmPage!)).toBeVisible({ timeout: UI_TIMEOUT_MS });
 
   const p1Session = await openContext(browser, p1, { width: 390, height: 844 });
   p1Context = p1Session.context;

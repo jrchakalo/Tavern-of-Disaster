@@ -738,16 +738,8 @@ test('arquivo não-imagem não muda a cena; excluir a cena apaga o asset e o uso
       buffer: Buffer.from('isto não é uma imagem', 'utf8'),
     });
 
-  const badResponsePromise = page.waitForResponse(
-    (candidate) =>
-      candidate.request().method() === 'POST' &&
-      candidate.url().includes(`/api/assets/maps/${w.table._id}`),
-    { timeout: UI_TIMEOUT_MS },
-  );
-  await form.getByRole('button', { name: 'Criar cena', exact: true }).click();
-  const badResponse = await badResponsePromise;
-  expect(badResponse.status(), 'Arquivo não-imagem precisa ser 400 (docs/MEDIA_SCENES.md §3.1).').toBe(400);
-
+  // O frontend barra o arquivo antes de enviar: erro visível, nenhum asset
+  // criado e a cena ativa continua a mesma (o backend também responderia 400).
   await expect(page.locator('.upload-error')).toBeVisible({ timeout: UI_TIMEOUT_MS });
   await expect(page.locator('.upload-error')).toContainText(/imagem|inválid|arquivo/i);
   await expect(page.locator('.scene-switch__name')).toContainText(CENA_UPLOAD);
