@@ -6,6 +6,7 @@ import {
   assignTokenOwnerForTable,
   editTokenForTable,
   undoTokenMoveForUser,
+  deleteTokenForTable,
 } from '../services/tokenSocketService';
 import { IInitiativeEntry } from '../models/Scene.model';
 import { createLogger } from '../logger';
@@ -24,6 +25,7 @@ import {
   zAssignTokenPayload,
   zEditTokenPayload,
   zUndoMovePayload,
+  zDeleteTokenPayload,
 } from '../validation/schemas';
 import type {
   PlaceTokenPayloadInput,
@@ -317,9 +319,50 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
     });
   };
 
+  // Remove o token e a entrada de iniciativa vinculada (apenas Mestre).
+  const requestDeleteToken = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestDeleteToken',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const data = validate(zDeleteTokenPayload, payload) as { tableId: string; tokenId: string };
+        const { tokenId, tableId, sceneId, initiative, removedEntryId } = await deleteTokenForTable(
+          userId!,
+          data
+        );
+        const revision = await bumpRevision(tableId);
+
+        io.to(tableId).emit('tokenRemoved', { tokenId, revision });
+        if (removedEntryId) {
+          io.to(tableId).emit('initiativeEntryRemoved', {
+            tableId,
+            sceneId,
+            revision,
+            entryId: removedEntryId,
+            order: initiative.map((entry) => entry._id?.toString()).filter(Boolean),
+          });
+        }
+
+        const changes: SessionPatchChanges = { tokensRemoved: [tokenId] };
+        if (removedEntryId) {
+          changes.initiative = initiative.map(mapInitiativeEntry);
+        }
+        return { tableId, revision, changes };
+      },
+    });
+  };
+
   socket.on('requestPlaceToken', requestPlaceToken);
   socket.on('requestMoveToken', requestMoveToken);
   socket.on('requestAssignToken', requestAssignToken);
   socket.on('requestUndoMove', requestUndoMove);
   socket.on('requestEditToken', requestEditToken);
+  socket.on('requestDeleteToken', requestDeleteToken);
 }

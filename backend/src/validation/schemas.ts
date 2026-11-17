@@ -179,6 +179,11 @@ export const zUndoMovePayload = z.object({
   tokenId: objectId,
 });
 
+export const zDeleteTokenPayload = z.object({
+  tableId,
+  tokenId: objectId,
+});
+
 // Initiative ---------------------------------------------------------------
 const initiativeEntryShape = z
   .object({
