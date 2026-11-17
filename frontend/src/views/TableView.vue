@@ -2253,7 +2253,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           <summary class="presence-summary" :aria-label="`Presença: ${presenceSummary}`">
             <span class="presence-dot" :class="{ offline: !connectedPlayerCount && !displayConnected }" aria-hidden="true"></span>
             <span class="presence-text">{{ presenceSummary }}</span>
-            <span class="presence-compact" aria-hidden="true">{{ connectedPlayerCount }} · {{ displayConnected ? 'TV on' : 'TV off' }}</span>
+            <span class="presence-compact" aria-hidden="true"><span class="presence-compact__count">{{ connectedPlayerCount }}</span><span class="presence-compact__tv"> · {{ displayConnected ? 'TV on' : 'TV off' }}</span></span>
           </summary>
           <div class="presence-panel">
             <p v-if="!presenceEntries.length && !displayConnected" class="presence-empty">Ninguém conectado.</p>
@@ -3830,6 +3830,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 
 @media (max-width: 380px) {
   .presence-compact { font-size: 10px; }
+  .presence-compact__tv { display: none; }
   .turn-bar__scene { display: none; }
   .turn-bar__label { font-size: 11px; }
   .mobile-bar__item, .mobile-bar :deep(.chat-toggle), .mobile-bar .log-toggle-btn { font-size: 10px; }
