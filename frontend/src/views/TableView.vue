@@ -2401,7 +2401,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             class="scene-switch__picker"
             aria-haspopup="dialog"
             :aria-expanded="scenePickerOpen"
-            aria-label="Trocar cena"
+            :aria-label="`Cena ativa: ${activeScene?.name || 'Nenhuma cena ativa'}. Trocar cena`"
             :title="activeScene?.name || 'Nenhuma cena ativa'"
             @click="openScenePicker"
           >
