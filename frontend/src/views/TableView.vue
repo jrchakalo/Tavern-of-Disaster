@@ -87,9 +87,7 @@ const persistentMode = ref<boolean>(false);
 // Colocação de token: toque/clique no quadrado e depois o formulário.
 const placementMode = ref(false);
 const roundNumber = ref(1);
-const pendingSessionEnd = ref(false);
-const sessionMenuRef = ref<HTMLDetailsElement | null>(null);
-const railTabButtonRefs = ref<HTMLButtonElement[]>([]);
+const scenePickerOpen = ref(false);
 
 function updateImageDimensions() {
   if (mapImgRef.value) {
@@ -391,42 +389,9 @@ const currentSystem = computed(() => {
   return preferredId ? systemStore.getById(preferredId) : null;
 });
 
-// Seleção de sistema da mesa (DM): lista do systemStore + PUT /tables/:id/system.
+// Seleção de sistema da mesa agora vive em “Minhas mesas → Configurações”;
+// o cockpit não repete esse controle na aba Sessão.
 const systemOptions = computed(() => (systemStore.systems ?? []) as SystemDTO[]);
-const selectedSystemId = computed(() => currentTable.value?.systemId ?? '');
-
-async function handleSystemChange(value: string | Event) {
-  if (!tableId) return;
-  const systemId = (typeof value === 'string' ? value : (value.target as HTMLSelectElement | null)?.value) || null;
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/system`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken.value}`,
-      },
-      body: JSON.stringify({ systemId }),
-    });
-    if (!response.ok) {
-      const data = (await response.json().catch(() => ({}))) as { message?: string };
-      throw new Error(data.message || 'Não foi possível atualizar o sistema da mesa.');
-    }
-    const system = systemOptions.value.find((entry) => entry._id === systemId) ?? null;
-    if (currentTable.value) {
-      // Aplicação local imediata; o snapshot canônico reafirma no próximo resync.
-      currentTable.value = {
-        ...currentTable.value,
-        systemId: system?._id ?? null,
-        systemKey: system?.key ?? null,
-        systemName: system?.name ?? null,
-      };
-    }
-    toast.success(system ? `Sistema da mesa: ${system.name}.` : 'Sistema removido da mesa.');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro ao salvar o sistema.';
-    toast.error(message);
-  }
-}
 const sharedMeasurementList = computed(() => Object.values(sharedMeasurements.value));
 const logCount = computed(() => logs.value.length);
 
@@ -434,9 +399,8 @@ systemStore.fetchAll().catch((error) => {
   console.warn('[table] não foi possível carregar sistemas', error);
 });
 
-// Transição curta antes do LIVE
+// Transição curta antes do LIVE: painel sólido, sem mídia.
 const showTransition = ref(false);
-const transitionVideoRef = ref<HTMLVideoElement | null>(null);
 // Quem pode interagir/visualizar o mapa (DM ou sessão ao vivo)
 const canUseMap = computed(() => isDM.value || sessionStatus.value === 'LIVE');
 // Pausa: Mestre define duração e jogadores veem contador
@@ -499,8 +463,6 @@ onUnmounted(() => {
 watch(transitionAt, (at) => {
   if (!at) return;
   showTransition.value = true;
-  // tenta iniciar reprodução
-  setTimeout(() => { transitionVideoRef.value?.play?.(); }, 0);
   const duration = transitionMs.value || 3000;
   setTimeout(() => { showTransition.value = false; }, duration);
 });
@@ -788,35 +750,17 @@ function applySessionStatus(newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'
 }
 
 function handleUpdateSessionStatus(newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED') {
-  // A confirmação de “Encerrar” vive no DMSessionControls; o menu da top bar
-  // usa requestEndSession, que abre o diálogo compartilhado abaixo.
+  // O DMSessionControls (aba Sessão) já confirma o encerramento com o Mestre.
   applySessionStatus(newStatus);
 }
 
-function requestEndSession() {
-  closeSessionMenu();
-  pendingSessionEnd.value = true;
-}
-
-function confirmEndSession() {
-  pendingSessionEnd.value = false;
-  applySessionStatus('ENDED');
-}
-
 async function startSessionWithTransition() {
-  closeSessionMenu();
   // dispara transição para todos por ~3s e muda status para LIVE após isso
   socketService.startTransition(tableId, 3000);
   showTransition.value = true;
-  // tenta tocar o vídeo local também
-  setTimeout(() => { transitionVideoRef.value?.play?.(); }, 0);
   await new Promise(res => setTimeout(res, 3000));
   showTransition.value = false;
   applySessionStatus('LIVE');
-}
-
-function closeSessionMenu() {
-  if (sessionMenuRef.value) sessionMenuRef.value.open = false;
 }
 
 function selectPanelTab(tab: DmPanelTab) {
@@ -825,32 +769,18 @@ function selectPanelTab(tab: DmPanelTab) {
   isDmPanelCollapsed.value = false;
 }
 
-async function onRailTabKeydown(event: KeyboardEvent, index: number) {
-  const tabs: DmPanelTab[] = ['scene', 'initiative', 'session', 'invite'];
-  const keys = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'];
-  if (!keys.includes(event.key)) return;
-  event.preventDefault();
-  let nextIndex = index;
-  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % tabs.length;
-  if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + tabs.length) % tabs.length;
-  if (event.key === 'Home') nextIndex = 0;
-  if (event.key === 'End') nextIndex = tabs.length - 1;
-  const tab = tabs[nextIndex];
-  if (!tab) return;
-  selectPanelTab(tab);
-  await nextTick();
-  railTabButtonRefs.value[nextIndex]?.focus();
+function openScenePicker() {
+  if (!scenes.value.length) {
+    toast.warning('Nenhuma cena nesta mesa. Crie uma na aba Cena.');
+    return;
+  }
+  scenePickerOpen.value = true;
 }
 
-function openInviteTab() {
-  userChangedPanelTab = true;
-  activePanelTab.value = 'invite';
-  isDmPanelCollapsed.value = false;
-  closeSessionMenu();
-  showActionLog.value = false;
-  callDialogOpen.value = false;
-  chatStore.closePanel();
-  if (isMobileLayout.value) isMobilePanelOpen.value = true;
+function switchSceneFromPicker(sceneId: string) {
+  scenePickerOpen.value = false;
+  if (!sceneId || sceneId === activeSceneId.value) return;
+  handleSetActiveScene(sceneId);
 }
 
 function openMobilePanel(tab: DmPanelTab = activePanelTab.value) {
@@ -872,11 +802,6 @@ function openMobileTools() {
 
 function handleToolSelectedFromSheet(tool: ToolMode) {
   handleToolSelected(tool);
-  isMobileToolsOpen.value = false;
-}
-
-function handleDiceFromSheet() {
-  openDiceSurface();
   isMobileToolsOpen.value = false;
 }
 
@@ -1251,8 +1176,6 @@ function handleInitiativeReorder(newOrder: IInitiativeEntry[]) {
 }
 
 function handleLeftClickOnSquare(square: GridSquare) {
-  if (activeTool.value === 'ruler' || activeTool.value === 'cone') return;
-
   if (isDM.value && placementMode.value) {
     if (square.token) {
       toast.warning('Este quadrado já tem um token. Escolha um livre.');
@@ -1264,6 +1187,8 @@ function handleLeftClickOnSquare(square: GridSquare) {
     return;
   }
 
+  // Token vence a ferramenta de medição: o DM abre o inspetor em vez de
+  // desenhar régua/cone por cima do token. Medir quadrados vazios segue igual.
   if (square.token) {
     const alreadySelected = selectedTokenId.value === square.token._id;
     selectedTokenId.value = alreadySelected ? null : square.token._id;
@@ -1271,9 +1196,12 @@ function handleLeftClickOnSquare(square: GridSquare) {
       tokenBeingEdited.value = square.token;
       showTokenEditForm.value = true;
     }
-  } else {
-    selectedTokenId.value = null;
+    return;
   }
+
+  if (activeTool.value === 'ruler' || activeTool.value === 'cone') return;
+
+  selectedTokenId.value = null;
 }
 
 
@@ -1504,6 +1432,30 @@ async function handleActivateScene(sceneId: string): Promise<void> {
   }
 }
 
+/**
+ * Troca só a imagem da cena ativa. A grade, os tokens e a escala permanecem:
+ * `requestSetMap` atualiza a arte da cena ativa sem tocar em dimensões.
+ */
+async function handleReplaceSceneImage(sceneId: string, imageUrl: string): Promise<void> {
+  if (!tableId) throw new Error('Mesa inválida para trocar a imagem da cena.');
+  if (!sceneId || !imageUrl) throw new Error('Escolha uma imagem antes de aplicar.');
+  if (sceneId !== activeSceneId.value) {
+    throw new Error('Ative a cena antes de trocar a imagem dela.');
+  }
+  const ack = await socketService.setMap(tableId, imageUrl);
+  if (!ack.ok) {
+    const message = ack.error.message || 'Não foi possível trocar a imagem da cena.';
+    toast.error(message);
+    throw new Error(message);
+  }
+  const index = scenes.value.findIndex((scene) => scene._id === sceneId);
+  if (index !== -1) {
+    scenes.value[index] = { ...scenes.value[index]!, imageUrl };
+  }
+  await refreshAssetUsage();
+  toast.success('Imagem da cena atualizada. A grade foi preservada.');
+}
+
 async function handleRenameScene(sceneId: string, name: string): Promise<void> {
   if (!tableId) throw new Error('Mesa inválida para renomear cena.');
   const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/scenes/${sceneId}`, {
@@ -1566,6 +1518,9 @@ function handlePointerDown(event: PointerEvent) {
   if (!isTouch && !isPrimaryButton && !isMiddleButton) return;
 
   if (isMeasuring.value && (isPrimaryButton || isTouch)) {
+    // Clique em token com ferramenta de medição aberta: não inicia o desenho;
+    // o clique segue para o token e abre o inspetor (DM) ou seleciona.
+    if ((event.target as HTMLElement | null)?.closest('.token')) return;
     if (!gridSurfaceRef.value) return;
     const gridRect = gridSurfaceRef.value.$el.getBoundingClientRect();
     const scale = viewTransform.value.scale || 1;
@@ -2441,9 +2396,18 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           >
             <Icon name="chevronLeft" :size="16" aria-hidden="true" />
           </button>
-          <strong class="scene-switch__name" :title="activeScene?.name || 'Nenhuma cena ativa'">
-            {{ activeScene?.name || 'Nenhuma cena ativa' }}
-          </strong>
+          <button
+            type="button"
+            class="scene-switch__picker"
+            aria-haspopup="dialog"
+            :aria-expanded="scenePickerOpen"
+            aria-label="Trocar cena"
+            :title="activeScene?.name || 'Nenhuma cena ativa'"
+            @click="openScenePicker"
+          >
+            <span class="scene-switch__name">{{ activeScene?.name || 'Nenhuma cena ativa' }}</span>
+            <Icon name="chevronDown" :size="14" aria-hidden="true" />
+          </button>
           <button
             type="button"
             class="scene-switch__button"
@@ -2502,57 +2466,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           <Icon name="users" :size="16" aria-hidden="true" />
           <span class="topbar-action-label">Fichas</span>
         </button>
-
-        <button type="button" class="btn btn-sm" @click="openInviteTab">
-          <Icon name="copy" :size="16" aria-hidden="true" />
-          <span class="topbar-action-label">Convidar</span>
-        </button>
-
-        <details ref="sessionMenuRef" class="session-menu">
-          <summary class="btn btn-sm alt session-menu__summary">
-            Sessão
-            <span aria-hidden="true">▾</span>
-          </summary>
-          <div class="session-menu__panel" role="menu" aria-label="Ações da sessão">
-            <button
-              v-if="sessionStatus === 'ENDED'"
-              type="button"
-              role="menuitem"
-              @click="closeSessionMenu(); applySessionStatus('PREPARING')"
-            >Reabrir sessão</button>
-            <button
-              v-if="sessionStatus === 'PREPARING'"
-              type="button"
-              role="menuitem"
-              @click="startSessionWithTransition"
-            >Iniciar sessão</button>
-            <button
-              v-if="sessionStatus === 'LIVE'"
-              type="button"
-              role="menuitem"
-              @click="closeSessionMenu(); applySessionStatus('PAUSED')"
-            >Pausar sessão</button>
-            <button
-              v-if="sessionStatus === 'PAUSED'"
-              type="button"
-              role="menuitem"
-              @click="closeSessionMenu(); applySessionStatus('LIVE')"
-            >Retomar sessão</button>
-            <hr />
-            <button
-              type="button"
-              role="menuitem"
-              @click="selectPanelTab('session'); closeSessionMenu()"
-            >Abrir aba Sessão</button>
-            <button
-              v-if="sessionStatus === 'LIVE' || sessionStatus === 'PAUSED'"
-              type="button"
-              role="menuitem"
-              class="danger-item"
-              @click="requestEndSession"
-            >Encerrar sessão…</button>
-          </div>
-        </details>
       </div>
 
       <button
@@ -2565,42 +2478,10 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </header>
 
     <div class="cockpit-body">
-      <nav v-if="isDM && !isMobileLayout" class="tool-rail" aria-label="Painéis e ferramentas do Mestre">
-        <button type="button" class="rail-add" @click="startTokenPlacement">
-          <Icon name="plus" :size="18" aria-hidden="true" />
-          <span>＋ Token</span>
-        </button>
-
-        <div class="rail-tabs" role="tablist" aria-orientation="vertical" aria-label="Painéis do Mestre">
-          <button
-            v-for="(tab, index) in [
-              { key: 'scene', label: 'Cena', icon: 'book' },
-              { key: 'initiative', label: 'Iniciativa', icon: 'users' },
-              { key: 'session', label: 'Sessão', icon: 'info' },
-              { key: 'invite', label: 'Convidar', icon: 'copy' },
-            ]"
-            :key="tab.key"
-            :ref="(el) => { if (el) railTabButtonRefs[index] = el as HTMLButtonElement; }"
-            type="button"
-            role="tab"
-            class="rail-tab"
-            :class="{ 'is-active': activePanelTab === tab.key }"
-            :id="`rail-tab-${tab.key}`"
-            :aria-selected="activePanelTab === tab.key"
-            :aria-controls="isDmPanelCollapsed ? undefined : `dm-tabpanel-${tab.key}`"
-            :tabindex="activePanelTab === tab.key ? 0 : -1"
-            @click="selectPanelTab(tab.key as DmPanelTab)"
-            @keydown="onRailTabKeydown($event, index)"
-          >
-            <Icon :name="tab.icon" :size="18" aria-hidden="true" />
-            <span>{{ tab.label }}</span>
-          </button>
-        </div>
-
-        <hr class="rail-divider" />
-
+      <nav v-if="isDM && !isMobileLayout" class="tool-rail" aria-label="Ferramentas do Mestre">
         <Toolbar
           variant="rail"
+          :showDiceAction="false"
           :activeTool="activeTool"
           :canDelete="Boolean(selectedPersistentId && (isDM || persistentMeasurements.find(pm => pm.id === selectedPersistentId)?.userId === currentUser?.id))"
           :persistentMode="persistentMode"
@@ -2615,7 +2496,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           @delete-selected="handleDeleteSelectedPersistent"
           @remove-aura="handleToolbarRemoveAura"
           @edit-aura="handleToolbarEditAura"
-          @toggle-dice-roller="openDiceSurface"
         />
       </nav>
 
@@ -2721,18 +2601,15 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
           >
             <div class="overlay-card surface">
               <template v-if="sessionStatus === 'PREPARING'">
-                <video class="overlay-media" autoplay loop muted playsinline src="/media/preparing.mp4"></video>
                 <h2>O Mestre está preparando a sessão…</h2>
                 <p>Afie suas lâminas e pegue seus dados — a aventura começa em instantes.</p>
               </template>
               <template v-else-if="sessionStatus === 'PAUSED'">
-                <video class="overlay-media" autoplay loop muted playsinline src="/media/paused.mp4"></video>
                 <h2>Pequena pausa, já voltamos!</h2>
                 <p>Hora de hidratar, alongar e revisar estratégias.</p>
                 <div v-if="pauseRemaining > 0" class="countdown">Retomando em {{ Math.floor(pauseRemaining/60) }}:{{ String(pauseRemaining%60).padStart(2,'0') }}</div>
               </template>
               <template v-else-if="sessionStatus === 'ENDED'">
-                <video class="overlay-media" autoplay loop muted playsinline src="/media/ended.mp4"></video>
                 <h2>E é aqui...</h2>
                 <p>Obrigado por jogar — até a próxima sessão.</p>
               </template>
@@ -2765,10 +2642,10 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             <span>Recentralizar</span>
           </button>
 
-          <div v-if="showTransition" class="transition-overlay">
-            <div class="overlay-card surface">
-              <video ref="transitionVideoRef" class="overlay-media" autoplay muted playsinline src="/media/transition.mp4"></video>
-              <h2>Vamos começar!</h2>
+          <div v-if="showTransition" class="transition-overlay" role="status" aria-live="polite">
+            <div class="overlay-card surface transition-card">
+              <h2>Trocando cena…</h2>
+              <p>A mesa está se preparando para o próximo momento.</p>
             </div>
           </div>
         </div>
@@ -2858,10 +2735,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             :current-turn-token-id="currentTurnTokenId"
             :grid-width="gridWidth"
             :grid-height="gridHeight"
-            :system-options="systemOptions"
-            :selected-system-id="selectedSystemId"
             :characters="charactersForTable"
-            :current-system="currentSystem"
             :round="roundNumber"
             :recent-rolls="tableStore.recentRolls"
             :connection-status="connectionStatus"
@@ -2869,13 +2743,13 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             :delete-scene="handleDeleteScene"
             :rename-scene="handleRenameScene"
             :activate-scene="handleActivateScene"
+            :replace-scene-image="handleReplaceSceneImage"
             @update:active-tab="selectPanelTab($event)"
             @update:pause-input="pauseInput = $event"
             @update-status="handleUpdateSessionStatus"
             @start-session="startSessionWithTransition"
             @reorder-scenes="onSceneReorder"
             @apply-grid="handleApplyGrid"
-            @system-change="handleSystemChange"
             @edit-token="handleOpenTokenInspector"
             @remove-entry="handleRemoveFromInitiative"
             @reorder-initiative="handleInitiativeReorder"
@@ -2883,7 +2757,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             @undo-move="handleUndoMove"
             @next-turn="handleNextTurn"
             @open-character-sheet="(id: string) => id && openCharacterSheet(id)"
-            @open-character-library="openCharacterLibrary"
             @add-token="startTokenPlacement"
             @select-token="handleOpenTokenInspector"
           />
@@ -3028,10 +2901,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :current-turn-token-id="currentTurnTokenId"
         :grid-width="gridWidth"
         :grid-height="gridHeight"
-        :system-options="systemOptions"
-        :selected-system-id="selectedSystemId"
         :characters="charactersForTable"
-        :current-system="currentSystem"
         :round="roundNumber"
         :recent-rolls="tableStore.recentRolls"
         :connection-status="connectionStatus"
@@ -3039,13 +2909,13 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :delete-scene="handleDeleteScene"
         :rename-scene="handleRenameScene"
         :activate-scene="handleActivateScene"
+        :replace-scene-image="handleReplaceSceneImage"
         @update:active-tab="activePanelTab = $event"
         @update:pause-input="pauseInput = $event"
         @update-status="handleUpdateSessionStatus"
         @start-session="startSessionWithTransition"
         @reorder-scenes="onSceneReorder"
         @apply-grid="handleApplyGrid"
-        @system-change="handleSystemChange"
         @edit-token="handleOpenTokenInspector"
         @remove-entry="handleRemoveFromInitiative"
         @reorder-initiative="handleInitiativeReorder"
@@ -3053,7 +2923,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         @undo-move="handleUndoMove"
         @next-turn="handleNextTurn"
         @open-character-sheet="(id: string) => id && openCharacterSheet(id)"
-        @open-character-library="openCharacterLibrary"
         @add-token="startTokenPlacement"
         @select-token="handleOpenTokenInspector"
       />
@@ -3068,6 +2937,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     >
       <Toolbar
         variant="sheet"
+        :showDiceAction="false"
         :activeTool="activeTool"
         :canDelete="Boolean(selectedPersistentId && (isDM || persistentMeasurements.find(pm => pm.id === selectedPersistentId)?.userId === currentUser?.id))"
         :persistentMode="persistentMode"
@@ -3082,7 +2952,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         @delete-selected="handleDeleteSelectedPersistent"
         @remove-aura="handleToolbarRemoveAura"
         @edit-aura="handleToolbarEditAura"
-        @toggle-dice-roller="handleDiceFromSheet"
       />
     </BaseSheet>
 
@@ -3232,19 +3101,40 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
     </BaseSheet>
 
     <BaseDialog
-      :open="pendingSessionEnd"
-      title="Encerrar sessão?"
-      @update:open="pendingSessionEnd = $event"
-      @close="pendingSessionEnd = false"
+      :open="scenePickerOpen"
+      title="Trocar cena"
+      :variant="isMobileLayout ? 'sheet' : 'dialog'"
+      @update:open="scenePickerOpen = $event"
+      @close="scenePickerOpen = false"
     >
-      <p class="confirm-copy">
-        Jogadores e TV verão a tela final imediatamente. A mesa pode preparar uma nova
-        sessão depois, mas o estado atual da sessão será encerrado para todos.
-      </p>
-      <div class="confirm-actions">
-        <button type="button" class="btn btn-sm" @click="pendingSessionEnd = false">Cancelar</button>
-        <button type="button" class="btn btn-sm danger" @click="confirmEndSession">Encerrar sessão</button>
-      </div>
+      <ul v-if="scenes.length" class="scene-picker">
+        <li v-for="scene in scenes" :key="scene._id">
+          <button
+            type="button"
+            class="scene-picker__item"
+            :class="{ 'is-active': scene._id === activeSceneId }"
+            :aria-current="scene._id === activeSceneId ? 'true' : undefined"
+            @click="switchSceneFromPicker(scene._id)"
+          >
+            <span class="scene-picker__thumb" aria-hidden="true">
+              <img v-if="scene.imageUrl" :src="scene.imageUrl" alt="" loading="lazy" />
+              <Icon v-else :name="scene.type === 'image' ? 'book' : 'square'" :size="18" />
+            </span>
+            <span class="scene-picker__body">
+              <span class="scene-picker__name">{{ scene.name }}</span>
+              <span class="scene-picker__meta">
+                {{ scene.type === 'image' ? 'Imagem' : 'Cena de batalha' }}
+                <template v-if="scene.type !== 'image'">
+                  · {{ scene.gridWidth }}×{{ scene.gridHeight }}
+                </template>
+              </span>
+            </span>
+            <span v-if="scene._id === activeSceneId" class="scene-picker__badge">Ativa</span>
+            <Icon v-else name="chevronRight" :size="16" aria-hidden="true" />
+          </button>
+        </li>
+      </ul>
+      <p v-else class="scene-picker__empty">Nenhuma cena nesta mesa. Crie uma na aba Cena.</p>
     </BaseDialog>
   </div>
 </template>
@@ -3295,14 +3185,16 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   gap: var(--s-2);
   min-width: 44px;
   min-height: 44px;
-  padding: 0 var(--s-2);
-  border: 1px solid transparent;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
-  color: var(--text-muted);
+  background: var(--raised);
+  color: var(--text);
   font-size: var(--text-sm);
+  font-weight: 600;
   text-decoration: none;
 }
-.topbar-back:hover { background: var(--raised); color: var(--text); text-decoration: none; }
+.topbar-back:hover { background: var(--raised-2); border-color: var(--line-strong); color: var(--text); text-decoration: none; }
 .topbar-back:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
 .topbar-identity {
@@ -3355,12 +3247,28 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 .scene-switch__button:disabled { color: var(--text-faint); cursor: not-allowed; }
 .scene-switch__button:not(:disabled):hover { border-color: var(--line-strong); }
 .scene-switch__button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.scene-switch__picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  max-width: 240px;
+  min-height: 32px;
+  padding: 0 var(--s-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  background: var(--raised);
+  color: var(--text);
+  cursor: pointer;
+}
+.scene-switch__picker:hover { background: var(--raised-2); }
+.scene-switch__picker:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .scene-switch__name {
-  max-width: 220px;
+  max-width: 200px;
   overflow: hidden;
   color: var(--text);
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3476,45 +3384,63 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   gap: var(--s-2);
 }
 .topbar-actions .btn,
-.session-menu__summary,
 .topbar-panel-btn { min-height: 44px; }
-.session-menu { position: relative; }
-.session-menu__summary {
-  list-style: none;
-  cursor: pointer;
-  min-height: 40px;
-}
-.session-menu__summary::-webkit-details-marker { display: none; }
-.session-menu__summary::marker { content: ''; }
-.session-menu__panel {
-  position: absolute;
-  top: calc(100% + var(--s-2));
-  right: 0;
-  z-index: 120;
-  display: flex;
-  flex-direction: column;
-  min-width: 210px;
-  padding: var(--s-2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  background: var(--panel);
-  box-shadow: var(--shadow-overlay);
-}
-.session-menu__panel button {
-  display: flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 var(--s-3);
-  border-radius: var(--radius-xs);
-  color: var(--text);
-  font-size: var(--text-sm);
-  text-align: left;
-}
-.session-menu__panel button:hover { background: var(--raised); }
-.session-menu__panel button.danger-item { color: var(--danger-ink); }
-.session-menu__panel hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: var(--s-2) 0; }
 
 .topbar-panel-btn { flex: none; }
+
+/* Lista de cenas no topo (troca em um clique) */
+.scene-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.scene-picker__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.scene-picker__item:hover { border-color: var(--line-strong); background: var(--raised-2); }
+.scene-picker__item:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.scene-picker__item.is-active { border-color: var(--accent-ink); box-shadow: inset 3px 0 0 var(--accent-ink); }
+.scene-picker__thumb {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--ink-0);
+  color: var(--text-muted);
+}
+.scene-picker__thumb img { width: 100%; height: 100%; object-fit: cover; }
+.scene-picker__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.scene-picker__name { overflow: hidden; font-size: var(--text-sm); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.scene-picker__meta { color: var(--text-muted); font-size: var(--text-2xs); }
+.scene-picker__badge {
+  flex: none;
+  padding: 0 var(--s-2);
+  border: 1px solid rgb(127 182 201 / 0.5);
+  border-radius: var(--radius-xs);
+  color: var(--accent-ink);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+.scene-picker__empty { margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
 
 /* Corpo em 3 zonas ------------------------------------------------------- */
 .cockpit-body {
@@ -3539,50 +3465,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   background: var(--panel);
   scrollbar-width: thin;
 }
-.rail-add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s-1);
-  min-height: 44px;
-  padding: 0 var(--s-2);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  cursor: pointer;
-}
-.rail-add:hover { background: var(--accent-hover); }
-.rail-add:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.rail-tabs { display: flex; flex-direction: column; gap: 1px; }
-.rail-tab {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  justify-content: flex-start;
-  width: 100%;
-  min-height: 44px;
-  padding: 0 var(--s-2);
-  border: 1px solid transparent;
-  border-left: 3px solid transparent;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-.rail-tab:hover { background: var(--raised); color: var(--text); }
-.rail-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.rail-tab.is-active {
-  border-left-color: var(--accent-ink);
-  background: var(--raised);
-  color: var(--text);
-}
-.rail-divider { width: 100%; border: 0; border-top: 1px solid var(--line); margin: var(--s-1) 0; }
 .tool-rail :deep(.tool-button) { min-height: 44px; }
 
 /* Tabuleiro e turn bar --------------------------------------------------- */
@@ -3909,7 +3791,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   background: var(--panel);
   text-align: center;
 }
-.overlay-media { width: 100%; max-height: 100%; object-fit: cover; border-radius: var(--radius-md); border: 1px solid var(--line); }
 .countdown { color: var(--manila); font-family: var(--font-data); font-weight: 600; font-variant-numeric: tabular-nums; }
 .transition-overlay {
   position: fixed;
@@ -3920,6 +3801,13 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   justify-content: center;
   background: rgb(4 6 7 / 0.72);
 }
+.transition-card {
+  width: min(420px, 88vw);
+  border-color: var(--line-strong);
+  background: var(--panel);
+}
+.transition-card h2 { margin: 0; font-family: var(--font-display); font-size: var(--text-xl); }
+.transition-card p { margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
 
 /* Chamada e dados ------------------------------------------------ */
 .media-bar {
@@ -4067,13 +3955,10 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 }
 .player-initiative-wrapper .initiative-panel { pointer-events: auto; }
 
-/* Diálogo de confirmação ------------------------------------------------ */
-.confirm-copy { margin: 0 0 var(--s-5); color: var(--text-muted); line-height: var(--leading-body); }
-.confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s-3); }
-
 /* Responsivo ----------------------------------------------------------- */
 @media (max-width: 1279px) {
   .scene-switch__label { display: none; }
+  .scene-switch__picker { max-width: 190px; }
   .scene-switch__name { max-width: 150px; }
   .connection-label { display: none; }
   /* Barra de 56 px cabe em uma linha: a prévia fica no diálogo da chamada. */
@@ -4141,7 +4026,12 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 }
 
 @media (max-width: 520px) {
-  .topbar-back__label { display: none; }
+  .topbar-back {
+    gap: 2px;
+    padding: 0 var(--s-1);
+    font-size: var(--text-2xs);
+  }
+  .topbar-back :deep(svg) { width: 16px; height: 16px; }
   .topbar-title { font-size: var(--text-sm); }
   .scene-switch { display: none; }
   .topbar-scene { max-width: 120px; }

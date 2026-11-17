@@ -15,7 +15,6 @@ import type {
   IScene,
   PlayerInfo,
   RollLogEntryDTO,
-  SystemDTO,
   TokenInfo,
 } from '../../types';
 
@@ -46,10 +45,7 @@ interface Props {
   currentTurnTokenId: string | null;
   gridWidth: number;
   gridHeight: number;
-  systemOptions: SystemDTO[];
-  selectedSystemId: string;
   characters: Character[];
-  currentSystem: SystemDTO | null;
   round: number | null;
   recentRolls?: RollLogEntryDTO[];
   connectionStatus?: string;
@@ -57,6 +53,7 @@ interface Props {
   deleteScene?: (sceneId: string) => Promise<void>;
   renameScene?: (sceneId: string, name: string) => Promise<void>;
   activateScene?: (sceneId: string) => Promise<void>;
+  replaceSceneImage?: (sceneId: string, imageUrl: string) => Promise<void>;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -66,6 +63,7 @@ const props = withDefaults(defineProps<Props>(), {
   deleteScene: async () => undefined,
   renameScene: async () => undefined,
   activateScene: async () => undefined,
+  replaceSceneImage: async () => undefined,
 });
 
 const emit = defineEmits<{
@@ -76,7 +74,6 @@ const emit = defineEmits<{
   (e: 'set-active-scene', sceneId: string): void;
   (e: 'reorder-scenes', scenes: IScene[]): void;
   (e: 'apply-grid', value: { width: number; height: number; metersPerSquare: number }): void;
-  (e: 'system-change', systemId: string): void;
   (e: 'edit-token', tokenId: string): void;
   (e: 'remove-entry', entryId: string): void;
   (e: 'reorder-initiative', order: IInitiativeEntry[]): void;
@@ -84,7 +81,6 @@ const emit = defineEmits<{
   (e: 'undo-move'): void;
   (e: 'next-turn'): void;
   (e: 'open-character-sheet', characterId: string): void;
-  (e: 'open-character-library'): void;
   (e: 'add-token'): void;
   (e: 'select-token', tokenId: string): void;
   (e: 'roll-result', payload: DiceRolledPayload): void;
@@ -220,28 +216,6 @@ function isInTurn(token: TokenInfo): boolean {
 function tokenOwnerName(token: TokenInfo): string {
   return token.ownerId?.username || 'Sem dono';
 }
-
-const systemDefaultNote = computed(() => {
-  if (!props.selectedSystemId) {
-    return 'Nenhum sistema fixado nesta mesa. D&D 5e vale como padrão para novas fichas; escolher um sistema não migra fichas existentes.';
-  }
-  return 'Define presets de dados e atributos de novas fichas. Fichas existentes não migram.';
-});
-
-const linkedCharacterIds = computed(
-  () => new Set(props.tokensOnMap.map((token) => token.characterId).filter((id): id is string => Boolean(id))),
-);
-
-const charactersWithoutToken = computed(
-  () => props.characters.filter((character) => !linkedCharacterIds.value.has(character._id)).length,
-);
-
-const characterSummary = computed(() => {
-  if (!props.characters.length) return 'Nenhuma ficha na mesa ainda.';
-  const total = props.characters.length;
-  const withoutToken = charactersWithoutToken.value;
-  return `${total} ${total === 1 ? 'ficha' : 'fichas'} · ${withoutToken} sem token nesta cena.`;
-});
 </script>
 
 <template>
@@ -290,6 +264,7 @@ const characterSummary = computed(() => {
           :rename-scene="renameScene"
           :activate-scene="activateScene"
           :reorder-scenes="(list: IScene[]) => emit('reorder-scenes', list)"
+          :replace-scene-image="replaceSceneImage"
         />
 
         <section v-if="activeScene" class="panel-block" aria-labelledby="grid-title">
@@ -356,10 +331,7 @@ const characterSummary = computed(() => {
         tabindex="0"
       >
         <section class="panel-block" aria-labelledby="tokens-title">
-          <div class="panel-block__head">
-            <h4 id="tokens-title">Tokens na cena</h4>
-            <button type="button" class="btn btn-xs" @click="emit('add-token')">＋ Token</button>
-          </div>
+          <h4 id="tokens-title">Tokens na cena</h4>
           <p v-if="!tokensOnMap.length" class="panel-hint">
             Nenhum token no mapa. Use <strong>＋ Token</strong> e toque em um quadrado.
           </p>
@@ -397,7 +369,6 @@ const characterSummary = computed(() => {
             @undo-move="emit('undo-move')"
             @next-turn="emit('next-turn')"
             @open-character-sheet="emit('open-character-sheet', $event)"
-            @add-token="emit('add-token')"
           />
         </section>
         <p v-else class="panel-hint">
@@ -443,23 +414,6 @@ const characterSummary = computed(() => {
           @start-session="emit('start-session')"
         />
 
-        <section class="panel-block" aria-labelledby="system-title">
-          <h4 id="system-title">Sistema da mesa</h4>
-          <select
-            id="table-system-select"
-            class="system-select"
-            :value="selectedSystemId"
-            aria-label="Sistema da mesa"
-            @change="emit('system-change', ($event.target as HTMLSelectElement).value)"
-          >
-            <option value="">Padrão da plataforma (D&amp;D 5e)</option>
-            <option v-for="system in systemOptions" :key="system._id" :value="system._id">
-              {{ system.name }}
-            </option>
-          </select>
-          <p class="panel-hint">{{ systemDefaultNote }}</p>
-        </section>
-
         <section class="panel-block" aria-labelledby="session-summary-title">
           <h4 id="session-summary-title">Resumo</h4>
           <dl class="summary-list">
@@ -469,22 +423,6 @@ const characterSummary = computed(() => {
             <div><dt>Iniciativa</dt><dd>{{ rowCount }} {{ rowCount === 1 ? 'entrada' : 'entradas' }}</dd></div>
           </dl>
           <p class="panel-hint">Encerrar a sessão pede confirmação e mostra a tela final para jogadores e TV.</p>
-        </section>
-
-        <section class="panel-block" aria-labelledby="dm-sheets-title">
-          <div class="panel-block__head">
-            <h4 id="dm-sheets-title">Fichas da mesa</h4>
-            <button
-              type="button"
-              class="btn btn-xs"
-              @click="emit('open-character-library')"
-            >Abrir fichas</button>
-          </div>
-          <p class="panel-hint">{{ characterSummary }}</p>
-          <p class="panel-hint">
-            O Mestre abre qualquer ficha, cria em nome de um jogador e vincula fichas aos tokens
-            da cena ativa.
-          </p>
         </section>
       </section>
 
@@ -604,14 +542,6 @@ const characterSummary = computed(() => {
   font-size: var(--text-sm);
   font-weight: 600;
 }
-.panel-block__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-3);
-  margin-bottom: var(--s-3);
-}
-.panel-block__head h4 { margin: 0; }
 .panel-hint {
   margin: 0 0 var(--s-3);
   color: var(--text-muted);
@@ -681,7 +611,6 @@ const characterSummary = computed(() => {
   white-space: nowrap;
 }
 .badge { flex: none; }
-.system-select { width: 100%; min-height: 44px; }
 .summary-list { display: flex; flex-direction: column; gap: var(--s-2); margin: 0; }
 .summary-list div { display: flex; justify-content: space-between; gap: var(--s-3); }
 .summary-list dt { color: var(--text-muted); font-size: var(--text-xs); }

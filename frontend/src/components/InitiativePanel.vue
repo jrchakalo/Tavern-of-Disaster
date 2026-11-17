@@ -37,7 +37,6 @@ const emit = defineEmits<{
   (e: 'reorder', newOrder: IInitiativeEntry[]): void;
   (e: 'open-character-sheet', characterId: string): void;
   (e: 'reset-initiative'): void;
-  (e: 'add-token'): void;
 }>();
 
 function tokenFor(entry: IInitiativeEntry): TokenInfo | null {
@@ -206,10 +205,7 @@ function confirmReset() {
 
     <div v-if="!enriched.length && !collapsed" class="empty">
       <p>Sem entradas de iniciativa.</p>
-      <button v-if="isDM" type="button" class="btn btn-xs" @click="emit('add-token')">
-        <Icon name="plus" :size="14" />
-        Token
-      </button>
+      <p class="empty-hint">Coloque um token com <strong>＋ Token</strong> e adicione-o ao turno.</p>
     </div>
 
     <BaseDialog
@@ -368,6 +364,7 @@ function confirmReset() {
   font-size: var(--text-sm);
 }
 .empty p { margin: 0; }
+.empty-hint { font-size: var(--text-xs); line-height: var(--leading-body); }
 .confirm-copy { margin: 0 0 var(--s-5); color: var(--text-muted); line-height: var(--leading-body); }
 .confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s-3); }
 

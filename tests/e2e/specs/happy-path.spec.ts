@@ -138,9 +138,9 @@ test('DM e jogador percorrem o fluxo principal no redesign', async ({ browser, r
 
   await expect(dmPage.locator('.grid-square').first()).toBeVisible({ timeout: 30_000 });
 
-  // Sessão no menu do cockpit.
-  await dmPage.locator('.session-menu__summary').click();
-  await dmPage.getByRole('menuitem', { name: 'Iniciar sessão' }).click();
+  // Sessão na aba Sessão do painel (a top bar não duplica o controle).
+  await dmPage.locator('.dm-panel__tab', { hasText: 'Sessão' }).click();
+  await dmPage.locator('.dm-panel .session-start').click();
   const dmTransitionOverlay = dmPage.locator('.transition-overlay');
   if ((await dmTransitionOverlay.count()) > 0) {
     await dmTransitionOverlay.waitFor({ state: 'detached', timeout: 20_000 }).catch(() => undefined);
@@ -153,9 +153,9 @@ test('DM e jogador percorrem o fluxo principal no redesign', async ({ browser, r
   // (o overlay de "personagem no tabuleiro" cobre o board até existir token).
   await expect(playerPage.locator('.session-overlay .player-empty')).toBeVisible({ timeout: 20_000 });
 
-  // DM coloca o token pelo botão do rail e clicando num quadrado do mapa
+  // DM coloca o token pelo cabeçalho do painel e clicando num quadrado do mapa
   // (o clique não pode ser engolido pelo pan do viewport).
-  await dmPage.locator('.rail-add').click();
+  await dmPage.locator('.dm-panel__add').click();
   await expect(dmPage.locator('.placement-banner')).toBeVisible();
   await dmPage.locator('.grid-square').nth(20).click();
   const tokenForm = dmPage.locator('.token-form');
@@ -174,7 +174,7 @@ test('DM e jogador percorrem o fluxo principal no redesign', async ({ browser, r
   await expect(playerPage.locator('.initiative-line')).toBeVisible({ timeout: 20_000 });
 
   // Aba Iniciativa do painel dockado lista o token.
-  await dmPage.locator('.rail-tab', { hasText: 'Iniciativa' }).click();
+  await dmPage.locator('.dm-panel__tab', { hasText: 'Iniciativa' }).click();
   await expect(dmPage.locator('.dm-panel .initiative-panel .entry', { hasText: tokenName })).toBeVisible({
     timeout: 20_000,
   });

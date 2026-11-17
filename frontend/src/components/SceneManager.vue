@@ -32,6 +32,7 @@ const props = withDefaults(defineProps<{
   renameScene?: (sceneId: string, name: string) => Promise<void>;
   activateScene?: (sceneId: string) => Promise<void>;
   reorderScenes?: (scenes: IScene[]) => void;
+  replaceSceneImage?: (sceneId: string, imageUrl: string) => Promise<void>;
 }>(), {
   usage: null,
   createScene: async () => undefined,
@@ -39,6 +40,7 @@ const props = withDefaults(defineProps<{
   renameScene: async () => undefined,
   activateScene: async () => undefined,
   reorderScenes: () => undefined,
+  replaceSceneImage: async () => undefined,
 });
 
 const activeScene = computed(
@@ -80,6 +82,17 @@ const renameTarget = ref<IScene | null>(null);
 const renameValue = ref('');
 const renameError = ref('');
 const renaming = ref(false);
+
+// Troca da imagem da cena ativa (sem tocar em grade/tokens).
+const imageTarget = ref<IScene | null>(null);
+const imageUrlDraft = ref('');
+const imageFile = ref<File | null>(null);
+const imageFilePreview = ref('');
+const imageDragActive = ref(false);
+const imagePending = ref(false);
+const imageProgress = ref(0);
+const imageError = ref('');
+const imageInputRef = ref<HTMLInputElement | null>(null);
 
 const displayProgress = computed(() => Math.max(0, Math.min(100, Math.round(progress.value))));
 const isBattlemap = computed(() => sceneType.value === 'battlemap');
@@ -347,6 +360,106 @@ async function confirmRename() {
   }
 }
 
+const imageDisplayProgress = computed(() => Math.max(0, Math.min(100, Math.round(imageProgress.value))));
+const imagePreviewSrc = computed(
+  () => imageFilePreview.value || imageUrlDraft.value.trim() || imageTarget.value?.imageUrl || '',
+);
+
+function setImageFile(file: File | null) {
+  if (imageFilePreview.value) {
+    URL.revokeObjectURL?.(imageFilePreview.value);
+    imageFilePreview.value = '';
+  }
+  imageFile.value = file;
+  if (file && typeof URL.createObjectURL === 'function') {
+    try {
+      imageFilePreview.value = URL.createObjectURL(file);
+    } catch {
+      imageFilePreview.value = '';
+    }
+  }
+}
+
+function resetImageDialog() {
+  imageTarget.value = null;
+  imageUrlDraft.value = '';
+  setImageFile(null);
+  imageDragActive.value = false;
+  imagePending.value = false;
+  imageProgress.value = 0;
+  imageError.value = '';
+}
+
+function openImageDialog(scene: IScene) {
+  if (scene._id !== props.activeSceneId) return;
+  resetImageDialog();
+  imageTarget.value = scene;
+}
+
+function closeImageDialog() {
+  if (imagePending.value) return;
+  resetImageDialog();
+}
+
+function onImageFileChange(event: Event) {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0] ?? null;
+  if (file) {
+    if (!file.type.startsWith('image/')) {
+      imageError.value = 'Envie um arquivo de imagem (PNG, JPG ou WebP).';
+    } else {
+      imageError.value = '';
+      setImageFile(file);
+    }
+  }
+  if (input) input.value = '';
+}
+
+function onImageDrop(event: DragEvent) {
+  imageDragActive.value = false;
+  const file = event.dataTransfer?.files?.[0] ?? null;
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    imageError.value = 'Envie um arquivo de imagem (PNG, JPG ou WebP).';
+    return;
+  }
+  imageError.value = '';
+  setImageFile(file);
+}
+
+async function confirmReplaceImage() {
+  const target = imageTarget.value;
+  if (!target || imagePending.value) return;
+  imageError.value = '';
+
+  const url = imageUrlDraft.value.trim();
+  if (!imageFile.value && !url) {
+    imageError.value = 'Escolha um arquivo ou cole a URL da nova imagem.';
+    return;
+  }
+
+  imagePending.value = true;
+  imageProgress.value = 0;
+  try {
+    let finalUrl = url;
+    if (imageFile.value) {
+      finalUrl = await uploadMap(imageFile.value, props.tableId, (percent) => {
+        imageProgress.value = percent;
+      });
+      imageProgress.value = 100;
+      // Mantém a URL final no campo para o retry não reenviar o arquivo.
+      setImageFile(null);
+      imageUrlDraft.value = finalUrl;
+    }
+    await props.replaceSceneImage(target._id, finalUrl);
+    resetImageDialog();
+  } catch (error) {
+    imageError.value = errorMessage(error, 'Não foi possível trocar a imagem da cena.');
+  } finally {
+    imagePending.value = false;
+  }
+}
+
 function onDragEnd() {
   props.reorderScenes(orderedScenes.value);
 }
@@ -364,6 +477,7 @@ function moveScene(index: number, delta: number) {
 
 onBeforeUnmount(() => {
   if (filePreviewUrl.value) URL.revokeObjectURL?.(filePreviewUrl.value);
+  if (imageFilePreview.value) URL.revokeObjectURL?.(imageFilePreview.value);
 });
 </script>
 
@@ -415,6 +529,17 @@ onBeforeUnmount(() => {
           <span class="scene-meta">{{ sceneMeta(scene) }}</span>
 
           <div class="scene-actions">
+            <button
+              v-if="scene._id === activeSceneId"
+              type="button"
+              class="btn btn-xs scene-replace"
+              :aria-label="`Trocar imagem da cena ${scene.name}`"
+              @click="openImageDialog(scene)"
+            >
+              <Icon name="upload" :size="14" aria-hidden="true" />
+              <span class="scene-replace__label">Trocar imagem</span>
+            </button>
+
             <button
               v-if="scene._id !== activeSceneId"
               type="button"
@@ -659,6 +784,109 @@ onBeforeUnmount(() => {
     </form>
 
     <BaseDialog
+      :open="Boolean(imageTarget)"
+      title="Trocar imagem da cena"
+      @update:open="(open) => { if (!open) closeImageDialog(); }"
+      @close="closeImageDialog"
+    >
+      <template v-if="imageTarget">
+        <p class="scene-dialog-copy">
+          Nova arte para <strong>“{{ imageTarget.name }}”</strong>. A grade
+          <template v-if="imageTarget.type !== 'image'">
+            ({{ clampInt(imageTarget.gridWidth, 1, 200, 30) }}×{{ clampInt(imageTarget.gridHeight, 1, 200, 30) }}),
+          </template>
+          os tokens e a escala são preservados.
+        </p>
+
+        <div class="scene-field">
+          <span class="scene-field-label">Nova imagem</span>
+          <div
+            class="image-drop"
+            :class="{ 'is-dragging': imageDragActive, 'has-image': Boolean(imagePreviewSrc) }"
+            @dragover.prevent="imageDragActive = true"
+            @dragleave.prevent="imageDragActive = false"
+            @drop.prevent="onImageDrop"
+          >
+            <img
+              v-if="imagePreviewSrc"
+              class="image-drop__preview"
+              :src="imagePreviewSrc"
+              alt="Prévia da nova imagem da cena"
+            />
+            <div v-else class="image-drop__empty">
+              <Icon name="plus" :size="20" aria-hidden="true" />
+              <span>Arraste uma imagem aqui</span>
+            </div>
+
+            <div class="image-drop__actions">
+              <label class="btn btn-sm alt image-drop__picker">
+                <span>{{ imageFile ? 'Trocar arquivo' : 'Escolher arquivo' }}</span>
+                <input
+                  ref="imageInputRef"
+                  class="file-input"
+                  type="file"
+                  accept="image/*"
+                  :disabled="imagePending"
+                  @change="onImageFileChange"
+                />
+              </label>
+              <button
+                v-if="imageFile"
+                type="button"
+                class="btn btn-sm btn-ghost"
+                :disabled="imagePending"
+                @click="setImageFile(null)"
+              >Remover arquivo</button>
+            </div>
+
+            <p v-if="imageFile" class="image-drop__filename" :title="imageFile.name">
+              {{ imageFile.name }}
+            </p>
+          </div>
+
+          <label class="scene-field-label" for="scene-replace-url">Ou cole uma URL</label>
+          <input
+            id="scene-replace-url"
+            v-model="imageUrlDraft"
+            class="scene-input"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="URL da imagem (opcional)"
+            data-autofocus
+            :disabled="imagePending"
+          />
+          <p class="scene-field-hint">O arquivo escolhido tem prioridade sobre a URL.</p>
+        </div>
+
+        <div
+          v-if="imagePending"
+          class="upload-progress"
+          role="progressbar"
+          aria-label="Progresso do envio da nova imagem"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          :aria-valuenow="imageDisplayProgress"
+        >
+          <div class="upload-progress__bar" :style="{ width: `${imageDisplayProgress}%` }"></div>
+          <span class="upload-progress__label">{{ imageDisplayProgress }}%</span>
+        </div>
+
+        <p v-if="imageError" class="upload-error" role="alert">{{ imageError }}</p>
+      </template>
+
+      <template #footer>
+        <button type="button" class="btn btn-sm alt" :disabled="imagePending" @click="closeImageDialog">
+          Cancelar
+        </button>
+        <button type="button" class="btn btn-sm" :disabled="imagePending" @click="confirmReplaceImage">
+          {{ imagePending ? 'Enviando…' : imageError ? 'Tentar de novo' : 'Aplicar imagem' }}
+        </button>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog
       :open="Boolean(deleteTarget)"
       title="Excluir cena?"
       @update:open="(open) => { if (!open) closeDeleteDialog(); }"
@@ -876,6 +1104,11 @@ onBeforeUnmount(() => {
 }
 
 .scene-activate {
+  white-space: nowrap;
+}
+
+.scene-replace {
+  gap: var(--s-1);
   white-space: nowrap;
 }
 

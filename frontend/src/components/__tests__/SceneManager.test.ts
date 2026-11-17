@@ -228,4 +228,62 @@ describe('SceneManager — cena em um passo', () => {
     expect(renameScene).toHaveBeenCalledWith('scene-1', 'Cripta Profunda');
     wrapper.unmount();
   });
+
+  it('troca a imagem da cena ativa por URL sem tocar na grade', async () => {
+    const replaceSceneImage = vi.fn(async () => undefined);
+    const { wrapper } = mountManager({ replaceSceneImage });
+
+    const open = wrapper.findAll('button').find((button) => button.text().includes('Trocar imagem'));
+    expect(open).toBeTruthy();
+    await open!.trigger('click');
+    await nextTick();
+
+    const dialog = dialogByTitle(wrapper, 'Trocar imagem da cena');
+    expect(dialog?.props('open')).toBe(true);
+    expect(dialog?.text()).toContain('24×18');
+    expect(dialog?.text()).toContain('preservados');
+
+    await wrapper.get('#scene-replace-url').setValue('https://example.com/cripta-nova.webp');
+    const apply = wrapper.findAll('button').find((button) => button.text() === 'Aplicar imagem');
+    expect(apply).toBeTruthy();
+    await apply!.trigger('click');
+    await flushPromises();
+
+    expect(replaceSceneImage).toHaveBeenCalledWith('scene-1', 'https://example.com/cripta-nova.webp');
+    wrapper.unmount();
+  });
+
+  it('envia arquivo novo pela troca de imagem e mostra erro com retry', async () => {
+    const replaceSceneImage = vi.fn(async () => { throw new Error('Falha ao aplicar.'); });
+    const { wrapper } = mountManager({ replaceSceneImage });
+
+    await wrapper.findAll('button').find((button) => button.text().includes('Trocar imagem'))!.trigger('click');
+    await nextTick();
+
+    const file = new File(['img'], 'nova.png', { type: 'image/png' });
+    const dialog = dialogByTitle(wrapper, 'Trocar imagem da cena');
+    const input = dialog!.find('input[type="file"]');
+    Object.defineProperty(input.element, 'files', { value: [file] });
+    await input.trigger('change');
+    await nextTick();
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Aplicar imagem')!.trigger('click');
+    await flushPromises();
+
+    expect(storageMock.uploadMap).toHaveBeenCalledWith(file, 'table-1', expect.any(Function));
+    expect(replaceSceneImage).toHaveBeenCalledWith('scene-1', '/uploads/maps/enviado.webp');
+    const error = wrapper.get('.upload-error');
+    expect(error.attributes('role')).toBe('alert');
+    expect(error.text()).toContain('Falha ao aplicar.');
+
+    const retry = wrapper.findAll('button').find((button) => button.text() === 'Tentar de novo');
+    expect(retry).toBeTruthy();
+    await retry!.trigger('click');
+    await flushPromises();
+
+    // O retry reaplica a URL já enviada, sem um segundo upload do arquivo.
+    expect(storageMock.uploadMap).toHaveBeenCalledTimes(1);
+    expect(replaceSceneImage).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+  });
 });

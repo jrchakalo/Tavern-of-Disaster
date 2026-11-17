@@ -367,7 +367,14 @@ describe('TableView token lifecycle', () => {
     const wrapper = mountTable();
     await flushPromises();
 
-    await wrapper.find('.rail-add').trigger('click');
+    // O rail agora só tem ferramentas do mapa: criar token vem do cabeçalho
+    // do painel direito (DMPanel emite `add-token`).
+    const panel = wrapper.findAllComponents({ name: 'DMPanel' })[0];
+    expect(panel).toBeTruthy();
+    expect(wrapper.find('.rail-add').exists()).toBe(false);
+    panel!.vm.$emit('add-token');
+    await nextTick();
+
     expect(wrapper.find('.placement-banner').exists()).toBe(true);
 
     const firstFree = wrapper
@@ -420,6 +427,27 @@ describe('TableView token lifecycle', () => {
     tableStoreStub.__refs = createTableStoreRefs({ tokensOnMap: ref([token]) });
     const wrapper = mountTable();
     await flushPromises();
+
+    const viewport = wrapper.findAllComponents({ name: 'MapViewport' })[0];
+    const onSquareLeftClick = viewport!.props('onSquareLeftClick') as (square: unknown) => void;
+    onSquareLeftClick({ id: 'sq-0', token });
+    await nextTick();
+
+    const inspector = wrapper.findAllComponents({ name: 'TokenEditForm' })[0];
+    expect(inspector!.props('open')).toBe(true);
+    expect(inspector!.props('token')).toMatchObject({ _id: 'token-1' });
+    wrapper.unmount();
+  });
+
+  it('token vence a ferramenta de medição e abre o inspetor do DM', async () => {
+    const token = { _id: 'token-1', name: 'Ghoul', movement: 9, remainingMovement: 9 };
+    tableStoreStub.__refs = createTableStoreRefs({ tokensOnMap: ref([token]) });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const toolbar = wrapper.findAllComponents({ name: 'Toolbar' })[0];
+    toolbar!.vm.$emit('tool-selected', 'ruler');
+    await nextTick();
 
     const viewport = wrapper.findAllComponents({ name: 'MapViewport' })[0];
     const onSquareLeftClick = viewport!.props('onSquareLeftClick') as (square: unknown) => void;
@@ -601,17 +629,13 @@ describe('TableView cockpit D6b (mídia, chat e dados)', () => {
       .find((dialog) => dialog.props('title') === title) ?? null;
   }
 
-  it('usa o DiceTray do painel e a ação Dados não abre popup', async () => {
+  it('não repete a ação Dados no rail; o DiceTray vive na aba Iniciativa', async () => {
     const wrapper = mountTable();
     await flushPromises();
 
-    const toolbar = findStub(wrapper, 'Toolbar');
-    expect(toolbar).toBeTruthy();
-    toolbar!.vm.$emit('toggle-dice-roller');
-    await nextTick();
-
-    const panel = findStub(wrapper, 'DMPanel');
-    expect(panel!.props('activeTab')).toBe('initiative');
+    const toolbars = wrapper.findAllComponents({ name: 'Toolbar' });
+    expect(toolbars.length).toBeGreaterThan(0);
+    expect(toolbars[0]!.props('showDiceAction')).toBe(false);
     expect(wrapper.find('.dice-popup-overlay').exists()).toBe(false);
     wrapper.unmount();
   });

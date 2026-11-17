@@ -17,8 +17,11 @@ const props = withDefaults(defineProps<{
   canAddAura?: boolean;
   /** `floating` = legado sobre o mapa; `rail`/`sheet` = lista com rótulos. */
   variant?: 'floating' | 'rail' | 'sheet';
+  /** O rail do cockpit não repete o atalho de Dados (ele vive na aba Iniciativa). */
+  showDiceAction?: boolean;
 }>(), {
   variant: 'floating',
+  showDiceAction: true,
 });
 
 // Quando um botão é clicado, emitimos um evento para o pai.
@@ -149,11 +152,13 @@ function toggleCollapse() {
         <span class="tool-label">Limpar</span>
       </button>
 
-      <hr class="divider" />
-      <button class="tool-button" type="button" title="Dados" aria-label="Dados" @click="$emit('toggle-dice-roller')">
-        <Icon name="dice" />
-        <span class="tool-label">Dados</span>
-      </button>
+      <template v-if="showDiceAction">
+        <hr class="divider" />
+        <button class="tool-button" type="button" title="Dados" aria-label="Dados" @click="$emit('toggle-dice-roller')">
+          <Icon name="dice" />
+          <span class="tool-label">Dados</span>
+        </button>
+      </template>
     </div>
   </div>
 </template>
