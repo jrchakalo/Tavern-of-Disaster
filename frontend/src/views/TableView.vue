@@ -517,7 +517,7 @@ function normalizeHexColor(value?: string | null) {
 function loadOrInitUserColor() {
   // Mestre é sempre roxo
   if (isDM.value) {
-    measurementColor.value = '#3c096c';
+    measurementColor.value = '#D9B45B';
     return;
   }
   const uid = currentUser?.value?.id;
@@ -1296,7 +1296,7 @@ const handleMiddleClickFree: MiddleClickHandler = (event) => {
   if (!Number.isFinite(squareSize) || squareSize <= 0) return;
   const local = { x: (event.clientX - rect.left) / scale, y: (event.clientY - rect.top) / scale };
   const gridPoint = clampGridPoint(pixelToGrid(local, squareSize), gridWidth.value, gridHeight.value);
-  socketService.sendPing({ tableId, sceneId: activeSceneId.value, x: gridPoint.x, y: gridPoint.y, color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00') });
+  socketService.sendPing({ tableId, sceneId: activeSceneId.value, x: gridPoint.x, y: gridPoint.y, color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00') });
 };
 
 // Mestre altera escala; jogadores recebem
@@ -1796,7 +1796,7 @@ function handlePointerUp(event: PointerEvent) {
       end: toGrid(previewMeasurement.value.end),
           distance: previewMeasurement.value.distance || '0m',
           type: 'ruler',
-          color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+          color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00')
         });
       }
     } else if (activeTool.value === 'cone' && previewMeasurement.value.type === 'cone' && activeSceneId.value) {
@@ -1817,7 +1817,7 @@ function handlePointerUp(event: PointerEvent) {
             distance: previewMeasurement.value.distance || '0m',
             type: 'cone',
             affectedSquares: coneAffectedSquares.value,
-            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+            color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00')
           });
           // Harmoniza comportamento: após persistir, desliga o PIN
           persistentMode.value = false;
@@ -1830,7 +1830,7 @@ function handlePointerUp(event: PointerEvent) {
             distance: previewMeasurement.value.distance || '0m',
             type: 'cone',
             affectedSquares: coneAffectedSquares.value,
-            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+            color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00')
           });
         }
       }
@@ -1851,7 +1851,7 @@ function handlePointerUp(event: PointerEvent) {
             distance: previewMeasurement.value.distance || '0m',
             type: 'circle',
             affectedSquares: coneAffectedSquares.value,
-            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+            color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00')
           });
           // Harmoniza comportamento: após persistir, desliga o PIN
           persistentMode.value = false;
@@ -1864,7 +1864,7 @@ function handlePointerUp(event: PointerEvent) {
             distance: previewMeasurement.value.distance || '0m',
             type: 'circle',
             affectedSquares: coneAffectedSquares.value,
-            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+            color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00')
           });
         }
       }
@@ -1885,7 +1885,7 @@ function handlePointerUp(event: PointerEvent) {
             distance: previewMeasurement.value.distance || '0m',
             type: 'square',
             affectedSquares: coneAffectedSquares.value,
-            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+            color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00')
           });
           // Ao persistir, desliga o modo pin
           persistentMode.value = false;
@@ -1898,7 +1898,7 @@ function handlePointerUp(event: PointerEvent) {
             distance: previewMeasurement.value.distance || '0m',
             type: 'square',
             affectedSquares: coneAffectedSquares.value,
-            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+            color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00')
           });
         }
       }
@@ -1919,7 +1919,7 @@ function handlePointerUp(event: PointerEvent) {
             distance: previewMeasurement.value.distance || '0m',
             type: 'line',
             affectedSquares: coneAffectedSquares.value,
-            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+            color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00')
           });
           persistentMode.value = false;
         } else {
@@ -1931,7 +1931,7 @@ function handlePointerUp(event: PointerEvent) {
             distance: previewMeasurement.value.distance || '0m',
             type: 'line',
             affectedSquares: coneAffectedSquares.value,
-            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+            color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00')
           });
         }
       }
@@ -1953,7 +1953,7 @@ function handlePointerUp(event: PointerEvent) {
             distance: previewMeasurement.value.distance || '0m',
             type,
             affectedSquares: coneAffectedSquares.value,
-            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+            color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00')
           });
           persistentMode.value = false;
         } else {
@@ -1965,7 +1965,7 @@ function handlePointerUp(event: PointerEvent) {
             distance: previewMeasurement.value.distance || '0m',
             type,
             affectedSquares: coneAffectedSquares.value,
-            color: measurementColor.value || (isDM.value ? '#3c096c' : '#ff8c00')
+            color: measurementColor.value || (isDM.value ? '#D9B45B' : '#ff8c00')
           });
         }
       }

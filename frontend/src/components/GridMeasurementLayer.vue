@@ -180,7 +180,7 @@ function buildAuraCenters(): Map<string, { cx: number; cy: number; r: number; co
 }
 
 function measurementStrokeColor(userId: string, fallback?: string) {
-  return fallback || props.userColorMap?.[userId] || (props.isDm ? '#3c096c' : '#ff8c00');
+  return fallback || props.userColorMap?.[userId] || (props.isDm ? '#D9B45B' : '#ff8c00');
 }
 
 function handleSelectPersistent(id: string | null) {
@@ -211,7 +211,7 @@ function handleViewportContextMenu() {
         :y1="props.previewMeasurement.start.y"
         :x2="props.previewMeasurement.end.x"
         :y2="props.previewMeasurement.end.y"
-        :style="{ stroke: props.measurementColor || (props.isDm ? '#3c096c' : '#ff8c00') }"
+        :style="{ stroke: props.measurementColor || (props.isDm ? '#D9B45B' : '#ff8c00') }"
       />
       <text :x="props.previewMeasurement.start.x + 12" :y="props.previewMeasurement.start.y - 12">
         {{ props.previewMeasurement.distance }}
@@ -221,7 +221,7 @@ function handleViewportContextMenu() {
       <path
         class="cone-outline"
         :d="getConePathD(props.previewMeasurement.start, props.previewMeasurement.end)"
-        :stroke="props.measurementColor || (props.isDm ? '#3c096c' : '#ff8c00')"
+        :stroke="props.measurementColor || (props.isDm ? '#D9B45B' : '#ff8c00')"
         fill="none"
       />
       <text :x="props.previewMeasurement.start.x + 12" :y="props.previewMeasurement.start.y - 12">
@@ -234,7 +234,7 @@ function handleViewportContextMenu() {
         :cx="props.previewMeasurement.start.x"
         :cy="props.previewMeasurement.start.y"
         :r="Math.hypot(props.previewMeasurement.end.x - props.previewMeasurement.start.x, props.previewMeasurement.end.y - props.previewMeasurement.start.y) + (props.squareSize / 2)"
-        :stroke="props.measurementColor || (props.isDm ? '#3c096c' : '#ff8c00')"
+        :stroke="props.measurementColor || (props.isDm ? '#D9B45B' : '#ff8c00')"
         fill="none"
       />
       <text :x="props.previewMeasurement.start.x + 12" :y="props.previewMeasurement.start.y - 12">
@@ -248,7 +248,7 @@ function handleViewportContextMenu() {
         :y="props.previewMeasurement.start.y - Math.hypot(props.previewMeasurement.end.x - props.previewMeasurement.start.x, props.previewMeasurement.end.y - props.previewMeasurement.start.y)"
         :width="2 * Math.hypot(props.previewMeasurement.end.x - props.previewMeasurement.start.x, props.previewMeasurement.end.y - props.previewMeasurement.start.y)"
         :height="2 * Math.hypot(props.previewMeasurement.end.x - props.previewMeasurement.start.x, props.previewMeasurement.end.y - props.previewMeasurement.start.y)"
-        :stroke="props.measurementColor || (props.isDm ? '#3c096c' : '#ff8c00')"
+        :stroke="props.measurementColor || (props.isDm ? '#D9B45B' : '#ff8c00')"
         fill="none"
       />
       <text :x="props.previewMeasurement.start.x + 12" :y="props.previewMeasurement.start.y - 12">
@@ -262,7 +262,7 @@ function handleViewportContextMenu() {
         :y1="props.previewMeasurement.start.y"
         :x2="props.previewMeasurement.end.x"
         :y2="props.previewMeasurement.end.y"
-        :style="{ stroke: props.measurementColor || (props.isDm ? '#3c096c' : '#ff8c00') }"
+        :style="{ stroke: props.measurementColor || (props.isDm ? '#D9B45B' : '#ff8c00') }"
       />
       <text :x="props.previewMeasurement.start.x + 12" :y="props.previewMeasurement.start.y - 12">
         {{ props.previewMeasurement.distance }}
@@ -272,7 +272,7 @@ function handleViewportContextMenu() {
       <polygon
         class="area-outline"
         :points="toPointsAttr(getOrientedRectPoints(props.previewMeasurement.start, props.previewMeasurement.end, Math.max(props.squareSize, 1)))"
-        :stroke="props.measurementColor || (props.isDm ? '#3c096c' : '#ff8c00')"
+        :stroke="props.measurementColor || (props.isDm ? '#D9B45B' : '#ff8c00')"
         fill="none"
       />
       <text :x="props.previewMeasurement.start.x + 12" :y="props.previewMeasurement.start.y - 12">

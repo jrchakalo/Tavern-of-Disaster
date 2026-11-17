@@ -11,7 +11,7 @@ export interface ProfileForm {
 
 export const DEFAULT_MEASUREMENT_COLOR = '#7FB6C9'
 /** O Mestre usa roxo fixo no tabuleiro; jogador não pode escolher essa cor. */
-export const DM_MEASUREMENT_COLOR = '#3c096c'
+export const DM_MEASUREMENT_COLOR = '#D9B45B'
 
 export const MEASUREMENT_SWATCHES = [
   '#f44336',
