@@ -228,7 +228,7 @@
   background: var(--ink-0);
   color: var(--text);
   font-family: var(--font-data);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.3;
   white-space: nowrap;
 }
@@ -244,7 +244,7 @@
   background: var(--ink-0);
   color: var(--manila);
   font-family: var(--font-data);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   white-space: nowrap;
 }
 

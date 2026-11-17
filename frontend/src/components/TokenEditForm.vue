@@ -300,6 +300,18 @@ function confirmDelete() {
 .confirm-copy { margin: 0 0 var(--s-5); color: var(--text-muted); line-height: var(--leading-body); }
 .confirm-copy strong { color: var(--text); }
 .confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s-3); }
+@media (max-width: 900px) {
+  .edit-form input,
+  .edit-form select,
+  .upload-btn {
+    min-height: 44px;
+  }
+
+  :deep(.base-dialog__footer .btn) {
+    min-height: 44px;
+  }
+}
+
 @media (max-width: 480px) {
   .field-row { grid-template-columns: 1fr; }
   .turn-box { flex-direction: column; align-items: stretch; }

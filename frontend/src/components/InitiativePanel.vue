@@ -127,7 +127,7 @@ function confirmReset() {
         <div class="entry" :class="{ active: entry.isCurrentTurn }">
           <div class="top-row">
             <div class="left">
-              <span class="drag-handle" title="Arrastar"><Icon name="drag" size="14" /></span>
+              <span class="drag-handle" aria-hidden="true"><Icon name="drag" size="14" /></span>
               <span class="dot" :style="{ background: tokenFor(entry)?.color || 'var(--text-faint)' }" />
               <button
                 v-if="entry.characterId"
@@ -206,7 +206,10 @@ function confirmReset() {
 
     <div v-if="!enriched.length && !collapsed" class="empty">
       <p>Sem entradas de iniciativa.</p>
-      <button v-if="isDM" type="button" class="btn btn-xs" @click="emit('add-token')">＋ Token</button>
+      <button v-if="isDM" type="button" class="btn btn-xs" @click="emit('add-token')">
+        <Icon name="plus" :size="14" />
+        Token
+      </button>
     </div>
 
     <BaseDialog
@@ -373,5 +376,7 @@ function confirmReset() {
   .initiative-panel:not(.embedded) { max-width: none; }
   .entries { max-height: 260px; }
   .action-link { min-height: 44px; }
+  .initiative-panel .btn-xs { min-height: 44px; }
+  .character-link { min-height: 44px; padding: var(--s-2) 0; }
 }
 </style>

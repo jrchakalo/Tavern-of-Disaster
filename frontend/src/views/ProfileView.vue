@@ -10,7 +10,6 @@ import { uploadAvatar } from '../services/storageService'
 import { systemDisplayName } from '../services/systemLabels'
 import {
   buildProfilePayload,
-  DM_MEASUREMENT_COLOR,
   isProfileDirty,
   MEASUREMENT_SWATCHES,
   profileFormFromProfile,
@@ -359,9 +358,15 @@ function cancelLeave() {
                 placeholder="Ex.: Ana, a Ladina"
                 :disabled="saving"
                 :aria-invalid="errors.displayName ? 'true' : undefined"
+                :aria-describedby="errors.displayName ? 'profile-display-name-error' : undefined"
                 @input="clearFieldError('displayName')"
               />
-              <p v-if="errors.displayName" class="field-error" role="alert">
+              <p
+                v-if="errors.displayName"
+                id="profile-display-name-error"
+                class="field-error"
+                role="alert"
+              >
                 {{ errors.displayName }}
               </p>
             </div>
@@ -376,9 +381,15 @@ function cancelLeave() {
                 placeholder="https://… ou /uploads/…"
                 :disabled="saving"
                 :aria-invalid="errors.avatarUrl ? 'true' : undefined"
+                :aria-describedby="errors.avatarUrl ? 'profile-avatar-url-error' : undefined"
                 @input="onAvatarUrlInput"
               />
-              <p v-if="errors.avatarUrl" class="field-error" role="alert">
+              <p
+                v-if="errors.avatarUrl"
+                id="profile-avatar-url-error"
+                class="field-error"
+                role="alert"
+              >
                 {{ errors.avatarUrl }}
               </p>
             </div>
@@ -393,10 +404,15 @@ function cancelLeave() {
                 placeholder="Duas linhas sobre o seu jeito de jogar."
                 :disabled="saving"
                 :aria-invalid="errors.bio ? 'true' : undefined"
+                :aria-describedby="
+                  errors.bio ? 'profile-bio-hint profile-bio-error' : 'profile-bio-hint'
+                "
                 @input="clearFieldError('bio')"
               />
-              <p class="field-hint">{{ form.bio.length }} / 1024</p>
-              <p v-if="errors.bio" class="field-error" role="alert">{{ errors.bio }}</p>
+              <p id="profile-bio-hint" class="field-hint">{{ form.bio.length }} / 1024</p>
+              <p v-if="errors.bio" id="profile-bio-error" class="field-error" role="alert">
+                {{ errors.bio }}
+              </p>
             </div>
           </div>
         </section>
@@ -492,8 +508,7 @@ function cancelLeave() {
                 </p>
 
                 <p class="dm-note">
-                  O Mestre aparece em <span class="mono">{{ DM_MEASUREMENT_COLOR }}</span> fixo no
-                  tabuleiro. O roxo é reservado a ele; escolha outra cor.
+                  A cor do Mestre é fixa no tabuleiro. Escolha outra cor para a sua régua.
                 </p>
               </fieldset>
             </div>

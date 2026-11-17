@@ -271,7 +271,7 @@ async function copy() {
   font-size: var(--text-sm);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   .tv-dialog .btn {
     min-height: 44px;
   }
@@ -282,6 +282,11 @@ async function copy() {
 
   .tv-dialog__url-row .btn {
     width: 100%;
+  }
+
+  :deep(.base-dialog__footer .btn),
+  .btn {
+    min-height: 44px;
   }
 }
 </style>

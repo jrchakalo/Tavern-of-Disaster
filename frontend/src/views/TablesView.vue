@@ -542,6 +542,13 @@ watch(
   margin-top: var(--s-5);
 }
 
+@media (max-width: 900px) {
+  .tables-head__actions .btn,
+  .empty-actions .btn {
+    min-height: 44px;
+  }
+}
+
 @media (max-width: 860px) {
   .tables-page {
     padding: var(--s-6) var(--s-5) var(--s-8);

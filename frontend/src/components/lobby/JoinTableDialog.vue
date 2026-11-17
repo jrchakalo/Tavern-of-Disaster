@@ -191,4 +191,15 @@ async function submit() {
   font-size: var(--text-sm);
   line-height: 1.5;
 }
+
+@media (max-width: 900px) {
+  .join-table input {
+    min-height: 44px;
+  }
+
+  :deep(.base-dialog__footer .btn),
+  .btn {
+    min-height: 44px;
+  }
+}
 </style>

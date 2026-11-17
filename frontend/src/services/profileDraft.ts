@@ -92,7 +92,7 @@ export function validateProfileForm(form: ProfileForm): ProfileErrors {
       errors.measurementColorHex = 'Escolha uma cor no formato #RRGGBB.'
     } else if (color === DM_MEASUREMENT_COLOR) {
       errors.measurementColorHex =
-        'O roxo é reservado ao Mestre no tabuleiro. Escolha outra cor para a sua régua.'
+        'Este tom é reservado ao Mestre no tabuleiro. Escolha outra cor para a sua régua.'
     }
   }
 
