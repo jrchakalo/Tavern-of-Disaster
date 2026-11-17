@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 import { registerResyncRequester, useTableStore } from '../tableStore';
-import type { SessionPatch, SessionSnapshot, TokenDTO } from '../../types';
+import type { InitiativeEntryDTO, SceneDTO, SessionPatch, SessionSnapshot, TokenDTO } from '../../types';
 
 setActivePinia(createPinia());
 
@@ -560,6 +560,7 @@ describe('tableStore — fichas (resumos) e log de rolagens', () => {
     const store = useTableStore();
     store.revision = 0;
     store.lastSyncAt = 0;
+    store.clearLogs();
     store.setInitialState({
       table: {
         _id: 'table-1',
@@ -788,5 +789,282 @@ describe('tableStore — TokenDTO: characterId nulo e resumo de ficha', () => {
     const token = store.squares.find((sq) => sq.token?._id === 'tk-linked')?.token;
     expect(token?.character?.currentHP).toBe(5);
     expect(token?.characterId).toBe('char-1');
+  });
+});
+
+describe('tableStore — log de ações (aba Ações do Histórico)', () => {
+  function scene(id: string, name: string): SceneDTO {
+    return {
+      _id: id,
+      tableId: 'table-1',
+      name,
+      imageUrl: `http://localhost:3001/uploads/${id}.png`,
+      gridWidth: 10,
+      gridHeight: 10,
+      type: 'battlemap',
+      metersPerSquare: 1.5,
+    };
+  }
+
+  function setup(overrides: Partial<SessionSnapshot> = {}) {
+    const store = useTableStore();
+    store.clearLogs();
+    store.applySnapshot(makeSnapshot(overrides));
+    return store;
+  }
+
+  function lastLog(store: ReturnType<typeof useTableStore>) {
+    return store.logs[store.logs.length - 1];
+  }
+
+  it('snapshot inicial não registra ações (nem resync)', () => {
+    const store = setup({
+      tokens: [makeToken()],
+      scenes: [scene('scene-1', 'Caverna'), scene('scene-2', 'Floresta')],
+    });
+
+    expect(store.logs).toHaveLength(0);
+  });
+
+  it('troca de cena ativa vira "Cena ativa: <nome>"', () => {
+    const store = setup({ scenes: [scene('scene-1', 'Caverna'), scene('scene-2', 'Floresta')] });
+
+    expect(store.applyPatch(makePatch({}, { activeScene: scene('scene-2', 'Floresta') }))).toBe(true);
+
+    expect(store.logs).toHaveLength(1);
+    const entry = lastLog(store)!;
+    expect(entry.type).toBe('system');
+    expect(entry.content).toBe('Cena ativa: Floresta');
+    expect(entry.authorName).toBe('Mestre');
+    expect(entry.id).toBe('action-6-scene-scene-2');
+  });
+
+  it('atualizar a cena ativa sem trocar não gera ação', () => {
+    const store = setup({ scenes: [scene('scene-1', 'Caverna')] });
+
+    store.applyPatch(makePatch({}, { activeScene: scene('scene-1', 'Caverna') }));
+
+    expect(store.logs).toHaveLength(0);
+  });
+
+  it('troca de cena via evento legado ainda gera a ação e preserva o histórico', () => {
+    const store = setup({ scenes: [scene('scene-1', 'Caverna'), scene('scene-2', 'Floresta')] });
+    store.addLogEntry({
+      id: 'roll-1',
+      type: 'roll',
+      content: 'Ataque: 1d20 + 5 = 18',
+      createdAt: new Date().toISOString(),
+    });
+
+    // `sessionStateUpdated` chega antes do patch e já aplica a cena nova.
+    store.updateSessionState({
+      table: { ...makeSnapshot().table, activeSceneId: 'scene-2' },
+      activeScene: scene('scene-2', 'Floresta'),
+      scenes: [scene('scene-1', 'Caverna'), scene('scene-2', 'Floresta')],
+      tokens: [],
+      initiative: [],
+      measurements: [],
+      auras: [],
+    });
+
+    store.applyPatch(makePatch({}, { activeScene: scene('scene-2', 'Floresta') }));
+
+    expect(store.logs.map((entry) => entry.content)).toEqual([
+      'Ataque: 1d20 + 5 = 18',
+      'Cena ativa: Floresta',
+    ]);
+  });
+
+  it('status da sessão vira "Sessão: <rótulo>"', () => {
+    const store = setup();
+
+    store.applyPatch(makePatch({}, {
+      table: { status: 'PAUSED' },
+      sessionStatus: { status: 'PAUSED', pauseUntil: null, serverNowMs: Date.now() },
+    }));
+
+    expect(store.logs).toHaveLength(1);
+    expect(lastLog(store)!.type).toBe('system');
+    expect(lastLog(store)!.content).toBe('Sessão: Pausado');
+    expect(lastLog(store)!.authorName).toBe('Mestre');
+  });
+
+  it('status igual ao atual não duplica ação', () => {
+    const store = setup();
+
+    store.applyPatch(makePatch({}, { table: { status: 'LIVE' } }));
+
+    expect(store.logs).toHaveLength(0);
+  });
+
+  it('tokenUpdates com squareId vira movimento com nome do token', () => {
+    const store = setup({ tokens: [makeToken({ _id: 'tk-1', squareId: 'sq-0', name: 'Goblin' })] });
+
+    store.applyPatch(makePatch({}, {
+      tokenUpdates: [{ tokenId: 'tk-1', patch: { squareId: 'sq-5', remainingMovement: 5 } }],
+    }));
+
+    expect(store.logs).toHaveLength(1);
+    expect(lastLog(store)!.type).toBe('movement');
+    expect(lastLog(store)!.content).toBe('Token Goblin moveu para sq-5');
+  });
+
+  it('movimento já aplicado pelo evento legado ainda é registrado pelo patch', () => {
+    const store = setup({ tokens: [makeToken({ _id: 'tk-1', squareId: 'sq-0', name: 'Goblin' })] });
+
+    // O servidor emite `tokenMoved` antes do `sessionPatch`.
+    store.moveToken({
+      sceneId: 'scene-1',
+      tokenId: 'tk-1',
+      oldSquareId: 'sq-0',
+      squareId: 'sq-5',
+      remainingMovement: 5,
+    });
+
+    store.applyPatch(makePatch({}, {
+      tokenUpdates: [{ tokenId: 'tk-1', patch: { squareId: 'sq-5', remainingMovement: 5 } }],
+    }));
+
+    expect(store.logs).toHaveLength(1);
+    expect(lastLog(store)!.content).toBe('Token Goblin moveu para sq-5');
+  });
+
+  it('tokenUpdates só com remainingMovement não vira movimento', () => {
+    const store = setup({ tokens: [makeToken({ _id: 'tk-1', squareId: 'sq-0', name: 'Goblin' })] });
+
+    store.applyPatch(makePatch({}, {
+      tokenUpdates: [{ tokenId: 'tk-1', patch: { remainingMovement: 2 } }],
+    }));
+
+    expect(store.logs).toHaveLength(0);
+  });
+
+  it('token removido vira "Token removido"', () => {
+    const store = setup({ tokens: [makeToken({ _id: 'tk-1' })] });
+
+    store.applyPatch(makePatch({}, { tokensRemoved: ['tk-1'] }));
+
+    expect(store.logs).toHaveLength(1);
+    expect(lastLog(store)!.type).toBe('system');
+    expect(lastLog(store)!.content).toBe('Token removido');
+  });
+
+  it('turno de iniciativa vira "Turno de <nome>" só quando o id muda', () => {
+    const store = setup({
+      initiative: [
+        { _id: 'init-1', characterName: 'Bruxa', isCurrentTurn: true },
+        { _id: 'init-2', characterName: 'Clérigo', isCurrentTurn: false },
+      ],
+    });
+
+    const next: InitiativeEntryDTO[] = [
+      { _id: 'init-1', characterName: 'Bruxa', isCurrentTurn: false },
+      { _id: 'init-2', characterName: 'Clérigo', isCurrentTurn: true },
+    ];
+
+    store.applyPatch(makePatch({}, { initiative: next }));
+    expect(lastLog(store)!.content).toBe('Turno de Clérigo');
+    expect(store.logs).toHaveLength(1);
+
+    // Mesmo turno na revisão seguinte: nada novo.
+    store.applyPatch(makePatch({ revision: 7, baseRevision: 6 }, { initiative: next }));
+    expect(store.logs).toHaveLength(1);
+  });
+
+  it('turno já aplicado pelo evento legado ainda é registrado pelo patch', () => {
+    const store = setup({
+      initiative: [
+        { _id: 'init-1', characterName: 'Bruxa', isCurrentTurn: true },
+        { _id: 'init-2', characterName: 'Clérigo', isCurrentTurn: false },
+      ],
+    });
+
+    // `initiativeTurnAdvanced` chega antes do patch e já vira o turno local.
+    store.handleInitiativeTurnAdvanced({ sceneId: 'scene-1', currentEntryId: 'init-2' });
+
+    store.applyPatch(makePatch({}, {
+      initiative: [
+        { _id: 'init-1', characterName: 'Bruxa', isCurrentTurn: false },
+        { _id: 'init-2', characterName: 'Clérigo', isCurrentTurn: true },
+      ],
+    }));
+
+    expect(store.logs).toHaveLength(1);
+    expect(lastLog(store)!.content).toBe('Turno de Clérigo');
+  });
+
+  it('characterUpdates com PV/nome/defesa vira "Ficha <nome> atualizada"', () => {
+    const store = setup({
+      characters: [{ _id: 'char-1', name: 'Bruxa', ownerId: 'u2', currentHP: 10, maxHP: 22, defense: 14 }],
+    });
+
+    store.applyPatch(makePatch({}, {
+      characterUpdates: [{ characterId: 'char-1', patch: { currentHP: 5 } }],
+    }));
+
+    expect(store.logs).toHaveLength(1);
+    expect(lastLog(store)!.type).toBe('system');
+    expect(lastLog(store)!.content).toBe('Ficha Bruxa atualizada');
+  });
+
+  it('characterUpdates sem campo relevante não gera ação', () => {
+    const store = setup({
+      characters: [{ _id: 'char-1', name: 'Bruxa', ownerId: 'u2', currentHP: 10, maxHP: 22, defense: 14 }],
+    });
+
+    store.applyPatch(makePatch({}, {
+      characterUpdates: [{ characterId: 'char-1', patch: { tokenId: 'tk-1', level: 3 } }],
+    }));
+
+    expect(store.logs).toHaveLength(0);
+  });
+
+  it('ficha já atualizada pelo evento legado ainda é registrada pelo patch', () => {
+    const store = setup({
+      characters: [{ _id: 'char-1', name: 'Bruxa', ownerId: 'u2', currentHP: 10, maxHP: 22, defense: 14 }],
+    });
+
+    // `characterUpdated` chega antes do patch e já aplica PV novo no resumo.
+    store.upsertCharacterSummary({
+      _id: 'char-1',
+      name: 'Bruxa',
+      ownerId: 'u2',
+      currentHP: 5,
+      maxHP: 22,
+      defense: 14,
+    });
+
+    store.applyPatch(makePatch({}, {
+      characterUpdates: [{
+        characterId: 'char-1',
+        patch: { name: 'Bruxa', currentHP: 5, maxHP: 22, defense: 14 },
+      }],
+    }));
+
+    expect(store.logs).toHaveLength(1);
+    expect(lastLog(store)!.content).toBe('Ficha Bruxa atualizada');
+  });
+
+  it('limita a 3 ações por patch', () => {
+    const store = setup({
+      tokens: [
+        makeToken({ _id: 'tk-1', squareId: 'sq-0' }),
+        makeToken({ _id: 'tk-2', squareId: 'sq-1' }),
+        makeToken({ _id: 'tk-3', squareId: 'sq-2' }),
+        makeToken({ _id: 'tk-4', squareId: 'sq-3' }),
+      ],
+    });
+
+    store.applyPatch(makePatch({}, {
+      tokenUpdates: [
+        { tokenId: 'tk-1', patch: { squareId: 'sq-10' } },
+        { tokenId: 'tk-2', patch: { squareId: 'sq-11' } },
+        { tokenId: 'tk-3', patch: { squareId: 'sq-12' } },
+        { tokenId: 'tk-4', patch: { squareId: 'sq-13' } },
+      ],
+    }));
+
+    expect(store.logs).toHaveLength(3);
+    expect(store.logs.every((entry) => entry.type === 'movement')).toBe(true);
   });
 });
