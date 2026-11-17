@@ -190,8 +190,7 @@ for (const route of [
 }
 
 for (const route of [
-  { label: '/ (lobby)', path: '/', ready: '.lobby' },
-  { label: '/tables', path: '/tables', ready: '.tables-page' },
+  { label: '/tables (lobby)', path: '/tables', ready: '.tables-page' },
 ] as const) {
   test(`axe: ${route.label} autenticado`, async ({ browser }) => {
     await audit(browser, route.label, route.path, route.ready, { user: world.dm });
