@@ -2496,7 +2496,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       <div v-if="isDM" class="topbar-actions">
         <button
           type="button"
-          class="btn btn-sm topbar-sheets-btn"
+          class="btn btn-sm alt topbar-sheets-btn"
           @click="openCharacterLibrary"
         >
           <Icon name="users" :size="16" aria-hidden="true" />
