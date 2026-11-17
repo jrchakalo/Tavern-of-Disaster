@@ -24,10 +24,13 @@ import Icon from '../components/Icon.vue';
 import Toolbar from '../components/Toolbar.vue';
 import AuraDialog from '../components/AuraDialog.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
-import ActionLog from '../components/ActionLog.vue';
 import DiceRoller from '../components/DiceRoller.vue';
 import DiceAnimation from '../components/DiceAnimation.vue';
 import DMPanel, { type DmPanelTab } from '../components/table/DMPanel.vue';
+import CharacterLibrary from '../components/table/CharacterLibrary.vue';
+import HistoryDrawer from '../components/table/HistoryDrawer.vue';
+import CharacterCreateDialog from '../components/character/CharacterCreateDialog.vue';
+import type { CharacterCreatePayload, CharacterOwner } from '../components/character/characterCreateTypes';
 import type { SceneCreatePayload } from '../components/SceneManager.vue';
 import MediaDock from '../components/media/MediaDock.vue';
 import ParticipantGrid from '../components/media/ParticipantGrid.vue';
@@ -193,6 +196,13 @@ watch(
 const activeCharacterId = ref<string | null>(null);
 const showCharacterSheet = ref(false);
 const showActionLog = ref(false);
+const showCharacterLibrary = ref(false);
+const showCharacterCreate = ref(false);
+const creatingCharacter = ref(false);
+const createCharacterError = ref('');
+const reopenLibraryAfterCreate = ref(false);
+/** Ficha escolhida antes de tocar no mapa para criar o token. */
+const pendingCharacterIdForToken = ref<string | null>(null);
 const showDicePopup = ref(false);
 const diceAnimationVisible = ref(false);
 const diceAnimationPayload = ref<DiceRolledPayload | null>(null);
@@ -200,6 +210,9 @@ const diceAnimationId = ref(0);
 const DICE_ANIMATION_DURATION = 4600;
 
 const charactersForTable = computed(() => (tableId ? characterStore.charactersForTable(tableId) : []));
+const charactersLoading = computed(() =>
+  Boolean(tableId && characterStore.loadingByTable?.[tableId]),
+);
 
 // Presença lida de forma defensiva (a store pode não expor `presence` em mocks).
 const sessionExtras = computed(() => readSessionExtras(tableStore));
@@ -213,6 +226,24 @@ const ownerOptions = computed(() => {
   const dm = currentTable.value?.dm;
   const players = (currentTable.value?.players ?? []).filter((player) => player._id !== dm?._id);
   return [...(dm ? [dm] : []), ...players];
+});
+
+/** Donos possíveis de uma ficha (Mestre primeiro), com o papel explícito. */
+const characterOwnerOptions = computed<CharacterOwner[]>(() => {
+  const dm = currentTable.value?.dm;
+  const players = (currentTable.value?.players ?? []).filter((player) => player._id !== dm?._id);
+  return [
+    ...(dm ? [{ _id: dm._id, username: dm.username, isDM: true }] : []),
+    ...players.map((player) => ({ _id: player._id, username: player.username, isDM: false })),
+  ];
+});
+
+const characterOwnerNames = computed<Record<string, string>>(() => {
+  const names: Record<string, string> = {};
+  characterOwnerOptions.value.forEach((owner) => {
+    names[owner._id] = owner.isDM ? `${owner.username} (Mestre)` : owner.username;
+  });
+  return names;
 });
 
 const presenceEntries = computed(() => {
@@ -572,6 +603,133 @@ async function handleCharacterDelete() {
   }
 }
 
+// ------------------------------------------------------------------
+// Fichas do Mestre: biblioteca, criação com dono e vínculo com token.
+// ------------------------------------------------------------------
+
+function openCharacterLibrary() {
+  showActionLog.value = false;
+  chatStore.closePanel();
+  isMobilePanelOpen.value = false;
+  isMobileToolsOpen.value = false;
+  showCharacterLibrary.value = true;
+}
+
+function closeCharacterLibrary() {
+  showCharacterLibrary.value = false;
+  pendingCharacterIdForToken.value = null;
+}
+
+function openCharacterFromLibrary(characterId: string) {
+  showCharacterLibrary.value = false;
+  openCharacterSheet(characterId);
+}
+
+function openCharacterCreate() {
+  reopenLibraryAfterCreate.value = showCharacterLibrary.value;
+  showCharacterLibrary.value = false;
+  createCharacterError.value = '';
+  showCharacterCreate.value = true;
+}
+
+function closeCharacterCreate() {
+  showCharacterCreate.value = false;
+  createCharacterError.value = '';
+  if (reopenLibraryAfterCreate.value) {
+    reopenLibraryAfterCreate.value = false;
+    showCharacterLibrary.value = true;
+  }
+}
+
+async function submitCreateCharacter(payload: CharacterCreatePayload) {
+  if (!tableId || creatingCharacter.value) return;
+  creatingCharacter.value = true;
+  createCharacterError.value = '';
+  try {
+    const { ownerId, ...characterPayload } = payload;
+    // `ownerId` só é aceito pelo servidor via socket, e apenas do Mestre.
+    const ownerForRequest = ownerId && ownerId !== currentUser.value?.id ? ownerId : undefined;
+    await characterStore.createCharacter(tableId, characterPayload, ownerForRequest);
+    const ownerName = ownerForRequest ? characterOwnerNames.value[ownerForRequest] : '';
+    toast.success(ownerName ? `Ficha criada para ${ownerName}.` : 'Ficha criada.');
+    closeCharacterCreate();
+  } catch (error) {
+    createCharacterError.value =
+      error instanceof Error ? error.message : 'Não foi possível criar a ficha.';
+  } finally {
+    creatingCharacter.value = false;
+  }
+}
+
+async function handleDeleteCharacterFromLibrary(characterId: string) {
+  if (!tableId) return;
+  const character = charactersForTable.value.find((entry) => entry._id === characterId);
+  try {
+    await characterStore.deleteCharacter(tableId, characterId);
+    toast.success(character ? `Ficha de ${character.name} excluída.` : 'Ficha excluída.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Não foi possível excluir a ficha.';
+    toast.error(message);
+  }
+}
+
+async function handleLinkCharacterToken(payload: { characterId: string; tokenId: string | null }) {
+  if (!tableId) return;
+  const character = charactersForTable.value.find((entry) => entry._id === payload.characterId);
+  const name = character?.name || 'Ficha';
+  const linkedTokens = tokensOnMap.value.filter((token) => token.characterId === payload.characterId);
+
+  if (!payload.tokenId) {
+    if (!linkedTokens.length) return;
+    for (const token of linkedTokens) {
+      const ack = await socketService.editToken({ tableId, tokenId: token._id, characterId: null });
+      if (!ack.ok) {
+        toast.error(ack.error.message || 'Não foi possível desvincular o token.');
+        return;
+      }
+    }
+    toast.success(`Token desvinculado da ficha de ${name}.`);
+    return;
+  }
+
+  // Um personagem usa um token por cena: desvincula o anterior antes de ligar o novo.
+  for (const token of linkedTokens.filter((entry) => entry._id !== payload.tokenId)) {
+    const ack = await socketService.editToken({ tableId, tokenId: token._id, characterId: null });
+    if (!ack.ok) {
+      toast.error(ack.error.message || 'Não foi possível trocar o token vinculado.');
+      return;
+    }
+  }
+
+  const ack = await socketService.editToken({
+    tableId,
+    tokenId: payload.tokenId,
+    characterId: payload.characterId,
+  });
+  if (!ack.ok) {
+    toast.error(ack.error.message || 'Não foi possível vincular o token.');
+    return;
+  }
+  const token = tokensOnMap.value.find((entry) => entry._id === payload.tokenId);
+  toast.success(
+    token ? `Ficha de ${name} vinculada ao token “${token.name}”.` : `Ficha de ${name} vinculada ao token.`,
+  );
+}
+
+function handleCreateTokenForCharacter(characterId: string) {
+  if (!activeSceneId.value) {
+    toast.warning('Ative uma cena antes de criar um token.');
+    return;
+  }
+  if (!isBattlemapScene.value) {
+    toast.warning('Troque para uma cena de batalha para colocar tokens.');
+    return;
+  }
+  pendingCharacterIdForToken.value = characterId;
+  showCharacterLibrary.value = false;
+  startTokenPlacement();
+}
+
 watch(characterFetchScope, () => {
   fetchCharactersForTable();
 }, { immediate: true });
@@ -734,6 +892,7 @@ function startTokenPlacement() {
 
 function cancelTokenPlacement() {
   placementMode.value = false;
+  pendingCharacterIdForToken.value = null;
 }
 
 function chooseFirstFreeSquare() {
@@ -911,6 +1070,7 @@ function createToken(payload: { name: string; imageUrl?: string; movement: numbe
   showTokenForm.value = false;
   targetSquareIdForToken.value = null;
   placementMode.value = false;
+  pendingCharacterIdForToken.value = null;
 }
 
 function handleTokenMoveRequest(payload: { tokenId: string; targetSquareId: string }) {
@@ -2272,6 +2432,15 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       </div>
 
       <div v-if="isDM" class="topbar-actions">
+        <button
+          type="button"
+          class="btn btn-sm topbar-sheets-btn"
+          @click="openCharacterLibrary"
+        >
+          <Icon name="users" :size="16" aria-hidden="true" />
+          <span class="topbar-action-label">Fichas</span>
+        </button>
+
         <button type="button" class="btn btn-sm" @click="openInviteTab">
           <Icon name="copy" :size="16" aria-hidden="true" />
           <span class="topbar-action-label">Convidar</span>
@@ -2637,6 +2806,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             @undo-move="handleUndoMove"
             @next-turn="handleNextTurn"
             @open-character-sheet="(id: string) => id && openCharacterSheet(id)"
+            @open-character-library="openCharacterLibrary"
             @add-token="startTokenPlacement"
             @select-token="handleOpenTokenInspector"
           />
@@ -2688,6 +2858,15 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       <button v-if="isDM" type="button" class="mobile-bar__item" @click="openMobilePanel()">
         <Icon name="menu" :size="20" aria-hidden="true" />
         <span>Painel</span>
+      </button>
+      <button
+        v-if="isDM"
+        type="button"
+        class="mobile-bar__item mobile-bar__sheets"
+        @click="openCharacterLibrary"
+      >
+        <Icon name="users" :size="20" aria-hidden="true" />
+        <span>Fichas</span>
       </button>
       <button v-if="isDM" type="button" class="mobile-bar__item" @click="openMobileTools">
         <Icon name="ruler" :size="20" aria-hidden="true" />
@@ -2773,6 +2952,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         @undo-move="handleUndoMove"
         @next-turn="handleNextTurn"
         @open-character-sheet="(id: string) => id && openCharacterSheet(id)"
+        @open-character-library="openCharacterLibrary"
         @add-token="startTokenPlacement"
         @select-token="handleOpenTokenInspector"
       />
@@ -2805,18 +2985,11 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       />
     </BaseSheet>
 
-    <transition name="log-panel">
-      <aside v-if="showActionLog" :class="['action-log-panel', 'surface', { 'mobile-sheet': isMobileLayout, 'has-dm-panel': isDM && !isMobileLayout }]">
-        <header class="log-panel__header">
-          <div>
-            <p class="log-panel__eyebrow">Histórico</p>
-            <h3>Registro de ações</h3>
-          </div>
-          <button type="button" class="log-panel__close" aria-label="Fechar histórico" @click="toggleActionLog">×</button>
-        </header>
-        <ActionLog :logs="logs" />
-      </aside>
-    </transition>
+    <HistoryDrawer
+      :open="showActionLog"
+      :logs="logs"
+      @close="showActionLog = false"
+    />
 
     <ChatPanel
       :table-id="tableId"
@@ -2833,8 +3006,9 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       :characters="charactersForTable"
       :table-id="tableId || ''"
       :dm-id="dmId"
+      :initial-character-id="pendingCharacterIdForToken || ''"
       @create-token="createToken"
-      @cancel="showTokenForm = false; targetSquareIdForToken = null;"
+      @cancel="showTokenForm = false; targetSquareIdForToken = null; pendingCharacterIdForToken = null;"
     />
     <TokenEditForm
       :open="showTokenEditForm"
@@ -2872,6 +3046,38 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       @close="closeCharacterSheet"
       @save="handleCharacterSave"
       @delete="handleCharacterDelete"
+    />
+
+    <CharacterLibrary
+      :open="showCharacterLibrary"
+      :characters="charactersForTable"
+      :owner-names="characterOwnerNames"
+      :tokens-on-map="tokensOnMap"
+      :table-system-name="currentSystem?.name ?? ''"
+      :loading="charactersLoading"
+      :can-manage-tokens="Boolean(activeSceneId && isBattlemapScene)"
+      :active-scene-name="activeScene?.name ?? ''"
+      @close="closeCharacterLibrary"
+      @open="openCharacterFromLibrary"
+      @create-request="openCharacterCreate"
+      @link="handleLinkCharacterToken"
+      @delete="handleDeleteCharacterFromLibrary"
+      @create-token="handleCreateTokenForCharacter"
+    />
+
+    <CharacterCreateDialog
+      :open="showCharacterCreate"
+      :system-key="currentSystem?.key || currentTable?.systemKey || 'dnd5e'"
+      :system-name="currentSystem?.name || currentTable?.systemName || 'D&D 5e'"
+      :owner-name="currentUser?.username ?? ''"
+      :owner-id="currentUser?.id ?? ''"
+      :owners="characterOwnerOptions"
+      :can-choose-system="true"
+      :systems="systemOptions"
+      :submitting="creatingCharacter"
+      :error="createCharacterError"
+      @submit="submitCreateCharacter"
+      @cancel="closeCharacterCreate"
     />
 
     <transition name="dice-roller">
@@ -3507,60 +3713,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   font-variant-numeric: tabular-nums;
 }
 
-/* Drawer de histórico --------------------------------------------------- */
-.action-log-panel {
-  position: fixed;
-  right: calc(var(--dm-panel-w) + var(--s-4));
-  bottom: calc(56px + var(--s-6));
-  z-index: 74;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-3);
-  width: min(420px, calc(100vw - var(--dm-panel-w) - var(--s-7)));
-  max-height: min(60vh, 560px);
-  padding: var(--s-4);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  background: var(--panel);
-  color: var(--text);
-}
-.table-view-layout.is-player .action-log-panel { right: var(--s-4); width: min(420px, calc(100vw - var(--s-7))); }
-.action-log-panel.mobile-sheet {
-  right: var(--s-3);
-  left: var(--s-3);
-  bottom: calc(var(--mobile-bar-h) + var(--s-3) + env(safe-area-inset-bottom, 0px));
-  width: auto;
-  max-height: min(56dvh, 520px);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-}
-.log-panel__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--s-3);
-}
-.log-panel__eyebrow {
-  margin: 0;
-  color: var(--text-faint);
-  font-size: var(--text-2xs);
-}
-.log-panel__header h3 { margin: 2px 0 0; font-family: var(--font-display); font-size: var(--text-lg); }
-.log-panel__close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  background: var(--raised);
-  color: var(--text);
-  font-size: var(--text-lg);
-}
-.log-panel-enter-active,
-.log-panel-leave-active { transition: opacity var(--dur-pop) var(--ease-out), transform var(--dur-pop) var(--ease-out); }
-.log-panel-enter-from,
-.log-panel-leave-to { opacity: 0; transform: translateY(8px); }
+/* Drawer de histórico: o componente HistoryDrawer cuida do layout/foco. */
 
 /* Chat: usa o painel existente, mas sem gradiente e fora do painel DM. */
 .table-view-layout :deep(.chat-panel) {

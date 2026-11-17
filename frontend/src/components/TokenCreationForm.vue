@@ -21,8 +21,10 @@ interface Props {
   tableId: string;
   /** Mesa com DM no topo da lista: usado apenas para o rótulo (Mestre). */
   dmId?: string;
+  /** Ficha escolhida antes da colocação (“Criar token para esta ficha”). */
+  initialCharacterId?: string;
 }
-const props = withDefaults(defineProps<Props>(), { dmId: '' });
+const props = withDefaults(defineProps<Props>(), { dmId: '', initialCharacterId: '' });
 
 const emit = defineEmits<{
   (e: 'create-token', payload: { name: string; imageUrl?: string; movement: number; ownerId?: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null }): void;
@@ -82,6 +84,15 @@ async function handleFileSelected(event: Event) {
 }
 
 onMounted(() => {
+  const preset = props.initialCharacterId
+    ? props.characters.find((character) => character._id === props.initialCharacterId)
+    : undefined;
+  if (preset) {
+    selectedCharacterId.value = preset._id;
+    tokenName.value = preset.name;
+    assignedOwnerId.value = preset.ownerId || props.dmId || props.players[0]?._id || '';
+    return;
+  }
   const dm = props.players.find((player) => player._id === props.dmId);
   assignedOwnerId.value = dm?._id ?? props.players[0]?._id ?? '';
 });

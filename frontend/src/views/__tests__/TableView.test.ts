@@ -63,9 +63,11 @@ const characterStoreStub = {
   charactersForTable: vi.fn(() => []),
   selectedCharacter: vi.fn(() => null),
   fetchForTable: vi.fn(() => Promise.resolve([])),
+  createCharacter: vi.fn(),
   setSelectedCharacter: vi.fn(),
   updateCharacter: vi.fn(),
   deleteCharacter: vi.fn(),
+  loadingByTable: {} as Record<string, boolean>,
 };
 vi.mock('../../stores/characterStore', () => ({ useCharacterStore: () => characterStoreStub }));
 
@@ -162,6 +164,7 @@ const usageFixture = {
 
 beforeEach(() => {
   tableStoreStub.__refs = createTableStoreRefs();
+  characterStoreStub.createCharacter.mockReset();
   storageMocks.fetchAssetUsage.mockReset();
   storageMocks.fetchAssetUsage.mockResolvedValue(usageFixture);
   (socketServiceMock.setActiveScene as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, revision: 2 });
@@ -429,8 +432,7 @@ describe('TableView token lifecycle', () => {
   });
 });
 
-describe('TableView chat', () => {
-  function mountTable() {
+describe('TableView chat', () => {  function mountTable() {
     return shallowMount(TableView, {
       global: {
         stubs: {
@@ -466,6 +468,116 @@ describe('TableView chat', () => {
     panel!.vm.$emit('close');
     await nextTick();
     expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(false);
+    wrapper.unmount();
+  });
+});
+
+describe('TableView fichas do Mestre e histórico', () => {
+  function mountTable() {
+    return shallowMount(TableView, {
+      global: {
+        stubs: {
+          teleport: true,
+          Transition: false,
+        },
+      },
+    });
+  }
+
+  function findStub(wrapper: ReturnType<typeof mountTable>, name: string) {
+    const found = wrapper.findAllComponents({ name });
+    return found.length > 0 ? found[0] : null;
+  }
+
+  it('abre a biblioteca de fichas pelo botão do topo no desktop', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    expect(wrapper.find('.topbar-sheets-btn').exists()).toBe(true);
+    expect(findStub(wrapper, 'CharacterLibrary')!.props('open')).toBe(false);
+
+    await wrapper.find('.topbar-sheets-btn').trigger('click');
+    await nextTick();
+
+    expect(findStub(wrapper, 'CharacterLibrary')!.props('open')).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('mantém Fichas acessível na barra mobile (390px)', async () => {
+    mockMatchMedia(true);
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const sheets = wrapper.find('.mobile-bar__sheets');
+    expect(sheets.exists()).toBe(true);
+    expect(sheets.text()).toContain('Fichas');
+
+    await sheets.trigger('click');
+    await nextTick();
+
+    expect(findStub(wrapper, 'CharacterLibrary')!.props('open')).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('abre o Histórico único com a mesma lista de logs', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({
+      logs: ref([
+        {
+          id: 'log-1',
+          type: 'roll',
+          authorName: 'Ana',
+          content: 'Ataque: 1d20 + 5 = 18',
+          createdAt: '2024-01-01T10:00:00Z',
+        },
+      ]),
+    });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    await wrapper.find('.log-toggle-btn').trigger('click');
+    await nextTick();
+
+    const drawer = findStub(wrapper, 'HistoryDrawer');
+    expect(drawer).toBeTruthy();
+    expect(drawer!.props('open')).toBe(true);
+    expect(drawer!.props('logs')).toHaveLength(1);
+
+    drawer!.vm.$emit('close');
+    await nextTick();
+    expect(drawer!.props('open')).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('cria ficha para um jogador passando ownerId para a store', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({
+      currentTable: ref({
+        _id: 'table-1',
+        dm: { _id: 'dm-1', username: 'DM' },
+        players: [{ _id: 'u-2', username: 'Ana' }],
+        inviteCode: 'INV',
+      }),
+    });
+    characterStoreStub.createCharacter.mockResolvedValue({});
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const dialog = findStub(wrapper, 'CharacterCreateDialog');
+    expect(dialog).toBeTruthy();
+    expect(dialog!.props('canChooseSystem')).toBe(true);
+    expect(dialog!.props('owners')).toEqual([
+      { _id: 'dm-1', username: 'DM', isDM: true },
+      { _id: 'u-2', username: 'Ana', isDM: false },
+    ]);
+
+    dialog!.vm.$emit('submit', { name: 'Lyra', systemKey: 'dnd5e', ownerId: 'u-2' });
+    await flushPromises();
+
+    expect(characterStoreStub.createCharacter).toHaveBeenCalledWith(
+      'table-1',
+      { name: 'Lyra', systemKey: 'dnd5e' },
+      'u-2',
+    );
+    expect(toastMock.success).toHaveBeenCalledWith('Ficha criada para Ana.');
     wrapper.unmount();
   });
 });

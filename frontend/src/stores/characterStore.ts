@@ -145,10 +145,18 @@ export const useCharacterStore = defineStore('character', () => {
   // em modo display (TV) ou em timeout de ack.
   // ------------------------------------------------------------------
 
-  async function createCharacter(tableId: string, payload: Partial<CharacterDTO>): Promise<Character | null> {
+  async function createCharacter(
+    tableId: string,
+    payload: Partial<CharacterDTO>,
+    ownerId?: string,
+  ): Promise<Character | null> {
     if (socketService.isConnected()) {
       try {
-        const ack = await socketService.createCharacter({ tableId, character: payload });
+        const ack = await socketService.createCharacter({
+          tableId,
+          character: payload,
+          ...(ownerId ? { ownerId } : {}),
+        });
         if (!ack.ok) throw ackToError(ack);
         const created = (ack as Ack & { character?: Character }).character;
         if (created?._id) {
@@ -163,6 +171,10 @@ export const useCharacterStore = defineStore('character', () => {
         if (!(err instanceof SocketAckError)) throw err;
         // Timeout/sem conexão: cai para REST abaixo.
       }
+    }
+    if (ownerId) {
+      // O REST cria sempre no nome de quem chama; só o socket aceita outro dono.
+      throw new Error('Criar ficha para outra pessoa exige conexão em tempo real com a mesa.');
     }
     const created = await apiCreateCharacter(tableId, payload);
     upsertLocalCharacter(tableId, created);
