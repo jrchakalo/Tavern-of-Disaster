@@ -231,7 +231,7 @@ describe('DisplayView', () => {
     wrapper.unmount();
   });
 
-  it('offers the /play invite with the table code while preparing', async () => {
+  it('offers the QR invite with the table code while preparing', async () => {
     setDisplayToken('#token=tv-secret');
     tableStoreStub.__refs = createRefs({ sessionStatus: ref('PREPARING') });
 
@@ -240,8 +240,8 @@ describe('DisplayView', () => {
 
     expect(wrapper.text()).toContain('Aguardando o Mestre');
     expect(wrapper.text()).toContain('ABC');
-    expect(wrapper.text()).toContain('/play');
-    expect(wrapper.text()).toContain('Entre em');
+    expect(wrapper.text()).toContain('Aponte a câmera do celular');
+    expect(wrapper.text()).not.toContain('/play');
     wrapper.unmount();
   });
 

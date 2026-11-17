@@ -72,9 +72,8 @@ const copy = computed(() => {
             <p class="display-waiting__code-label">Código da mesa</p>
             <p class="display-waiting__code">{{ inviteCode }}</p>
             <p class="display-waiting__invite-line">
-              Entre em <strong>/play</strong> com o código
-              <strong>{{ inviteCode }}</strong
-              >.
+              Aponte a câmera do celular para o QR ou use o código
+              <strong>{{ inviteCode }}</strong>.
             </p>
           </div>
         </template>
