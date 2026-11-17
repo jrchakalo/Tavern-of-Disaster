@@ -239,11 +239,12 @@ Todos aceitam ack e `expectedRevision?` quando fazem sentido.
 | `requestMoveToken` | DM ou dono no turno | sim | sim | `expectedRevision` |
 | `requestAssignToken` | DM | sim | sim | novo dono deve ser membro |
 | `requestEditToken` | DM | sim | sim | |
+| `requestDeleteToken` | DM | sim | sim | payload `{ tableId, tokenId }`; resolve token → cena → mesa; emite `tokenRemoved` e, se havia entrada, `initiativeEntryRemoved` |
 | `requestUndoMove` | DM ou dono | sim | sim | |
 | `requestAddCharacterToInitiative` | DM | sim | sim | token da mesma cena |
 | `requestNextTurn` | DM ou dono atual | sim | sim | conflito se revisão mudou |
 | `requestResetInitiative` | DM | sim | sim | |
-| `requestRemoveFromInitiative` | DM | sim | sim | |
+| `requestRemoveFromInitiative` | DM | sim | sim | remove **só** a entrada; nunca apaga o token |
 | `requestReorderInitiative` | DM | sim | sim | |
 | `requestEditInitiativeEntry` | DM | sim | sim | |
 | `requestShareMeasurement` | membro | não | sim | efêmero |
@@ -264,6 +265,8 @@ Todos aceitam ack e `expectedRevision?` quando fazem sentido.
 | `actionError` | ação sem ack falhou | `{ event, error, revision, serverNowMs }` |
 | `presenceUpdated` | entra/sai socket | `{ tableId, presence, revision }` |
 | `diceRolled` | rolagem | payload atual + `revision` |
+| `tokenRemoved` | exclusão explícita de token (`requestDeleteToken`) | `{ tokenId, revision }` |
+| `initiativeEntryRemoved` | remoção de entrada ou exclusão de token | `{ tableId, sceneId, revision, entryId, order }` |
 | `pingBroadcast` | ping | payload atual (efêmero) |
 | `measurementShared` | medição em andamento | payload atual (efêmero) |
 | `measurementRemoved` | fim de medição | payload atual (efêmero) |
