@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { mount, flushPromises } from '@vue/test-utils';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 
 const qrMock = vi.hoisted(() => ({
   toDataURL: vi.fn(async () => 'data:image/png;base64,QRCODE'),
@@ -22,198 +22,234 @@ const toastMock = vi.hoisted(() => ({
 vi.mock('../../services/toast', () => ({ toast: toastMock }));
 
 import TableSharePanel from '../table/TableSharePanel.vue';
+import BaseDialog from '../ui/BaseDialog.vue';
 
 const clipboardWrite = vi.fn(async () => {});
 
 function mountPanel(props: Partial<{ tableId: string; inviteCode: string; displayConnected: boolean }> = {}) {
   return mount(TableSharePanel, {
+    attachTo: document.body,
     props: {
       tableId: 'table-1',
       inviteCode: 'INV-42',
       displayConnected: false,
       ...props,
     },
+    global: { stubs: { teleport: true } },
   });
 }
 
+function dialogByTitle(wrapper: ReturnType<typeof mountPanel>, title: string) {
+  return wrapper
+    .findAllComponents(BaseDialog)
+    .find((dialog) => dialog.props('title') === title);
+}
+
+function findButton(wrapper: ReturnType<typeof mountPanel>, label: string) {
+  return wrapper.findAll('button').find((button) => button.text() === label);
+}
+
 const playerUrl = `${window.location.origin}/play/table-1?invite=INV-42`;
+const displayUrl = `${window.location.origin}/display/table-1#token=secreto`;
+const displayKey = 'tod:display-url:table-1';
 
 beforeEach(() => {
   qrMock.toDataURL.mockClear();
   qrMock.toDataURL.mockResolvedValue('data:image/png;base64,QRCODE');
-  accessMock.createDisplayToken.mockClear();
-  accessMock.revokeDisplayToken.mockClear();
+  accessMock.createDisplayToken.mockReset();
+  accessMock.revokeDisplayToken.mockReset();
   Object.values(toastMock).forEach((fn) => fn.mockClear());
   clipboardWrite.mockClear();
+  window.sessionStorage.clear();
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
     value: { writeText: clipboardWrite },
   });
+  Object.defineProperty(navigator, 'share', {
+    configurable: true,
+    value: undefined,
+  });
 });
 
-describe('TableSharePanel', () => {
-  it('renders the player QR and link built from the invite code', async () => {
+describe('TableSharePanel — convite de jogadores', () => {
+  it('mostra QR de 140 px, link completo e código, com ampliação em diálogo', async () => {
     const wrapper = mountPanel();
     await flushPromises();
 
     expect(qrMock.toDataURL).toHaveBeenCalledWith(playerUrl, expect.anything());
-
-    const img = wrapper.get('.share-block__qr img');
+    const img = wrapper.get('.invite-qr img');
     expect(img.attributes('src')).toBe('data:image/png;base64,QRCODE');
-    expect(img.attributes('alt')).toContain(playerUrl);
+    expect(img.attributes('alt')).toBe('QR Code para entrar como jogador');
+    expect(img.attributes('width')).toBe('140');
 
     expect(wrapper.get('a.share-block__link').attributes('href')).toBe(playerUrl);
-    expect(wrapper.text()).toContain(playerUrl);
+    expect(wrapper.text()).toContain('INV-42');
+
+    await findButton(wrapper, 'Ampliar')!.trigger('click');
+    await flushPromises();
+    const dialog = dialogByTitle(wrapper, 'Convite de jogadores');
+    expect(dialog?.props('open')).toBe(true);
+    expect(dialog?.find('.qr-dialog__image').exists()).toBe(true);
     wrapper.unmount();
   });
 
-  it('copies the player link to the clipboard', async () => {
+  it('copia link e código, e oferece Web Share quando disponível', async () => {
+    const share = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'share', { configurable: true, value: share });
+
     const wrapper = mountPanel();
     await flushPromises();
 
-    const copy = wrapper
-      .findAll('button')
-      .find((btn) => btn.text() === 'Copiar link' && btn.attributes('disabled') === undefined);
-    expect(copy).toBeTruthy();
-    await copy!.trigger('click');
+    await findButton(wrapper, 'Copiar link')!.trigger('click');
     await flushPromises();
-
     expect(clipboardWrite).toHaveBeenCalledWith(playerUrl);
     expect(toastMock.success).toHaveBeenCalledWith('Link copiado.');
+
+    await findButton(wrapper, 'Copiar código')!.trigger('click');
+    await flushPromises();
+    expect(clipboardWrite).toHaveBeenCalledWith('INV-42');
+
+    await findButton(wrapper, 'Compartilhar')!.trigger('click');
+    await flushPromises();
+    expect(share).toHaveBeenCalledWith(expect.objectContaining({ url: playerUrl }));
     wrapper.unmount();
   });
 
-  it('generates the TV token, shows its QR and can copy the display URL', async () => {
-    const displayUrl = `${window.location.origin}/display/table-1#token=secreto`;
+  it('expõe a prévia “Entrar como jogador” para a rota /play', async () => {
+    const wrapper = mountPanel();
+    await flushPromises();
+    const preview = wrapper.get('a.invite-preview');
+    expect(preview.attributes('href')).toBe(playerUrl);
+    expect(preview.attributes('target')).toBe('_blank');
+    wrapper.unmount();
+  });
+});
+
+describe('TableSharePanel — TV segura', () => {
+  it('gera o link apenas quando não existe e guarda em sessionStorage por mesa', async () => {
     accessMock.createDisplayToken.mockResolvedValue({ token: 'secreto', displayUrl });
 
     const wrapper = mountPanel();
     await flushPromises();
 
-    expect(wrapper.text()).not.toContain(displayUrl);
-    await wrapper
-      .findAll('button')
-      .find((btn) => btn.text() === 'Gerar token da TV')!
-      .trigger('click');
+    expect(wrapper.text()).toContain('Abra o link da TV');
+    expect(findButton(wrapper, 'Gerar link da TV')).toBeTruthy();
+
+    await findButton(wrapper, 'Gerar link da TV')!.trigger('click');
     await flushPromises();
 
     expect(accessMock.createDisplayToken).toHaveBeenCalledWith('table-1');
+    expect(window.sessionStorage.getItem(displayKey)).toBe(displayUrl);
+    expect(window.localStorage.setItem).not.toHaveBeenCalledWith(displayKey, expect.anything());
     expect(wrapper.text()).toContain(displayUrl);
-    const img = wrapper.findAll('.share-block__qr img')[1];
-    expect(img.attributes('alt')).toContain(displayUrl);
-    expect(toastMock.success).toHaveBeenCalledWith('Token da TV gerado.');
+    expect(toastMock.success).toHaveBeenCalledWith('Link da TV gerado.');
     wrapper.unmount();
   });
 
-  it('asks for confirmation before rotating the token', async () => {
-    const displayUrl = `${window.location.origin}/display/table-1#token=secreto`;
-    accessMock.createDisplayToken.mockResolvedValue({ token: 'secreto', displayUrl });
+  it('após reload mostra “TV configurada” e “Reexibir link” sem rotacionar', async () => {
+    window.sessionStorage.setItem(displayKey, displayUrl);
+    accessMock.createDisplayToken.mockResolvedValue({ token: 'novo', displayUrl });
 
     const wrapper = mountPanel();
     await flushPromises();
-    await wrapper
-      .findAll('button')
-      .find((btn) => btn.text() === 'Gerar token da TV')!
-      .trigger('click');
-    await flushPromises();
 
-    accessMock.createDisplayToken.mockClear();
-    await wrapper
-      .findAll('button')
-      .find((btn) => btn.text() === 'Rotacionar token')!
-      .trigger('click');
-    await flushPromises();
-
-    // ainda não rotacionou: só mostra a confirmação
+    expect(wrapper.text()).toContain('TV configurada');
+    expect(findButton(wrapper, 'Reexibir link')).toBeTruthy();
+    expect(findButton(wrapper, 'Gerar link da TV')).toBeUndefined();
     expect(accessMock.createDisplayToken).not.toHaveBeenCalled();
-    expect(wrapper.find('.share-confirm').exists()).toBe(true);
+    expect(wrapper.find('.share-display').exists()).toBe(false);
 
-    await wrapper
-      .findAll('button')
-      .find((btn) => btn.text() === 'Confirmar')!
-      .trigger('click');
+    await findButton(wrapper, 'Reexibir link')!.trigger('click');
     await flushPromises();
-
-    expect(accessMock.createDisplayToken).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('.share-display').exists()).toBe(true);
+    expect(wrapper.text()).toContain(displayUrl);
+    expect(accessMock.createDisplayToken).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
-  it('asks for confirmation before revoking the token', async () => {
-    const displayUrl = `${window.location.origin}/display/table-1#token=secreto`;
-    accessMock.createDisplayToken.mockResolvedValue({ token: 'secreto', displayUrl });
+  it('rotacionar exige confirmação e avisa que desconecta a TV', async () => {
+    window.sessionStorage.setItem(displayKey, displayUrl);
+    accessMock.createDisplayToken.mockResolvedValue({
+      token: 'novo',
+      displayUrl: `${window.location.origin}/display/table-1#token=novo`,
+    });
+
+    const wrapper = mountPanel({ displayConnected: true });
+    await flushPromises();
+
+    await findButton(wrapper, 'Rotacionar link…')!.trigger('click');
+    await flushPromises();
+
+    expect(accessMock.createDisplayToken).not.toHaveBeenCalled();
+    const dialog = dialogByTitle(wrapper, 'Rotacionar link da TV?');
+    expect(dialog?.props('open')).toBe(true);
+    expect(dialog?.text()).toContain('desconecta a TV');
+    expect(dialog?.text()).toContain('TV conectada');
+
+    await findButton(wrapper, 'Rotacionar e desconectar')!.trigger('click');
+    await flushPromises();
+
+    expect(accessMock.createDisplayToken).toHaveBeenCalledTimes(1);
+    expect(window.sessionStorage.getItem(displayKey)).toContain('#token=novo');
+    expect(toastMock.success).toHaveBeenCalledWith(
+      'Link da TV rotacionado. A TV anterior foi desconectada.',
+    );
+    wrapper.unmount();
+  });
+
+  it('revogar pede confirmação e limpa o link guardado', async () => {
+    window.sessionStorage.setItem(displayKey, displayUrl);
     accessMock.revokeDisplayToken.mockResolvedValue(undefined);
 
     const wrapper = mountPanel();
     await flushPromises();
-    await wrapper
-      .findAll('button')
-      .find((btn) => btn.text() === 'Gerar token da TV')!
-      .trigger('click');
-    await flushPromises();
 
-    await wrapper
-      .findAll('button')
-      .find((btn) => btn.text() === 'Revogar token')!
-      .trigger('click');
+    await findButton(wrapper, 'Revogar…')!.trigger('click');
     await flushPromises();
     expect(accessMock.revokeDisplayToken).not.toHaveBeenCalled();
 
-    await wrapper
-      .findAll('button')
-      .find((btn) => btn.text() === 'Confirmar')!
-      .trigger('click');
+    await findButton(wrapper, 'Revogar link')!.trigger('click');
     await flushPromises();
 
     expect(accessMock.revokeDisplayToken).toHaveBeenCalledWith('table-1');
+    expect(window.sessionStorage.getItem(displayKey)).toBeNull();
     expect(wrapper.text()).not.toContain(displayUrl);
-    expect(wrapper.findAll('button').some((btn) => btn.text() === 'Gerar token da TV')).toBe(true);
+    expect(findButton(wrapper, 'Gerar link da TV')).toBeTruthy();
     wrapper.unmount();
   });
 
-  it('absolutizes a relative display URL before rendering QR and link', async () => {
-    accessMock.createDisplayToken.mockResolvedValue({
-      token: 'abc',
-      displayUrl: '/display/table-1#token=abc',
-    });
-    const expected = `${window.location.origin}/display/table-1#token=abc`;
-
-    const wrapper = mountPanel();
-    await flushPromises();
-    await wrapper
-      .findAll('button')
-      .find((btn) => btn.text() === 'Gerar token da TV')!
-      .trigger('click');
-    await flushPromises();
-
-    expect(qrMock.toDataURL).toHaveBeenCalledWith(expected, expect.anything());
-    expect(wrapper.text()).toContain(expected);
-    const displayLink = wrapper.findAll('a.share-block__link').find((a) =>
-      (a.attributes('href') ?? '').includes('/display/'),
-    );
-    expect(displayLink?.attributes('href')).toBe(expected);
-    wrapper.unmount();
-  });
-
-  it('shows the TV connected badge when a display socket is present', async () => {
+  it('não gera um link novo em cima de uma TV conectada sem confirmação', async () => {
+    accessMock.createDisplayToken.mockResolvedValue({ token: 'novo', displayUrl });
     const wrapper = mountPanel({ displayConnected: true });
     await flushPromises();
 
+    expect(wrapper.text()).toContain('Uma TV está conectada');
+    await findButton(wrapper, 'Gerar novo link…')!.trigger('click');
+    await flushPromises();
+
+    expect(accessMock.createDisplayToken).not.toHaveBeenCalled();
+    const dialog = dialogByTitle(wrapper, 'Gerar novo link da TV?');
+    expect(dialog?.props('open')).toBe(true);
+    expect(dialog?.text()).toContain('desconecta a TV');
+    wrapper.unmount();
+  });
+
+  it('mostra o selo “TV conectada” quando há presença DISPLAY', async () => {
+    const wrapper = mountPanel({ displayConnected: true });
+    await flushPromises();
     expect(wrapper.text()).toContain('TV conectada');
     wrapper.unmount();
   });
 
-  it('surfaces token generation errors instead of failing silently', async () => {
-    accessMock.createDisplayToken.mockRejectedValue(new Error('Apenas o Mestre pode gerar o token.'));
+  it('expõe erro de geração em vez de falhar em silêncio', async () => {
+    accessMock.createDisplayToken.mockRejectedValue(new Error('Apenas o Mestre pode gerar o link.'));
 
     const wrapper = mountPanel();
     await flushPromises();
-    await wrapper
-      .findAll('button')
-      .find((btn) => btn.text() === 'Gerar token da TV')!
-      .trigger('click');
+    await findButton(wrapper, 'Gerar link da TV')!.trigger('click');
     await flushPromises();
 
-    expect(wrapper.find('.share-error').text()).toContain('Apenas o Mestre pode gerar o token.');
+    expect(wrapper.get('.share-error').text()).toContain('Apenas o Mestre pode gerar o link.');
     expect(toastMock.error).toHaveBeenCalled();
     wrapper.unmount();
   });

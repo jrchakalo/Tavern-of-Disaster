@@ -284,9 +284,21 @@ async function expectCard(page: Page, hp: number) {
     .toContain(String(INITIAL.defense));
 }
 
+async function ensureDmInitiativeTab(page: Page): Promise<void> {
+  // O Histórico/Fichas agora são <dialog> modais (BaseDialog). Fecha antes de
+  // interagir com o painel, que fica `inert` enquanto o modal está aberto.
+  if (await page.locator('dialog[open]').count()) {
+    await page.keyboard.press('Escape');
+    await expect(page.locator('dialog[open]')).toHaveCount(0, { timeout: 5_000 }).catch(() => undefined);
+  }
+  const tab = page.locator('.dm-panel .dm-panel__tab', { hasText: 'Iniciativa' }).first();
+  if (await tab.count()) await tab.click().catch(() => undefined);
+}
+
 async function openDmSheet(page: Page): Promise<ReturnType<Page['locator']>> {
   const sheet = page.locator('.character-sheet');
   if (await sheet.isVisible().catch(() => false)) return sheet;
+  await ensureDmInitiativeTab(page);
   const link = page.locator('.dm-panel .initiative-panel .character-link', { hasText: TOKEN_NAME }).first();
   if ((await link.count()) === 0) {
     const toggle = page.locator('.dm-panel .toggle-button').first();
@@ -323,6 +335,7 @@ async function closeSheet(page: Page): Promise<void> {
 }
 
 async function openDmDiceRoller(page: Page): Promise<ReturnType<Page['locator']>> {
+  await ensureDmInitiativeTab(page);
   const roller = page.locator('.dm-panel .dice-roller').first();
   if (await roller.isVisible().catch(() => false)) return roller;
   const toggle = page.getByRole('button', { name: /Dados|Rolagem/ }).first();
@@ -630,6 +643,7 @@ test('rolagem do DM chega ao jogador remoto e o log persiste', async () => {
   expect(payload.total).toBe(kept + payload.modifier);
   expect(payload.modifier).toBe(4);
 
+  await openDmLog(dmPage!);
   await expect(
     dmPage!.locator('.log-entry[data-type="roll"]', { hasText: DICE_EXPRESSION }).first(),
   ).toBeVisible({ timeout: UI_TIMEOUT_MS });

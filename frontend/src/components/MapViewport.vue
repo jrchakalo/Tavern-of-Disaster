@@ -230,11 +230,11 @@ const footprintOccupied = computed(() => {
 let lastDragOverAt = 0;
 const THROTTLE_DELAY_MS = 50;
 
-function onSquareLeftClick(square: GridSquare, event: MouseEvent) {
+function handleSquareLeftClick(square: GridSquare, event: MouseEvent) {
   props.onSquareLeftClick(square, event);
 }
 
-function onSquareRightClick(square: GridSquare, event: MouseEvent) {
+function handleSquareRightClick(square: GridSquare, event: MouseEvent) {
   props.onSquareRightClick(square, event);
 }
 
@@ -508,8 +508,8 @@ function findShortestPath(startId: string, endId: string): string[] {
           :is-path-valid="isPathValid"
           :occupied-squares="footprintOccupied"
           :memo-key="squaresVersion"
-          @square-left-click="onSquareLeftClick"
-          @square-right-click="onSquareRightClick"
+          @square-left-click="handleSquareLeftClick"
+          @square-right-click="handleSquareRightClick"
           @drag-over="handleGridDragOver"
           @drop="handleGridDrop"
         />
@@ -530,7 +530,7 @@ function findShortestPath(startId: string, endId: string): string[] {
           :on-pointer-down="onTokenPointerDown"
           :on-pointer-move="onTokenPointerMove"
           :on-pointer-up="onTokenPointerUp"
-          :on-token-click="onSquareLeftClick"
+          :on-token-click="handleSquareLeftClick"
         />
 
         <GridMeasurementLayer

@@ -89,20 +89,36 @@ function adjustHp(delta: number) {
 </template>
 
 <style scoped>
+/* Vitais como ficha de registro: superfície elevada sólida, números em mono. */
 .vitals {
   display: grid;
   grid-template-columns: minmax(180px, 1.4fr) minmax(120px, 1fr) minmax(120px, 1fr);
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--color-border-strong);
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
-  background: linear-gradient(180deg, rgba(152, 115, 79, 0.14), rgba(152, 115, 79, 0.04));
+  background: var(--raised);
+}
+
+.vitals :deep(.sheet-field__label) {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.vitals :deep(.sheet-field__control) {
+  border-color: var(--line-strong);
+  background: var(--ink-0);
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-base);
 }
 
 .vitals__hp {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: var(--s-3);
 }
 
 .vitals__field {
@@ -111,25 +127,38 @@ function adjustHp(delta: number) {
 }
 
 .vitals__step {
+  flex: 0 0 auto;
   width: 44px;
   height: 44px;
-  flex: 0 0 auto;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-alt);
-  color: var(--color-text);
-  font-size: 1.3rem;
+  background: var(--ink-0);
+  color: var(--text);
+  font-family: var(--font-data);
+  font-size: var(--text-lg);
   line-height: 1;
   cursor: pointer;
+  transition: background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out);
+}
+
+.vitals__step:hover:not(:disabled) {
+  background: var(--raised-2);
+}
+
+.vitals__step:active:not(:disabled) {
+  transform: translateY(1px);
+  transition-duration: var(--dur-press);
 }
 
 .vitals__step:disabled {
-  opacity: 0.45;
+  border-color: var(--line);
+  color: var(--text-muted);
   cursor: not-allowed;
 }
 
 .vitals__step:focus-visible {
-  outline: 2px solid var(--color-warning);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -140,6 +169,12 @@ function adjustHp(delta: number) {
 
   .vitals__hp {
     grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vitals__step {
+    transition: none;
   }
 }
 </style>

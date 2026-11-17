@@ -8,6 +8,7 @@
     "codegen": "playwright codegen"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "^1.48.2",
     "@types/node": "^22.15.21",
     "@types/wait-on": "^5.3.4",

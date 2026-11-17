@@ -148,4 +148,26 @@ describe('ParticipantGrid', () => {
     expect(first.text()).toContain('Tela');
     wrapper.unmount();
   });
+
+  it('na prévia da barra mantém todos os tiles e a classe compacta', () => {
+    const s = store();
+    s.joined = true;
+    s.peers = [remote(), remote({ peerId: 'peer-2', username: 'Bram' })];
+
+    const wrapper = mount(ParticipantGrid, { props: { preview: true } });
+    const grid = wrapper.get('.participant-grid');
+    expect(grid.classes()).toContain('participant-grid--preview');
+    expect(wrapper.findAll('.media-tile')).toHaveLength(3);
+    expect(wrapper.findAll('.media-tile__name').map((node) => node.text())).toEqual([
+      'Tester',
+      'Lyra',
+      'Bram',
+    ]);
+    // Fora da chamada a prévia não existe.
+    s.joined = false;
+    const closed = mount(ParticipantGrid, { props: { preview: true } });
+    expect(closed.find('.participant-grid').exists()).toBe(false);
+    wrapper.unmount();
+    closed.unmount();
+  });
 });

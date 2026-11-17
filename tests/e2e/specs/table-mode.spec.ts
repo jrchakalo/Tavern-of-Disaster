@@ -505,6 +505,9 @@ test('TV 1920×1080 entra por token, renderiza mesa/cena/iniciativa e não escre
   await expect(tvPage.locator('.display-header__title')).toHaveText(w.table.name, { timeout: UI_TIMEOUT_MS });
   await expect(tvPage.locator('.display-header__scene')).toContainText(w.scene.name);
   await expect(tvPage.locator('.display-header__role')).toHaveText('TV');
+  // `rev`/role existem só como hooks de teste visualmente ocultos.
+  await expect(tvPage.locator('.display-header__role')).toHaveClass(/sr-only/);
+  await expect(tvPage.locator('.display-header__revision')).toHaveClass(/sr-only/);
   await expect(tvPage.getByRole('status', { name: /Conexão:/ })).toContainText('Conectado', {
     timeout: UI_TIMEOUT_MS,
   });
@@ -581,7 +584,10 @@ test('5 celulares 390×844 entram por /play/:id?invite= e veem o tabuleiro', asy
       timeout: UI_TIMEOUT_MS,
     });
     await expect(page.locator('.player-board')).toBeVisible();
-    await expect(page.locator('.token-card')).toBeVisible();
+    // Sem token vinculado o /play mostra o estado vazio com CTAs; o card só
+    // aparece depois que o Mestre atribui o token (abaixo).
+    await expect(page.locator('.player-empty')).toBeVisible();
+    await expect(page.locator('.token-card')).toHaveCount(0);
   }
 
   // O Mestre vincula cada token ao jogador correspondente.
@@ -596,6 +602,12 @@ test('5 celulares 390×844 entram por /play/:id?invite= e veem o tabuleiro', asy
       }),
       'requestAssignToken',
     );
+  }
+
+  // Atribuído o token, o estado vazio sai e o card do personagem entra.
+  for (const page of playerPages) {
+    await expect(page.locator('.token-card')).toBeVisible({ timeout: UI_TIMEOUT_MS });
+    await expect(page.locator('.player-empty')).toHaveCount(0);
   }
 
   // Sockets de controle dos jogadores (para turnos, movimento e rolagens).
@@ -619,8 +631,12 @@ test('TV e os 5 celulares convergem na mesma revisão e no mesmo tabuleiro', asy
     for (const name of w.tokenNames) {
       await expect(page.locator(`.board-token[title="${name}"]`)).toBeVisible();
     }
-    const names = await page.locator('.board-token__label').allTextContents();
-    expect(names.sort()).toEqual([...w.tokenNames].sort());
+    const titles = await page
+      .locator('.board-token')
+      .evaluateAll((elements) => elements.map((element) => element.getAttribute('title') ?? ''));
+    expect(titles.sort()).toEqual([...w.tokenNames].sort());
+    // O próprio token usa o rótulo "Você" no lugar do nome.
+    await expect(page.locator('.board-token__you')).toHaveCount(1);
   }
 
   await expect(tvPage!.locator('.display-board__token')).toHaveCount(PLAYER_COUNT);
@@ -679,13 +695,13 @@ test('iniciativa: cada jogador move no próprio turno; fora do turno é rejeitad
     await expect(page.getByRole('button', { name: 'Mover', exact: true })).toBeEnabled();
     await expect(page.locator('.token-card__name')).toHaveText(w.tokenNames[i]);
 
-    // Fora do turno: o próximo jogador não pode mover o próprio token.
+    // Fora do turno: a barra de turno do próximo jogador nem é montada.
     const nextIndex = (i + 1) % PLAYER_COUNT;
     const nextSocket = w.playerSockets[nextIndex];
     await expect(
       playerPages[nextIndex].getByRole('button', { name: 'Mover', exact: true }),
       `O celular do jogador ${nextIndex + 1} não deve armar movimento fora do turno.`,
-    ).toBeDisabled();
+    ).toHaveCount(0);
     const nextToken = snapshot.tokens.find((token) => token.name === w.tokenNames[nextIndex]);
     expect(nextToken).toBeTruthy();
     const revisionBeforeReject = snapshot.revision;
@@ -701,10 +717,13 @@ test('iniciativa: cada jogador move no próprio turno; fora do turno é rejeitad
     expect(afterReject.revision, 'Ação rejeitada não pode incrementar a revisão.').toBe(revisionBeforeReject);
     expect(afterReject.tokens.find((token) => token._id === nextToken!._id)?.squareId).toBe(nextToken!.squareId);
 
-    // No turno: UI arma o movimento e o servidor confirma.
+    // No turno: UI arma o movimento, o toque escolhe o destino e a confirmação
+    // (nova, contra toque acidental) envia ao servidor.
     const target = nextFreeSquare(snapshot, currentToken!.squareId);
     await page.getByRole('button', { name: 'Mover', exact: true }).click();
     await page.locator('.grid-square').nth(squareIndex(target)).click();
+    await expect(page.locator('.move-confirm')).toBeVisible({ timeout: UI_TIMEOUT_MS });
+    await page.locator('.move-confirm').getByRole('button', { name: 'Confirmar', exact: true }).click();
 
     await expect
       .poll(
@@ -739,7 +758,7 @@ test('rolagem de dados aparece no log da TV', async () => {
   );
 
   await expect(
-    tvPage!.locator('.roll-log__item[data-type="roll"]', { hasText: expression }).first(),
+    tvPage!.locator('.roll-ticker__item', { hasText: expression }).first(),
   ).toBeVisible({ timeout: UI_TIMEOUT_MS });
 });
 

@@ -18,7 +18,6 @@ function updateUserState(token: string | null) {
 
       // Se a data de expiração for no passado, o token está expirado.
       if (decoded.exp * 1000 < Date.now()) {
-        console.log('Token encontrado no localStorage, mas está expirado. Limpando...');
         throw new Error('Token expirado'); // Lança um erro para cair no bloco catch
       }
 
@@ -26,11 +25,9 @@ function updateUserState(token: string | null) {
       localStorage.setItem('authToken', token);
       authToken.value = token;
       currentUser.value = decoded.user;
-      console.log('Estado de autenticação inicializado com token válido.');
 
-    } catch (error) {
-      console.error("Não foi possível processar o token:", error);
-      // Limpa o estado e o localStorage para garantir
+    } catch {
+      // Nunca loga o token: apenas limpa o estado.
       localStorage.removeItem('authToken');
       authToken.value = null;
       currentUser.value = null;

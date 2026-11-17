@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { toast } from '../services/toast';
 import { uploadTokenImage } from '../services/storageService';
+import BaseDialog from './ui/BaseDialog.vue';
 import type { PlayerInfo, TokenSize, Character } from '../types';
 import { tokenSizes } from '../types';
 
 const tokenName = ref('');
+const nameError = ref('');
 const tokenImageUrl = ref('');
 const tokenMovement = ref(9);
 const assignedOwnerId = ref('');
@@ -15,39 +17,49 @@ const selectedCharacterId = ref<string | null>(null);
 const isUploadingImage = ref(false);
 
 interface Props {
-  players: PlayerInfo[]; 
+  players: PlayerInfo[];
   characters: Character[];
   tableId: string;
+  /** Mesa com DM no topo da lista: usado apenas para o rótulo (Mestre). */
+  dmId?: string;
+  /** Ficha escolhida antes da colocação (“Criar token para esta ficha”). */
+  initialCharacterId?: string;
 }
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), { dmId: '', initialCharacterId: '' });
 
 const emit = defineEmits<{
-  (e: 'create-token', payload: { name: string; imageUrl?: string; movement: number; ownerId: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null }): void; // includes canOverlap
+  (e: 'create-token', payload: { name: string; imageUrl?: string; movement: number; ownerId?: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null }): void;
   (e: 'cancel'): void;
 }>();
 
+const ownerOptions = computed(() => props.players);
+
+function ownerLabel(player: PlayerInfo): string {
+  return player._id && player._id === props.dmId ? `${player.username} (Mestre)` : player.username;
+}
+
 function handleSubmit() {
   if (!tokenName.value.trim()) {
-    toast.warning('O nome do token é obrigatório!');
+    nameError.value = 'Dê um nome ao token para encontrá-lo no mapa e na iniciativa.';
     return;
   }
+  nameError.value = '';
   emit('create-token', {
-    name: tokenName.value,
+    name: tokenName.value.trim(),
     imageUrl: tokenImageUrl.value.trim() || undefined,
     movement: tokenMovement.value,
-    ownerId: assignedOwnerId.value,
-  size: tokenSize.value,
-  canOverlap: canOverlap.value,
-  characterId: selectedCharacterId.value,
+    ownerId: assignedOwnerId.value || undefined,
+    size: tokenSize.value,
+    canOverlap: canOverlap.value,
+    characterId: selectedCharacterId.value,
   });
-  // Limpa os campos após emitir
   tokenName.value = '';
   tokenImageUrl.value = '';
   selectedCharacterId.value = null;
 }
 
 function handleCancel() {
-    emit('cancel');
+  emit('cancel');
 }
 
 async function handleFileSelected(event: Event) {
@@ -74,9 +86,17 @@ async function handleFileSelected(event: Event) {
 }
 
 onMounted(() => {
-  if (props.players.length > 0) {
-    assignedOwnerId.value = props.players[0]._id; 
+  const preset = props.initialCharacterId
+    ? props.characters.find((character) => character._id === props.initialCharacterId)
+    : undefined;
+  if (preset) {
+    selectedCharacterId.value = preset._id;
+    tokenName.value = preset.name;
+    assignedOwnerId.value = preset.ownerId || props.dmId || props.players[0]?._id || '';
+    return;
   }
+  const dm = props.players.find((player) => player._id === props.dmId);
+  assignedOwnerId.value = dm?._id ?? props.players[0]?._id ?? '';
 });
 
 watch(
@@ -90,110 +110,128 @@ watch(
 );
 </script>
 
-
 <template>
-  <div class="form-overlay">
+  <BaseDialog
+    :open="true"
+    title="Criar token"
+    @update:open="!$event && handleCancel()"
+    @close="handleCancel"
+  >
     <form class="token-form" @submit.prevent="handleSubmit">
-      <h3>Criar Novo Token</h3>
-      <label for="token-name">Nome:</label>
-      <input id="token-name" v-model="tokenName" type="text" placeholder="Nome do Personagem" required />
-
-      <label for="token-image">URL da Imagem:</label>
-      <input id="token-image" v-model="tokenImageUrl" type="url" placeholder="https://exemplo.com/imagem.png" />
-      <div class="upload-row">
-        <label class="upload-btn" :class="{ disabled: isUploadingImage }">
-          <input
-            type="file"
-            accept="image/*"
-            :disabled="isUploadingImage"
-            @change="handleFileSelected"
-          />
-          <span>{{ isUploadingImage ? 'Enviando…' : 'Enviar arquivo' }}</span>
-        </label>
-        <small>Ou cole uma URL direta no campo acima.</small>
+      <div class="field-group" :class="{ 'field-group--error': nameError }">
+        <label for="token-name">Nome</label>
+        <input
+          id="token-name"
+          v-model="tokenName"
+          type="text"
+          placeholder="Nome do personagem ou NPC"
+          required
+          autofocus
+          :aria-invalid="nameError ? 'true' : undefined"
+          :aria-describedby="nameError ? 'token-name-error' : undefined"
+          @input="nameError = ''"
+        />
+        <p v-if="nameError" id="token-name-error" class="field-error" role="alert">
+          {{ nameError }}
+        </p>
       </div>
 
-      <label for="token-movement">Movimento (m):</label>
-      <input id="token-movement" v-model="tokenMovement" type="number" required />
+      <div class="field-group">
+        <label for="token-image">Imagem (URL)</label>
+        <input id="token-image" v-model="tokenImageUrl" type="url" placeholder="https://exemplo.com/imagem.png" />
+        <div class="upload-row">
+          <label class="upload-btn" :class="{ disabled: isUploadingImage }">
+            <input
+              type="file"
+              accept="image/*"
+              :disabled="isUploadingImage"
+              @change="handleFileSelected"
+            />
+            <span>{{ isUploadingImage ? 'Enviando…' : 'Enviar arquivo' }}</span>
+          </label>
+          <small>Ou cole uma URL direta no campo acima.</small>
+        </div>
+      </div>
 
-      <label for="token-owner">Atribuir a:</label>
-      <select id="token-owner" v-model="assignedOwnerId">
-        <option v-for="player in players" :key="player._id" :value="player._id">
-          {{ player.username }} {{ player._id === props.players[0]._id ? '(Mestre)' : '' }}
-        </option>
-      </select>
+      <div class="field-row">
+        <div class="field-group">
+          <label for="token-movement">Movimento (m)</label>
+          <input id="token-movement" v-model.number="tokenMovement" type="number" min="0" required />
+        </div>
+        <div class="field-group">
+          <label for="token-size">Tamanho</label>
+          <select id="token-size" v-model="tokenSize">
+            <option v-for="sizeOption in tokenSizes" :key="sizeOption" :value="sizeOption">
+              {{ sizeOption }}
+            </option>
+          </select>
+        </div>
+      </div>
 
-      <label for="token-size">Tamanho:</label>
-      <select id="token-size" v-model="tokenSize">
-        <option v-for="sizeOption in tokenSizes" :key="sizeOption" :value="sizeOption">
-          {{ sizeOption }}
-        </option>
-      </select>
+      <div class="field-group">
+        <label for="token-owner">Atribuir a</label>
+        <select id="token-owner" v-model="assignedOwnerId">
+          <option v-if="!ownerOptions.length" value="">Ninguém</option>
+          <option v-for="player in ownerOptions" :key="player._id" :value="player._id">
+            {{ ownerLabel(player) }}
+          </option>
+        </select>
+      </div>
 
-      <label for="token-character">Associar ficha:</label>
-      <select id="token-character" v-model="selectedCharacterId">
-        <option :value="null">Nenhuma</option>
-        <option v-for="character in characters" :key="character._id" :value="character._id">
-          {{ character.name }}
-        </option>
-      </select>
+      <div class="field-group">
+        <label for="token-character">Ficha vinculada</label>
+        <select id="token-character" v-model="selectedCharacterId">
+          <option :value="null">Nenhuma</option>
+          <option v-for="character in characters" :key="character._id" :value="character._id">
+            {{ character.name }}
+          </option>
+        </select>
+      </div>
 
-      <label class="toggle-row">
+      <label class="check-row">
         <input type="checkbox" v-model="canOverlap" /> Pode sobrepor outros tokens
       </label>
 
-      <div class="buttons">
-        <button type="submit">Criar</button>
-        <button type="button" @click="handleCancel">Cancelar</button>
+      <div class="form-actions">
+        <button type="button" class="btn btn-sm btn-ghost" @click="handleCancel">Cancelar</button>
+        <button type="submit" class="btn btn-sm">Criar</button>
       </div>
     </form>
-  </div>
+  </BaseDialog>
 </template>
 
 <style scoped>
-.form-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.6);
+.token-form {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 100;
+  flex-direction: column;
+  gap: var(--s-4);
 }
-.token-form { background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); color:var(--color-text); padding:20px; border-radius:var(--radius-md); display:flex; flex-direction:column; gap:10px; border:1px solid var(--color-border); box-shadow:var(--elev-3); }
-label {
-  text-align: left;
-}
-input, select { padding:8px; border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface-alt); color:var(--color-text); }
-input:focus, select:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
-.buttons {
-  display: flex;
-  justify-content: space-around;
-  margin-top: 10px;
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-4);
 }
 .upload-row {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.85rem;
+  gap: var(--s-2);
+  font-size: var(--text-xs);
 }
-.upload-row small {
-  color: var(--color-text-muted);
-}
+.upload-row small { color: var(--text-muted); }
 .upload-btn {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  padding: 0.35rem 0.65rem;
-  border: 1px dashed var(--color-border);
+  gap: var(--s-2);
+  min-height: 40px;
+  padding: 0 var(--s-4);
+  border: 1px dashed var(--line-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  background: var(--color-surface-alt);
+  background: var(--raised);
+  color: var(--text);
+  font-size: var(--text-sm);
 }
 .upload-btn input {
   position: absolute;
@@ -201,11 +239,45 @@ input:focus, select:focus { outline:2px solid var(--color-border-strong); outlin
   opacity: 0;
   cursor: pointer;
 }
-.upload-btn.disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.upload-btn.disabled { opacity: 0.6; cursor: not-allowed; }
+.upload-btn.disabled input { cursor: not-allowed; }
+.check-row {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-sm);
 }
-.upload-btn.disabled input {
-  cursor: not-allowed;
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--s-3);
+  padding-top: var(--s-2);
+}
+.field-error {
+  margin: var(--s-2) 0 0;
+  color: var(--danger-ink);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+.field-group--error input {
+  border-color: var(--danger);
+}
+@media (max-width: 900px) {
+  .token-form input,
+  .token-form select,
+  .upload-btn {
+    min-height: 44px;
+  }
+
+  :deep(.base-dialog__footer .btn) {
+    min-height: 44px;
+  }
+}
+@media (max-width: 480px) {
+  .field-row { grid-template-columns: 1fr; }
+  .form-actions .btn { flex: 1 1 auto; }
 }
 </style>

@@ -130,12 +130,35 @@ export const useCharacterStore = defineStore('character', () => {
       return;
     }
     const payload = event.character;
-    if (!payload._id || !looksLikeFullCharacter(payload)) return;
-    const fullCharacter = payload as unknown as Character;
+    if (!payload._id) return;
+    const characterId = payload._id;
+
+    if (looksLikeFullCharacter(payload)) {
+      const fullCharacter = payload as unknown as Character;
+      Object.entries(charactersByTable.value).forEach(([tableId, list]) => {
+        if (list.some((char) => char._id === characterId)) {
+          upsertLocalCharacter(tableId, fullCharacter);
+        }
+      });
+      return;
+    }
+
+    // O servidor também emite a **ficha resumida** em `characterUpdated`
+    // (PV/CA/nome). Mescla no cache completo para a ficha aberta no DM/TV
+    // refletir mudanças feitas por outro cliente sem refetch.
     Object.entries(charactersByTable.value).forEach(([tableId, list]) => {
-      if (list.some((char) => char._id === fullCharacter._id)) {
-        upsertLocalCharacter(tableId, fullCharacter);
-      }
+      const existing = list.find((char) => char._id === characterId);
+      if (!existing) return;
+      upsertLocalCharacter(tableId, {
+        ...existing,
+        name: payload.name ?? existing.name,
+        avatarUrl: payload.avatarUrl ?? existing.avatarUrl,
+        systemKey: payload.systemKey ?? existing.systemKey,
+        profile: payload.profile
+          ? { ...existing.profile, ...payload.profile }
+          : existing.profile,
+        stats: payload.stats ? { ...existing.stats, ...payload.stats } : existing.stats,
+      });
     });
   }
   registerCharacterSyncHandler(handleCharacterSync);
@@ -145,10 +168,18 @@ export const useCharacterStore = defineStore('character', () => {
   // em modo display (TV) ou em timeout de ack.
   // ------------------------------------------------------------------
 
-  async function createCharacter(tableId: string, payload: Partial<CharacterDTO>): Promise<Character | null> {
+  async function createCharacter(
+    tableId: string,
+    payload: Partial<CharacterDTO>,
+    ownerId?: string,
+  ): Promise<Character | null> {
     if (socketService.isConnected()) {
       try {
-        const ack = await socketService.createCharacter({ tableId, character: payload });
+        const ack = await socketService.createCharacter({
+          tableId,
+          character: payload,
+          ...(ownerId ? { ownerId } : {}),
+        });
         if (!ack.ok) throw ackToError(ack);
         const created = (ack as Ack & { character?: Character }).character;
         if (created?._id) {
@@ -163,6 +194,10 @@ export const useCharacterStore = defineStore('character', () => {
         if (!(err instanceof SocketAckError)) throw err;
         // Timeout/sem conexão: cai para REST abaixo.
       }
+    }
+    if (ownerId) {
+      // O REST cria sempre no nome de quem chama; só o socket aceita outro dono.
+      throw new Error('Criar ficha para outra pessoa exige conexão em tempo real com a mesa.');
     }
     const created = await apiCreateCharacter(tableId, payload);
     upsertLocalCharacter(tableId, created);

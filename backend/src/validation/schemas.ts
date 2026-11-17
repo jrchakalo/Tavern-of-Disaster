@@ -41,10 +41,32 @@ const nullableString = (max: number) => z.union([optionalTrimmedString(max), z.n
 const queryLimit = z.coerce.number().int().min(1).max(200).optional();
 
 // Auth ---------------------------------------------------------------------
-export const zLoginRequest = z.object({
-  email: z.string().trim().email().max(254),
-  password: z.string().min(6).max(128),
-});
+// Login aceita o formato novo `{ identifier, password }` (usuário OU email) e
+// o formato legado `{ email, password }` de clientes antigos. Os dois são
+// normalizados para `{ identifier, password }` antes de chegar ao handler.
+const loginIdentifier = sanitizeText(z.string().trim().min(3).max(254));
+const loginLegacyEmail = sanitizeText(z.string().trim().email().max(254));
+const loginPassword = z.string().min(6).max(128);
+
+export const zLoginRequest = z
+  .object({
+    identifier: loginIdentifier.optional(),
+    email: loginLegacyEmail.optional(),
+    password: loginPassword,
+  })
+  .superRefine((value, ctx) => {
+    if (value.identifier === undefined && value.email === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['identifier'],
+        message: 'Informe seu nome de usuário ou email.',
+      });
+    }
+  })
+  .transform((value) => ({
+    identifier: value.identifier ?? (value.email as string),
+    password: value.password,
+  }));
 
 export const zRegisterRequest = z.object({
   username: z.string().trim().min(3).max(50),
@@ -153,6 +175,11 @@ export const zEditTokenPayload = z.object({
 });
 
 export const zUndoMovePayload = z.object({
+  tableId,
+  tokenId: objectId,
+});
+
+export const zDeleteTokenPayload = z.object({
   tableId,
   tokenId: objectId,
 });

@@ -46,6 +46,8 @@ const props = defineProps<{
   canEdit: boolean;
 }>();
 
+const emit = defineEmits<{ (e: 'dirty', value: boolean): void }>();
+
 const tabs = [
   { key: 'identidade', label: 'Identidade' },
   { key: 'atributos', label: 'Atributos & Perícias' },
@@ -75,12 +77,14 @@ const tableStore = getActivePinia() ? useTableStore() : null;
 
 function touch() {
   dirty.value = true;
+  emit('dirty', true);
 }
 
 function resetFromCharacter(character: Character | null) {
   draft.value = buildOpDraft(character);
   dirty.value = false;
   pendingBonusDice.value = [];
+  emit('dirty', false);
 }
 
 watch(
@@ -408,7 +412,14 @@ function buildPatch(): Partial<CharacterDTO> {
   return buildOpPatch(draft.value);
 }
 
-defineExpose({ buildPatch });
+function markSaved() {
+  if (props.character) draft.value = buildOpDraft(props.character);
+  dirty.value = false;
+  pendingBonusDice.value = [];
+  emit('dirty', false);
+}
+
+defineExpose({ buildPatch, markSaved });
 </script>
 
 <template>

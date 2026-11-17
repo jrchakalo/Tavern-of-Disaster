@@ -87,11 +87,14 @@ describe('MediaDock', () => {
     });
   });
 
-  it('mostra o botão de entrar e delega a chamada com a mesa', async () => {
+  it('fora da chamada mostra uma pílula única com o rótulo Chamada', async () => {
     const wrapper = mountDock();
-    expect(wrapper.text()).toContain('Chamada de voz');
+    expect(wrapper.get('.media-dock').classes()).toContain('media-dock--pill');
+    expect(wrapper.get('.media-dock__label').text()).toBe('Chamada');
     const join = wrapper.get('button.media-btn--join');
-    expect(join.text()).toBe('Entrar na chamada');
+    expect(join.attributes('aria-label')).toBe('Entrar na chamada');
+    expect(wrapper.find('.media-dock__count').exists()).toBe(false);
+    expect(wrapper.findAll('.media-btn')).toHaveLength(1);
 
     await join.trigger('click');
     await flushPromises();
@@ -104,13 +107,13 @@ describe('MediaDock', () => {
     store().connecting = true;
     const wrapper = mountDock();
     const join = wrapper.get('button.media-btn--join');
-    expect(join.text()).toBe('Conectando…');
+    expect(join.attributes('aria-label')).toBe('Conectando à chamada');
     expect(join.attributes('disabled')).toBeDefined();
-    expect(wrapper.text()).toContain('Conectando à chamada…');
+    expect(wrapper.get('.media-dock__label').text()).toBe('Conectando…');
     wrapper.unmount();
   });
 
-  it('mostra contagem, controles ativos e aviso sem TURN', () => {
+  it('na chamada mostra a barra de 56 px, contagem, controles e nota de TURN', () => {
     const s = store();
     s.joined = true;
     s.participantCount = 3;
@@ -120,10 +123,35 @@ describe('MediaDock', () => {
 
     const wrapper = mountDock();
 
-    expect(wrapper.text()).toContain('3');
+    expect(wrapper.get('.media-dock').classes()).not.toContain('media-dock--pill');
+    expect(wrapper.get('.media-dock__label').text()).toBe('Na chamada');
+    expect(wrapper.get('.media-dock__count').text()).toBe('3');
+    expect(wrapper.find('button.media-btn--join').exists()).toBe(false);
     expect(wrapper.get('[aria-label="Ativar microfone"]').text()).toBe('Mudo');
     expect(wrapper.get('[aria-label="Ouvir a chamada"]').text()).toBe('Surdo');
-    expect(wrapper.text()).toContain('Sem TURN configurado');
+
+    // O aviso de TURN não abre uma linha que empurra a barra.
+    const note = wrapper.get('.media-dock__turn-note');
+    expect(note.text()).toBe('Sem TURN');
+    expect(note.attributes('title')).toContain('Sem TURN configurado');
+    expect(wrapper.find('.media-dock__warning').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('expande a grade da chamada pelo rótulo e pela prévia', async () => {
+    store().joined = true;
+    store().participantCount = 2;
+    const wrapper = mount(MediaDock, {
+      props: { tableId: 'table-1' },
+      slots: { preview: '<span class="preview-stub">tiles</span>' },
+      global: { stubs: { DeviceSettings: true } },
+    });
+
+    expect(wrapper.find('.media-dock__preview .preview-stub').exists()).toBe(true);
+    await wrapper.get('.media-dock__status').trigger('click');
+    await wrapper.get('.media-dock__preview').trigger('click');
+
+    expect(wrapper.emitted('expand')).toHaveLength(2);
     wrapper.unmount();
   });
 

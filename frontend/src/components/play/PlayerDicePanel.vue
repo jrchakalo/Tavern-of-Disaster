@@ -1,122 +1,71 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
-import DiceRoller from '../DiceRoller.vue';
+import BaseSheet from '../ui/BaseSheet.vue';
+import DiceTray from '../dice/DiceTray.vue';
+import type { CharacterDTO, DiceRolledPayload, RollLogEntryDTO } from '../../types';
 
-const props = defineProps<{
-  open: boolean;
-  tableId: string;
-  currentTokenId?: string | null;
-}>();
-
-const emit = defineEmits<{ (e: 'close'): void }>();
-
-const panelRef = ref<HTMLElement | null>(null);
-
-watch(
-  () => props.open,
-  async (open) => {
-    if (!open) return;
-    await nextTick();
-    panelRef.value?.focus();
+withDefaults(
+  defineProps<{
+    open: boolean;
+    tableId: string;
+    currentTokenId?: string | null;
+    characters?: CharacterDTO[];
+    activeCharacterId?: string | null;
+    recentRolls?: RollLogEntryDTO[];
+    connectionStatus?: string;
+  }>(),
+  {
+    currentTokenId: null,
+    characters: () => [],
+    activeCharacterId: null,
+    recentRolls: () => [],
+    connectionStatus: 'connected',
   },
 );
 
-function handleKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    event.stopPropagation();
-    emit('close');
-  }
-}
+const emit = defineEmits<{
+  (e: 'close'): void;
+  (e: 'roll-result', payload: DiceRolledPayload): void;
+}>();
 </script>
 
 <template>
-  <div v-if="open" class="dice-overlay" @click.self="emit('close')">
-    <section
-      ref="panelRef"
-      class="dice-sheet"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Rolagem de dados"
-      tabindex="-1"
-      @keydown="handleKeydown"
-    >
-      <div class="dice-sheet__bar" aria-hidden="true"></div>
-      <div class="dice-sheet__actions">
-        <button
-          type="button"
-          class="dice-sheet__close"
-          aria-label="Fechar rolagem de dados"
-          @click="emit('close')"
-        >
-          ×
-        </button>
-      </div>
-      <DiceRoller
+  <BaseSheet :open="open" title="Dados" @close="emit('close')">
+    <div class="player-dice">
+      <DiceTray
         :table-id="tableId"
         :current-token-id="currentTokenId"
-        mode="embedded"
-        default-expression="1d20"
+        :characters="characters"
+        :active-character-id="activeCharacterId"
+        :recent-rolls="recentRolls"
+        :connection-status="connectionStatus"
+        @roll-result="emit('roll-result', $event)"
       />
-    </section>
-  </div>
+    </div>
+  </BaseSheet>
 </template>
 
 <style scoped>
-.dice-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
+.player-dice {
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: rgba(10, 7, 10, 0.6);
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
 }
 
-.dice-sheet {
-  position: relative;
-  width: min(480px, 100%);
-  max-height: 82%;
-  overflow-y: auto;
-  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
-  border: 1px solid var(--color-border-strong);
-  border-radius: 16px 16px 0 0;
-  background: var(--color-surface);
-  box-shadow: var(--elev-3);
+/* Campos legados do DiceRoller (DM) que podem aparecer em telas pequenas. */
+.player-dice :deep(input),
+.player-dice :deep(select) {
+  font-size: var(--text-base);
 }
 
-.dice-sheet:focus-visible {
-  outline: 2px solid var(--color-warning);
-  outline-offset: -2px;
+.player-dice :deep(.shortcut-btn) {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 var(--s-2);
 }
 
-.dice-sheet__bar {
-  width: 44px;
-  height: 4px;
-  margin: 0 auto 8px;
-  border-radius: var(--radius-pill);
-  background: var(--color-border-strong);
-}
-
-.dice-sheet__actions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-}
-
-.dice-sheet__close {
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--color-border);
-  border-radius: 50%;
-  background: var(--color-surface-alt);
-  color: inherit;
-  font-size: 1.3rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.dice-sheet__close:focus-visible {
-  outline: 2px solid var(--color-warning);
-  outline-offset: 2px;
+.player-dice :deep(.primary),
+.player-dice :deep(.ghost) {
+  min-height: 48px;
 }
 </style>

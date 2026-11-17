@@ -26,11 +26,9 @@ const socketServiceMock = vi.hoisted(() => new Proxy({}, {
 vi.mock('../../services/socketService', () => ({ socketService: socketServiceMock }));
 
 const storageMocks = vi.hoisted(() => ({
-  uploadMap: vi.fn(),
   fetchAssetUsage: vi.fn(),
 }));
 vi.mock('../../services/storageService', () => ({
-  uploadMap: storageMocks.uploadMap,
   fetchAssetUsage: storageMocks.fetchAssetUsage,
 }));
 
@@ -65,9 +63,11 @@ const characterStoreStub = {
   charactersForTable: vi.fn(() => []),
   selectedCharacter: vi.fn(() => null),
   fetchForTable: vi.fn(() => Promise.resolve([])),
+  createCharacter: vi.fn(),
   setSelectedCharacter: vi.fn(),
   updateCharacter: vi.fn(),
   deleteCharacter: vi.fn(),
+  loadingByTable: {} as Record<string, boolean>,
 };
 vi.mock('../../stores/characterStore', () => ({ useCharacterStore: () => characterStoreStub }));
 
@@ -79,6 +79,7 @@ vi.mock('../../stores/userStore', () => ({ useUserStore: () => userStoreStub }))
 
 const tableStoreStub = {
   __refs: createTableStoreRefs(),
+  recentRolls: [] as unknown[],
   registerDiceAnimationHook: vi.fn(),
 };
 vi.mock('../../stores/tableStore', () => ({ useTableStore: () => tableStoreStub }));
@@ -164,9 +165,13 @@ const usageFixture = {
 
 beforeEach(() => {
   tableStoreStub.__refs = createTableStoreRefs();
-  storageMocks.uploadMap.mockReset();
+  characterStoreStub.createCharacter.mockReset();
   storageMocks.fetchAssetUsage.mockReset();
   storageMocks.fetchAssetUsage.mockResolvedValue(usageFixture);
+  (socketServiceMock.setActiveScene as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, revision: 2 });
+  (socketServiceMock.updateSessionStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, revision: 2 });
+  (socketServiceMock.updateSceneScale as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, revision: 2 });
+  (socketServiceMock.reorderScenes as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, revision: 2 });
   mockMatchMedia(false);
 });
 
@@ -225,58 +230,86 @@ describe('TableView scene media feedback', () => {
     return found.length > 0 ? found[0] : null;
   }
 
-  it('envia mapa com progresso, aplica a URL e atualiza o uso', async () => {
-    let resolveUpload: ((url: string) => void) | null = null;
-    storageMocks.uploadMap.mockImplementation((_file, _tableId, onProgress) => {
-      onProgress?.(37);
-      return new Promise<string>((resolve) => {
-        resolveUpload = resolve;
-      });
-    });
+  it('cria e ativa a cena em um passo pelo callback do painel', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({ sessionStatus: ref('PREPARING') });
+    const created = {
+      _id: 'scene-2',
+      tableId: 'table-1',
+      name: 'Cripta',
+      imageUrl: '/uploads/maps/cripta.webp',
+      type: 'battlemap',
+      gridWidth: 24,
+      gridHeight: 18,
+      metersPerSquare: 1.5,
+    };
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify(created), { status: 201 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
 
     const wrapper = mountTable();
     await flushPromises();
-    const manager = findStub(wrapper, 'SceneManager');
+    const manager = findStub(wrapper, 'DMPanel');
     expect(manager).toBeTruthy();
 
-    const file = new File(['px'], 'map.png', { type: 'image/png' });
-    manager!.vm.$emit('upload-map-file', file);
-    await nextTick();
-
-    expect(storageMocks.uploadMap).toHaveBeenCalledWith(file, 'table-1', expect.any(Function));
-    expect(manager!.props('isUploadingMap')).toBe(true);
-    expect(manager!.props('uploadProgress')).toBe(37);
-
-    resolveUpload!('/uploads/maps/new-map.webp');
+    await (manager!.props('createScene') as (payload: unknown) => Promise<void>)({
+      name: 'Cripta',
+      imageUrl: '/uploads/maps/cripta.webp',
+      type: 'battlemap',
+      gridWidth: 24,
+      gridHeight: 18,
+      metersPerSquare: 1.5,
+      activate: true,
+    });
     await flushPromises();
 
-    expect(socketServiceMock.setMap).toHaveBeenCalledWith('table-1', '/uploads/maps/new-map.webp');
-    expect(manager!.props('isUploadingMap')).toBe(false);
-    expect(manager!.props('uploadProgress')).toBe(100);
-    expect(manager!.props('usage')).toEqual(usageFixture);
-    expect(storageMocks.fetchAssetUsage).toHaveBeenCalledTimes(2);
-    expect(toastMock.success).toHaveBeenCalledWith('Mapa atualizado com sucesso.');
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/tables/table-1/scenes'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string);
+    expect(body).toEqual({
+      name: 'Cripta',
+      imageUrl: '/uploads/maps/cripta.webp',
+      gridWidth: 24,
+      gridHeight: 18,
+      type: 'battlemap',
+    });
+    expect(tableStoreStub.__refs.scenes.value.map((scene) => scene._id)).toContain('scene-2');
+    expect(socketServiceMock.setActiveScene).toHaveBeenCalledWith('table-1', 'scene-2');
+    expect(manager!.props('assetUsage')).toEqual(usageFixture);
+    expect(toastMock.success).toHaveBeenCalledWith('Cena “Cripta” criada e ativada.');
 
     wrapper.unmount();
+    vi.unstubAllGlobals();
   });
 
-  it('mantém o erro de upload visível no painel', async () => {
-    storageMocks.uploadMap.mockRejectedValue(
-      new Error('A mesa atingiu o limite de armazenamento.'),
+  it('propaga erro de criação para o formulário', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({ sessionStatus: ref('PREPARING') });
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify({ message: 'Mesa sem permissão.' }), { status: 403 }),
     );
+    vi.stubGlobal('fetch', fetchMock);
 
     const wrapper = mountTable();
     await flushPromises();
-    const manager = findStub(wrapper, 'SceneManager');
+    const manager = findStub(wrapper, 'DMPanel');
     expect(manager).toBeTruthy();
 
-    manager!.vm.$emit('upload-map-file', new File(['px'], 'big.png', { type: 'image/png' }));
-    await flushPromises();
-
-    expect(manager!.props('uploadError')).toBe('A mesa atingiu o limite de armazenamento.');
-    expect(toastMock.error).toHaveBeenCalledWith('A mesa atingiu o limite de armazenamento.');
+    await expect(
+      (manager!.props('createScene') as (payload: unknown) => Promise<void>)({
+        name: 'Cripta',
+        imageUrl: '',
+        type: 'battlemap',
+        gridWidth: 24,
+        gridHeight: 18,
+        metersPerSquare: 1.5,
+        activate: true,
+      }),
+    ).rejects.toThrow('Mesa sem permissão.');
 
     wrapper.unmount();
+    vi.unstubAllGlobals();
   });
 
   it('mostra carregamento e erro ao falhar a imagem da cena', async () => {
@@ -312,8 +345,95 @@ describe('TableView scene media feedback', () => {
   });
 });
 
-describe('TableView chat', () => {
+describe('TableView token lifecycle', () => {
   function mountTable() {
+    return shallowMount(TableView, {
+      global: {
+        stubs: {
+          teleport: true,
+          Transition: false,
+        },
+      },
+    });
+  }
+
+  it('entra em modo de colocação e abre o formulário no primeiro quadrado livre', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({
+      squares: ref([
+        { id: 'sq-0', token: { _id: 'occupied' } },
+        { id: 'sq-1', token: null },
+      ]),
+    });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    await wrapper.find('.rail-add').trigger('click');
+    expect(wrapper.find('.placement-banner').exists()).toBe(true);
+
+    const firstFree = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Usar primeiro livre'));
+    expect(firstFree).toBeTruthy();
+    await firstFree!.trigger('click');
+
+    expect(wrapper.find('.placement-banner').exists()).toBe(false);
+    const form = wrapper.findAllComponents({ name: 'TokenCreationForm' });
+    expect(form.length).toBe(1);
+    wrapper.unmount();
+  });
+
+  it('mostra ator, movimento restante, rodada e ações na turn bar', async () => {
+    const token = {
+      _id: 'token-1',
+      name: 'Ghoul',
+      movement: 9,
+      remainingMovement: 6,
+      ownerId: { _id: 'dm-1', username: 'DM' },
+    };
+    tableStoreStub.__refs = createTableStoreRefs({
+      initiativeList: ref([
+        { _id: 'entry-1', characterName: 'Ghoul', tokenId: 'token-1', isCurrentTurn: true },
+      ]),
+      tokensOnMap: ref([token]),
+      currentTurnTokenId: ref('token-1'),
+    });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const text = wrapper.find('.turn-bar').text();
+    expect(text).toContain('Ghoul');
+    expect(text).toContain('6.0 m de 9.0 m');
+    expect(text).toContain('Rodada 1');
+    expect(text).toContain('Passar turno');
+
+    const nextButton = wrapper
+      .findAll('.turn-bar__actions button')
+      .find((button) => button.text().includes('Passar turno'));
+    expect(nextButton).toBeTruthy();
+    await nextButton!.trigger('click');
+    expect(socketServiceMock.nextTurn).toHaveBeenCalledWith('table-1', 'scene-1');
+    wrapper.unmount();
+  });
+
+  it('abre o inspetor ao clicar num token no tabuleiro', async () => {
+    const token = { _id: 'token-1', name: 'Ghoul', movement: 9, remainingMovement: 9 };
+    tableStoreStub.__refs = createTableStoreRefs({ tokensOnMap: ref([token]) });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const viewport = wrapper.findAllComponents({ name: 'MapViewport' })[0];
+    const onSquareLeftClick = viewport!.props('onSquareLeftClick') as (square: unknown) => void;
+    onSquareLeftClick({ id: 'sq-0', token });
+    await nextTick();
+
+    const inspector = wrapper.findAllComponents({ name: 'TokenEditForm' })[0];
+    expect(inspector!.props('open')).toBe(true);
+    expect(inspector!.props('token')).toMatchObject({ _id: 'token-1' });
+    wrapper.unmount();
+  });
+});
+
+describe('TableView chat', () => {  function mountTable() {
     return shallowMount(TableView, {
       global: {
         stubs: {
@@ -349,6 +469,217 @@ describe('TableView chat', () => {
     panel!.vm.$emit('close');
     await nextTick();
     expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(false);
+    wrapper.unmount();
+  });
+});
+
+describe('TableView fichas do Mestre e histórico', () => {
+  function mountTable() {
+    return shallowMount(TableView, {
+      global: {
+        stubs: {
+          teleport: true,
+          Transition: false,
+        },
+      },
+    });
+  }
+
+  function findStub(wrapper: ReturnType<typeof mountTable>, name: string) {
+    const found = wrapper.findAllComponents({ name });
+    return found.length > 0 ? found[0] : null;
+  }
+
+  it('abre a biblioteca de fichas pelo botão do topo no desktop', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    expect(wrapper.find('.topbar-sheets-btn').exists()).toBe(true);
+    expect(findStub(wrapper, 'CharacterLibrary')!.props('open')).toBe(false);
+
+    await wrapper.find('.topbar-sheets-btn').trigger('click');
+    await nextTick();
+
+    expect(findStub(wrapper, 'CharacterLibrary')!.props('open')).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('mantém Fichas acessível na barra mobile (390px)', async () => {
+    mockMatchMedia(true);
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const sheets = wrapper.find('.mobile-bar__sheets');
+    expect(sheets.exists()).toBe(true);
+    expect(sheets.text()).toContain('Fichas');
+
+    await sheets.trigger('click');
+    await nextTick();
+
+    expect(findStub(wrapper, 'CharacterLibrary')!.props('open')).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('abre o Histórico único com a mesma lista de logs', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({
+      logs: ref([
+        {
+          id: 'log-1',
+          type: 'roll',
+          authorName: 'Ana',
+          content: 'Ataque: 1d20 + 5 = 18',
+          createdAt: '2024-01-01T10:00:00Z',
+        },
+      ]),
+    });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    await wrapper.find('.log-toggle-btn').trigger('click');
+    await nextTick();
+
+    const drawer = findStub(wrapper, 'HistoryDrawer');
+    expect(drawer).toBeTruthy();
+    expect(drawer!.props('open')).toBe(true);
+    expect(drawer!.props('logs')).toHaveLength(1);
+
+    drawer!.vm.$emit('close');
+    await nextTick();
+    expect(drawer!.props('open')).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('cria ficha para um jogador passando ownerId para a store', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({
+      currentTable: ref({
+        _id: 'table-1',
+        dm: { _id: 'dm-1', username: 'DM' },
+        players: [{ _id: 'u-2', username: 'Ana' }],
+        inviteCode: 'INV',
+      }),
+    });
+    characterStoreStub.createCharacter.mockResolvedValue({});
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const dialog = findStub(wrapper, 'CharacterCreateDialog');
+    expect(dialog).toBeTruthy();
+    expect(dialog!.props('canChooseSystem')).toBe(true);
+    expect(dialog!.props('owners')).toEqual([
+      { _id: 'dm-1', username: 'DM', isDM: true },
+      { _id: 'u-2', username: 'Ana', isDM: false },
+    ]);
+
+    dialog!.vm.$emit('submit', { name: 'Lyra', systemKey: 'dnd5e', ownerId: 'u-2' });
+    await flushPromises();
+
+    expect(characterStoreStub.createCharacter).toHaveBeenCalledWith(
+      'table-1',
+      { name: 'Lyra', systemKey: 'dnd5e' },
+      'u-2',
+    );
+    expect(toastMock.success).toHaveBeenCalledWith('Ficha criada para Ana.');
+    wrapper.unmount();
+  });
+});
+
+describe('TableView cockpit D6b (mídia, chat e dados)', () => {
+  function mountTable() {
+    return shallowMount(TableView, {
+      global: { stubs: { teleport: true, Transition: false } },
+    });
+  }
+
+  function findStub(wrapper: ReturnType<typeof mountTable>, name: string) {
+    const found = wrapper.findAllComponents({ name });
+    return found.length > 0 ? found[0] : null;
+  }
+
+  function findByTitle(wrapper: ReturnType<typeof mountTable>, title: string) {
+    return wrapper
+      .findAllComponents({ name: 'BaseDialog' })
+      .find((dialog) => dialog.props('title') === title) ?? null;
+  }
+
+  it('usa o DiceTray do painel e a ação Dados não abre popup', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const toolbar = findStub(wrapper, 'Toolbar');
+    expect(toolbar).toBeTruthy();
+    toolbar!.vm.$emit('toggle-dice-roller');
+    await nextTick();
+
+    const panel = findStub(wrapper, 'DMPanel');
+    expect(panel!.props('activeTab')).toBe('initiative');
+    expect(wrapper.find('.dice-popup-overlay').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('mostra o momento do DM como card compacto (variant dm)', async () => {
+    let hook: ((payload: unknown) => void) | null = null;
+    tableStoreStub.registerDiceAnimationHook = vi.fn((handler) => {
+      hook = handler;
+    });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    expect(hook).toBeTypeOf('function');
+    hook!({
+      tableId: 'table-1',
+      userId: 'user-1',
+      username: 'Tester',
+      expression: '1d20+5',
+      total: 17,
+      modifier: 5,
+      rolls: [{ value: 12, kept: 'kept', sides: 20 }],
+      tags: [],
+      createdAt: new Date().toISOString(),
+    });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await nextTick();
+
+    const moment = findStub(wrapper, 'DiceAnimation');
+    expect(moment).toBeTruthy();
+    expect(moment!.props('variant')).toBe('dm');
+    expect(moment!.props('payload')).toMatchObject({ total: 17 });
+    wrapper.unmount();
+  });
+
+  it('abre a grade completa da chamada e fecha o chat (uma sobreposição por vez)', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const chatToggle = findStub(wrapper, 'ChatToggle');
+    chatToggle!.vm.$emit('toggle');
+    await nextTick();
+    expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(true);
+
+    const mediaDock = findStub(wrapper, 'MediaDock');
+    expect(mediaDock).toBeTruthy();
+    expect(mediaDock!.props('variant')).toBe('inline');
+    mediaDock!.vm.$emit('expand');
+    await nextTick();
+
+    expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(false);
+    expect(findByTitle(wrapper, 'Chamada')!.props('open')).toBe(true);
+    expect(wrapper.find('.media-bar').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('fecha o chat quando o histórico abre', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    findStub(wrapper, 'ChatToggle')!.vm.$emit('toggle');
+    await nextTick();
+    expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(true);
+
+    await wrapper.find('.dm-panel__dock .log-toggle-btn').trigger('click');
+    await nextTick();
+
+    expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(false);
+    expect(findStub(wrapper, 'HistoryDrawer')!.props('open')).toBe(true);
     wrapper.unmount();
   });
 });

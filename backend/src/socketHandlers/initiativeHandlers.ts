@@ -219,7 +219,7 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
     });
   };
 
-  // Remove entrada específica e deleta token associado (se houver). Apenas Mestre.
+  // Remove entrada da iniciativa sem apagar o token associado. Apenas Mestre.
   const requestRemoveFromInitiative = async (payload: unknown, ackArg?: unknown) => {
     const ack = extractAck(ackArg);
     await runAction({
@@ -237,10 +237,10 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         assertEntityBelongsToTable(table._id.toString(), data.tableId);
         assertUserIsDM(userId, table);
 
-        const { initiative, removedTokenId } = await removeInitiativeEntry(
+        const { initiative } = await removeInitiativeEntry(
           scene._id.toString(),
           data.initiativeEntryId,
-          true
+          false
         );
         const revision = await bumpRevision(data.tableId);
 
@@ -251,12 +251,8 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
           entryId: data.initiativeEntryId,
           order: serializeOrder(initiative),
         });
-        if (removedTokenId) {
-          io.to(data.tableId).emit('tokenRemoved', { tokenId: removedTokenId, revision });
-        }
 
         const changes: SessionPatchChanges = { initiative: initiative.map(mapInitiativeEntry) };
-        if (removedTokenId) changes.tokensRemoved = [removedTokenId];
         return { tableId: data.tableId, revision, changes };
       },
     });

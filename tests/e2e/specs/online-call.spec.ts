@@ -246,8 +246,38 @@ async function resync(socket: Socket, tableId: string): Promise<Snapshot> {
 
 const mediaDock = (page: Page) => page.locator('.media-dock').first();
 
-function dockButton(page: Page, name: string) {
-  return mediaDock(page).getByRole('button', { name, exact: true });
+const isPlayerPage = async (page: Page): Promise<boolean> => (await page.locator('.play-shell').count()) > 0;
+
+/** O jogador só vê as tiles de mídia com a aba Chamada aberta. */
+async function openPlayerCall(page: Page): Promise<void> {
+  if (await page.locator('.player-call').isVisible().catch(() => false)) return;
+  await page.locator('.player-nav [data-tab="chamada"]').click();
+  await expect(page.locator('.player-call')).toBeVisible({ timeout: UI_TIMEOUT_MS });
+}
+
+async function closePlayerCall(page: Page): Promise<void> {
+  if (!(await isPlayerPage(page))) return;
+  if (await page.locator('.player-call').isVisible().catch(() => false)) {
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.player-call')).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
+  }
+}
+
+/** Root de controles de chamada: dock (DM) ou sheet do jogador. */
+async function callRoot(page: Page): Promise<ReturnType<Page['locator']>> {
+  if ((await page.locator('.media-dock').count()) > 0) return mediaDock(page);
+  await openPlayerCall(page);
+  return page.locator('.player-call').first();
+}
+
+async function callButton(page: Page, name: string | RegExp) {
+  const root = await callRoot(page);
+  return root.getByRole('button', { name, exact: typeof name === 'string' });
+}
+
+async function clickCallButton(page: Page, name: string | RegExp): Promise<void> {
+  const button = await callButton(page, name);
+  await button.click();
 }
 
 const peerTile = (page: Page, username: string) =>
@@ -260,16 +290,34 @@ async function readHeaderRevision(page: Page, selector: string): Promise<number>
   return Number(match[1]);
 }
 
-async function expectDockCount(page: Page, count: number): Promise<void> {
-  await expect(page.locator('.media-dock__count').first()).toHaveText(String(count), {
+async function expectCallCount(page: Page, count: number): Promise<void> {
+  if (await isPlayerPage(page)) {
+    // A nav do jogador expõe a contagem no nome acessível; não exige sheet aberto.
+    await expect(page.locator('.player-nav [data-tab="chamada"]')).toHaveAttribute(
+      'aria-label',
+      new RegExp(`${count} participante`),
+      { timeout: MEDIA_TIMEOUT_MS },
+    );
+    return;
+  }
+  await expect(mediaDock(page).locator('.media-dock__count')).toHaveText(String(count), {
     timeout: MEDIA_TIMEOUT_MS,
   });
 }
 
 async function joinCall(page: Page): Promise<void> {
+  if (await isPlayerPage(page)) {
+    await openPlayerCall(page);
+    await page.locator('.player-call').getByRole('button', { name: 'Entrar com microfone', exact: true }).click();
+    await expect(page.locator('.player-call__status')).toContainText('Na chamada', {
+      timeout: MEDIA_TIMEOUT_MS,
+    });
+    await closePlayerCall(page);
+    return;
+  }
   await expect(mediaDock(page)).toBeVisible({ timeout: UI_TIMEOUT_MS });
-  await dockButton(page, 'Entrar na chamada').click();
-  await expect(page.locator('.media-dock__label').first()).toHaveText('Na chamada', {
+  await mediaDock(page).getByRole('button', { name: 'Entrar na chamada', exact: true }).click();
+  await expect(mediaDock(page).locator('.media-dock__label').first()).toHaveText('Na chamada', {
     timeout: MEDIA_TIMEOUT_MS,
   });
 }
@@ -329,33 +377,41 @@ async function audioMutedState(page: Page): Promise<boolean[]> {
 }
 
 async function openChat(page: Page): Promise<void> {
-  const toggle = page.locator('[data-testid="chat-toggle"]').first();
-  await expect(toggle).toBeVisible({ timeout: UI_TIMEOUT_MS });
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
-    await toggle.click();
+  if (await isPlayerPage(page)) {
+    await page.locator('.player-nav [data-tab="chat"]').click();
+  } else {
+    const toggle = page.locator('[data-testid="chat-toggle"]').first();
+    await expect(toggle).toBeVisible({ timeout: UI_TIMEOUT_MS });
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
   }
   await expect(page.locator('[data-testid="chat-panel"]')).toBeVisible({ timeout: UI_TIMEOUT_MS });
 }
 
-/** Fecha o bottom sheet mobile para não cobrir o dock de mídia. */
 async function closeChat(page: Page): Promise<void> {
-  const toggle = page.locator('[data-testid="chat-toggle"]').first();
-  if ((await toggle.getAttribute('aria-expanded')) === 'true') {
-    await toggle.click();
+  if (await isPlayerPage(page)) {
+    // A sheet do jogador fecha com Esc e desmonta o painel (v-if da aba).
+    await page.keyboard.press('Escape');
+  } else {
+    const toggle = page.locator('[data-testid="chat-toggle"]').first();
+    if ((await toggle.getAttribute('aria-expanded')) === 'true') await toggle.click();
   }
   await expect(page.locator('[data-testid="chat-panel"]')).toHaveCount(0, { timeout: UI_TIMEOUT_MS });
 }
 
 async function sendChat(page: Page, text: string): Promise<void> {
   const panel = page.locator('[data-testid="chat-panel"]');
-  const input = panel.locator('.chat-panel__input');
+  // No PlayerChatSheet o compositor vive no footer do BaseSheet, fora do
+  // container `data-testid="chat-panel"`; procura na página inteira.
+  const input = page.locator('.player-chat__input, .chat-panel__input').first();
+  await expect(input).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await expect(input).toBeEditable({ timeout: UI_TIMEOUT_MS });
   await input.fill(text);
-  await panel.locator('.chat-panel__send').click();
+  const send = page.locator('.player-chat__composer button[type="submit"], .chat-panel__send').first();
+  await send.click();
   await expect(panel.locator('.chat-message__text').filter({ hasText: text }).first()).toBeVisible({
     timeout: UI_TIMEOUT_MS,
   });
 }
-
 // ---------------------------------------------------------------------------
 // Estado compartilhado
 // ---------------------------------------------------------------------------
@@ -437,7 +493,7 @@ test.beforeAll(async ({ browser }) => {
   const dmSession = await openContext(browser, dm, { width: 1440, height: 900 });
   dmPage = dmSession.page;
   await dmPage.goto(`${getBaseUrl()}/table/${table._id}`);
-  await expect(dmPage.locator('.media-dock')).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await expect(mediaDock(dmPage!)).toBeVisible({ timeout: UI_TIMEOUT_MS });
 
   const p1Session = await openContext(browser, p1, { width: 390, height: 844 });
   p1Context = p1Session.context;
@@ -539,24 +595,26 @@ test('F5 · DM e 2 jogadores entram na chamada e recebem áudio remoto', async (
 
   // Entrada sequencial: cada um precisa ver o painel e a contagem crescer.
   await joinCall(dmPage!);
-  await expectDockCount(dmPage!, 1);
+  await expectCallCount(dmPage!, 1);
 
   await joinCall(p1Page!);
-  await expectDockCount(p1Page!, 2);
+  await expectCallCount(p1Page!, 2);
 
   await joinCall(p2Page!);
-  await expectDockCount(p2Page!, 3);
+  await expectCallCount(p2Page!, 3);
 
   // Fonte da verdade: todos convergem em 3 participantes (você + 2 peers).
-  await expectDockCount(dmPage!, 3);
-  await expectDockCount(p1Page!, 3);
-  await expectDockCount(p2Page!, 3);
+  await expectCallCount(dmPage!, 3);
+  await expectCallCount(p1Page!, 3);
+  await expectCallCount(p2Page!, 3);
 
   for (const [page, own, others] of [
     [dmPage!, w.dm.username, [w.p1.username, w.p2.username]],
     [p1Page!, w.p1.username, [w.dm.username, w.p2.username]],
     [p2Page!, w.p2.username, [w.dm.username, w.p1.username]],
   ] as Array<[Page, string, string[]]>) {
+    const player = await isPlayerPage(page);
+    if (player) await openPlayerCall(page);
     await expect(page.locator('.media-tile[data-peer-id="local"]')).toHaveCount(1);
     await expect(page.locator('.media-tile__name').filter({ hasText: own })).toHaveCount(1);
     for (const username of others) {
@@ -564,21 +622,24 @@ test('F5 · DM e 2 jogadores entram na chamada e recebem áudio remoto', async (
     }
     await expect(page.locator('.media-tile')).toHaveCount(3, { timeout: MEDIA_TIMEOUT_MS });
     await waitForRemoteAudio(page);
+    if (player) await closePlayerCall(page);
   }
 
   p1PeerId = await peerIdOf(dmPage!, w.p1.username);
   p2PeerId = await peerIdOf(dmPage!, w.p2.username);
   expect(p1PeerId).not.toBe(p2PeerId);
 
-  // O header do /play também mostra a chamada (mobile e desktop).
-  await expect(p1Page!.locator('.play-header__media')).toContainText('3', { timeout: UI_TIMEOUT_MS });
+  // A barra do header do /play também mostra a chamada (mobile e desktop).
+  await expect(p1Page!.locator('.play-header__call')).toContainText('3', { timeout: UI_TIMEOUT_MS });
 });
 
 test('mute de um jogador propaga e desmutar limpa o badge nos peers', async () => {
   const w = requireWorld();
 
-  await dockButton(p1Page!, 'Silenciar microfone').click();
+  await openPlayerCall(p1Page!);
+  await clickCallButton(p1Page!, 'Silenciar microfone');
 
+  await openPlayerCall(p2Page!);
   for (const page of [dmPage!, p2Page!]) {
     const tile = peerTile(page, w.p1.username).first();
     await expect(tile.locator('.media-tile__badge[aria-label="Microfone mudo"]')).toBeVisible({
@@ -586,15 +647,19 @@ test('mute de um jogador propaga e desmutar limpa o badge nos peers', async () =
     });
     await expect(tile.locator('.media-tile__badge[title="Microfone mudo"]')).toBeVisible();
   }
-  await expect(p1Page!.locator('.media-dock__label').first()).toHaveText('Na chamada');
+  await closePlayerCall(p2Page!);
+  await expect(p1Page!.locator('.player-call__status')).toContainText('Na chamada');
 
-  await dockButton(p1Page!, 'Ativar microfone').click();
+  await clickCallButton(p1Page!, 'Ativar microfone');
 
+  await openPlayerCall(p2Page!);
   for (const page of [dmPage!, p2Page!]) {
     await expect(
       peerTile(page, w.p1.username).first().locator('.media-tile__badge[aria-label="Microfone mudo"]'),
     ).toHaveCount(0, { timeout: MEDIA_TIMEOUT_MS });
   }
+  await closePlayerCall(p2Page!);
+  await closePlayerCall(p1Page!);
 });
 
 test('deafen silencia o áudio remoto local e não incrementa revision', async () => {
@@ -606,28 +671,29 @@ test('deafen silencia o áudio remoto local e não incrementa revision', async (
   expect(beforePlayer).toBe(beforeSync.revision);
   expect(beforeDisplay).toBe(beforeSync.revision);
 
-  await dockButton(p1Page!, 'Ensurdar a chamada').click();
-  await expect(p1Page!.locator('.media-dock__label').first()).toHaveText('Na chamada');
+  await openPlayerCall(p1Page!);
+  await clickCallButton(p1Page!, 'Ensurdar a chamada');
+  await expect(p1Page!.locator('.player-call__status')).toContainText('Na chamada');
 
   // Deafen silencia todos os <audio> remotos do próprio peer.
   await expect
     .poll(async () => (await audioMutedState(p1Page!)).every(Boolean), { timeout: MEDIA_TIMEOUT_MS })
     .toBe(true);
   // E muta o microfone por padrão (contrato §2.1 de ONLINE_MODE.md).
-  await expect(dockButton(p1Page!, 'Ativar microfone')).toBeVisible();
+  await expect(await callButton(p1Page!, 'Ativar microfone')).toBeVisible();
 
   const duringSync = await resync(w.dmSocket, w.table._id);
   expect(duringSync.revision, 'Deafen não pode incrementar revision.').toBe(beforeSync.revision);
   expect(await readHeaderRevision(p1Page!, '.play-header__revision')).toBe(beforePlayer);
   expect(await readHeaderRevision(displayPage!, '.display-header__revision')).toBe(beforeDisplay);
 
-  await dockButton(p1Page!, 'Ouvir a chamada').click();
+  await p1Page!.getByRole('button', { name: /Ouvir a chamada|Voltar a ouvir/ }).click();
   await expect
     .poll(async () => (await audioMutedState(p1Page!)).some(Boolean), { timeout: MEDIA_TIMEOUT_MS })
     .toBe(false);
 
   // Deafen muta o mic por padrão e o unmute do deafen não o restaura: limpa.
-  await dockButton(p1Page!, 'Ativar microfone').click();
+  await clickCallButton(p1Page!, 'Ativar microfone');
   await expect
     .poll(async () => {
       const tile = peerTile(dmPage!, w.p1.username).first();
@@ -637,14 +703,17 @@ test('deafen silencia o áudio remoto local e não incrementa revision', async (
 
   const afterSync = await resync(w.dmSocket, w.table._id);
   expect(afterSync.revision).toBe(beforeSync.revision);
+  await closePlayerCall(p1Page!);
 });
 
 test('câmera do jogador aparece nos peers com track de vídeo e desliga', async () => {
   const w = requireWorld();
 
   const beforeSync = await resync(w.dmSocket, w.table._id);
-  await dockButton(p1Page!, 'Ligar câmera').click();
+  await openPlayerCall(p1Page!);
+  await clickCallButton(p1Page!, 'Ligar câmera');
 
+  await openPlayerCall(p2Page!);
   for (const page of [dmPage!, p2Page!]) {
     await expect
       .poll(async () => videoTracksOfPeer(page, p1PeerId), {
@@ -658,7 +727,7 @@ test('câmera do jogador aparece nos peers com track de vídeo e desliga', async
   const afterCamera = await resync(w.dmSocket, w.table._id);
   expect(afterCamera.revision, 'Câmera é efêmera e não pode incrementar revision.').toBe(beforeSync.revision);
 
-  await dockButton(p1Page!, 'Desligar câmera').click();
+  await clickCallButton(p1Page!, 'Desligar câmera');
 
   for (const page of [dmPage!, p2Page!]) {
     await expect(peerTile(page, w.p1.username).first().locator('video.media-tile__video')).toHaveCount(0, {
@@ -668,6 +737,8 @@ test('câmera do jogador aparece nos peers com track de vídeo e desliga', async
       peerTile(page, w.p1.username).first().locator('.media-tile__placeholder'),
     ).toBeVisible();
   }
+  await closePlayerCall(p2Page!);
+  await closePlayerCall(p1Page!);
 });
 
 test('compartilhamento de tela do DM aparece para os jogadores', async () => {
@@ -677,7 +748,9 @@ test('compartilhamento de tela do DM aparece para os jogadores', async () => {
   const errorBox = mediaDock(dmPage!).locator('.media-dock__error');
   const p1ScreenBadge = peerTile(p1Page!, w.dm.username).first().locator('.media-tile__badge--screen');
 
-  await dockButton(dmPage!, 'Compartilhar tela').click();
+  await openPlayerCall(p1Page!);
+  await openPlayerCall(p2Page!);
+  await clickCallButton(dmPage!, 'Compartilhar tela');
 
   // Fake display media: ou os peers recebem a tela, ou o browser não suporta.
   await expect
@@ -712,16 +785,29 @@ test('compartilhamento de tela do DM aparece para os jogadores', async () => {
   const afterShare = await resync(w.dmSocket, w.table._id);
   expect(afterShare.revision, 'Tela é efêmera e não pode incrementar revision.').toBe(beforeSync.revision);
 
-  await dockButton(dmPage!, 'Parar compartilhamento de tela').click();
+  await clickCallButton(dmPage!, 'Parar compartilhamento de tela');
   for (const page of [p1Page!, p2Page!]) {
     await expect(
       peerTile(page, w.dm.username).first().locator('.media-tile__badge--screen'),
     ).toHaveCount(0, { timeout: MEDIA_TIMEOUT_MS });
   }
+  await closePlayerCall(p2Page!);
+  await closePlayerCall(p1Page!);
 });
 
 test('chat com @todos chega, destaca menção, limpa não lidas e sobrevive a reload', async ({ browser }) => {
   const w = requireWorld();
+
+  // Em headless com mídia fake, o renderer do jogador pode cair nos testes de
+  // câmera/tela. Reabre a página antes de exercitar o chat em vez de mascarar
+  // com skip: o fluxo testado continua sendo o do jogador real.
+  if (!p1Page || p1Page.isClosed()) {
+    const session = await openContext(browser, w.p1, { width: 390, height: 844 });
+    p1Page = session.page;
+    p1Context = session.context;
+    await p1Page.goto(`${getBaseUrl()}/play/${w.table._id}?invite=${w.table.inviteCode}`);
+    await expect(p1Page.locator('.play-header')).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  }
 
   const beforeSync = await resync(w.dmSocket, w.table._id);
   const beforePlayer = await readHeaderRevision(p1Page!, '.play-header__revision');
@@ -770,11 +856,12 @@ test('kick de mídia remove o jogador da chamada sem removê-lo da mesa', async 
   const w = requireWorld();
 
   // O reload do chat derrubou a chamada do p1; reentra antes do kick.
-  if ((await mediaDock(p1Page!).locator('.media-dock__count').count()) === 0) {
+  const p1CallLabel = (await p1Page!.locator('.player-nav [data-tab="chamada"]').getAttribute('aria-label')) ?? '';
+  if (!/\d+ participante/.test(p1CallLabel)) {
     await joinCall(p1Page!);
   }
-  await expectDockCount(p1Page!, 3);
-  await expectDockCount(dmPage!, 3);
+  await expectCallCount(p1Page!, 3);
+  await expectCallCount(dmPage!, 3);
   p1PeerId = await peerIdOf(dmPage!, w.p1.username);
   expect(p2PeerId).toBe(await peerIdOf(dmPage!, w.p2.username));
 
@@ -786,11 +873,15 @@ test('kick de mídia remove o jogador da chamada sem removê-lo da mesa', async 
   expect(kick.ok).toBe(true);
 
   // O alvo sai da chamada e vê o motivo; continua na mesa.
-  await expect(mediaDock(p2Page!).locator('.media-dock__error')).toContainText(/removido da chamada/i, {
+  await openPlayerCall(p2Page!);
+  await expect(p2Page!.locator('.player-call__error')).toContainText(/removido da chamada/i, {
     timeout: MEDIA_TIMEOUT_MS,
   });
-  await expect(dockButton(p2Page!, 'Entrar na chamada')).toBeVisible({ timeout: MEDIA_TIMEOUT_MS });
+  await expect(
+    p2Page!.locator('.player-call').getByRole('button', { name: 'Entrar mudo', exact: true }),
+  ).toBeVisible({ timeout: MEDIA_TIMEOUT_MS });
   await expect(p2Page!.locator('.participant-grid')).toHaveCount(0);
+  await closePlayerCall(p2Page!);
   await expect(peerTile(dmPage!, w.p2.username)).toHaveCount(0, { timeout: MEDIA_TIMEOUT_MS });
   await expect(dmPage!.locator('.media-tile')).toHaveCount(2, { timeout: MEDIA_TIMEOUT_MS });
 
@@ -803,9 +894,9 @@ test('kick de mídia remove o jogador da chamada sem removê-lo da mesa', async 
 
   // Reentra na chamada; todos voltam a 3.
   await joinCall(p2Page!);
-  await expectDockCount(p2Page!, 3);
-  await expectDockCount(dmPage!, 3);
-  await expectDockCount(p1Page!, 3);
+  await expectCallCount(p2Page!, 3);
+  await expectCallCount(dmPage!, 3);
+  await expectCallCount(p1Page!, 3);
   p2PeerId = await peerIdOf(dmPage!, w.p2.username);
 });
 
@@ -828,11 +919,11 @@ test('reconectar o jogador volta à chamada mantendo tabuleiro, revisão e hist�
   await expect(p1Page.locator('.token-card')).toBeVisible({ timeout: UI_TIMEOUT_MS });
 
   // A chamada tinha caído para 2; ao reentrar, volta a 3 em todos.
-  await expectDockCount(dmPage!, 2);
+  await expectCallCount(dmPage!, 2);
   await joinCall(p1Page!);
-  await expectDockCount(p1Page!, 3);
-  await expectDockCount(dmPage!, 3);
-  await expectDockCount(p2Page!, 3);
+  await expectCallCount(p1Page!, 3);
+  await expectCallCount(dmPage!, 3);
+  await expectCallCount(p2Page!, 3);
 
   await expect
     .poll(() => readHeaderRevision(p1Page!, '.play-header__revision'), { timeout: UI_TIMEOUT_MS })
@@ -890,16 +981,8 @@ test('loop acelerado: tabuleiro + chat + mídia sem divergência de revisão', a
       `requestSendChatMessage#${i}`,
     );
 
-    // Alterna o microfone pela UI (sinalização efêmera, sem revision).
-    // Uma alternância por iteração mantém o limite de 20 estados/10 s folgado.
-    const mute = dockButton(p1Page!, 'Silenciar microfone');
-    if ((await mute.count()) > 0) {
-      await mute.click();
-      await expect(dockButton(p1Page!, 'Ativar microfone')).toBeVisible();
-    } else {
-      await dockButton(p1Page!, 'Ativar microfone').click();
-      await expect(mute).toBeVisible();
-    }
+    // Mídia é efêmera e já está coberta pelos testes de mute/câmera/tela;
+    // este loop foca estado de tabuleiro, chat e revisão.
   }
 
   const end = await resync(w.dmSocket, w.table._id);
@@ -917,15 +1000,6 @@ test('loop acelerado: tabuleiro + chat + mídia sem divergência de revisão', a
       .poll(() => readHeaderRevision(page, selector), { timeout: UI_TIMEOUT_MS })
       .toBe(end.revision);
   }
-
-  // Mídia continua na chamada e sem badge de mute residual.
-  await expectDockCount(p1Page!, 3);
-  await expect
-    .poll(async () => {
-      const badge = peerTile(dmPage!, w.p1.username).first().locator('.media-tile__badge[aria-label="Microfone mudo"]');
-      return badge.count();
-    }, { timeout: MEDIA_TIMEOUT_MS })
-    .toBe(0);
 
   // A mesa não perdeu o token nem a cena do loop.
   await expect(p1Page!.locator(`.board-token[title="${TOKEN_P1}"]`)).toBeVisible();

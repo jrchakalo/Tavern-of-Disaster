@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 import Icon from './Icon.vue';
+import BaseDialog from './ui/BaseDialog.vue';
 import type { IInitiativeEntry, TokenInfo, PlayerInfo } from '../types';
 
 interface Props {
@@ -11,8 +12,15 @@ interface Props {
   currentUser: PlayerInfo | null;
   isDM: boolean;
   myActiveToken: TokenInfo | null; // token do usuário cujo turno está ativo
+  /** Dentro do painel dockado: sem moldura própria. */
+  embedded?: boolean;
+  /** Rodada derivada da sessão (quando conhecida). */
+  round?: number | null;
 }
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  embedded: false,
+  round: null,
+});
 
 // Local lista mutável para drag (evita mutar prop readonly)
 const localList = ref<IInitiativeEntry[]>([...props.initiativeList]);
@@ -28,6 +36,8 @@ const emit = defineEmits<{
   (e: 'remove-entry', entryId: string): void;
   (e: 'reorder', newOrder: IInitiativeEntry[]): void;
   (e: 'open-character-sheet', characterId: string): void;
+  (e: 'reset-initiative'): void;
+  (e: 'add-token'): void;
 }>();
 
 function tokenFor(entry: IInitiativeEntry): TokenInfo | null {
@@ -56,27 +66,52 @@ function toggleCollapse() {
 function handleDragEnd() {
   emit('reorder', [...localList.value]);
 }
+
+const confirmResetOpen = ref(false);
+function confirmReset() {
+  confirmResetOpen.value = false;
+  emit('reset-initiative');
+}
 </script>
 
 <template>
-  <div class="initiative-panel" :class="{ collapsed }">
+  <div class="initiative-panel" :class="{ collapsed, embedded }">
     <div class="panel-header">
-      <h3>Iniciativa</h3>
+      <div class="panel-title">
+        <h3>Iniciativa</h3>
+        <span v-if="round && round > 0" class="round-badge">Rodada {{ round }}</span>
+      </div>
       <!-- DM controls -->
       <div class="header-right" v-if="isDM">
         <div class="actions">
-          <button @click="emit('undo-move')" :disabled="!enriched.some(i => i.entry.isCurrentTurn && i.token)">Desfazer</button>
-          <button class="next-btn" aria-label="Próximo turno" @click="emit('next-turn')">Próximo Turno ➤</button>
+          <button
+            type="button"
+            class="btn btn-xs btn-ghost"
+            :disabled="!enriched.some(i => i.entry.isCurrentTurn && i.token)"
+            @click="emit('undo-move')"
+          >Desfazer</button>
+          <button
+            class="btn btn-xs next-btn"
+            type="button"
+            aria-label="Passar turno"
+            @click="emit('next-turn')"
+          >Passar turno</button>
+          <button
+            v-if="enriched.length"
+            type="button"
+            class="btn btn-xs btn-danger-outline"
+            @click="confirmResetOpen = true"
+          >Resetar</button>
         </div>
       </div>
       <!-- Player controls + collapse toggle -->
       <div class="header-right" v-else>
-        <button class="collapse-btn" @click="toggleCollapse" :title="collapsed ? 'Expandir' : 'Minimizar'">
+        <button class="collapse-btn" type="button" @click="toggleCollapse" :aria-label="collapsed ? 'Expandir iniciativa' : 'Minimizar iniciativa'" :aria-expanded="!collapsed">
           <Icon :name="collapsed ? 'plus' : 'minus'" size="18" />
         </button>
         <div class="actions" v-if="isMyTurn && !collapsed">
-          <button @click="emit('undo-move')">Desfazer</button>
-          <button class="next-btn" aria-label="Encerrar turno" @click="emit('next-turn')">Encerrar Turno</button>
+          <button type="button" class="btn btn-xs btn-ghost" @click="emit('undo-move')">Desfazer</button>
+          <button class="btn btn-xs next-btn" type="button" aria-label="Encerrar turno" @click="emit('next-turn')">Encerrar turno</button>
         </div>
       </div>
     </div>
@@ -92,8 +127,8 @@ function handleDragEnd() {
         <div class="entry" :class="{ active: entry.isCurrentTurn }">
           <div class="top-row">
             <div class="left">
-              <span class="drag-handle" title="Arrastar"><Icon name="drag" size="14" /></span>
-              <span class="dot" :style="{ background: tokenFor(entry)?.color || 'var(--color-text-muted)' }" />
+              <span class="drag-handle" aria-hidden="true"><Icon name="drag" size="14" /></span>
+              <span class="dot" :style="{ background: tokenFor(entry)?.color || 'var(--text-faint)' }" />
               <button
                 v-if="entry.characterId"
                 type="button"
@@ -104,10 +139,21 @@ function handleDragEnd() {
               </button>
               <strong v-else class="character-name">{{ entry.characterName }}</strong>
               <span v-if="tokenFor(entry)" class="size">{{ tokenFor(entry)?.size }}</span>
+              <span v-if="entry.isCurrentTurn" class="turn-badge">Em turno</span>
             </div>
             <div class="row-actions" v-if="tokenFor(entry)">
-              <button title="Editar" @click="emit('edit-token', tokenFor(entry)!._id)"><Icon name="wrench" size="16" /></button>
-              <button title="Remover" @click="emit('remove-entry', entry._id)"><Icon name="delete" size="16" /></button>
+              <button
+                type="button"
+                class="action-link"
+                :aria-label="`Editar token ${entry.characterName}`"
+                @click="emit('edit-token', tokenFor(entry)!._id)"
+              >Editar</button>
+              <button
+                type="button"
+                class="action-link"
+                :aria-label="`Remover do turno: ${entry.characterName} (o token permanece no mapa)`"
+                @click="emit('remove-entry', entry._id)"
+              >Remover do turno</button>
             </div>
           </div>
           <div v-if="tokenFor(entry)" class="movement" >
@@ -125,11 +171,11 @@ function handleDragEnd() {
       </template>
     </draggable>
 
-  <div v-else class="entries" v-show="!collapsed">
+    <div v-else class="entries" v-show="!collapsed">
       <div v-for="item in enriched" :key="item.entry._id" class="entry" :class="{ active: item.entry.isCurrentTurn }">
         <div class="top-row">
           <div class="left">
-            <span class="dot" :style="{ background: item.token?.color || 'var(--color-text-muted)' }" />
+            <span class="dot" :style="{ background: item.token?.color || 'var(--text-faint)' }" />
             <button
               v-if="item.entry.characterId"
               type="button"
@@ -158,76 +204,179 @@ function handleDragEnd() {
       </div>
     </div>
 
-    <p v-if="!enriched.length && !collapsed" class="empty">Sem entradas de iniciativa.</p>
+    <div v-if="!enriched.length && !collapsed" class="empty">
+      <p>Sem entradas de iniciativa.</p>
+      <button v-if="isDM" type="button" class="btn btn-xs" @click="emit('add-token')">
+        <Icon name="plus" :size="14" />
+        Token
+      </button>
+    </div>
+
+    <BaseDialog
+      :open="confirmResetOpen"
+      title="Resetar combate?"
+      @update:open="confirmResetOpen = $event"
+      @close="confirmResetOpen = false"
+    >
+      <p class="confirm-copy">
+        Todas as entradas saem do turno e as medições da cena são limpas. Os tokens
+        permanecem no mapa e podem voltar ao turno depois.
+      </p>
+      <div class="confirm-actions">
+        <button type="button" class="btn btn-sm" @click="confirmResetOpen = false">Cancelar</button>
+        <button type="button" class="btn btn-sm danger" @click="confirmReset">Resetar combate</button>
+      </div>
+    </BaseDialog>
   </div>
 </template>
 
 <style scoped>
 .initiative-panel {
-  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt));
-  border: 1px solid var(--color-border);
-  padding: 12px 14px;
-  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: var(--s-4);
+  border-radius: var(--radius-md);
   width: min(340px, 100%);
-  color: var(--color-text);
+  color: var(--text);
   font-family: var(--font-sans);
-  backdrop-filter: blur(4px);
 }
-.initiative-panel.collapsed {
-  padding-bottom: 8px;
+.initiative-panel.embedded {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
-.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.panel-header h3 { margin: 0; font-size: 1.05rem; color: var(--color-accent); font-family: var(--font-display); letter-spacing: .5px; }
-.header-right { display: flex; align-items: center; gap: 6px; }
-.collapse-btn { background: var(--color-surface-alt); color: var(--color-accent); border:1px solid var(--color-border); border-radius:4px; cursor:pointer; width:30px; height:28px; font-size:1rem; line-height:1; display:flex; align-items:center; justify-content:center; transition: background var(--transition-fast); }
-.collapse-btn:hover { background: var(--color-surface); }
-.actions { display: flex; gap: 8px; }
-.actions button { padding: 6px 10px; background: var(--color-surface-alt); color: var(--color-text); border:1px solid var(--color-border); border-radius:4px; cursor:pointer; font-size:0.7rem; letter-spacing:.5px; font-weight:500; transition: background var(--transition-fast), color var(--transition-fast); }
-.actions button:hover { background: var(--color-surface); }
-.actions .next-btn { background: var(--color-accent); border-color: var(--color-border-strong); color: var(--color-text); font-weight:600; }
-.actions .next-btn:hover { background: var(--color-accent-alt); }
-.entries { display:flex; flex-direction:column; gap:6px; max-height:360px; overflow-y:auto; }
-.entry { background: var(--color-surface); border:1px solid var(--color-border); }
-.entry.active { border-color: var(--color-success); box-shadow:0 0 0 1px var(--color-success), 0 0 8px rgba(79 160 109 / .55); }
-.entry .my-turn-badge { margin-left: 6px; padding: 2px 6px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; color: var(--color-text); border:1px solid var(--color-border); background: linear-gradient(90deg, rgba(18,194,233,0.18), rgba(196,113,237,0.18)); }
-.top-row { display:flex; justify-content:space-between; align-items:center; }
-.left { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.dot { width:14px; height:14px; border-radius:50%; box-shadow:0 0 4px rgba(0 0 0 / 0.5); }
+.initiative-panel.collapsed { padding-bottom: var(--s-3); }
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-bottom: var(--s-4);
+}
+.panel-title { display: flex; align-items: baseline; gap: var(--s-3); }
+.panel-header h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+.round-badge {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+}
+.header-right { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
+  cursor: pointer;
+}
+.collapse-btn:hover { background: var(--raised-2); }
+.actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+.entries { display: flex; flex-direction: column; gap: var(--s-2); max-height: 340px; overflow-y: auto; }
+.entry {
+  padding: var(--s-3);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.entry.active { border-color: var(--success); box-shadow: inset 3px 0 0 var(--success); }
+.turn-badge {
+  padding: 1px 6px;
+  border: 1px solid rgb(92 155 133 / 0.45);
+  border-radius: var(--radius-xs);
+  color: var(--success-ink);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+.my-turn-badge {
+  padding: 1px 6px;
+  border: 1px solid var(--accent-ink);
+  border-radius: var(--radius-xs);
+  color: var(--accent-ink);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+.top-row { display: flex; justify-content: space-between; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+.left { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; min-width: 0; }
+.dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
 .character-link {
   background: none;
   border: none;
-  color: var(--color-accent-alt);
+  color: var(--accent-ink);
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   padding: 0;
   text-align: left;
 }
 .character-link:hover,
-.character-link:focus-visible {
-  color: var(--color-accent);
-  text-decoration: underline;
+.character-link:focus-visible { color: var(--text); text-decoration: underline; }
+.character-name { font-weight: 600; }
+.size {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
 }
-.character-name {
-  font-weight: 700;
+.movement { display: flex; flex-direction: column; gap: var(--s-1); margin-top: var(--s-2); }
+.bar-bg { width: 100%; height: 6px; background: var(--ink-0); border-radius: var(--radius-xs); overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent-ink); transition: width var(--dur-pop) var(--ease-out); }
+.numbers {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
 }
-.size { font-size:0.55rem; background: var(--color-surface-alt); padding:2px 6px; border-radius:12px; letter-spacing:0.5px; border:1px solid var(--color-border); text-transform:uppercase; }
-.movement { display:flex; flex-direction:column; gap:4px; }
-.bar-bg { width:100%; height:6px; background: #1f171b; border-radius:4px; overflow:hidden; box-shadow:inset 0 0 4px rgba(0 0 0 / 0.65); }
-.bar-fill { height:100%; background: var(--gradient-accent); transition: width 0.25s ease; }
-.numbers { font-size:0.6rem; display:flex; justify-content:space-between; color: var(--color-text-muted); }
-.row-actions { display:flex; gap:4px; }
-.row-actions button { background: transparent; border: 1px solid transparent; cursor:pointer; font-size:0.75rem; color: var(--color-text-muted); padding:2px 4px; border-radius:4px; transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast); }
-.row-actions button:hover { color: var(--color-text); background: var(--color-surface-alt); border-color: var(--color-border); }
-.drag-handle { cursor:grab; color: var(--color-text-muted); }
-.drag-handle:active { cursor:grabbing; }
-.empty { font-style:italic; color: var(--color-text-muted); margin:8px 0 0; }
+.row-actions { display: flex; gap: var(--s-1); flex-wrap: wrap; }
+.action-link {
+  min-height: 32px;
+  padding: 0 var(--s-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.action-link:hover { color: var(--text); background: var(--raised-2); border-color: var(--line); }
+.drag-handle { cursor: grab; color: var(--text-muted); display: inline-flex; }
+.drag-handle:active { cursor: grabbing; }
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.empty p { margin: 0; }
+.confirm-copy { margin: 0 0 var(--s-5); color: var(--text-muted); line-height: var(--leading-body); }
+.confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s-3); }
 
-@media (max-width: 900px) {
-  .initiative-panel { width: 100%; max-width: 320px; padding: 10px 12px; border-radius: 10px; }
-  .panel-header h3 { font-size: 0.95rem; }
-  .actions button { padding: 5px 8px; font-size: 0.65rem; }
+@media (max-width: 1023px) {
+  .initiative-panel { width: 100%; }
+  .initiative-panel:not(.embedded) { max-width: none; }
   .entries { max-height: 260px; }
-  .numbers { font-size: 0.55rem; }
+  .action-link { min-height: 44px; }
+  .initiative-panel .btn-xs { min-height: 44px; }
+  .character-link { min-height: 44px; padding: var(--s-2) 0; }
 }
 </style>

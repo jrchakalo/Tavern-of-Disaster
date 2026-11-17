@@ -28,7 +28,6 @@ import type {
   ChatSocketEventMap,
   ChatSocketEventName,
   MediaIceServersResponse,
-  MediaIcePayload,
   MediaIncomingIcePayload,
   MediaIncomingSignalPayload,
   MediaKickedPayload,
@@ -36,7 +35,6 @@ import type {
   MediaPeerJoinedPayload,
   MediaPeerLeftPayload,
   MediaRoomStatePayload,
-  MediaSignalPayload,
   MediaSocketEventMap,
   MediaSocketEventName,
   MediaStateUpdatedPayload,
@@ -960,7 +958,7 @@ class SocketService {
   }
 
   // Tokens
-  placeToken(payload: { tableId: string; sceneId: string; squareId: string; name: string; imageUrl?: string; movement: number; ownerId: string; size: TokenSize; }, ack?: (a: Ack) => void) {
+  placeToken(payload: { tableId: string; sceneId: string; squareId: string; name: string; imageUrl?: string; movement: number; ownerId?: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null; }, ack?: (a: Ack) => void) {
     return this.emitRequest('requestPlaceToken', payload, ack);
   }
 
@@ -972,8 +970,28 @@ class SocketService {
     return this.emitRequest('requestAssignToken', payload, ack);
   }
 
-  editToken(payload: { tableId: string; tokenId: string; name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean }, ack?: (a: Ack) => void) {
-    return this.emitRequest('requestEditToken', payload, ack);
+  editToken(
+    payload: {
+      tableId: string;
+      tokenId: string;
+      name?: string;
+      movement?: number;
+      imageUrl?: string;
+      ownerId?: string;
+      size?: string;
+      resetRemainingMovement?: boolean;
+      canOverlap?: boolean;
+      characterId?: string | null;
+    },
+    ack?: (a: Ack) => void,
+  ) {
+    const { tableId, tokenId, ...patch } = payload;
+    return this.emitRequest('requestEditToken', { tableId, tokenId, patch }, ack);
+  }
+
+  /** Exclui o token e a entrada de iniciativa associada (somente Mestre). */
+  deleteToken(payload: { tableId: string; tokenId: string }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestDeleteToken', payload, ack);
   }
 
   undoMove(tableId: string, tokenId: string, ack?: (a: Ack) => void) {
@@ -987,6 +1005,16 @@ class SocketService {
 
   removeFromInitiative(payload: { tableId: string; sceneId: string; initiativeEntryId: string; }, ack?: (a: Ack) => void) {
     return this.emitRequest('requestRemoveFromInitiative', payload, ack);
+  }
+
+  /** Adiciona um token já existente ao turno (somente Mestre). */
+  addTokenToInitiative(payload: { tableId: string; sceneId: string; tokenId: string; }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestAddCharacterToInitiative', payload, ack);
+  }
+
+  /** Limpa toda a iniciativa da cena e as medições (somente Mestre). */
+  resetInitiative(tableId: string, sceneId: string, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestResetInitiative', { tableId, sceneId }, ack);
   }
 
   editInitiativeEntry(payload: { tableId: string; sceneId: string; initiativeEntryId: string; newName: string; }, ack?: (a: Ack) => void) {
@@ -1086,13 +1114,19 @@ class SocketService {
     };
   }
 
-  private handleCharacterUpdated = (payload: CharacterLegacyUpdatedEvent) => {
-    const summary = this.summaryFromCharacterPayload(payload);
+  private handleCharacterUpdated = (
+    payload: CharacterLegacyUpdatedEvent & { character?: CharacterLegacyUpdatedEvent },
+  ) => {
+    // O backend emite `{ tableId, revision, characterId, character: summary }`;
+    // versões antigas emitiam a ficha plana. Normaliza os dois formatos para
+    // que a ficha aberta no DM/TV acompanhe PV/CA alterados por outro cliente.
+    const characterPayload = payload.character ?? payload;
+    const summary = this.summaryFromCharacterPayload(characterPayload);
     if (summary) {
       this.store.upsertCharacterSummary(summary);
     }
     try {
-      characterSyncHandler?.({ type: 'updated', character: payload });
+      characterSyncHandler?.({ type: 'updated', character: characterPayload });
     } catch {
       // Cache de fichas é best-effort; nunca quebra o handler de socket.
     }

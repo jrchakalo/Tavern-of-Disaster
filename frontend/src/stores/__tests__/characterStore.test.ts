@@ -116,8 +116,33 @@ describe('characterStore — mutações com socket e fallback REST', () => {
     expect(characterServiceMock.createCharacter).not.toHaveBeenCalled();
   });
 
-  it('createCharacter via socket sem ficha no ack refetcha a lista (best-effort)', async () => {
+  it('createCharacter envia ownerId no topo do payload do socket (Mestre)', async () => {
     socketServiceMock.isConnected.mockReturnValue(true);
+    socketServiceMock.createCharacter.mockResolvedValue({
+      ok: true, revision: 6, serverNowMs: 0, character: bruxa(),
+    });
+    const store = useCharacterStore();
+
+    await store.createCharacter('table-1', { name: 'Bruxa' }, 'u2');
+
+    expect(socketServiceMock.createCharacter).toHaveBeenCalledWith({
+      tableId: 'table-1',
+      character: { name: 'Bruxa' },
+      ownerId: 'u2',
+    });
+    expect(store.charactersForTable('table-1')).toHaveLength(1);
+  });
+
+  it('createCharacter sem socket não cria para outro dono (REST fixa o autor)', async () => {
+    const store = useCharacterStore();
+
+    await expect(store.createCharacter('table-1', { name: 'Bruxa' }, 'u2')).rejects.toThrow(
+      'Criar ficha para outra pessoa exige conexão em tempo real',
+    );
+    expect(characterServiceMock.createCharacter).not.toHaveBeenCalled();
+  });
+
+  it('createCharacter via socket sem ficha no ack refetcha a lista (best-effort)', async () => {    socketServiceMock.isConnected.mockReturnValue(true);
     socketServiceMock.createCharacter.mockResolvedValue({ ok: true, revision: 6, serverNowMs: 0 });
     characterServiceMock.getMyCharacters.mockResolvedValue([bruxa()]);
     const store = useCharacterStore();

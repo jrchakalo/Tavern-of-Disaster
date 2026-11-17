@@ -700,6 +700,140 @@ describe('realtime integration (2+ clients)', () => {
     const stored = await Table.findById(table._id);
     expect(stored?.activeScene?.toString()).toBe(firstScene._id.toString());
   });
+
+  it('16. remover da iniciativa preserva o token e não emite tokenRemoved', async () => {
+    const dm = await createUser('dm-remove-entry');
+    const { table, scene } = await createTableWithScene(dm._id, []);
+    const token = await createTokenFor({
+      tableId: table._id,
+      sceneId: scene._id,
+      ownerId: dm._id,
+      name: 'NPC preservado',
+    });
+    const seeded = await seedInitiative(scene._id, [{ name: 'NPC preservado', tokenId: token._id }]);
+    const entryId = seeded.initiative[0]._id.toString();
+
+    const client = await connectClient(signToken(dm));
+    await joinTable(client, table._id.toString());
+
+    const tokenRemovedEvents: unknown[] = [];
+    client.on('tokenRemoved', (payload: unknown) => tokenRemovedEvents.push(payload));
+
+    const patchPromise = onceEvent(client, 'sessionPatch');
+    const ack = await emitAck(client, 'requestRemoveFromInitiative', {
+      tableId: table._id.toString(),
+      sceneId: scene._id.toString(),
+      initiativeEntryId: entryId,
+    });
+    const patch = await patchPromise;
+
+    expect(ack.ok).toBe(true);
+    expect(ack.revision).toBe(1);
+    expect(patch.changes.initiative).toEqual([]);
+    expect(patch.changes.tokensRemoved).toBeUndefined();
+    expect(await Token.findById(token._id)).not.toBeNull();
+    expect((await Scene.findById(scene._id))!.initiative).toHaveLength(0);
+
+    await sleep(150);
+    expect(tokenRemovedEvents).toHaveLength(0);
+  });
+
+  it('17. requestDeleteToken apaga token + entrada, exige DM e incrementa a revisão uma vez', async () => {
+    const dm = await createUser('dm-delete-token');
+    const player = await createUser('player-delete-token');
+    const otherDm = await createUser('dm-delete-token-other');
+    const { table, scene } = await createTableWithScene(dm._id, [player._id]);
+    const { table: otherTable } = await createTableWithScene(otherDm._id, []);
+
+    const target = await createTokenFor({
+      tableId: table._id,
+      sceneId: scene._id,
+      ownerId: dm._id,
+      squareId: 'sq-0',
+      name: 'Alvo',
+    });
+    const survivor = await createTokenFor({
+      tableId: table._id,
+      sceneId: scene._id,
+      ownerId: dm._id,
+      squareId: 'sq-1',
+      name: 'Sobrevivente',
+    });
+    const seeded = await seedInitiative(scene._id, [
+      { name: 'Alvo', tokenId: target._id },
+      { name: 'Sobrevivente', tokenId: survivor._id },
+    ]);
+    const targetEntryId = seeded.initiative[0]._id.toString();
+
+    const dmClient = await connectClient(signToken(dm));
+    const playerClient = await connectClient(signToken(player));
+    const otherDmClient = await connectClient(signToken(otherDm));
+    await joinTable(dmClient, table._id.toString());
+    await joinTable(playerClient, table._id.toString());
+    await joinTable(otherDmClient, otherTable._id.toString());
+
+    const playerAttempt = await emitAck(playerClient, 'requestDeleteToken', {
+      tableId: table._id.toString(),
+      tokenId: target._id.toString(),
+    });
+    expect(playerAttempt.ok).toBe(false);
+    expect(playerAttempt.error.code).toBe('FORBIDDEN');
+    expect(await Token.findById(target._id)).not.toBeNull();
+
+    const crossTableAttempt = await emitAck(otherDmClient, 'requestDeleteToken', {
+      tableId: otherTable._id.toString(),
+      tokenId: target._id.toString(),
+    });
+    expect(crossTableAttempt.ok).toBe(false);
+    expect(crossTableAttempt.error.code).toBe('FORBIDDEN');
+    expect(await Token.findById(target._id)).not.toBeNull();
+
+    const spoofedTableAttempt = await emitAck(otherDmClient, 'requestDeleteToken', {
+      tableId: table._id.toString(),
+      tokenId: target._id.toString(),
+    });
+    expect(spoofedTableAttempt.ok).toBe(false);
+    expect(spoofedTableAttempt.error.code).toBe('FORBIDDEN');
+    expect(await Token.findById(target._id)).not.toBeNull();
+
+    const missingAttempt = await emitAck(dmClient, 'requestDeleteToken', {
+      tableId: table._id.toString(),
+      tokenId: new Types.ObjectId().toString(),
+    });
+    expect(missingAttempt.ok).toBe(false);
+    expect(missingAttempt.error.code).toBe('NOT_FOUND');
+    expect((await Table.findById(table._id))!.revision).toBe(0);
+
+    const tokenRemovedPromise = onceEvent(dmClient, 'tokenRemoved');
+    const entryRemovedPromise = onceEvent(dmClient, 'initiativeEntryRemoved');
+    const patchPromise = onceEvent(dmClient, 'sessionPatch');
+    const ack = await emitAck(dmClient, 'requestDeleteToken', {
+      tableId: table._id.toString(),
+      tokenId: target._id.toString(),
+    });
+    const [tokenRemoved, entryRemoved, patch] = await Promise.all([
+      tokenRemovedPromise,
+      entryRemovedPromise,
+      patchPromise,
+    ]);
+
+    expect(ack.ok).toBe(true);
+    expect(ack.revision).toBe(1);
+    expect(tokenRemoved).toMatchObject({ tokenId: target._id.toString(), revision: 1 });
+    expect(entryRemoved.entryId).toBe(targetEntryId);
+    expect(entryRemoved.order).toEqual([seeded.initiative[1]._id.toString()]);
+    expect(patch.changes.tokensRemoved).toEqual([target._id.toString()]);
+    expect(patch.changes.initiative.map((entry: any) => entry._id)).toEqual([
+      seeded.initiative[1]._id.toString(),
+    ]);
+
+    expect(await Token.findById(target._id)).toBeNull();
+    expect(await Token.findById(survivor._id)).not.toBeNull();
+    const storedScene = await Scene.findById(scene._id);
+    expect(storedScene!.initiative).toHaveLength(1);
+    expect(storedScene!.initiative[0].tokenId?.toString()).toBe(survivor._id.toString());
+    expect((await Table.findById(table._id))!.revision).toBe(1);
+  });
 });
 
 describe('advanceTurn CAS (turnVersion)', () => {

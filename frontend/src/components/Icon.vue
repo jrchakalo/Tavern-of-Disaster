@@ -1,15 +1,31 @@
+<!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts">
 import { computed } from 'vue';
 import { iconSet } from '../icons/iconSet';
 
-const props = defineProps<{ name: string; size?: number | string; stroke?: number | string; title?: string }>();
+const props = defineProps<{
+  name: string;
+  size?: number | string;
+  stroke?: number | string;
+  /** @deprecated use `label` para ícones com significado */
+  title?: string;
+  /** Nome acessível. Sem label/title o ícone é decorativo. */
+  label?: string;
+}>();
 
-// Simple inline icon library (stroke-based for scalability)
-// Add new icons here as needed.
-// Proxy to external iconSet for easier manual editing by user
-const paths = iconSet;
+const definition = computed(() => iconSet[props.name]);
+const box = computed(() => definition.value?.viewBox || '0 0 24 24');
 
-const box = computed(() => paths[props.name]?.viewBox || '0 0 24 24');
+// As entradas do iconSet carregam um <svg> completo. Extraímos apenas o miolo
+// para evitar <svg> aninhado e atributos duplicados (width, height, aria).
+const inner = computed(() => {
+  const raw = definition.value?.svg ?? '';
+  const match = raw.match(/<svg\b[^>]*>([\s\S]*)<\/svg>/i);
+  return (match ? match[1] : raw).trim();
+});
+
+const accessibleName = computed(() => props.label || props.title || '');
+const isDecorative = computed(() => accessibleName.value.length === 0);
 </script>
 
 <template>
@@ -19,13 +35,20 @@ const box = computed(() => paths[props.name]?.viewBox || '0 0 24 24');
     :height="size || 24"
     fill="none"
     stroke="currentColor"
-    :aria-label="props.title || props.name"
-    role="img"
-    style="display:inline-block;vertical-align:middle;"
-    v-html="paths[props.name]?.svg || ''"
+    :stroke-width="stroke || 2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    :aria-hidden="isDecorative ? 'true' : undefined"
+    :aria-label="isDecorative ? undefined : accessibleName"
+    :role="isDecorative ? undefined : 'img'"
+    :focusable="isDecorative ? 'false' : undefined"
+    style="display: inline-block; vertical-align: middle; flex: none"
+    v-html="inner"
   />
 </template>
 
 <style scoped>
-svg { color: currentColor; }
+svg {
+  color: currentColor;
+}
 </style>

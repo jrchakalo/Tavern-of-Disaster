@@ -532,10 +532,16 @@ async function expectDisplayVitals(
     .toMatch(new RegExp(`(CA|Def|Defesa)[^\\d]{0,6}${defense}(\\D|$)`, 'i'));
 }
 
+async function ensureDmInitiativeTab(page: Page): Promise<void> {
+  const tab = page.locator('.dm-panel .dm-panel__tab', { hasText: 'Iniciativa' }).first();
+  if (await tab.count()) await tab.click().catch(() => undefined);
+}
+
 async function openDmCharacterSheet(page: Page, tokenName: string) {
   const sheet = page.locator('.character-sheet');
   if (await sheet.isVisible().catch(() => false)) return sheet;
 
+  await ensureDmInitiativeTab(page);
   const link = page
     .locator('.dm-panel .initiative-panel .character-link', { hasText: tokenName })
     .first();
@@ -592,11 +598,13 @@ async function openPlayerCharacterSheet(page: Page, characterName: string) {
 }
 
 async function closeSheet(page: Page): Promise<void> {
-  const close = page.locator('.character-sheet button[aria-label="Fechar"]');
-  if (await close.count()) {
-    await close.first().click().catch(() => undefined);
-    await expect(page.locator('.character-sheet')).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
-  }
+  const sheet = page.locator('.character-sheet');
+  if (!(await sheet.isVisible().catch(() => false))) return;
+  const close = sheet.locator('button[aria-label="Fechar"]').first();
+  if (await close.count()) await close.click().catch(() => undefined);
+  const discard = page.getByRole('button', { name: 'Descartar e fechar' });
+  if (await discard.isVisible().catch(() => false)) await discard.click().catch(() => undefined);
+  await expect(sheet).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
 }
 
 async function readSheetNumber(sheet: ReturnType<Page['locator']>, label: RegExp): Promise<number> {
@@ -620,7 +628,8 @@ async function updateHpInSheet(page: Page, hp: number): Promise<void> {
 }
 
 async function openDiceRoller(page: Page): Promise<void> {
-  const rollers = page.locator('.dice-roller');
+  await ensureDmInitiativeTab(page);
+  const rollers = page.locator('.dice-roller:visible');
   if ((await rollers.count()) > 0) return;
   const openButton = page
     .getByRole('button', { name: /Dados|Rolagem|Abrir rolagem de dados/i })
@@ -657,8 +666,9 @@ async function openLog(page: Page): Promise<void> {
 }
 
 async function expectRollInLog(page: Page, expression: string, selector: string): Promise<void> {
+  const scoped = selector.includes('roll-ticker') ? selector : `${selector}[data-type="roll"]`;
   await expect(
-    page.locator(`${selector}[data-type="roll"]`, { hasText: expression }).first(),
+    page.locator(scoped, { hasText: expression }).first(),
     `docs/SHEETS_DICE.md §8.3: a rolagem "${expression}" precisa aparecer no log.`,
   ).toBeVisible({ timeout: UI_TIMEOUT_MS });
 }
@@ -1230,7 +1240,7 @@ test('rolagem 2d6+3 aparece no log do DM e da TV e sobrevive a reload', async ()
   expect(typeof payload.revision).toBe('number');
 
   await expectRollInLog(dmPage!, expression, '.log-entry');
-  await expectRollInLog(tvPage!, expression, '.roll-log__item');
+  await expectRollInLog(tvPage!, expression, '.roll-ticker__item');
 
   // Log persistido: REST devolve a rolagem e a TV a recupera após reload.
   const history = await fetchRolls(api, w.players[0], w.table._id);
@@ -1242,7 +1252,7 @@ test('rolagem 2d6+3 aparece no log do DM e da TV e sobrevive a reload', async ()
   await expect(tvPage!.locator('.display-header__title')).toHaveText(w.table.name, {
     timeout: UI_TIMEOUT_MS,
   });
-  await expectRollInLog(tvPage!, expression, '.roll-log__item');
+  await expectRollInLog(tvPage!, expression, '.roll-ticker__item');
 
   // Reload do jogador: card continua e o REST devolve o mesmo log.
   await playerPage!.reload({ waitUntil: 'domcontentloaded' });
@@ -1290,7 +1300,7 @@ test('troca para Cyberpunk RED: preset 1d10! rola e explosão é comprovada', as
   expect(Number.isFinite(presetPayload.total)).toBe(true);
 
   await expectRollInLog(dmPage!, '1d10!', '.log-entry');
-  await expectRollInLog(tvPage!, '1d10!', '.roll-log__item');
+  await expectRollInLog(tvPage!, '1d10!', '.roll-ticker__item');
 
   // Prova determinística da explosão: 100d2! quase certamente encadeia
   // (P(sem explosão) = 2^-100). Aceita tanto dados extras quanto valor > face.
