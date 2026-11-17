@@ -795,6 +795,17 @@ test('compartilhamento de tela do DM aparece para os jogadores', async () => {
 test('chat com @todos chega, destaca menção, limpa não lidas e sobrevive a reload', async ({ browser }) => {
   const w = requireWorld();
 
+  // Em headless com mídia fake, o renderer do jogador pode cair nos testes de
+  // câmera/tela. Reabre a página antes de exercitar o chat em vez de mascarar
+  // com skip: o fluxo testado continua sendo o do jogador real.
+  if (!p1Page || p1Page.isClosed()) {
+    const session = await openContext(browser, w.p1, { width: 390, height: 844 });
+    p1Page = session.page;
+    p1Context = session.context;
+    await p1Page.goto(`${getBaseUrl()}/play/${w.table._id}?invite=${w.table.inviteCode}`);
+    await expect(p1Page.locator('.play-header')).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  }
+
   const beforeSync = await resync(w.dmSocket, w.table._id);
   const beforePlayer = await readHeaderRevision(p1Page!, '.play-header__revision');
   const beforeDisplay = await readHeaderRevision(displayPage!, '.display-header__revision');
