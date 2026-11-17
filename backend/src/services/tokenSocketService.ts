@@ -1,7 +1,12 @@
-import { addTokenToInitiative, syncInitiativeNameWithToken } from './initiativeService';
+import {
+  addTokenToInitiative,
+  removeInitiativeEntry,
+  syncInitiativeNameWithToken,
+} from './initiativeService';
 import { assertUserInTable, assertUserIsDM } from './tableService';
 import {
   createToken,
+  deleteToken,
   moveToken,
   undoLastMove,
   updateToken,
@@ -163,4 +168,33 @@ export async function undoTokenMoveForUser(userId: string, data: { tableId: stri
   const previousSquare = token.squareId;
   const updated = await undoLastMove(token as any, scene);
   return { updated, previousSquare };
+}
+
+/**
+ * Remove o token e a entrada de iniciativa vinculada a ele.
+ * Resolve token -> cena -> mesa; nunca confia no tableId do payload.
+ */
+export async function deleteTokenForTable(userId: string, data: { tableId: string; tokenId: string }) {
+  const { tableId, tokenId } = data;
+  const { token, scene, table } = await loadTokenContext(tokenId);
+  assertEntityBelongsToTable(table._id.toString(), tableId);
+  assertUserIsDM(userId, table);
+
+  const linkedEntry = scene.initiative.find((entry) => entry.tokenId?.toString() === token._id.toString());
+  let initiative = scene.initiative;
+  let removedEntryId: string | undefined;
+  if (linkedEntry?._id) {
+    removedEntryId = linkedEntry._id.toString();
+    ({ initiative } = await removeInitiativeEntry(scene._id.toString(), removedEntryId, false));
+  }
+
+  await deleteToken(token._id.toString());
+
+  return {
+    tokenId: token._id.toString(),
+    tableId: table._id.toString(),
+    sceneId: scene._id.toString(),
+    initiative,
+    removedEntryId,
+  };
 }
