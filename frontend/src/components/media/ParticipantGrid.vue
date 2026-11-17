@@ -3,10 +3,23 @@ import { computed, onBeforeUnmount, watch } from 'vue';
 import { useMediaStore } from '../../stores/mediaStore';
 import type { MediaConnectionQuality, MediaState } from '../../types';
 
-withDefaults(defineProps<{ floating?: boolean; compact?: boolean }>(), {
-  floating: false,
-  compact: false,
-});
+withDefaults(
+  defineProps<{
+    floating?: boolean;
+    compact?: boolean;
+    /**
+     * Faixa compacta para a barra de chamada do cockpit: todos os tiles
+     * continuam no DOM (vídeo/áudio e badges), mas em miniatura horizontal.
+     * A grade completa abre em um diálogo a partir do botão “Na chamada”.
+     */
+    preview?: boolean;
+  }>(),
+  {
+    floating: false,
+    compact: false,
+    preview: false,
+  },
+);
 
 const store = useMediaStore();
 
@@ -146,8 +159,9 @@ function connectionTitle(tile: ParticipantTile): string {
     :class="{
       'participant-grid--floating': floating,
       'participant-grid--compact': compact,
+      'participant-grid--preview': preview,
     }"
-    aria-label="Participantes da chamada"
+    :aria-label="preview ? 'Prévia dos participantes da chamada' : 'Participantes da chamada'"
   >
     <article
       v-for="tile in tiles"
@@ -257,6 +271,73 @@ function connectionTitle(tile: ParticipantTile): string {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   max-height: 220px;
   overflow-y: auto;
+}
+
+/* Prévia da barra de chamada: uma faixa de miniaturas, sem card sobre o mapa. */
+.participant-grid--preview {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 4px;
+  max-width: 100%;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+}
+
+.participant-grid--preview .media-tile {
+  flex: 0 0 76px;
+  width: 76px;
+  height: 42px;
+  aspect-ratio: auto;
+  border-width: 1px;
+}
+
+.participant-grid--preview .media-tile.is-screen {
+  flex-basis: 104px;
+  width: 104px;
+}
+
+.participant-grid--preview .media-tile__placeholder {
+  flex-direction: row;
+  gap: 4px;
+  padding: 2px;
+}
+
+.participant-grid--preview .media-tile__initials {
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
+}
+
+.participant-grid--preview .media-tile__hint {
+  display: none;
+}
+
+.participant-grid--preview .media-tile__footer {
+  padding: 0 3px;
+}
+
+.participant-grid--preview .media-tile__name {
+  max-width: 42%;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.participant-grid--preview .media-tile__badge {
+  padding: 0 3px;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+/* Na miniatura o badge de câmera/silenciado só repetiria o que o vídeo mostra. */
+.participant-grid--preview .media-tile__badge--muted {
+  display: none;
 }
 
 .media-tile {

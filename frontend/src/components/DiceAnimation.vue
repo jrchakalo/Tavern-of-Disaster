@@ -13,7 +13,7 @@ import { diceArtFor, formatModifier } from './dice/dieShapes';
 const props = withDefaults(
   defineProps<{
     payload: DiceRolledPayload;
-    variant?: 'card' | 'tv' | 'player';
+    variant?: 'card' | 'tv' | 'player' | 'dm';
   }>(),
   { variant: 'card' },
 );
@@ -22,9 +22,11 @@ const emit = defineEmits<{ (e: 'dismiss'): void }>();
 
 /**
  * No celular o momento não pode virar bloqueio: some sozinho em 2,8 s, dentro
- * da janela de 2,6–3,2 s combinada com o jogador.
+ * da janela de 2,6–3,2 s combinada com o jogador. No cockpit do Mestre o
+ * bilhete é um card compacto no canto: 3,2 s, sem escurecer o tabuleiro.
  */
 const PLAYER_DISMISS_MS = 2800;
+const DM_DISMISS_MS = 3200;
 
 const momentKey = ref(0);
 const prefersReducedMotion = ref(
@@ -33,6 +35,9 @@ const prefersReducedMotion = ref(
     : false,
 );
 const isPlayer = computed(() => props.variant === 'player');
+const isDm = computed(() => props.variant === 'dm');
+/** Variantes em que o bilhete é compacto e clicável, não um palco modal. */
+const isCompact = computed(() => isPlayer.value || isDm.value);
 
 let motionQuery: MediaQueryList | null = null;
 let autoDismissTimer: ReturnType<typeof setTimeout> | null = null;
@@ -47,8 +52,8 @@ function clearAutoDismiss() {
 
 function scheduleAutoDismiss() {
   clearAutoDismiss();
-  if (!isPlayer.value) return;
-  autoDismissTimer = setTimeout(() => dismiss(), PLAYER_DISMISS_MS);
+  if (!isCompact.value) return;
+  autoDismissTimer = setTimeout(() => dismiss(), isDm.value ? DM_DISMISS_MS : PLAYER_DISMISS_MS);
 }
 
 /** Vibração curta e opcional: nunca é requisito, nunca roda em reduced motion. */
@@ -69,10 +74,10 @@ function dismiss() {
   emit('dismiss');
 }
 
-/** No celular, tocar no próprio bilhete também fecha ("toque em qualquer lugar"). */
+/** No celular/cockpit, tocar no próprio bilhete também fecha. */
 function handleSlipClick(event: MouseEvent) {
   event.stopPropagation();
-  if (isPlayer.value) dismiss();
+  if (isCompact.value) dismiss();
 }
 
 const title = computed(() => props.payload.metadata || props.payload.tags?.[0] || 'Rolagem');
@@ -227,7 +232,7 @@ watch(
 
         <div class="dice-slip__actions">
           <p class="dice-slip__hint">
-            {{ isPlayer ? 'Toque ou Esc para fechar' : 'Clique ou pressione Esc para fechar' }}
+            {{ isPlayer ? 'Toque ou Esc para fechar' : isDm ? 'Clique ou Esc para fechar' : 'Clique ou pressione Esc para fechar' }}
           </p>
           <button type="button" class="dice-slip__close" @click="dismiss">Fechar</button>
         </div>
@@ -420,6 +425,126 @@ watch(
   min-height: 44px;
   padding: 0 var(--s-3);
   font-size: 0.8125rem;
+}
+
+/* --------------------------------------------------------------------------
+   Cockpit do Mestre: card compacto no canto, sem scrim e sem bloquear o
+   tabuleiro. Novo resultado substitui o anterior; o timer do TableView fecha
+   em 3,2 s e o componente também agenda a própria saída.
+   -------------------------------------------------------------------------- */
+.dice-moment.dice-moment--dm {
+  inset: auto;
+  right: calc(var(--dm-panel-w, 0px) + 16px);
+  bottom: 88px;
+  left: auto;
+  top: auto;
+  place-items: end end;
+  padding: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.dice-moment--dm .dice-slip {
+  --die-size: clamp(26px, 2.6vw, 38px);
+
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(52dvh, 420px);
+  padding: 14px var(--s-4) 12px;
+  border-radius: 2px;
+  pointer-events: auto;
+}
+
+.dice-moment--dm .dice-slip::before {
+  inset: 6px;
+}
+
+.dice-moment--dm .dice-slip__head {
+  padding-bottom: 6px;
+}
+
+.dice-moment--dm .dice-slip__eyebrow,
+.dice-moment--dm .dice-slip__time {
+  font-size: 0.6875rem;
+}
+
+.dice-moment--dm .dice-slip__actor {
+  margin-top: 8px;
+  font-size: 0.9375rem;
+}
+
+.dice-moment--dm .dice-slip__title {
+  font-size: 0.8125rem;
+}
+
+.dice-moment--dm .dice-slip__expression {
+  margin: 6px 0 2px;
+  padding-bottom: 6px;
+  font-size: 0.9375rem;
+  -webkit-line-clamp: 2;
+}
+
+.dice-moment--dm .dice-slip__dice {
+  gap: 6px;
+  padding: 2px 0 6px;
+}
+
+.dice-moment--dm .dice-slip__rule {
+  block-size: 2px;
+  margin: 2px 0 6px;
+}
+
+.dice-moment--dm .dice-slip__total {
+  gap: 10px;
+}
+
+.dice-moment--dm .dice-slip__total-label {
+  font-size: 0.6875rem;
+}
+
+.dice-moment--dm .dice-slip__total-value {
+  font-size: clamp(2.25rem, 5vw, 3rem);
+}
+
+.dice-moment--dm .dice-slip__footnote,
+.dice-moment--dm .dice-slip__tags {
+  margin-top: 4px;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+
+.dice-moment--dm .dice-slip__stamp {
+  padding: 2px 6px;
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+}
+
+.dice-moment--dm .dice-slip__actions {
+  gap: var(--s-2);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.dice-moment--dm .dice-slip__hint {
+  font-size: 0.6875rem;
+}
+
+.dice-moment--dm .dice-slip__close {
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 1023px) {
+  .dice-moment.dice-moment--dm {
+    right: 8px;
+    bottom: calc(var(--mobile-bar-h, 64px) + 56px + 12px);
+    left: 8px;
+  }
+
+  .dice-moment--dm .dice-slip {
+    width: min(420px, 100%);
+    margin-left: auto;
+  }
 }
 
 .dice-slip::before {

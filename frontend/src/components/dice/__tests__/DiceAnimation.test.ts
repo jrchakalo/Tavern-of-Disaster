@@ -299,3 +299,43 @@ describe('DiceAnimation — momento do jogador', () => {
     wrapper.unmount();
   });
 });
+
+function mountDm(overrides: Partial<DiceRolledPayload> = {}) {
+  return mount(DiceAnimation, {
+    props: { payload: payload(overrides), variant: 'dm' as const },
+  });
+}
+
+describe('DiceAnimation — card compacto do Mestre', () => {
+  it('renderiza o card de canto com a classe dm e sem scrim de tela cheia', () => {
+    const wrapper = mountDm();
+
+    expect(wrapper.find('.dice-moment--dm').exists()).toBe(true);
+    expect(wrapper.get('.dice-slip__total-value').text()).toBe('19');
+    expect(wrapper.text()).toContain('Clique ou Esc para fechar');
+    expect(wrapper.get('[role="status"]').attributes('aria-live')).toBe('polite');
+    wrapper.unmount();
+  });
+
+  it('fecha sozinho em 3,2 s, mais tarde que o bilhete do jogador', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const wrapper = mountDm();
+
+    vi.advanceTimersByTime(2800);
+    expect(wrapper.emitted('dismiss')).toBeUndefined();
+
+    vi.advanceTimersByTime(400);
+    expect(wrapper.emitted('dismiss')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('fecha ao clicar no card e não vibra no desktop', async () => {
+    const vibrate = stubVibration();
+    const wrapper = mountDm();
+
+    expect(vibrate).not.toHaveBeenCalled();
+    await wrapper.get('.dice-slip').trigger('click');
+    expect(wrapper.emitted('dismiss')).toHaveLength(1);
+    wrapper.unmount();
+  });
+});
