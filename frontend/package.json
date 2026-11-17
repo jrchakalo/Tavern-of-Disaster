@@ -11,6 +11,7 @@
     "type-check": "vue-tsc --build",
     "lint": "eslint . --fix",
     "test:unit": "vitest run",
+    "check:contrast": "node scripts/check-contrast.mjs",
     "format": "prettier --write src/"
   },
   "dependencies": {
