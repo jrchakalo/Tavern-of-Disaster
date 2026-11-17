@@ -151,21 +151,46 @@ bottom nav 64: Ficha · Tabuleiro · Dados · Chat · Chamada
   (“Entrem em /play com o código X”).
 - Dado em tela cheia por ~5 s, depois volta ao board.
 
-## 4. Funcional P0 desta fase
+## 4. Backlog funcional consolidado
 
-1. **Criar token** por botão/aba e por toque longo no mobile; inspetor com
-   editar/duplicar/excluir/reset movimento.
-2. **Criar ficha** em DM e jogador; abrir a ficha por token/personagem.
-3. **Iniciativa não destrutiva**: remover da ordem não apaga token; excluir token
-   é ação separada com confirmação/undo.
-4. **Entrar por link ou código**: colar URL de convite extrai o código.
-5. **Roteamento por papel**: mesas listam `Mestrar`/`Jogar`/`TV`; jogador nunca
-   cai em `/table`.
-6. **Sessão**: encerrar com confirmação; erros de rede visíveis com retry.
-7. **Cena em um passo**: upload + grade + ativar; auto-ativa; thumbnails.
-8. **Histórico único** com abas; não duplicar ActionLog + RollLog.
-9. **Ficha vazia/incompleta** com CTA e instrução; não becos sem saída.
-10. **Erros/loading/offline** em todas as ações; toast com `aria-live`.
+Fonte detalhada: `/tmp/opencode/audit-functions.md` (inventário de cada
+controle, flags DEAD/DUP/DESTR/HIDDEN/NOFB e critérios completos).
+Aqui ficam só os itens que bloqueiam a fase e a onda responsável.
+
+### 4.1 P0 — bloqueiam “jogável por uma mesa nova”
+
+| ID | Item | Onda | Aceite |
+|---|---|---|---|
+| F0-1 | **Ficha**: criar/listar/abrir/vincular. Nenhuma view chama `createCharacter` hoje. | D3/D4 | DM cria ficha D&D/OP2/OPSH para um jogador, persiste, aparece na iniciativa/token; jogador vê a própria ficha e não a de outro; criar não exige token. |
+| F0-2 | **Token**: criar/editar/atribuir/excluir por toque e teclado, não só `contextmenu`; inspetor com excluir + confirmar. | D3 | Em 390×844 o DM faz o ciclo completo sem clique direito; remover da iniciativa **não** apaga o token; excluir token some do mapa/iniciativa em todos os clientes com 1 revision. |
+| F0-3 | **Iniciativa não destrutiva**: `requestRemoveFromInitiative` deixa de apagar; novo `requestDeleteToken` separado. | D7 (backend) | Remover do turno mantém o token e não emite `tokenRemoved`; delete exige DM e confirmação; ack/erro em ambos. |
+| F0-4 | **Roteamento por papel**: lobby abre `/table` só para DM; PLAYER vai a `/play`; `/play` tem saída. | D2/D4 | Jogador clicando na mesa cai em `/play` com token card e nav; consegue sair sem botão do navegador; `/table` direto como PLAYER redireciona. |
+| F0-5 | **Ações destrutivas**: encerrar sessão, excluir cena, remover jogador, aplicar grade, rotacionar TV — todas nomeiam objeto/consequência e pedem confirmação. | D3 | Nenhuma ação destrutiva commita em um clique; confirm acessível por teclado e devolve foco. |
+| F0-6 | **Entrar por link ou código**: colar URL extrai o código; sucesso navega para a rota certa. | D2 | Link de convite e código funcionam no mobile; erro de rede aparece com retry. |
+| F0-7 | **Sessão visível**: status, rodada, quem está conectado e TV na barra do DM. | D3 | DM responde “está ao vivo? de quem é o turno? quem está online? a TV está ligada?” sem abrir aba. |
+| F0-8 | **Cena em um passo**: upload + grade + ativar, com thumbnails e feedback em todos os clientes. | D3 | Criar/ativar cena não deixa jogador/TV com board em branco sem explicação; grade tem “Aplicar”. |
+| F0-9 | **Histórico único**: um drawer com Rolagens/Ações/Chat; sem ActionLog + RollLog duplicados. | D3/D5 | Uma rolagem aparece uma vez por superfície (DM, TV, jogador). |
+| F0-10 | **Estados**: loading, erro, offline/reconnect e vazio com CTA em todas as ações; toast `aria-live`. | D1/D2/D3/D4 | Falha de rede nunca vira “você não tem mesas”; reconexão não deixa estado divergente. |
+| F0-11 | **Auth**: login por usuário/email, olho na senha, registro com confirmação e login automático. | D2 | Backend já aceita `{identifier}`; frontend usa; erros inline; sem 429 silencioso. |
+
+### 4.2 P1 — primeira sessão normal
+
+- Medir/ping no `/play` + pinça/pan no tabuleiro (`TABLE_MODE.md` prevê escrita
+  do jogador; hoje não existe UI — decidir e alinhar contrato).
+- Criar mesa com seletor de sistema visível (D&D padrão) + checklist de primeira
+  mesa (convidar → cena → token → iniciar).
+- Estado do link da TV após reload (`sessionStorage`; rotação só com aviso).
+- Ficha suja: indicador, confirmar ao fechar, não sobrescrever digitação remota.
+- Chamada: roster/kick para o DM, sem card permanente sobre o mapa.
+- Upload de token/avatar com progresso e retry.
+
+### 4.3 Remover/encerrar agora
+
+- Paleta de cor do DM no toolbar (controle morto; jogador pode escolher roxo).
+- Superfície de dados duplicada no DM (popup + embutida).
+- Pills flutuantes de Chat/Log sobre o painel.
+- `rev`, role e telemetria no `/play` e na TV.
+- Micro-labels em caixa alta e emoji como ícone.
 
 ## 5. Acessibilidade (não negociável)
 
