@@ -284,9 +284,15 @@ async function expectCard(page: Page, hp: number) {
     .toContain(String(INITIAL.defense));
 }
 
+async function ensureDmInitiativeTab(page: Page): Promise<void> {
+  const tab = page.locator('.dm-panel .dm-panel__tab', { hasText: 'Iniciativa' }).first();
+  if (await tab.count()) await tab.click().catch(() => undefined);
+}
+
 async function openDmSheet(page: Page): Promise<ReturnType<Page['locator']>> {
   const sheet = page.locator('.character-sheet');
   if (await sheet.isVisible().catch(() => false)) return sheet;
+  await ensureDmInitiativeTab(page);
   const link = page.locator('.dm-panel .initiative-panel .character-link', { hasText: TOKEN_NAME }).first();
   if ((await link.count()) === 0) {
     const toggle = page.locator('.dm-panel .toggle-button').first();
@@ -323,6 +329,7 @@ async function closeSheet(page: Page): Promise<void> {
 }
 
 async function openDmDiceRoller(page: Page): Promise<ReturnType<Page['locator']>> {
+  await ensureDmInitiativeTab(page);
   const roller = page.locator('.dm-panel .dice-roller').first();
   if (await roller.isVisible().catch(() => false)) return roller;
   const toggle = page.getByRole('button', { name: /Dados|Rolagem/ }).first();

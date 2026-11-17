@@ -40,6 +40,7 @@ const JWT_TTL_SECONDS = 6 * 60 * 60;
 
 const SCENE_ONE_NAME = 'Cena Online A';
 const SCENE_TWO_NAME = 'Cena Online B';
+const SCENE_UPLOAD_NAME = 'Cena Upload Online';
 const TOKEN_NAME = 'Herói Online';
 const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -284,6 +285,16 @@ async function activateSceneFromUi(page: Page, sceneName: string): Promise<void>
   await button.click();
 }
 
+/** Sessão LIVE abre o painel na aba Iniciativa; cenas ficam na aba Cena. */
+async function openScenePanelTab(page: Page): Promise<void> {
+  const panel = page.locator('.dm-panel-content:visible').first();
+  await expect(panel).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  const tab = panel.locator('.dm-panel__tab', { hasText: 'Cena' }).first();
+  await expect(tab).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: UI_TIMEOUT_MS });
+}
+
 /** A URL deve ser portátil: relativa `/uploads/...` ou da base configurada. */
 function assertPortableAssetUrl(rawUrl: string | null): void {
   expect(rawUrl, 'A imagem ativa precisa existir.').toBeTruthy();
@@ -417,25 +428,32 @@ test('F4-QA-2 · DM e jogador entram em contextos remotos e o convite adiciona o
   await joinTable(w.playerSocket, w.table._id);
 });
 
-test('DM sobe o mapa pela UI e o jogador vê a URL nova sem reload', async () => {
+test('DM cria cena com upload pela UI e o jogador vê a URL nova sem reload', async () => {
   const w = world!;
 
-  const input = dmPage!.locator('.scene-manager input[type=file]');
+  await openScenePanelTab(dmPage!);
+  const form = dmPage!.locator('.scene-manager .create-scene-form');
+  await expect(form).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await form.locator('#scene-name').fill(SCENE_UPLOAD_NAME);
+  const input = form.locator('input[type=file]');
   await expect(input).toHaveCount(1);
+
+  await input.setInputFiles({ name: 'online-one.png', mimeType: 'image/png', buffer: TINY_PNG });
   const responsePromise = dmPage!.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
       response.url().includes(`/api/assets/maps/${w.table._id}`),
     { timeout: UI_TIMEOUT_MS },
   );
-  await input.setInputFiles({ name: 'online-one.png', mimeType: 'image/png', buffer: TINY_PNG });
+  await form.getByRole('button', { name: 'Criar cena', exact: true }).click();
   const response = await responsePromise;
   expect(response.status()).toBe(201);
   const uploaded = (await response.json()) as UploadResponse;
   w.firstMapUrl = uploaded.publicUrl;
 
+  await expect(sceneRow(dmPage!, SCENE_UPLOAD_NAME)).toBeVisible({ timeout: UI_TIMEOUT_MS });
   await expect(
-    dmPage!.locator('.toast.success').filter({ hasText: 'Mapa atualizado com sucesso.' }).last(),
+    dmPage!.locator('.toast--success').filter({ hasText: /criada e ativada/ }).last(),
   ).toBeVisible({ timeout: UI_TIMEOUT_MS });
 
   // Nenhum reload no contexto do jogador: o evento realtime atualiza o tabuleiro.
@@ -449,30 +467,38 @@ test('DM troca para a segunda cena e o jogador converge na imagem e na revisão'
   const w = world!;
 
   const second = await uploadMapViaApi(api, w.dm, w.table._id, 'online-two.png');
-  w.secondMapUrl = second.publicUrl;
-  expect(second.publicUrl).not.toBe(w.firstMapUrl);
+  // `type="url"` no formulário exige URL absoluta para a validação nativa.
+  const secondAbsolute = /^https?:\/\//i.test(second.publicUrl)
+    ? second.publicUrl
+    : `${getBaseUrl()}${second.publicUrl}`;
+  w.secondMapUrl = secondAbsolute;
+  expect(secondAbsolute).not.toBe(w.firstMapUrl);
 
+  await openScenePanelTab(dmPage!);
+  const before = await resync(w.dmSocket, w.table._id);
   const form = dmPage!.locator('.scene-manager .create-scene-form');
   await expect(form).toBeVisible({ timeout: UI_TIMEOUT_MS });
-  await form.locator('input[placeholder="Nome da Cena"]').fill(SCENE_TWO_NAME);
-  await form.locator('input[placeholder="URL da Imagem (Opcional)"]').fill(second.publicUrl);
-  await form.getByRole('button', { name: 'Adicionar Cena', exact: true }).click();
-  await expect(sceneRow(dmPage!, SCENE_TWO_NAME)).toBeVisible({ timeout: UI_TIMEOUT_MS });
-
-  const before = await resync(w.dmSocket, w.table._id);
-  await activateSceneFromUi(dmPage!, SCENE_TWO_NAME);
+  await form.locator('#scene-name').fill(SCENE_TWO_NAME);
+  await form.locator('#scene-image-url').fill(secondAbsolute);
+  await expect(form.locator('.scene-check input[type="checkbox"]')).toBeChecked();
+  await form.getByRole('button', { name: 'Criar cena', exact: true }).click();
+  const sceneTwoRow = sceneRow(dmPage!, SCENE_TWO_NAME);
+  await expect(sceneTwoRow).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await expect(sceneTwoRow, 'Criar cena já ativa a cena; não há segundo clique.').toHaveClass(
+    /active-scene/,
+  );
 
   await expect
     .poll(async () => (await resync(w.dmSocket, w.table._id)).activeScene?._id, { timeout: UI_TIMEOUT_MS })
     .not.toBe(w.sceneOne._id);
   const after = await resync(w.dmSocket, w.table._id);
   expect(after.revision, 'Trocar de cena precisa incrementar a revisão.').toBeGreaterThan(before.revision);
-  expect(after.activeScene?.imageUrl).toBe(second.publicUrl);
+  expect(after.activeScene?.imageUrl).toBe(secondAbsolute);
 
   await expect(playerPage!.locator('.play-header__scene')).toContainText(SCENE_TWO_NAME, {
     timeout: UI_TIMEOUT_MS,
   });
-  await expect(playerPage!.locator('.board-map')).toHaveAttribute('src', second.publicUrl, {
+  await expect(playerPage!.locator('.board-map')).toHaveAttribute('src', secondAbsolute, {
     timeout: UI_TIMEOUT_MS,
   });
   await expect

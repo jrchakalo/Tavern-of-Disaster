@@ -50,6 +50,7 @@ const GRID_WIDTH = 12;
 const GRID_HEIGHT = 8;
 const SCENE_ONE_NAME = 'Cena Mídia A';
 const SCENE_TWO_NAME = 'Cena Mídia B';
+const CENA_UPLOAD = 'Cena Upload Mídia';
 const TOKEN_ONE = 'Herói Mídia 1';
 const TOKEN_TWO = 'Herói Mídia 2';
 
@@ -421,6 +422,16 @@ function sceneRow(page: Page, sceneName: string) {
   return page.locator('.scene-manager .scene-list li', { hasText: sceneName }).first();
 }
 
+/** A aba inicial do painel vira Iniciativa quando a sessão está LIVE. */
+async function openScenePanelTab(page: Page): Promise<void> {
+  const panel = page.locator('.dm-panel-content:visible').first();
+  await expect(panel).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  const tab = panel.locator('.dm-panel__tab', { hasText: 'Cena' }).first();
+  await expect(tab).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: UI_TIMEOUT_MS });
+}
+
 async function activateSceneFromUi(page: Page, sceneName: string): Promise<void> {
   const row = sceneRow(page, sceneName);
   await expect(row, `A cena "${sceneName}" precisa estar no painel do Mestre.`).toBeVisible({
@@ -473,10 +484,13 @@ test.beforeAll(async ({ browser }) => {
     throw new Error(`PUT /api/tables/:id/system falhou: ${systemResponse.status()} ${await systemResponse.text()}`);
   }
 
+  // A cena base já nasce com imagem para a grade renderizar em todos os clientes.
+  const sceneOneMap = await uploadMapViaApi(api, dm, table._id, 'scene-one.png');
   const sceneOne = await createScene(api, dm, table._id, {
     name: SCENE_ONE_NAME,
     gridWidth: GRID_WIDTH,
     gridHeight: GRID_HEIGHT,
+    imageUrl: sceneOneMap.publicUrl,
   });
 
   const dmSocket = await connectSocket(dm.token, 'dm-f4');
@@ -549,8 +563,8 @@ test.beforeAll(async ({ browser }) => {
     playerSocket,
     mapOneUrl: '',
     mapOneAssetId: '',
-    mapTwoUrl: '',
-    mapTwoAssetId: '',
+    mapTwoUrl: sceneOneMap.publicUrl,
+    mapTwoAssetId: sceneOneMap.assetId,
     sceneTwoMapUrl: '',
   };
 
@@ -622,11 +636,15 @@ test('sistemas e uso de assets: membro lê o uso, não-membro recebe 403', async
   expect(system.dicePresets?.some((preset) => preset.expression === 'd20')).toBe(true);
 
   const usage = await fetchUsage(api, w.playerOne, w.table._id);
-  expect(usage.usedBytes, 'A mesa começa sem assets de mapa/token.').toBe(0);
+  expect(usage.usedBytes, 'A cena base já tem um mapa, então o uso não começa em zero.').toBeGreaterThan(0);
   expect(usage.quotaBytes).toBeGreaterThan(0);
-  expect(usage.remainingBytes).toBe(usage.quotaBytes);
-  expect(usage.count).toBe(0);
-  expect(usage.byKind).toMatchObject({ map: 0, token: 0, avatar: 0 });
+  expect(usage.remainingBytes).toBe(usage.quotaBytes - usage.usedBytes);
+  expect(usage.count, 'Só a imagem da cena base existe no setup.').toBe(1);
+  expect(usage.byKind, 'byKind é medido em bytes, não em quantidade.').toMatchObject({
+    map: usage.usedBytes,
+    token: 0,
+    avatar: 0,
+  });
 
   const outsiderResponse = await api.get(`${getBackendUrl()}/api/assets/tables/${w.table._id}/usage`, {
     headers: authHeaders(w.outsider),
@@ -634,29 +652,34 @@ test('sistemas e uso de assets: membro lê o uso, não-membro recebe 403', async
   expect(outsiderResponse.status(), 'Não-membro não pode ler o uso de armazenamento.').toBe(403);
 });
 
-test('DM mobile 390×844 envia mapa; uso aparece e TV/jogador convergem para a URL nova', async () => {
+test('DM mobile 390×844 cria cena com upload; uso aparece e TV/jogador convergem para a URL nova', async () => {
   const w = world!;
   const page = dmMobilePage!;
 
   await page.goto(`${getBaseUrl()}/table/${w.table._id}`);
-  const openPanel = page.getByRole('button', { name: 'Abrir painel do Mestre' });
+  const openPanel = page.locator('.dm-drawer-toggle').first();
   await expect(openPanel, 'O DM mobile precisa do botão do painel do Mestre.').toBeVisible({
     timeout: UI_TIMEOUT_MS,
   });
   await openPanel.click();
+  await openScenePanelTab(page);
   await expect(page.locator('.scene-manager')).toBeVisible({ timeout: UI_TIMEOUT_MS });
 
-  const input = page.locator('.scene-manager input[type=file]');
+  const form = page.locator('.scene-manager .create-scene-form');
+  await form.locator('#scene-name').fill(CENA_UPLOAD);
+  const input = form.locator('input[type=file]');
   await expect(input, 'SceneManager precisa do input de arquivo (docs/MEDIA_SCENES.md §5).').toHaveCount(1);
 
   await startUploadProgressObserver(page);
+  await input.setInputFiles({ name: 'map-one.png', mimeType: 'image/png', buffer: TINY_PNG });
+
   const responsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
       response.url().includes(`/api/assets/maps/${w.table._id}`),
     { timeout: UI_TIMEOUT_MS },
   );
-  await input.setInputFiles({ name: 'map-one.png', mimeType: 'image/png', buffer: TINY_PNG });
+  await form.getByRole('button', { name: 'Criar cena', exact: true }).click();
   const response = await responsePromise;
   expect(response.status(), 'POST /api/assets/maps/:tableId precisa responder 201.').toBe(201);
   const uploaded = (await response.json()) as UploadResponse;
@@ -668,10 +691,14 @@ test('DM mobile 390×844 envia mapa; uso aparece e TV/jogador convergem para a U
   w.mapOneUrl = uploaded.publicUrl;
   w.mapOneAssetId = uploaded.assetId;
 
-  await expect(page.locator('#map-url')).toHaveValue(uploaded.publicUrl, { timeout: UI_TIMEOUT_MS });
+  const row = sceneRow(page, CENA_UPLOAD);
+  await expect(row, 'A cena criada pelo mobile precisa aparecer na lista.').toBeVisible({
+    timeout: UI_TIMEOUT_MS,
+  });
+  await expect(row, 'Criar cena com "Ativar ao criar" já ativa a cena.').toHaveClass(/active-scene/);
   await expect(page.locator('.usage-summary')).toContainText('Armazenamento:', { timeout: UI_TIMEOUT_MS });
   await expect(
-    page.locator('.toast.success').filter({ hasText: 'Mapa atualizado com sucesso.' }).last(),
+    page.locator('.toast--success').filter({ hasText: /criada e ativada/ }).last(),
     'Upload bem-sucedido precisa de toast (DoD: erro/sucesso visível).',
   ).toBeVisible({ timeout: UI_TIMEOUT_MS });
 
@@ -683,7 +710,7 @@ test('DM mobile 390×844 envia mapa; uso aparece e TV/jogador convergem para a U
   });
 
   const usage = await fetchUsage(api, w.playerOne, w.table._id);
-  expect(usage.count).toBeGreaterThanOrEqual(1);
+  expect(usage.count).toBeGreaterThanOrEqual(2);
   expect(usage.byKind.map).toBeGreaterThan(0);
 
   const sawProgress = await uploadProgressObserved(page);
@@ -695,76 +722,76 @@ test('DM mobile 390×844 envia mapa; uso aparece e TV/jogador convergem para a U
   });
 });
 
-test('trocar o mapa apaga o asset antigo; arquivo não-imagem mostra erro e não muda a cena', async () => {
+test('arquivo não-imagem não muda a cena; excluir a cena apaga o asset e o uso cai', async () => {
   const w = world!;
   const page = dmMobilePage!;
-  const previousUrl = w.mapOneUrl;
+  const currentUrl = w.mapOneUrl;
 
-  const input = page.locator('.scene-manager input[type=file]');
-  const responsePromise = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST' &&
-      response.url().includes(`/api/assets/maps/${w.table._id}`),
-    { timeout: UI_TIMEOUT_MS },
-  );
-  await input.setInputFiles({ name: 'map-two.png', mimeType: 'image/png', buffer: TINY_PNG });
-  const response = await responsePromise;
-  expect(response.status()).toBe(201);
-  const uploaded = (await response.json()) as UploadResponse;
-  expect(uploaded.publicUrl).not.toBe(previousUrl);
+  const form = page.locator('.scene-manager .create-scene-form');
+  await expect(form).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await form.locator('#scene-name').fill('Cena inválida');
+  await form
+    .locator('input[type=file]')
+    .setInputFiles({
+      name: 'not-an-image.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('isto não é uma imagem', 'utf8'),
+    });
 
-  w.mapTwoUrl = uploaded.publicUrl;
-  w.mapTwoAssetId = uploaded.assetId;
-
-  await expect(page.locator('#map-url')).toHaveValue(uploaded.publicUrl, { timeout: UI_TIMEOUT_MS });
-  await expect(tvPage!.locator('.display-board__map')).toHaveAttribute('src', uploaded.publicUrl, {
-    timeout: UI_TIMEOUT_MS,
-  });
-  await expect(playerPage!.locator('.board-map')).toHaveAttribute('src', uploaded.publicUrl, {
-    timeout: UI_TIMEOUT_MS,
-  });
-
-  const oldAssetResponse = await api.get(toBackendUrl(previousUrl));
-  // O Supabase pode continuar servindo a URL pública antiga por cache/CDN por
-  // alguns instantes; o contrato verificável é o registro/quota (abaixo). No
-  // driver local o arquivo some e responde 404 imediatamente.
-  expect(
-    [200, 404],
-    `Resposta inesperada para o asset antigo (${previousUrl}).`,
-  ).toContain(oldAssetResponse.status());
-
-  const usageAfterReplace = await fetchUsage(api, w.playerOne, w.table._id);
-  expect(usageAfterReplace.count, 'A troca de mapa não pode acumular assets: o antigo é apagado.').toBe(1);
-
-  // Arquivo não-imagem: o input aceita qualquer arquivo via automação; o
-  // backend precisa rejeitar com erro visível e a cena não muda.
   const badResponsePromise = page.waitForResponse(
     (candidate) =>
       candidate.request().method() === 'POST' &&
       candidate.url().includes(`/api/assets/maps/${w.table._id}`),
     { timeout: UI_TIMEOUT_MS },
   );
-  await input.setInputFiles({
-    name: 'not-an-image.txt',
-    mimeType: 'text/plain',
-    buffer: Buffer.from('isto não é uma imagem', 'utf8'),
-  });
+  await form.getByRole('button', { name: 'Criar cena', exact: true }).click();
   const badResponse = await badResponsePromise;
   expect(badResponse.status(), 'Arquivo não-imagem precisa ser 400 (docs/MEDIA_SCENES.md §3.1).').toBe(400);
 
   await expect(page.locator('.upload-error')).toBeVisible({ timeout: UI_TIMEOUT_MS });
   await expect(page.locator('.upload-error')).toContainText(/imagem|inválid|arquivo/i);
-  await expect(
-    page.locator('.toast.error').filter({ hasText: /imagem|inválid|arquivo/i }).last(),
-    'O erro de upload precisa aparecer também no toast.',
-  ).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await expect(page.locator('.scene-switch__name')).toContainText(CENA_UPLOAD);
+  await expect(tvPage!.locator('.display-board__map')).toHaveAttribute('src', currentUrl);
+  await expect(playerPage!.locator('.board-map')).toHaveAttribute('src', currentUrl);
 
-  await expect(page.locator('#map-url')).toHaveValue(uploaded.publicUrl);
-  await expect(tvPage!.locator('.display-board__map')).toHaveAttribute('src', uploaded.publicUrl);
-  await expect(playerPage!.locator('.board-map')).toHaveAttribute('src', uploaded.publicUrl);
+  const usageBeforeDelete = await fetchUsage(api, w.playerOne, w.table._id);
+  expect(
+    usageBeforeDelete.count,
+    'O upload inválido não pode criar asset: o uso continua com a cena base + upload.',
+  ).toBe(2);
 
-  const usageAfterFailure = await fetchUsage(api, w.playerOne, w.table._id);
-  expect(usageAfterFailure).toEqual(usageAfterReplace);
+  // Excluir a cena ativa apaga a imagem e devolve a mesa para a primeira cena.
+  const row = sceneRow(page, CENA_UPLOAD);
+  await row.getByRole('button', { name: /Excluir cena/ }).click();
+  const confirm = page.getByRole('dialog', { name: 'Excluir cena?' });
+  await expect(confirm).toBeVisible();
+  const deleteResponse = page.waitForResponse(
+    (candidate) =>
+      candidate.request().method() === 'DELETE' &&
+      candidate.url().includes(`/api/tables/${w.table._id}/scenes/`),
+    { timeout: UI_TIMEOUT_MS },
+  );
+  await confirm.getByRole('button', { name: 'Excluir cena', exact: true }).click();
+  expect((await deleteResponse).status()).toBe(200);
+  await expect(sceneRow(page, CENA_UPLOAD)).toHaveCount(0, { timeout: UI_TIMEOUT_MS });
+
+  const oldAssetResponse = await api.get(toBackendUrl(currentUrl));
+  // O Supabase pode continuar servindo a URL pública antiga por cache/CDN por
+  // alguns instantes; o contrato verificável é o registro/quota (abaixo). No
+  // driver local o arquivo some e responde 404 imediatamente.
+  expect(
+    [200, 404],
+    `Resposta inesperada para o asset da cena excluída (${currentUrl}).`,
+  ).toContain(oldAssetResponse.status());
+
+  const usageAfterDelete = await fetchUsage(api, w.playerOne, w.table._id);
+  expect(usageAfterDelete.count, 'Excluir a cena precisa apagar o asset dela.').toBe(
+    usageBeforeDelete.count - 1,
+  );
+
+  // A cena ativa passa a ser outra (sem imagem): tabuleiro sem mapa em todos.
+  await expect(tvPage!.locator('.display-board__map')).toHaveCount(0, { timeout: UI_TIMEOUT_MS });
+  await expect(playerPage!.locator('.board-map')).toHaveCount(0, { timeout: UI_TIMEOUT_MS });
 });
 
 test('troca de cena: DM ativa a segunda cena, TV/jogador convergem; voltar restaura', async () => {
@@ -772,38 +799,47 @@ test('troca de cena: DM ativa a segunda cena, TV/jogador convergem; voltar resta
   const page = dmDesktopPage!;
 
   const third = await uploadMapViaApi(api, w.dm, w.table._id, 'scene-two.png');
-  w.sceneTwoMapUrl = third.publicUrl;
-  expect(third.publicUrl).not.toBe(w.mapTwoUrl);
+  // O campo é `type="url"`: URLs relativas do driver local não passam na
+  // validação nativa do formulário, então colamos a versão absoluta.
+  const thirdAbsolute = /^https?:\/\//i.test(third.publicUrl)
+    ? third.publicUrl
+    : `${getBaseUrl()}${third.publicUrl}`;
+  w.sceneTwoMapUrl = thirdAbsolute;
+  expect(thirdAbsolute).not.toBe(w.mapTwoUrl);
 
+  await openScenePanelTab(page);
+  const before = await resync(w.dmSocket, w.table._id);
   const form = page.locator('.scene-manager .create-scene-form');
   await expect(form).toBeVisible({ timeout: UI_TIMEOUT_MS });
-  await form.locator('input[placeholder="Nome da Cena"]').fill(SCENE_TWO_NAME);
-  await form.locator('input[placeholder="URL da Imagem (Opcional)"]').fill(third.publicUrl);
-  await form.getByRole('button', { name: 'Adicionar Cena', exact: true }).click();
-  await expect(sceneRow(page, SCENE_TWO_NAME), 'A segunda cena precisa aparecer na lista.').toBeVisible({
+  await form.locator('#scene-name').fill(SCENE_TWO_NAME);
+  await form.locator('#scene-image-url').fill(thirdAbsolute);
+  await expect(form.locator('.scene-check input[type="checkbox"]')).toBeChecked();
+  await form.getByRole('button', { name: 'Criar cena', exact: true }).click();
+  const sceneTwoRow = sceneRow(page, SCENE_TWO_NAME);
+  await expect(sceneTwoRow, 'A segunda cena precisa aparecer na lista.').toBeVisible({
     timeout: UI_TIMEOUT_MS,
   });
-
-  const before = await resync(w.dmSocket, w.table._id);
-  await activateSceneFromUi(page, SCENE_TWO_NAME);
+  await expect(sceneTwoRow, 'Criar cena já ativa a cena; não há segundo clique.').toHaveClass(
+    /active-scene/,
+  );
 
   await expect
     .poll(async () => (await resync(w.dmSocket, w.table._id)).activeScene?.name, { timeout: UI_TIMEOUT_MS })
     .toBe(SCENE_TWO_NAME);
   const afterSwitch = await resync(w.dmSocket, w.table._id);
   expect(afterSwitch.revision, 'Trocar a cena precisa incrementar a revisão.').toBeGreaterThan(before.revision);
-  expect(afterSwitch.activeScene?.imageUrl).toBe(third.publicUrl);
+  expect(afterSwitch.activeScene?.imageUrl).toBe(thirdAbsolute);
 
   await expect(tvPage!.locator('.display-header__scene')).toContainText(SCENE_TWO_NAME, {
     timeout: UI_TIMEOUT_MS,
   });
-  await expect(tvPage!.locator('.display-board__map')).toHaveAttribute('src', third.publicUrl, {
+  await expect(tvPage!.locator('.display-board__map')).toHaveAttribute('src', thirdAbsolute, {
     timeout: UI_TIMEOUT_MS,
   });
   await expect(playerPage!.locator('.play-header__scene')).toContainText(SCENE_TWO_NAME, {
     timeout: UI_TIMEOUT_MS,
   });
-  await expect(playerPage!.locator('.board-map')).toHaveAttribute('src', third.publicUrl, {
+  await expect(playerPage!.locator('.board-map')).toHaveAttribute('src', thirdAbsolute, {
     timeout: UI_TIMEOUT_MS,
   });
   await expect

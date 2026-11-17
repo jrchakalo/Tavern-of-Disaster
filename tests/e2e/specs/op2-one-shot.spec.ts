@@ -585,6 +585,11 @@ async function readSheetNumber(sheet: ReturnType<Page['locator']>, label: RegExp
   return Number(await input.inputValue());
 }
 
+async function ensureDmInitiativeTab(page: Page): Promise<void> {
+  const tab = page.locator('.dm-panel .dm-panel__tab', { hasText: 'Iniciativa' }).first();
+  if (await tab.count()) await tab.click().catch(() => undefined);
+}
+
 async function openDmCharacterSheet(page: Page, tokenName: string) {
   const sheet = page.locator('.character-sheet');
   if (await sheet.isVisible().catch(() => false)) {
@@ -593,6 +598,7 @@ async function openDmCharacterSheet(page: Page, tokenName: string) {
     await expect(sheet).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
   }
 
+  await ensureDmInitiativeTab(page);
   const link = page.locator('.dm-panel .initiative-panel .character-link', { hasText: tokenName }).first();
   if ((await link.count()) === 0) {
     const toggle = page.locator('.dm-panel .toggle-button').first();
