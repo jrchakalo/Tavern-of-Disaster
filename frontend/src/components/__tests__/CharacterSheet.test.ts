@@ -70,22 +70,107 @@ describe('CharacterSheet', () => {
     expect(wrapper.find('.vitals').exists()).toBe(true);
 
     const labels = wrapper.findAll('.sheet-tabs__tab').map((tab) => tab.text());
-    expect(labels).toEqual([
-      'Identidade',
-      'Atributos & Perícias',
-      'Combate',
-      'Ataques',
-      'Características',
-      'Inventário',
-      'Magias',
-      'Notas',
-    ]);
+    expect(labels).toEqual(['Identidade', 'Atributos', 'Combate', 'Inventário & Notas']);
 
     // D&D 5e: atributos e perícias calculados aparecem na aba correspondente.
     const atributosTab = wrapper.findAll('.sheet-tabs__tab')[1];
     await atributosTab.trigger('click');
     expect(wrapper.find('.ability-grid').exists()).toBe(true);
     expect(wrapper.find('.skill-list').exists()).toBe(true);
+  });
+
+  it('keeps vitals and the tab strip fixed above the scrolling panel', () => {
+    const wrapper = mount(CharacterSheet, {
+      props: {
+        open: true,
+        character: { ...baseCharacter, systemKey: 'dnd5e' },
+        isDM: true,
+        isOwner: true,
+        system: null,
+      },
+      global: {
+        stubs: { teleport: true },
+      },
+    });
+
+    const pinned = wrapper.get('.sheet-pinned');
+    expect(pinned.find('.vitals').exists()).toBe(true);
+    expect(pinned.find('.sheet-tabs').exists()).toBe(true);
+
+    // O trilho não pode viver dentro da área que rola: era isso que colapsava.
+    const scrollArea = wrapper.get('.sheet-panel-scroll');
+    expect(scrollArea.find('.sheet-tabs').exists()).toBe(false);
+    expect(scrollArea.findAll('.sheet-tab-panel').length).toBe(4);
+  });
+
+  it('groups every section without losing content', async () => {
+    const wrapper = mount(CharacterSheet, {
+      props: {
+        open: true,
+        character: {
+          ...baseCharacter,
+          systemKey: 'dnd5e',
+          attacks: [{ name: 'Espada longa', bonus: 5, damage: '1d8+3' }],
+          features: [{ name: 'Ataque furtivo', description: '1d6' }],
+          inventory: [{ name: 'Corda', quantity: 1 }],
+        },
+        isDM: true,
+        isOwner: true,
+        system: null,
+      },
+      global: {
+        stubs: { teleport: true },
+      },
+    });
+
+    async function openTab(index: number) {
+      await wrapper.findAll('.sheet-tabs__tab')[index].trigger('click');
+      return wrapper
+        .findAll('.sheet-tab-panel')
+        .find((panel) => (panel.element as HTMLElement).style.display !== 'none');
+    }
+
+    const combate = await openTab(2);
+    expect(combate, 'Combate precisa estar visível.').toBeTruthy();
+    expect(combate!.find('.combat').exists()).toBe(true);
+    expect(combate!.text()).toContain('Ataques');
+    expect(combate!.text()).toContain('Espaços de magia');
+
+    const inventario = await openTab(3);
+    expect(inventario, 'Inventário & Notas precisa estar visível.').toBeTruthy();
+    expect(inventario!.text()).toContain('Inventário');
+    expect(inventario!.text()).toContain('Características');
+    expect(inventario!.text()).toContain('Notas livres');
+  });
+
+  it('navigates the tab strip with arrow keys, Home and End', async () => {
+    const wrapper = mount(CharacterSheet, {
+      props: {
+        open: true,
+        character: { ...baseCharacter, systemKey: 'dnd5e' },
+        isDM: true,
+        isOwner: true,
+        system: null,
+      },
+      global: {
+        stubs: { teleport: true },
+      },
+    });
+
+    // O stub de teleport recria o DOM a cada update; reconsultamos o trilho.
+    const tablist = () => wrapper.get('.sheet-tabs');
+    const selected = () =>
+      wrapper.findAll('.sheet-tabs__tab').findIndex((tab) => tab.attributes('aria-selected') === 'true');
+
+    expect(selected()).toBe(0);
+    await tablist().trigger('keydown', { key: 'ArrowRight' });
+    expect(selected()).toBe(1);
+    await tablist().trigger('keydown', { key: 'End' });
+    expect(selected()).toBe(3);
+    await tablist().trigger('keydown', { key: 'Home' });
+    expect(selected()).toBe(0);
+    await tablist().trigger('keydown', { key: 'ArrowLeft' });
+    expect(selected()).toBe(3);
   });
 
   it('prevents editing when user is neither DM nor owner', () => {

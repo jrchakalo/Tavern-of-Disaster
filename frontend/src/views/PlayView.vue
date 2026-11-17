@@ -18,6 +18,7 @@ import { mergeCharacterSummary } from '../components/character/summary';
 import type { CharacterDTO, DiceRolledPayload, IInitiativeEntry, RollLogEntryDTO, TokenInfo } from '../types';
 
 import PlayerBoard from '../components/play/PlayerBoard.vue';
+import PlayerImageScene from '../components/play/PlayerImageScene.vue';
 import InitiativeStrip from '../components/play/InitiativeStrip.vue';
 import TokenCard from '../components/play/TokenCard.vue';
 import TokenDetailsSheet from '../components/play/TokenDetailsSheet.vue';
@@ -267,10 +268,18 @@ async function handleCharacterDelete() {
 
 const tableName = computed(() => currentTable.value?.name ?? 'Mesa');
 const sceneName = computed(() => activeScene.value?.name ?? 'Nenhuma cena ativa');
+/**
+ * Cena de imagem é handout/exploração: o jogador vê só a imagem (pinça, pan e
+ * zoom), sem grade, tokens, turno, iniciativa, ficha de token ou "Mover".
+ * Trocar de volta para uma cena de batalha restaura o tabuleiro inteiro.
+ */
+const isImageScene = computed(() => activeScene.value?.type === 'image');
 const isLive = computed(() => sessionStatus.value === 'LIVE');
 const isMyTurn = computed(() => isLive.value && Boolean(myActiveToken.value));
 const isOffline = computed(() => connectionStatus.value !== 'connected');
-const canMove = computed(() => isMyTurn.value && Boolean(activeScene.value) && !isOffline.value);
+const canMove = computed(
+  () => isMyTurn.value && Boolean(activeScene.value) && !isImageScene.value && !isOffline.value,
+);
 const canEndTurn = computed(() => isMyTurn.value && !isOffline.value);
 
 const statusLabel = computed(() => {
@@ -442,6 +451,15 @@ watch(sessionStatus, (status) => {
     pendingMove.value = null;
     clearUndo();
   }
+});
+
+// Cena de imagem não aceita movimento: sair do modo mover evita um toque
+// "armado" sem alvo quando o Mestre troca de cena no meio do turno.
+watch(isImageScene, (isImage) => {
+  if (!isImage) return;
+  moveMode.value = false;
+  pendingMove.value = null;
+  clearUndo();
 });
 
 watch(
@@ -1036,8 +1054,19 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <section class="play-board" aria-label="Tabuleiro">
+    <section
+      class="play-board"
+      :class="{ 'play-board--image': isImageScene }"
+      :aria-label="isImageScene ? 'Imagem da cena' : 'Tabuleiro'"
+    >
+      <PlayerImageScene
+        v-if="isImageScene"
+        :image-url="currentMapUrl"
+        :scene-name="sceneName"
+      />
+
       <PlayerBoard
+        v-else
         ref="boardRef"
         :squares="squares"
         :grid-width="gridWidth"
@@ -1079,7 +1108,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        v-else-if="!myToken && canWrite"
+        v-else-if="!isImageScene && !myToken && canWrite"
         class="session-overlay session-overlay--empty"
         role="region"
         aria-label="Personagem no tabuleiro"
@@ -1096,7 +1125,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        v-if="pendingMove"
+        v-if="pendingMove && !isImageScene"
         class="move-confirm"
         role="status"
         aria-live="polite"
@@ -1114,7 +1143,7 @@ onBeforeUnmount(() => {
     </section>
 
     <section
-      v-if="isLive && canWrite && myToken"
+      v-if="isLive && canWrite && myToken && !isImageScene"
       class="play-initiative"
       aria-label="Seu personagem e iniciativa"
     >
@@ -1601,6 +1630,11 @@ onBeforeUnmount(() => {
   flex: 1 0 auto;
   min-height: 46vh;
   overflow: hidden;
+}
+
+.play-board--image {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .session-overlay {

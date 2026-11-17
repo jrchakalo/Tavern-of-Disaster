@@ -8,15 +8,12 @@
  */
 import type { Character, CharacterDTO } from '../../types';
 
-export type SheetTabKey =
-  | 'identidade'
-  | 'atributos'
-  | 'combate'
-  | 'ataques'
-  | 'caracteristicas'
-  | 'inventario'
-  | 'magias'
-  | 'notas';
+/**
+ * Seções de navegação da ficha padrão. Quatro abas cobrem os oito blocos
+ * antigos: Combate agrupa combate/ataques/magias e Inventário & Notas agrupa
+ * inventário/características/notas. Nenhum campo foi removido — só o acesso.
+ */
+export type SheetTabKey = 'identidade' | 'atributos' | 'combate' | 'inventario';
 
 export interface SheetProfileDraft {
   className: string;

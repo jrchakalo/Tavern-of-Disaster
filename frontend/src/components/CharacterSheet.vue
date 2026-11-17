@@ -152,14 +152,21 @@ const systemAttributeKeys = computed(
 
 const tabs: Array<{ key: SheetTabKey; label: string }> = [
   { key: 'identidade', label: 'Identidade' },
-  { key: 'atributos', label: 'Atributos & Perícias' },
+  { key: 'atributos', label: 'Atributos' },
   { key: 'combate', label: 'Combate' },
-  { key: 'ataques', label: 'Ataques' },
-  { key: 'caracteristicas', label: 'Características' },
-  { key: 'inventario', label: 'Inventário' },
-  { key: 'magias', label: 'Magias' },
-  { key: 'notas', label: 'Notas' },
+  { key: 'inventario', label: 'Inventário & Notas' },
 ];
+
+const panelScrollRef = ref<HTMLDivElement | null>(null);
+
+/** Trocar de aba começa a leitura do painel do topo, não no meio do texto. */
+watch(activeTab, async () => {
+  await nextTick();
+  const panel = panelScrollRef.value;
+  if (!panel) return;
+  if (typeof panel.scrollTo === 'function') panel.scrollTo({ top: 0 });
+  else panel.scrollTop = 0;
+});
 
 function syncFromCharacter() {
   remoteUpdated.value = false;
@@ -377,7 +384,11 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
           </button>
         </header>
 
-        <section v-if="hasCharacterLoaded" class="sheet-body">
+        <section
+          v-if="hasCharacterLoaded"
+          class="sheet-body"
+          :class="{ 'sheet-body--standard': systemKind === 'standard' }"
+        >
           <p v-if="remoteUpdated" class="sheet-banner" role="status">
             Atualizado por outro cliente enquanto você editava. Suas alterações continuam aqui.
           </p>
@@ -398,12 +409,21 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
           />
 
           <template v-else>
-            <VitalsBar :draft="draft" :can-edit="canEdit" :patch="applyPatch" />
+            <!-- Vitais e abas fixos: só o painel da aba ativa rola. -->
+            <div class="sheet-pinned">
+              <VitalsBar :draft="draft" :can-edit="canEdit" :patch="applyPatch" />
 
-            <SheetTabs :tabs="tabs" v-model="activeTab" />
+              <SheetTabs :tabs="tabs" v-model="activeTab" wrap />
+            </div>
 
-            <div class="sheet-tab-panels">
-              <div v-show="activeTab === 'identidade'" class="sheet-tab-panel">
+            <div ref="panelScrollRef" class="sheet-panel-scroll">
+              <div
+                v-show="activeTab === 'identidade'"
+                class="sheet-tab-panel"
+                role="tabpanel"
+                aria-labelledby="sheet-tab-identidade"
+                tabindex="0"
+              >
                 <IdentitySection
                   :draft="draft"
                   :can-edit="canEdit"
@@ -413,7 +433,13 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
                 />
               </div>
 
-              <div v-show="activeTab === 'atributos'" class="sheet-tab-panel">
+              <div
+                v-show="activeTab === 'atributos'"
+                class="sheet-tab-panel"
+                role="tabpanel"
+                aria-labelledby="sheet-tab-atributos"
+                tabindex="0"
+              >
                 <AbilitiesSection
                   :draft="draft"
                   :can-edit="canEdit"
@@ -423,51 +449,63 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
                 />
               </div>
 
-              <div v-show="activeTab === 'combate'" class="sheet-tab-panel">
+              <div
+                v-show="activeTab === 'combate'"
+                class="sheet-tab-panel"
+                role="tabpanel"
+                aria-labelledby="sheet-tab-combate"
+                tabindex="0"
+              >
                 <CombatSection :draft="draft" :can-edit="canEdit" :patch="applyPatch" :dnd="dnd" />
+
+                <div class="sheet-panel-group">
+                  <RecordListSection
+                    kind="attacks"
+                    :rows="draftToRecords('attacks')"
+                    :can-edit="canEdit"
+                    @change="recordsToDraft('attacks', $event)"
+                  />
+                </div>
+
+                <div class="sheet-panel-group">
+                  <SpellSlotsSection
+                    :rows="draft.spellSlots"
+                    :can-edit="canEdit"
+                    @change="applyPatch({ spellSlots: $event })"
+                  />
+                </div>
               </div>
 
-              <div v-show="activeTab === 'ataques'" class="sheet-tab-panel">
-                <RecordListSection
-                  kind="attacks"
-                  :rows="draftToRecords('attacks')"
-                  :can-edit="canEdit"
-                  @change="recordsToDraft('attacks', $event)"
-                />
-              </div>
-
-              <div v-show="activeTab === 'caracteristicas'" class="sheet-tab-panel">
-                <RecordListSection
-                  kind="features"
-                  :rows="draftToRecords('features')"
-                  :can-edit="canEdit"
-                  @change="recordsToDraft('features', $event)"
-                />
-              </div>
-
-              <div v-show="activeTab === 'inventario'" class="sheet-tab-panel">
+              <div
+                v-show="activeTab === 'inventario'"
+                class="sheet-tab-panel"
+                role="tabpanel"
+                aria-labelledby="sheet-tab-inventario"
+                tabindex="0"
+              >
                 <RecordListSection
                   kind="inventory"
                   :rows="draftToRecords('inventory')"
                   :can-edit="canEdit"
                   @change="recordsToDraft('inventory', $event)"
                 />
-              </div>
 
-              <div v-show="activeTab === 'magias'" class="sheet-tab-panel">
-                <SpellSlotsSection
-                  :rows="draft.spellSlots"
-                  :can-edit="canEdit"
-                  @change="applyPatch({ spellSlots: $event })"
-                />
-              </div>
+                <div class="sheet-panel-group">
+                  <RecordListSection
+                    kind="features"
+                    :rows="draftToRecords('features')"
+                    :can-edit="canEdit"
+                    @change="recordsToDraft('features', $event)"
+                  />
+                </div>
 
-              <div v-show="activeTab === 'notas'" class="sheet-tab-panel">
-                <NotesSection
-                  :notes="draft.notes"
-                  :can-edit="canEdit"
-                  @update:notes="applyPatch({ notes: $event })"
-                />
+                <div class="sheet-panel-group">
+                  <NotesSection
+                    :notes="draft.notes"
+                    :can-edit="canEdit"
+                    @update:notes="applyPatch({ notes: $event })"
+                  />
+                </div>
               </div>
             </div>
           </template>
@@ -652,6 +690,53 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
   scroll-padding-bottom: var(--s-6);
 }
 
+/* Ficha padrão: vitais + abas fixos; o painel ativo é o único que rola. */
+.sheet-body--standard {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.sheet-body--standard .sheet-banner {
+  flex: 0 0 auto;
+  margin: var(--s-3) var(--s-5) 0;
+}
+
+.sheet-pinned {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-5) var(--s-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.sheet-panel-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--s-4) var(--s-5) var(--s-6);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-bottom: var(--s-6);
+  -webkit-overflow-scrolling: touch;
+}
+
+.sheet-tab-panel {
+  display: block;
+}
+
+.sheet-tab-panel:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}
+
+.sheet-panel-group {
+  margin-top: var(--s-5);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+}
+
 .sheet-banner {
   margin: 0;
   padding: var(--s-2) var(--s-3);
@@ -665,14 +750,6 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
   border-left-color: var(--danger);
   background: rgb(178 58 50 / 0.12);
   color: var(--danger-ink);
-}
-
-.sheet-tab-panels {
-  min-width: 0;
-}
-
-.sheet-tab-panel {
-  padding-top: var(--s-2);
 }
 
 .sheet-empty {
@@ -784,6 +861,23 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
 
   .sheet-body {
     padding: var(--s-3) var(--s-4);
+  }
+
+  .sheet-body--standard {
+    padding: 0;
+  }
+
+  .sheet-body--standard .sheet-banner {
+    margin: var(--s-2) var(--s-4) 0;
+  }
+
+  .sheet-pinned {
+    gap: var(--s-2);
+    padding: var(--s-3) var(--s-4);
+  }
+
+  .sheet-panel-scroll {
+    padding: var(--s-3) var(--s-4) var(--s-6);
   }
 
   .sheet-confirm {
