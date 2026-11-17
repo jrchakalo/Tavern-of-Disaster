@@ -245,16 +245,18 @@ autoplay infinito sem `prefers-reduced-motion`.
 
 | Onda | Entrega | Responsável |
 |---|---|---|
-| D1 | tokens, base CSS, fontes, shell, Toast, Icon, BaseDialog/Sheet | design-foundation |
-| D2 | Home/Lobby, Login, Registro, Mesas, Perfil, Sistemas | frontend-auth-home |
-| D3a | layout 3 zonas, top bar, rail, painel 4 abas, turn bar, token (criar/editar/excluir) | frontend-dm-shell |
-| D3b | cena em um passo, grade, convite/TV e sessão | frontend-dm |
-| D3c | fichas do Mestre (criar/listar/vincular) e histórico único | frontend-dm |
-| D4a | shell do jogador, bottom nav, turn bar, câmera do tabuleiro, saída | frontend-player-shell |
-| D4b | ficha (criar/listar), dados, chat/chamada no nav | frontend-player |
-| D5a | TV em 3 zonas + dado assinatura (SVG, papel, sem loop) | frontend-tv |
-| D5b | integração do dado no DM/jogador, medição do jogador e limpeza de mídia | frontend-shared |
-| D6 | QA visual/a11y/E2E, correções e deploy | QA |
+| D1 | tokens, base CSS, fontes, shell, Toast, Icon, BaseDialog/Sheet | concluída (`468768f`) |
+| D2 | Home/Lobby, Login, Registro, Mesas, Perfil, Sistemas | concluída (`6be97f1`) |
+| D3a | layout 3 zonas, top bar, rail, painel 4 abas, turn bar, token (criar/editar/excluir) | concluída (`b89deb7`) |
+| D3b | cena em um passo, grade, convite/TV e sessão | concluída (`eb5c105`) |
+| D3c | fichas do Mestre (criar/listar/vincular) e histórico único | concluída (`ce25129`) |
+| D4a | shell do jogador, bottom nav, turn bar, câmera do tabuleiro, saída | concluída (`89954c2`) |
+| D4b | ficha (criar/listar), dados, chat/chamada no nav | concluída (`cd06c79`) |
+| D5a | TV em 3 zonas + dado assinatura (SVG, papel, sem loop) | concluída (`d35e27d`) |
+| D5b | momento do dado no celular | concluída (`e523503`) |
+| D6a | E2E atualizado + axe + correções de teste | QA |
+| D6b | cockpit compacto: mídia, chat e dados | QA |
+| D6c | varredura visual final, medição do jogador e deploy | QA |
 | D7 | backend: iniciativa não destrutiva + `requestDeleteToken` | concluído (`4e8798b`) |
 
 Cada onda tem branch/worktree própria a partir de `design/overhaul-v1`, revisão
