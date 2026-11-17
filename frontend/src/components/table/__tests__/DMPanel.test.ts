@@ -74,7 +74,8 @@ describe('DMPanel', () => {
     });
     const tokenButton = wrapper.find('.token-list__main');
     expect(tokenButton.exists()).toBe(true);
-    expect(tokenButton.attributes('aria-label')).toContain('Ghoul');
+    expect(tokenButton.text()).toContain('Ghoul');
+    expect(tokenButton.attributes('aria-label')).toBeUndefined();
     await tokenButton.trigger('click');
     expect(wrapper.emitted('select-token')?.[0]).toEqual(['token-1']);
     wrapper.unmount();
