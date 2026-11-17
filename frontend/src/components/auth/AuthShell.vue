@@ -31,15 +31,15 @@ withDefaults(
       <dl class="auth-shell__routes">
         <div class="auth-shell__route">
           <dt>Mestre</dt>
-          <dd><code>/table/:id</code></dd>
+          <dd>Prepara a cena e conduz o turno</dd>
         </div>
         <div class="auth-shell__route">
           <dt>Jogador</dt>
-          <dd><code>/play/:id</code></dd>
+          <dd>Move o token e rola pelo celular</dd>
         </div>
         <div class="auth-shell__route">
           <dt>TV da sala</dt>
-          <dd><code>/display/:id</code></dd>
+          <dd>Mostra o tabuleiro para todos</dd>
         </div>
       </dl>
 
