@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { extractInviteCode, isTableDm, resolveTableEntry } from '../tableEntry';
+import { extractInviteCode, isTableDm, resolveJoinedTableEntry, resolveTableEntry } from '../tableEntry';
 
 const table = {
   _id: 't1',
@@ -28,6 +28,23 @@ describe('resolveTableEntry', () => {
   it('returns null without a table id', () => {
     expect(resolveTableEntry(null, 'u-dm')).toBeNull();
     expect(resolveTableEntry({ dm: table.dm, players: [] } as never, 'u-dm')).toBeNull();
+  });
+});
+
+describe('resolveJoinedTableEntry', () => {
+  it('uses the user tables to resolve the role after a join', () => {
+    expect(resolveJoinedTableEntry('t1', [table], 'u-dm')).toBe('/table/t1');
+    expect(resolveJoinedTableEntry('t1', [table], 'u-p1')).toBe('/play/t1');
+  });
+
+  it('falls back to the player shell when the list has not refreshed yet', () => {
+    expect(resolveJoinedTableEntry('t9', [table], 'u-dm')).toBe('/play/t9');
+    expect(resolveJoinedTableEntry('t9', null, 'u-dm')).toBe('/play/t9');
+  });
+
+  it('returns null without a table id', () => {
+    expect(resolveJoinedTableEntry('', [table], 'u-dm')).toBeNull();
+    expect(resolveJoinedTableEntry(null, [table], 'u-dm')).toBeNull();
   });
 });
 

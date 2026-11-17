@@ -1,240 +1,467 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
-import { storeToRefs } from 'pinia';
-import { useSystemStore } from '../stores/systemStore';
-import Icon from '../components/Icon.vue';
+import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
+import { storeToRefs } from 'pinia'
+import { useSystemStore } from '../stores/systemStore'
+import { systemDisplayName } from '../services/systemLabels'
+import EmptyState from '../components/ui/EmptyState.vue'
+import Icon from '../components/Icon.vue'
+import type { SystemDTO } from '../types'
 
-const systemStore = useSystemStore();
-const { systems } = storeToRefs(systemStore);
+const systemStore = useSystemStore()
+const { systems, isLoading, isLoaded } = storeToRefs(systemStore)
 
-const isLoading = computed(() => systemStore.isLoading);
-const hasSystems = computed(() => systems.value.length > 0);
+const query = ref('')
+const loadError = ref('')
 
-function openDocs(url?: string | null) {
-  if (!url) return;
-  window.open(url, '_blank', 'noopener');
+const ORDER = [
+  'dnd5e',
+  'ordem-paranormal-2',
+  'ordem-paranormal-sobrevivendo-ao-horror',
+  'cyberpunk-red',
+]
+
+function normalize(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
 }
 
-function attributePreview(system: (typeof systems.value)[number]) {
-  return (system.defaultAttributes ?? []).slice(0, 4);
+const orderedSystems = computed(() => {
+  return [...systems.value].sort((a, b) => {
+    const indexA = ORDER.indexOf(a.key)
+    const indexB = ORDER.indexOf(b.key)
+    if (indexA !== -1 || indexB !== -1) {
+      return (indexA === -1 ? ORDER.length : indexA) - (indexB === -1 ? ORDER.length : indexB)
+    }
+    return a.name.localeCompare(b.name, 'pt-BR')
+  })
+})
+
+const filteredSystems = computed(() => {
+  const term = normalize(query.value)
+  if (!term) return orderedSystems.value
+  return orderedSystems.value.filter((system) => {
+    const haystack = normalize(
+      `${systemDisplayName(system)} ${system.name} ${system.key} ${system.description ?? ''}`,
+    )
+    return haystack.includes(term)
+  })
+})
+
+const searching = computed(() => Boolean(query.value.trim()))
+
+function indexLabel(system: SystemDTO): string {
+  const index = orderedSystems.value.findIndex((entry) => entry._id === system._id)
+  return String(index + 1).padStart(2, '0')
+}
+
+function isDefault(system: SystemDTO): boolean {
+  return system.key === 'dnd5e'
+}
+
+function facts(system: SystemDTO): string[] {
+  const result: string[] = []
+  const attributes = system.defaultAttributes?.length ?? 0
+  const presets = system.dicePresets?.length ?? 0
+  if (attributes) result.push(`${attributes} atributos`)
+  if (presets) result.push(`${presets} rolagens`)
+  if (system.movementRules?.baseSpeedFeet) {
+    result.push(`${system.movementRules.baseSpeedFeet} ft de base`)
+  }
+  return result
+}
+
+async function load(force = false) {
+  loadError.value = ''
+  try {
+    await systemStore.fetchAll({ force })
+  } catch {
+    loadError.value = 'Não foi possível carregar a biblioteca de sistemas.'
+  }
+}
+
+function clearSearch() {
+  query.value = ''
 }
 
 onMounted(() => {
-  if (!systemStore.isLoaded) {
-    systemStore.fetchAll().catch((error) => {
-      console.error('[systems] falha ao carregar biblioteca', error);
-    });
-  }
-});
+  if (!isLoaded.value) void load()
+})
 </script>
 
 <template>
-  <div class="systems-library">
-    <header class="library-hero surface">
-      <div>
-        <p class="eyebrow">Biblioteca</p>
-        <h1>Sistemas suportados</h1>
-        <p class="lead">
-          Explore presets prontos para configurar atributos, movimentação e rolagens padrão. Escolha um sistema
-          na hora de montar sua mesa e deixe o VTT cuidar do resto.
+  <div class="systems-page">
+    <header class="systems-head">
+      <div class="systems-head__copy">
+        <p class="systems-head__kicker">Biblioteca</p>
+        <h1>Sistemas</h1>
+        <p class="systems-head__lead">
+          Cada sistema define atributos, movimento e rolagens padrão. Escolha um arquivo e crie a
+          mesa já com ele selecionado — sem configurar ficha do zero.
         </p>
       </div>
-      <Icon name="book" size="56" class="hero-icon" />
+
+      <div class="systems-head__tools">
+        <div class="systems-search">
+          <label for="systems-search" class="sr-only">Buscar sistema por nome ou chave</label>
+          <Icon name="search" :size="16" />
+          <input
+            id="systems-search"
+            v-model="query"
+            type="search"
+            placeholder="Buscar por nome ou chave"
+            autocomplete="off"
+            @keydown.esc="clearSearch"
+          />
+        </div>
+        <p class="systems-head__count" aria-live="polite">
+          <span v-if="searching">
+            {{ filteredSystems.length }} de {{ systems.length }} arquivos
+          </span>
+          <span v-else>{{ systems.length }} arquivos de sistema</span>
+        </p>
+      </div>
     </header>
 
-    <section class="system-grid" v-if="hasSystems">
-      <article v-for="system in systems" :key="system._id" class="system-card surface">
-        <div class="card-head">
-          <div>
-            <p class="system-key">{{ system.key }}</p>
-            <h2>{{ system.name }}</h2>
-          </div>
-          <button v-if="system.docsUrl" type="button" class="ghost" @click="openDocs(system.docsUrl)">
-            Abrir livro
-            <Icon name="external" size="16" />
-          </button>
+    <p v-if="isLoading && !systems.length" class="systems-status" role="status">
+      Carregando sistemas…
+    </p>
+
+    <EmptyState
+      v-else-if="loadError && !systems.length"
+      tone="error"
+      eyebrow="Falha de rede"
+      title="A biblioteca não abriu"
+      :description="loadError"
+    >
+      <button type="button" class="btn" @click="load(true)">
+        <Icon name="refresh" :size="16" />
+        Tentar de novo
+      </button>
+      <RouterLink to="/" class="btn ghost">Voltar ao início</RouterLink>
+    </EmptyState>
+
+    <EmptyState
+      v-else-if="!systems.length"
+      eyebrow="Arquivo vazio"
+      title="Nenhum sistema cadastrado"
+      description="O servidor não devolveu nenhum sistema. Tente recarregar a biblioteca."
+    >
+      <button type="button" class="btn" @click="load(true)">
+        <Icon name="refresh" :size="16" />
+        Recarregar
+      </button>
+    </EmptyState>
+
+    <EmptyState
+      v-else-if="!filteredSystems.length"
+      eyebrow="Busca"
+      title="Nenhum sistema com esse termo"
+      :description="`Não encontramos “${query.trim()}” no nome, na chave ou na descrição.`"
+    >
+      <button type="button" class="btn outline" @click="clearSearch">Limpar busca</button>
+    </EmptyState>
+
+    <section v-else class="system-list" aria-label="Sistemas disponíveis">
+      <article
+        v-for="system in filteredSystems"
+        :key="system._id"
+        class="system-file"
+        :class="{ 'system-file--default': isDefault(system) }"
+      >
+        <div class="system-file__index" aria-hidden="true">
+          <span>{{ indexLabel(system) }}</span>
+          <span class="system-file__index-rule" />
         </div>
-        <p class="description">{{ system.description || 'Sistema genérico pronto para uso imediato.' }}</p>
-        <div v-if="system.defaultAttributes?.length" class="attributes">
-          <p class="attr-title">Atributos base</p>
-          <ul>
-            <li v-for="attr in attributePreview(system)" :key="attr.key">
-              <span class="attr-label">{{ attr.label }}</span>
-              <small>{{ attr.type }}</small>
-            </li>
+
+        <div class="system-file__body">
+          <header class="system-file__head">
+            <div class="system-file__title">
+              <p class="system-file__key">{{ system.key }}</p>
+              <h2>{{ systemDisplayName(system) }}</h2>
+            </div>
+            <span v-if="isDefault(system)" class="badge warning">Padrão da plataforma</span>
+          </header>
+
+          <p class="system-file__description">
+            {{ system.description || 'Sistema genérico pronto para uso imediato.' }}
+          </p>
+
+          <ul v-if="facts(system).length" class="system-file__facts">
+            <li v-for="fact in facts(system)" :key="fact">{{ fact }}</li>
           </ul>
-        </div>
-        <div class="card-footer">
-          <span class="chip" v-if="system.movementRules?.baseSpeedFeet">
-            <Icon name="ruler" size="14" /> {{ system.movementRules.baseSpeedFeet }} ft base
-          </span>
-          <span class="chip neutral">
-            <Icon name="dice" size="14" /> {{ system.dicePresets?.length || 0 }} presets
-          </span>
+
+          <div class="system-file__actions">
+            <RouterLink :to="`/tables?system=${system.key}`" class="btn btn-sm">
+              Criar mesa com este sistema
+              <Icon name="arrow-right" :size="14" />
+            </RouterLink>
+            <a
+              v-if="system.docsUrl"
+              :href="system.docsUrl"
+              target="_blank"
+              rel="noopener"
+              class="btn btn-sm ghost"
+            >
+              Abrir livro
+              <Icon name="external" :size="14" />
+            </a>
+          </div>
         </div>
       </article>
     </section>
-
-    <div v-else class="empty-state surface">
-      <p v-if="isLoading">Carregando sistemas...</p>
-      <p v-else>Nenhum sistema cadastrado ainda. Em breve adicionaremos mais universos jogáveis.</p>
-    </div>
   </div>
 </template>
 
 <style scoped>
-.systems-library {
-  padding: clamp(1.5rem, 4vw, 3rem);
-  max-width: 1200px;
-  margin: 0 auto;
+.systems-page {
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+  padding: var(--s-7) var(--s-6) var(--s-9);
+}
+
+.systems-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-6);
+  padding-bottom: var(--s-6);
+  border-bottom: 2px solid var(--line-strong);
+}
+
+.systems-head__copy {
+  max-width: 58ch;
+}
+
+.systems-head__kicker {
+  margin: 0 0 var(--s-2);
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+}
+
+.systems-head h1 {
+  margin: 0;
+}
+
+.systems-head__lead {
+  margin: var(--s-3) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  line-height: 1.6;
+}
+
+.systems-head__tools {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: var(--s-2);
+  width: min(320px, 100%);
 }
-.surface {
-  border: 1px solid var(--color-border);
-  border-radius: 18px;
-  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt));
-  box-shadow: var(--elev-2);
-}
-.library-hero {
-  padding: clamp(1.25rem, 3vw, 2rem);
+
+.systems-search {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1.5rem;
+  gap: var(--s-3);
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--ink-0);
+  color: var(--text-muted);
 }
-.eyebrow {
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  margin: 0 0 0.25rem;
+
+.systems-search:focus-within {
+  border-color: var(--focus);
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
-.library-hero h1 {
-  margin: 0;
-  font-size: clamp(1.8rem, 3vw, 2.4rem);
-}
-.library-hero .lead {
-  margin: 0.5rem 0 0;
-  color: var(--color-text-muted);
-  max-width: 60ch;
-}
-.hero-icon {
-  color: var(--color-accent);
-}
-.system-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1.5rem;
-}
-.system-card {
-  padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.card-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: flex-start;
-}
-.system-key {
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  color: var(--color-text-muted);
-  margin: 0;
-}
-.system-card h2 {
-  margin: 0.1rem 0 0;
-  font-size: 1.25rem;
-}
-.system-card .ghost {
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: transparent;
-  color: inherit;
-  padding: 6px 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-.description {
-  margin: 0;
-  color: var(--color-text-muted);
-  min-height: 48px;
-}
-.attributes {
-  border-top: 1px solid var(--color-border);
-  padding-top: 0.75rem;
-}
-.attr-title {
-  margin: 0 0 0.25rem;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-}
-.attributes ul {
-  list-style: none;
+
+.systems-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
   padding: 0;
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  border: 0;
+  background: transparent;
+  outline: none;
 }
-.attributes li {
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 6px 10px;
+
+.systems-search input:focus-visible {
+  outline: none;
+}
+
+.systems-head__count {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  text-align: right;
+}
+
+.systems-status {
+  margin: var(--s-6) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+}
+
+.system-list {
   display: flex;
   flex-direction: column;
-  min-width: 90px;
-  background: rgba(255, 255, 255, 0.03);
 }
-.attr-label {
-  font-weight: 600;
+
+.system-file {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: var(--s-5);
+  padding: var(--s-6) 0;
+  border-bottom: 1px solid var(--line);
 }
-.attributes small {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
+
+.system-file--default {
+  border-left: 3px solid var(--manila);
+  padding-left: var(--s-4);
 }
-.card-footer {
-  margin-top: auto;
+
+.system-file__index {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding-top: var(--s-1);
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+}
+
+.system-file__index-rule {
+  width: 1px;
+  flex: 1 1 auto;
+  min-height: 48px;
+  background: var(--line);
+}
+
+.system-file__body {
+  min-width: 0;
+}
+
+.system-file__head {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
 }
-.chip {
-  border-radius: 999px;
-  padding: 4px 10px;
-  border: 1px solid var(--color-border);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
+
+.system-file__title {
+  min-width: 0;
 }
-.chip.neutral {
-  color: var(--color-text-muted);
+
+.system-file__key {
+  margin: 0 0 var(--s-1);
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
 }
-.empty-state {
-  padding: 2rem;
-  text-align: center;
-}
-.empty-state p {
+
+.system-file h2 {
   margin: 0;
-  color: var(--color-text-muted);
+  font-size: var(--text-2xl);
+  overflow-wrap: anywhere;
 }
-@media (max-width: 640px) {
-  .library-hero {
-    flex-direction: column;
+
+.system-file__description {
+  max-width: 66ch;
+  margin: var(--s-3) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  line-height: 1.6;
+}
+
+.system-file__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-5);
+  margin: var(--s-4) 0 0;
+  padding: var(--s-3) 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.system-file__facts li {
+  position: relative;
+  padding-left: var(--s-4);
+}
+
+.system-file__facts li::before {
+  content: '';
+  position: absolute;
+  top: 0.6em;
+  left: 0;
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--line-strong);
+}
+
+.system-file__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-top: var(--s-5);
+}
+
+@media (max-width: 860px) {
+  .systems-page {
+    padding: var(--s-6) var(--s-5) var(--s-8);
+  }
+
+  .systems-head {
     align-items: flex-start;
   }
-  .card-head {
-    flex-direction: column;
-    align-items: flex-start;
+
+  .systems-head__tools {
+    width: 100%;
+  }
+
+  .systems-head__count {
+    text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .system-file {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-3);
+    padding: var(--s-5) 0;
+  }
+
+  .system-file--default {
+    padding-left: var(--s-3);
+  }
+
+  .system-file__index {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--s-3);
+  }
+
+  .system-file__index-rule {
+    width: auto;
+    height: 1px;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .system-file__actions :deep(.btn) {
+    flex: 1 1 auto;
+    min-height: 44px;
   }
 }
 </style>
