@@ -90,7 +90,7 @@ const pingList = computed(() => {
         top: `${center.y - size / 2}px`,
         width: `${size}px`,
         height: `${size}px`,
-        '--ping-color': ping.color || '#ffeb3b',
+        '--ping-color': ping.color || 'var(--manila)',
       },
     });
   }
@@ -109,7 +109,10 @@ const pingList = computed(() => {
     >
       <img v-if="mapUrl" class="display-board__map" :src="mapUrl" alt="" draggable="false" />
       <div v-else class="display-board__placeholder">
-        <span>Mapa ainda não definido</span>
+        <p class="display-board__placeholder-title">Imagem da cena ainda não definida</p>
+        <p class="display-board__placeholder-copy">
+          O Mestre prepara o tabuleiro. Ele aparece aqui assim que a cena for ativada.
+        </p>
       </div>
 
       <GridLayer
@@ -189,16 +192,16 @@ const pingList = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
   box-sizing: border-box;
 }
 
 .display-board__canvas {
   position: relative;
   flex: 0 0 auto;
-  overflow: hidden;
-  background: #150f12;
-  box-shadow: var(--elev-2);
+  overflow: visible;
+  border: 1px solid var(--line-strong);
+  background: var(--ink-0);
 }
 
 .display-board__map {
@@ -206,7 +209,7 @@ const pingList = computed(() => {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   pointer-events: none;
   user-select: none;
 }
@@ -215,12 +218,29 @@ const pingList = computed(() => {
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  gap: var(--s-4);
+  padding: clamp(24px, 4vw, 64px);
   text-align: center;
-  color: var(--color-text-muted);
-  font-size: 1.2rem;
+}
+
+.display-board__placeholder-title {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 1.4vw + 1rem, 2.25rem);
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.display-board__placeholder-copy {
+  max-width: 44ch;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: clamp(1.125rem, 0.5vw + 0.85rem, 1.375rem);
+  line-height: 1.4;
 }
 
 .display-board__grid {
@@ -271,11 +291,11 @@ const pingList = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
   padding: 2px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 8px;
-  background: var(--color-surface);
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
   pointer-events: none;
   z-index: 4;
 }
@@ -284,35 +304,41 @@ const pingList = computed(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: 1px;
 }
 
 .display-board__initial {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .display-board__label {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 3px 6px;
-  font-size: 0.85rem;
-  line-height: 1.1;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  width: max-content;
+  max-width: min(220px, 40vw);
+  padding: 3px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  font-family: var(--font-sans);
+  font-size: clamp(1.125rem, 0.5vw + 0.75rem, 1.375rem);
+  font-weight: 500;
+  line-height: 1.15;
   text-align: center;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.6);
+  color: var(--text);
+  background: rgb(11 13 15 / 0.92);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transform: translateX(-50%);
 }
 
 .display-board__token.is-current-turn {
-  border-color: var(--color-warning);
-  box-shadow: 0 0 0 3px rgba(210, 156, 68, 0.55), 0 0 24px rgba(210, 156, 68, 0.55);
+  border-color: var(--manila);
+  box-shadow: inset 0 0 0 2px var(--manila);
 }
 
 @media (prefers-reduced-motion: reduce) {

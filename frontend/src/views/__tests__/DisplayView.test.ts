@@ -120,6 +120,8 @@ function createRefs(overrides: Record<string, unknown> = {}) {
         content: 'Ataque: 1d20+5 → [14] + 5 = 19',
       },
     ]),
+    pauseUntil: ref<string | null>(null),
+    recentRolls: ref([]),
     squares: ref([]),
     gridWidth: ref(20),
     gridHeight: ref(20),
@@ -226,6 +228,134 @@ describe('DisplayView', () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain('Aguardando o Mestre');
+    wrapper.unmount();
+  });
+
+  it('offers the /play invite with the table code while preparing', async () => {
+    setDisplayToken('#token=tv-secret');
+    tableStoreStub.__refs = createRefs({ sessionStatus: ref('PREPARING') });
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Aguardando o Mestre');
+    expect(wrapper.text()).toContain('ABC');
+    expect(wrapper.text()).toContain('/play');
+    expect(wrapper.text()).toContain('Entre em');
+    wrapper.unmount();
+  });
+
+  it('asks for the link when the snapshot has no invite code', async () => {
+    setDisplayToken('#token=tv-secret');
+    tableStoreStub.__refs = createRefs({
+      sessionStatus: ref('PREPARING'),
+      currentTable: ref({
+        _id: 'display-1',
+        name: 'Mesa da TV',
+        dm: { _id: 'dm-1', username: 'DM' },
+        players: [],
+        inviteCode: '',
+        status: 'PREPARING',
+      }),
+    });
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Peça o link ao Mestre');
+    wrapper.unmount();
+  });
+
+  it('shows a calm countdown while paused', async () => {
+    setDisplayToken('#token=tv-secret');
+    const until = new Date(Date.now() + 90_000).toISOString();
+    tableStoreStub.__refs = createRefs({
+      sessionStatus: ref('PAUSED'),
+      pauseUntil: ref(until),
+    });
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Sessão pausada');
+    expect(wrapper.text()).toContain('Volta em');
+    expect(wrapper.text()).toMatch(/\d{2}:\d{2}/);
+    wrapper.unmount();
+  });
+
+  it('names the table and closes the record when the session ended', async () => {
+    setDisplayToken('#token=tv-secret');
+    tableStoreStub.__refs = createRefs({ sessionStatus: ref('ENDED') });
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Sessão encerrada');
+    expect(wrapper.text()).toContain('Mesa da TV');
+    wrapper.unmount();
+  });
+
+  it('keeps rev and role as screen-reader-only hooks, invisible on the TV', async () => {
+    setDisplayToken('#token=tv-secret');
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    expect(wrapper.get('.display-header__revision').classes()).toContain('sr-only');
+    expect(wrapper.get('.display-header__role').classes()).toContain('sr-only');
+    expect(wrapper.get('.display-header__role').text()).toBe('TV');
+
+    const clone = wrapper.element.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('.sr-only').forEach((element) => element.remove());
+    const visible = clone.textContent ?? '';
+    expect(visible).not.toMatch(/\brev\s*\d+/i);
+    expect(visible).not.toContain('Mestre');
+    expect(visible).not.toContain('display-1');
+    wrapper.unmount();
+  });
+
+  it('shows the full-screen dice moment for a live roll (latest wins)', async () => {
+    setDisplayToken('#token=tv-secret');
+
+    const wrapper = mountDisplay();
+    await flushPromises();
+
+    socketHandlers['diceRolled']?.({
+      tableId: 'display-1',
+      expression: '1d20+5',
+      rolls: [
+        { die: 20, value: 14, kept: 'kept' },
+        { die: 20, value: 6, kept: 'dropped' },
+      ],
+      modifier: 5,
+      total: 19,
+      userId: 'user-1',
+      username: 'Tester',
+      createdAt: '2026-11-14T20:00:00.000Z',
+    });
+    await flushPromises();
+
+    expect(wrapper.find('.dice-moment').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Tester');
+    expect(wrapper.text()).toContain('1d20+5');
+
+    socketHandlers['diceRolled']?.({
+      tableId: 'display-1',
+      expression: '2d6',
+      rolls: [
+        { die: 6, value: 3, kept: 'kept' },
+        { die: 6, value: 4, kept: 'kept' },
+      ],
+      modifier: 0,
+      total: 7,
+      userId: 'user-1',
+      username: 'Tester',
+      createdAt: '2026-11-14T20:01:00.000Z',
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('2d6');
+    expect(wrapper.get('.dice-slip').text()).not.toContain('1d20+5');
     wrapper.unmount();
   });
 
