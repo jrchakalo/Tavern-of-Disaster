@@ -7,17 +7,24 @@ import { diceArtFor, formatModifier } from './dice/dieShapes';
 /**
  * Momento assinatura "Arquivo Morto": uma ficha de papel registra a rolagem,
  * com carimbo, régua manila e números em mono. O contrato público continua o
- * mesmo do DM (`payload` + `dismiss`); `variant="tv"` só amplia a escala.
+ * mesmo do DM (`payload` + `dismiss`); `variant="tv"` amplia a escala e
+ * `variant="player"` vira um bilhete compacto sobre a mesa do celular.
  */
 const props = withDefaults(
   defineProps<{
     payload: DiceRolledPayload;
-    variant?: 'card' | 'tv';
+    variant?: 'card' | 'tv' | 'player';
   }>(),
   { variant: 'card' },
 );
 
 const emit = defineEmits<{ (e: 'dismiss'): void }>();
+
+/**
+ * No celular o momento não pode virar bloqueio: some sozinho em 2,8 s, dentro
+ * da janela de 2,6–3,2 s combinada com o jogador.
+ */
+const PLAYER_DISMISS_MS = 2800;
 
 const momentKey = ref(0);
 const prefersReducedMotion = ref(
@@ -25,13 +32,47 @@ const prefersReducedMotion = ref(
     ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
     : false,
 );
+const isPlayer = computed(() => props.variant === 'player');
+
 let motionQuery: MediaQueryList | null = null;
+let autoDismissTimer: ReturnType<typeof setTimeout> | null = null;
 let dismissed = false;
+
+function clearAutoDismiss() {
+  if (autoDismissTimer) {
+    clearTimeout(autoDismissTimer);
+    autoDismissTimer = null;
+  }
+}
+
+function scheduleAutoDismiss() {
+  clearAutoDismiss();
+  if (!isPlayer.value) return;
+  autoDismissTimer = setTimeout(() => dismiss(), PLAYER_DISMISS_MS);
+}
+
+/** Vibração curta e opcional: nunca é requisito, nunca roda em reduced motion. */
+function maybeVibrate() {
+  if (!isPlayer.value || prefersReducedMotion.value) return;
+  if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
+  try {
+    navigator.vibrate(20);
+  } catch {
+    // Aparelho/navegador sem suporte — o momento visual já basta.
+  }
+}
 
 function dismiss() {
   if (dismissed) return;
   dismissed = true;
+  clearAutoDismiss();
   emit('dismiss');
+}
+
+/** No celular, tocar no próprio bilhete também fecha ("toque em qualquer lugar"). */
+function handleSlipClick(event: MouseEvent) {
+  event.stopPropagation();
+  if (isPlayer.value) dismiss();
 }
 
 const title = computed(() => props.payload.metadata || props.payload.tags?.[0] || 'Rolagem');
@@ -102,20 +143,28 @@ onMounted(() => {
     syncReducedMotion();
     motionQuery.addEventListener?.('change', syncReducedMotion);
   }
-  window.addEventListener('keydown', handleKeydown);
+  // Captura: se o sheet modal de Dados estiver aberto, Esc fecha o momento em
+  // vez de derrubar o sheet (o `cancel` do <dialog> é o default do keydown).
+  window.addEventListener('keydown', handleKeydown, true);
+  maybeVibrate();
+  scheduleAutoDismiss();
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleKeydown);
+  clearAutoDismiss();
+  window.removeEventListener('keydown', handleKeydown, true);
   motionQuery?.removeEventListener?.('change', syncReducedMotion);
 });
 
 watch(
   () => props.payload,
   () => {
-    // Rolagem nova substitui a atual sem fila: reinicia a coreografia.
+    // Rolagem nova substitui a atual sem fila: reinicia a coreografia e o
+    // relógio do auto-dismiss.
     dismissed = false;
     momentKey.value += 1;
+    maybeVibrate();
+    scheduleAutoDismiss();
   },
 );
 </script>
@@ -133,7 +182,7 @@ watch(
         class="dice-slip"
         :class="{ 'is-dense': isDense }"
         :style="{ '--total-delay': totalDelay, '--stamp-delay': stampDelay }"
-        @click.stop
+        @click="handleSlipClick"
       >
         <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {{ liveSummary }}
@@ -177,7 +226,9 @@ watch(
         </div>
 
         <div class="dice-slip__actions">
-          <p class="dice-slip__hint">Clique ou pressione Esc para fechar</p>
+          <p class="dice-slip__hint">
+            {{ isPlayer ? 'Toque ou Esc para fechar' : 'Clique ou pressione Esc para fechar' }}
+          </p>
           <button type="button" class="dice-slip__close" @click="dismiss">Fechar</button>
         </div>
       </div>
@@ -268,6 +319,107 @@ watch(
 .dice-moment--tv .dice-slip__close {
   min-height: 48px;
   font-size: clamp(1rem, 0.4vw + 0.85rem, 1.25rem);
+}
+
+/* --------------------------------------------------------------------------
+   Celular: o momento é um bilhete de registro, não um teatro. Card compacto
+   acima da bottom nav, scrim só para dar foco e saída em 2,8 s.
+   -------------------------------------------------------------------------- */
+/* O bloco móvel legado (max-width: 560px) redefine `.dice-moment { padding }`;
+   a especificidade dupla garante o recuo da nav também no celular. */
+.dice-moment.dice-moment--player {
+  place-items: end center;
+  padding: 0 12px calc(76px + env(safe-area-inset-bottom, 0px));
+  background: rgb(4 6 7 / 0.48);
+  overscroll-behavior: contain;
+}
+
+.dice-moment--player .dice-slip {
+  --die-size: clamp(30px, 9vw, 42px);
+
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100dvh - 112px - env(safe-area-inset-bottom, 0px));
+  padding: 14px var(--s-4) 12px;
+  border-radius: 3px;
+}
+
+.dice-moment--player .dice-slip::before {
+  inset: 6px;
+}
+
+.dice-moment--player .dice-slip__head {
+  padding-bottom: 6px;
+}
+
+.dice-moment--player .dice-slip__eyebrow,
+.dice-moment--player .dice-slip__time {
+  font-size: 0.6875rem;
+}
+
+.dice-moment--player .dice-slip__actor {
+  margin-top: 10px;
+  font-size: 1rem;
+}
+
+.dice-moment--player .dice-slip__title {
+  font-size: 0.8125rem;
+}
+
+.dice-moment--player .dice-slip__expression {
+  margin: 8px 0 2px;
+  padding-bottom: 6px;
+  font-size: 1rem;
+}
+
+.dice-moment--player .dice-slip__dice {
+  gap: 6px;
+  padding: 4px 0 8px;
+}
+
+.dice-moment--player .dice-slip__rule {
+  block-size: 2px;
+  margin: 4px 0 8px;
+}
+
+.dice-moment--player .dice-slip__total {
+  gap: 10px;
+}
+
+.dice-moment--player .dice-slip__total-label {
+  font-size: 0.6875rem;
+}
+
+.dice-moment--player .dice-slip__total-value {
+  font-size: clamp(2.75rem, 14vw, 4rem);
+}
+
+.dice-moment--player .dice-slip__footnote,
+.dice-moment--player .dice-slip__tags {
+  margin-top: 6px;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+
+.dice-moment--player .dice-slip__stamp {
+  padding: 2px 6px;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+}
+
+.dice-moment--player .dice-slip__actions {
+  gap: var(--s-2);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.dice-moment--player .dice-slip__hint {
+  font-size: 0.6875rem;
+}
+
+.dice-moment--player .dice-slip__close {
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  font-size: 0.8125rem;
 }
 
 .dice-slip::before {

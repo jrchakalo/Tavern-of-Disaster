@@ -15,6 +15,8 @@ vi.mock('pinia', async () => {
 
 import PlayView from '../PlayView.vue';
 import PlayerBoard from '../../components/play/PlayerBoard.vue';
+import PlayerDicePanel from '../../components/play/PlayerDicePanel.vue';
+import type { DiceRolledPayload } from '../../types';
 
 const mockRoute = { params: { tableId: 'table-1' }, query: {} as Record<string, unknown> };
 const routerMock = vi.hoisted(() => ({ back: vi.fn(), push: vi.fn() }));
@@ -170,6 +172,7 @@ beforeEach(() => {
   socketServiceMock.sendChatMessage.mockResolvedValue({ ok: true, revision: 8, serverNowMs: 0 });
   socketServiceMock.onChatEvent.mockClear();
   socketServiceMock.onChatEvent.mockImplementation(() => () => {});
+  delete (socketServiceMock as unknown as { socket?: unknown }).socket;
   tableAccessMock.joinTableByInvite.mockClear();
   tableAccessMock.joinTableByInvite.mockResolvedValue({ tableId: 'table-1' });
   characterMock.getMyCharacters.mockClear();
@@ -190,6 +193,21 @@ function mountPlay() {
   return mount(PlayView, {
     global: { stubs: { PlayerBoard: true, teleport: true } },
   });
+}
+
+function diceRoll(overrides: Partial<DiceRolledPayload> = {}): DiceRolledPayload {
+  return {
+    tableId: 'table-1',
+    expression: '1d20+5',
+    rolls: [{ die: 20, value: 14, kept: 'kept' }],
+    modifier: 5,
+    total: 19,
+    metadata: 'Ataque',
+    userId: 'user-1',
+    username: 'Tester',
+    createdAt: '2026-11-16T20:00:00.000Z',
+    ...overrides,
+  };
 }
 
 function visibleTurnBar(wrapper: ReturnType<typeof mountPlay>) {
@@ -628,6 +646,54 @@ describe('PlayView — shell do jogador', () => {
       expect.objectContaining({ method: 'POST' }),
     );
     expect(routerMock.push).toHaveBeenCalledWith({ name: 'tables' });
+    wrapper.unmount();
+  });
+});
+
+describe('PlayView — momento assinatura do dado', () => {
+  it('mostra o bilhete compacto depois da rolagem, fecha o sheet e devolve o resultado na aba Dados', async () => {
+    tableStoreStub.__refs = createRefs({ recentRolls: ref([diceRoll()]) });
+
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    await wrapper.get('[data-tab="dados"]').trigger('click');
+    await flushPromises();
+
+    const panel = wrapper.findComponent(PlayerDicePanel);
+    expect(panel.exists()).toBe(true);
+    panel.vm.$emit('roll-result', diceRoll());
+    await flushPromises();
+
+    const moment = wrapper.get('.dice-moment--player');
+    expect(moment.text()).toContain('19');
+    expect(moment.text()).toContain('1d20+5');
+    // O sheet modal fecha para o bilhete ficar acionável sobre o tabuleiro.
+    expect(wrapper.get('[data-tab="mesa"]').attributes('aria-current')).toBe('page');
+
+    await moment.trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.dice-moment').exists()).toBe(false);
+
+    // Ao voltar à aba Dados, o resultado próprio continua lá.
+    await wrapper.get('[data-tab="dados"]').trigger('click');
+    await flushPromises();
+    const result = wrapper.get('[data-testid="dice-result"]');
+    expect(result.text()).toContain('19');
+    expect(result.text()).toContain('1d20+5');
+    wrapper.unmount();
+  });
+
+  it('não abre o momento para rolagem de outro jogador', async () => {
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    wrapper
+      .findComponent(PlayerDicePanel)
+      .vm.$emit('roll-result', diceRoll({ userId: 'user-2', username: 'Outro' }));
+    await flushPromises();
+
+    expect(wrapper.find('.dice-moment').exists()).toBe(false);
     wrapper.unmount();
   });
 });

@@ -125,6 +125,40 @@ describe('DiceTray', () => {
     wrapper.unmount();
   });
 
+  it('mantém o resultado próprio na aba Dados quando o painel é reaberto', () => {
+    const wrapper = mountTray({
+      recentRolls: [
+        {
+          tableId: 'table-1',
+          expression: '1d20+2',
+          rolls: [{ die: 20, value: 18, kept: 'kept' }],
+          modifier: 2,
+          total: 20,
+          userId: 'user-1',
+          username: 'Ana',
+          createdAt: new Date().toISOString(),
+        },
+        {
+          tableId: 'table-1',
+          expression: '1d6',
+          rolls: [{ die: 6, value: 4, kept: 'kept' }],
+          modifier: 0,
+          total: 4,
+          userId: 'user-2',
+          username: 'Outro',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    const result = wrapper.get('[data-testid="dice-result"]');
+    expect(result.text()).toContain('20');
+    expect(result.text()).toContain('1d20+2');
+    // Restaurar do log não reabre o momento assinatura.
+    expect(wrapper.emitted('roll-result')).toBeUndefined();
+    wrapper.unmount();
+  });
+
   it('mantém todos os atalhos de dado sem select que estoure em 320', () => {
     const wrapper = mountTray();
 
