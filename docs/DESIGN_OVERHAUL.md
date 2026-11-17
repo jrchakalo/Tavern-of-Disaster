@@ -275,7 +275,7 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
 - [x] TV legível a 3 m, sem debug; dado aparece na TV/jogador.
 - [x] Contraste AA, teclado, foco, labels, toasts, 44 px, 320 px, reduced motion.
       (guard `npm run check:contrast`; auditoria axe final em D6a.)
-- [x] E2E (81/81), caos, axe (9/9 rotas), unitários e build verdes.
+- [x] E2E (80/80), caos, axe (8/8 rotas), unitários e build verdes.
 - [x] Deploy Render/Vercel e smoke de produção (2026-11-17).
 
 ### 8.1 Resultados dos gates (2026-11-17)
@@ -283,15 +283,29 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
 | Gate | Resultado |
 |---|---|
 | Backend (Jest) | **265/265** |
-| Frontend (Vitest) | **479/479** |
+| Frontend (Vitest) | **512/512** |
 | Type-check + build | verdes |
 | ESLint (frontend) | 0 erros |
 | Contraste (`check:contrast`) | 45/45 pares AA |
-| E2E (Playwright, Chrome) | **81/81** |
-| axe (9 rotas) | **0 critical/serious** |
+| E2E (Playwright, Chrome) | **80/80** |
+| axe (8 rotas) | **0 critical/serious** |
 | Caos (6 clientes) | **PASS** |
 | Assets públicos | 1,6 MB (logo 45 KB, vídeos 118–384 KB) |
 | Produção | frontend Vercel + API Render no ar; login por identificador validado |
+
+## 8.2 Correções pós-beta (feedback do PO)
+
+- Home online-first: presencial e online no mesmo peso; TV como opção.
+- Logo da taverna no rodapé da landing e no login.
+- `/` logado redireciona para `/tables`; “Início” some da navegação.
+- Perfil com 15 cores de régua (inclui roxo/violeta) + cor personalizada.
+- Cena: “Trocar imagem” da cena ativa sem recriar cena.
+- Ficha D&D: vitais + 4 abas fixas (Identidade/Atributos/Combate/Inventário & Notas).
+- Token vence a ferramenta de medição ao clicar num token editável.
+- Chat com ícone no dock; vídeos/GIFs de overlay removidos.
+- Um único `＋ Token` por superfície; Convidar/Sessão/Fichas/Dados sem duplicatas.
+- TV/jogador: cena de imagem sem grade, tokens, iniciativa ou turno; batalha inalterada.
+- Seletor de cena e botão “Mesas” visíveis; sistema da mesa só nas configurações do lobby.
 
 ## 9. Invariantes
 
