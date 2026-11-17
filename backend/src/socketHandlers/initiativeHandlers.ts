@@ -1,236 +1,339 @@
 import { Server, Socket } from 'socket.io';
-import { IInitiativeEntry } from '../models/Scene.model';
-import Table from '../models/Table.model';
-import Scene from '../models/Scene.model';
+import Scene, { IInitiativeEntry } from '../models/Scene.model';
 import Token from '../models/Token.model';
-import { clearMeasurementsForTable } from './measurementStore';
+import {
+  addTokenToInitiative,
+  advanceTurn,
+  buildReorderedInitiative,
+  resetInitiative,
+  removeInitiativeEntry,
+  reorderInitiative,
+  editInitiativeEntry,
+} from '../services/initiativeService';
+import { assertUserInTable, assertUserIsDM } from '../services/tableService';
+import {
+  clearEphemeralMeasurements,
+  clearPersistentMeasurementsForScene,
+} from '../services/measurementService';
+import { assertCondition } from '../services/serviceErrors';
+import {
+  assertEntityBelongsToTable,
+  loadInitiativeContext,
+  loadSceneContext,
+} from '../services/authorizationService';
+import { assertExpectedRevision, bumpRevision, getRevision } from '../services/revisionService';
+import { mapInitiativeEntry } from '../dto/sessionAssembler';
+import { getTokensForScene } from '../services/sessionService';
+import { SessionPatchChanges } from '../dto/session.dto';
+import { extractAck, runAction } from './ack';
+import { createLogger } from '../logger';
+import { validate } from '../validation/validate';
+import {
+  zAddInitiativeEntryPayload,
+  zRemoveInitiativeEntryPayload,
+  zReorderInitiativePayload,
+  zNextTurnPayload,
+  zEditInitiativeEntryPayload,
+} from '../validation/schemas';
+
+const serializeEntry = (entry: IInitiativeEntry) => ({
+  _id: entry._id?.toString() || '',
+  characterName: entry.characterName,
+  tokenId: entry.tokenId ? entry.tokenId.toString() : undefined,
+  characterId: entry.characterId ? entry.characterId.toString() : undefined,
+  isCurrentTurn: !!entry.isCurrentTurn,
+});
+
+const serializeOrder = (initiative: IInitiativeEntry[]) =>
+  initiative.map((entry) => entry._id?.toString()).filter((id): id is string => Boolean(id));
+
+function emitTurnState(
+  io: Server,
+  tableId: string,
+  sceneId: string,
+  initiative: IInitiativeEntry[],
+  newRound = false,
+  revision = 0
+) {
+  const current = initiative.find((entry) => entry.isCurrentTurn);
+  if (!current?._id) return;
+  const currentIndex = initiative.findIndex((entry) => entry._id?.toString() === current._id?.toString());
+  const previous = currentIndex === -1
+    ? undefined
+    : initiative[(currentIndex - 1 + initiative.length) % initiative.length];
+
+  io.to(tableId).emit('initiativeTurnAdvanced', {
+    tableId,
+    sceneId,
+    revision,
+    currentEntryId: current._id.toString(),
+    previousEntryId: previous?._id?.toString(),
+    currentTokenId: current.tokenId?.toString(),
+    newRound,
+  });
+}
+
+function hintTableId(payload: unknown): string | undefined {
+  const raw = payload as { tableId?: unknown } | undefined;
+  return typeof raw?.tableId === 'string' ? raw.tableId : undefined;
+}
 
 export function registerInitiativeHandlers(io: Server, socket: Socket) {
+  const log = createLogger({ scope: 'socket:initiative', socketId: socket.id, userId: socket.data.user?.id });
 
   // Adiciona token à iniciativa (apenas Mestre). Evita duplicatas do mesmo token.
-  const requestAddCharacterToInitiative = async (data: { tableId: string, sceneId: string, tokenId: string }) => {
-    try {
-        const { tableId, sceneId, tokenId } = data;
+  const requestAddCharacterToInitiative = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestAddCharacterToInitiative',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zAddInitiativeEntryPayload, payload);
         const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const { scene, table } = await loadSceneContext(data.sceneId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertUserIsDM(userId, table);
 
-        const table = await Table.findById(tableId);
-        if (!table) return;
+        const token = await Token.findById(data.tokenId);
+        assertCondition(!!token, 'Token não encontrado.', 404);
+        assertCondition(token!.tableId?.toString() === table._id.toString(), 'Token pertence a outra mesa.', 403);
+        assertCondition(token!.sceneId?.toString() === scene._id.toString(), 'Token pertence a outra cena.', 403);
 
-        if (table.dm.toString() !== userId) {
-          return socket.emit('error', { message: 'Apenas o Mestre pode adicionar personagens à iniciativa.' });
+        const initiative = await addTokenToInitiative(scene._id.toString(), token as any);
+        const revision = await bumpRevision(data.tableId);
+
+        const createdEntry = initiative.find((entry) => entry.tokenId?.toString() === data.tokenId);
+        if (createdEntry) {
+          io.to(data.tableId).emit('initiativeEntryAdded', {
+            tableId: data.tableId,
+            sceneId: data.sceneId,
+            revision,
+            entry: serializeEntry(createdEntry),
+            order: serializeOrder(initiative),
+          });
         }
-
-        if (!tokenId) {
-        socket.emit('error', { message: 'Nenhum token foi selecionado.' });
-        return;
-        }
-
-        const token = await Token.findById(tokenId);
-        if (!token) {
-            socket.emit('error', { message: 'Token não encontrado.' });
-            return;
-        }
-
-        const scene = await Scene.findById(sceneId);
-    if (scene && scene.initiative.some(entry => entry.tokenId?.toString() === tokenId)) return socket.emit('error', { message: 'Este token já está na iniciativa.' });
-
-        const newEntry = { 
-        characterName: token.name,
-        tokenId: token._id, 
-        isCurrentTurn: false
-        };
-
-        const updatedScene = await Scene.findByIdAndUpdate(
-        sceneId,
-        { $push: { initiative: newEntry } },
-        { new: true }
-        );
-
-  if (updatedScene) io.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
-    } catch (error) { 
-        console.error("Erro ao adicionar personagem à iniciativa:", error); 
-    }
+        return { tableId: data.tableId, revision, changes: { initiative: initiative.map(mapInitiativeEntry) } };
+      },
+    });
   };
 
-
   // Avança para o próximo turno. Se voltar ao início da lista: nova rodada -> reseta movimento.
-  const requestNextTurn = async (data: { tableId: string, sceneId: string }) => {
-    try {
-        const { tableId, sceneId } = data;
-        const userId = socket.data.user?.id; 
-        
-        const table = await Table.findById(tableId);
-        if (!table) return;
+  const requestNextTurn = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestNextTurn',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zNextTurnPayload, payload);
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const { scene, table } = await loadSceneContext(data.sceneId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertUserInTable(userId, table);
+        await assertExpectedRevision(data.tableId, data.expectedRevision);
 
-        const isDM = table.dm.toString() === userId;
+        const result = await advanceTurn(table, scene, userId);
+        const revision = await bumpRevision(data.tableId);
 
-        const scene = await Scene.findById(sceneId);
-        if (!scene || scene.initiative.length === 0) return;
+        emitTurnState(io, data.tableId, data.sceneId, result.initiative, result.newRound, revision);
 
-        // Permissão: DM sempre; jogador só se for dono do token em turno
-        if (!isDM) {
-          const currentTurnEntry = scene.initiative.find(e => e.isCurrentTurn);
-          if (!currentTurnEntry || !currentTurnEntry.tokenId) return socket.emit('initiativeError', { message: 'Apenas o Mestre pode iniciar a rodada.' });
-          const currentToken = await Token.findById(currentTurnEntry.tokenId);
-          const isOwnerOfCurrent = currentToken?.ownerId?.toString() === userId;
-          if (!isOwnerOfCurrent) return socket.emit('initiativeError', { message: 'Você só pode encerrar o seu próprio turno.' });
+        const changes: SessionPatchChanges = {
+          initiative: result.initiative.map(mapInitiativeEntry),
+        };
+        if (result.newRound) {
+          const tokens = await getTokensForScene(data.sceneId);
+          io.to(data.tableId).emit('tokensMovementReset', {
+            tableId: data.tableId,
+            sceneId: data.sceneId,
+            revision,
+            updates: tokens.map((token) => ({
+              tokenId: token._id,
+              remainingMovement: token.remainingMovement,
+              movement: token.movement,
+            })),
+          });
+          changes.tokens = tokens;
+
+          // Nova rodada limpa efêmeras + persistentes da cena no servidor para
+          // que o cliente e o próximo resync concordem. Auras são preservadas.
+          clearEphemeralMeasurements(data.tableId);
+          await clearPersistentMeasurementsForScene(data.tableId, data.sceneId);
+          io.to(data.tableId).emit('allMeasurementsCleared', { sceneId: data.sceneId, revision });
+          changes.measurements = [];
         }
 
-        const initiativeList = scene.initiative;
-        const currentTurnIndex = initiativeList.findIndex(entry => entry.isCurrentTurn);
-
-        // Desmarca o turno atual
-        if (currentTurnIndex !== -1) {
-            initiativeList[currentTurnIndex].isCurrentTurn = false;
-        }
-
-        // Encontra o próximo turno, voltando ao início se chegar ao fim
-        const nextTurnIndex = (currentTurnIndex + 1) % initiativeList.length;
-    if (nextTurnIndex === 0) {
-    // Nova rodada: restaura movimento e registra casa atual como base do histórico
-        await Token.updateMany(
-        { sceneId: sceneId },
-        [{ $set: { 
-            remainingMovement: "$movement",
-            moveHistory: ["$squareId"]
-        }}]
-        );
-
-        const updatedTokens = await Token.find({ sceneId: sceneId }).populate('ownerId', '_id username');
-        io.to(tableId).emit('tokensUpdated', updatedTokens);
-    }
-
-    initiativeList[nextTurnIndex].isCurrentTurn = true;
-
-    scene.initiative = initiativeList;
-    await scene.save();
-
-  io.to(tableId).emit('initiativeUpdated', scene.initiative);
-  // Limpa medições compartilhadas no servidor e notifica clientes
-  clearMeasurementsForTable(tableId);
-  io.to(tableId).emit('allMeasurementsCleared');
-    } catch (error) { 
-        console.error("Erro ao avançar o turno:", error); 
-    }
+        return { tableId: data.tableId, revision, changes };
+      },
+    });
   };
 
   // Remove todas as entradas da iniciativa (apenas Mestre) e limpa medições.
-  const requestResetInitiative = async (data: { tableId: string, sceneId: string }) => {
-    try {
-        const { tableId, sceneId } = data;
+  const requestResetInitiative = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestResetInitiative',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zNextTurnPayload, payload);
         const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const { scene, table } = await loadSceneContext(data.sceneId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertUserIsDM(userId, table);
+        await assertExpectedRevision(data.tableId, data.expectedRevision);
 
-        const table = await Table.findById(tableId);
-        if (!table) return;
-        
-    if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode resetar a iniciativa.' });
+        const initiative = await resetInitiative(scene._id.toString());
+        const revision = await bumpRevision(data.tableId);
 
-  const updatedScene = await Scene.findByIdAndUpdate(
-            sceneId,
-            { initiative: [] }, // Define o array de iniciativa como vazio
-            { new: true }
-        );
+        io.to(data.tableId).emit('initiativeReset', { tableId: data.tableId, sceneId: data.sceneId, revision });
+        io.to(data.tableId).emit('initiativeOrderUpdated', {
+          tableId: data.tableId,
+          sceneId: data.sceneId,
+          revision,
+          order: serializeOrder(initiative),
+          currentTurnId: null,
+        });
+        clearEphemeralMeasurements(data.tableId);
+        await clearPersistentMeasurementsForScene(data.tableId, data.sceneId);
+        io.to(data.tableId).emit('allMeasurementsCleared', { sceneId: data.sceneId, revision });
 
-  io.to(tableId).emit('initiativeUpdated', updatedScene?.initiative);
-  // Limpa medições ao resetar iniciativa
-  clearMeasurementsForTable(tableId);
-  io.to(tableId).emit('allMeasurementsCleared');
-    } catch (error) { 
-        console.error("Erro ao resetar a iniciativa:", error); 
-    }
+        return {
+          tableId: data.tableId,
+          revision,
+          changes: { initiative: [], measurements: [] },
+        };
+      },
+    });
   };
 
-  // Remove entrada específica e deleta token associado (se houver). Apenas Mestre.
-  const requestRemoveFromInitiative = async (data: { tableId: string; sceneId: string; initiativeEntryId: string }) => {
-    try {
-        const { tableId, sceneId, initiativeEntryId } = data;
-        
+  // Remove entrada da iniciativa sem apagar o token associado. Apenas Mestre.
+  const requestRemoveFromInitiative = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestRemoveFromInitiative',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zRemoveInitiativeEntryPayload, payload);
         const userId = socket.data.user?.id;
-        const table = await Table.findById(tableId);
-        if (!table) return;
-  if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode remover personagens da iniciativa.' });
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const { scene, table } = await loadInitiativeContext(data.sceneId, data.initiativeEntryId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertUserIsDM(userId, table);
 
-        // Encontra a cena
-        const scene = await Scene.findById(sceneId);
-        const entryToRemove = scene?.initiative.find(e => e._id.toString() === initiativeEntryId);
-
-        if (entryToRemove && entryToRemove.tokenId) {
-        // Deleta o token associado
-        await Token.findByIdAndDelete(entryToRemove.tokenId);
-        }
-
-        // Remove a entrada do array de iniciativa no documento da cena
-        const updatedScene = await Scene.findByIdAndUpdate(
-        sceneId,
-        { $pull: { initiative: { _id: initiativeEntryId } } },
-        { new: true }
+        const { initiative } = await removeInitiativeEntry(
+          scene._id.toString(),
+          data.initiativeEntryId,
+          false
         );
+        const revision = await bumpRevision(data.tableId);
 
-        if (updatedScene) {
-          io.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
-          if (entryToRemove?.tokenId) io.to(tableId).emit('tokenRemoved', { tokenId: entryToRemove.tokenId.toString() });
-        }
-    } catch (error) { 
-        console.error("Erro ao remover da iniciativa:", error); 
-    }
+        io.to(data.tableId).emit('initiativeEntryRemoved', {
+          tableId: data.tableId,
+          sceneId: data.sceneId,
+          revision,
+          entryId: data.initiativeEntryId,
+          order: serializeOrder(initiative),
+        });
+
+        const changes: SessionPatchChanges = { initiative: initiative.map(mapInitiativeEntry) };
+        return { tableId: data.tableId, revision, changes };
+      },
+    });
   };
 
   // Reordena manualmente a lista (apenas Mestre). Mantém flags isCurrentTurn conforme recebido.
-  const requestReorderInitiative = async (data: { tableId: string; sceneId: string; newOrder: IInitiativeEntry[] }) => {
-    try {
-        const { tableId, sceneId, newOrder } = data;
+  const requestReorderInitiative = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestReorderInitiative',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zReorderInitiativePayload, payload);
         const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const { scene, table } = await loadSceneContext(data.sceneId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertUserIsDM(userId, table);
 
-        const table = await Table.findById(tableId);
-        if (!table) return;
-  if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode reordenar a iniciativa.' });
+        // Reconstrói a ordem a partir das entradas do servidor; o payload só
+        // decide posição e qual entrada está ativa.
+        const orderForService = buildReorderedInitiative(scene, data.newOrder);
+        const initiative = await reorderInitiative(scene._id.toString(), orderForService);
+        const revision = await bumpRevision(data.tableId);
 
-        // Atualiza todo o array 'initiative' da cena com a nova ordem recebida
-        const updatedScene = await Scene.findByIdAndUpdate(
-        sceneId,
-        { initiative: newOrder },
-        { new: true }
-        );
+        io.to(data.tableId).emit('initiativeOrderUpdated', {
+          tableId: data.tableId,
+          sceneId: data.sceneId,
+          revision,
+          order: serializeOrder(initiative),
+          currentTurnId: initiative.find((entry) => entry.isCurrentTurn)?._id?.toString() || null,
+        });
 
-  if (updatedScene) socket.to(tableId).emit('initiativeUpdated', updatedScene.initiative);
-    } catch (error) { 
-        console.error("Erro ao reordenar iniciativa:", error); 
-    }
+        return { tableId: data.tableId, revision, changes: { initiative: initiative.map(mapInitiativeEntry) } };
+      },
+    });
   };
 
   // Renomeia uma entrada; reflete também no token (se vinculado). Apenas Mestre.
-  const requestEditInitiativeEntry = async (data: { tableId: string; sceneId: string; initiativeEntryId: string; newName: string }) => {
-    try {
-      const { tableId, sceneId, initiativeEntryId, newName } = data;
-      const userId = socket.data.user?.id;
+  const requestEditInitiativeEntry = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestEditInitiativeEntry',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zEditInitiativeEntryPayload, payload);
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const { scene, table, entry } = await loadInitiativeContext(data.sceneId, data.initiativeEntryId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertUserIsDM(userId, table);
 
-      const table = await Table.findById(tableId);
-      if (!table) return;
-      if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode editar entradas da iniciativa.' });
+        const initiative = await editInitiativeEntry(scene._id.toString(), data.initiativeEntryId, data.newName);
+        const revision = await bumpRevision(data.tableId);
 
-      const scene = await Scene.findById(sceneId);
-      if (!scene) return;
+        const updatedEntry = initiative.find((item) => item._id?.toString() === data.initiativeEntryId);
+        io.to(data.tableId).emit('initiativeEntryUpdated', {
+          tableId: data.tableId,
+          sceneId: data.sceneId,
+          revision,
+          entryId: data.initiativeEntryId,
+          patch: { characterName: updatedEntry?.characterName },
+        });
 
-      // Encontra a entrada específica no array e atualiza seu nome
-      const entry = scene.initiative.find(e => e._id?.toString() === initiativeEntryId);
-      if (entry) {
-        entry.characterName = newName;
-
+        const changes: SessionPatchChanges = { initiative: initiative.map(mapInitiativeEntry) };
         if (entry.tokenId) {
-          await Token.findByIdAndUpdate(entry.tokenId, { name: newName });
+          changes.tokenUpdates = [{ tokenId: entry.tokenId.toString(), patch: { name: data.newName } }];
         }
-      }
-
-      await scene.save();
-
-      // Notifica todos na sala sobre a lista de iniciativa atualizada
-      io.to(tableId).emit('initiativeUpdated', scene.initiative);
-    } catch (error) { 
-      console.error("Erro ao editar entrada da iniciativa:", error); 
-    }
+        return { tableId: data.tableId, revision, changes };
+      },
+    });
   };
 
-  // Registro de todos os listeners de iniciativa no socket
   socket.on('requestAddCharacterToInitiative', requestAddCharacterToInitiative);
   socket.on('requestNextTurn', requestNextTurn);
   socket.on('requestResetInitiative', requestResetInitiative);

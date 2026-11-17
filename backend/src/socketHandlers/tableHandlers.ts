@@ -1,223 +1,480 @@
 import { Server, Socket } from 'socket.io';
-import Table from '../models/Table.model';
-import Token from '../models/Token.model';
-import Scene from '../models/Scene.model';
-import { listPersistents, listAuras } from './measurementStore';
+import { getTableById, assertUserIsDM, assertUserInTable, updateTableStatus } from '../services/tableService';
+import {
+  setActiveScene,
+  updateSceneMap,
+  reorderScenes,
+  updateSceneGridDimensions,
+  updateSceneScale,
+} from '../services/sceneService';
+import {
+  assertEntityBelongsToTable,
+  loadClaimedTable,
+  loadSceneContext,
+} from '../services/authorizationService';
+import { assertExpectedRevision, bumpRevision, getRevision } from '../services/revisionService';
+import { buildSessionSnapshot, loadSessionState, sendPresenceUpdated } from '../services/sessionService';
+import { joinPresence } from '../services/presenceService';
+import { mapScene } from '../dto/sessionAssembler';
+import { SessionPatchChanges } from '../dto/session.dto';
+import { assertCondition, ServiceError } from '../services/serviceErrors';
+import { extractAck, runAction } from './ack';
+import { createLogger } from '../logger';
+import { recordTableJoin } from '../metrics';
+import { validate } from '../validation/validate';
+import {
+  zJoinTablePayload,
+  zRequestResyncPayload,
+  zSetActiveScenePayload,
+  zUpdateSessionStatusPayload,
+  zStartTransitionPayload,
+  zSetMapPayload,
+  zReorderScenesPayload,
+  zUpdateGridDimensionsPayload,
+  zUpdateSceneScalePayload,
+} from '../validation/schemas';
 
-// Reúne estado completo (cena ativa + tokens) para sincronização.
-async function getFullSessionState(tableId: string, sceneId: string) {
-  const activeScene = await Scene.findById(sceneId);
-  const tokens = await Token.find({ sceneId: sceneId }).populate('ownerId', '_id username');
-  return { activeScene, tokens };
-}
+const JOIN_ATTEMPT_WINDOW_MS = 60_000;
+const JOIN_ATTEMPT_LIMIT = 10;
 
 export function registerTableHandlers(io: Server, socket: Socket) {
-    
-    const joinTable = async (tableId: string) => {
-        try {
-        socket.join(tableId);
-        // Entrada na sala da mesa
+  const log = createLogger({ eventType: 'socket:table', socketId: socket.id, userId: socket.data.user?.id });
 
-        const table = await Table.findById(tableId)
-            .populate('activeScene')
-            .populate('scenes')
-            .populate('players', 'username _id')
-            .populate('dm', 'username _id');
-    if (!table) return;
+  // Limite simples de tentativas de joinTable por socket para dificultar enumeração.
+  const joinAttempts: number[] = [];
+  const registerJoinAttempt = () => {
+    const now = Date.now();
+    while (joinAttempts.length && now - joinAttempts[0] > JOIN_ATTEMPT_WINDOW_MS) {
+      joinAttempts.shift();
+    }
+    joinAttempts.push(now);
+    assertCondition(
+      joinAttempts.length <= JOIN_ATTEMPT_LIMIT,
+      'Muitas tentativas de entrada. Aguarde um instante e tente novamente.',
+      429
+    );
+  };
 
-        const activeSceneId = table.activeScene?._id;
-        const tokens = activeSceneId 
-            ? await Token.find({ sceneId: activeSceneId }).populate('ownerId', '_id username') 
-            : [];
+  const hintTableId = (payload: unknown): string | undefined => {
+    if (typeof payload === 'string') return payload;
+    const raw = payload as { tableId?: unknown } | undefined;
+    return typeof raw?.tableId === 'string' ? raw.tableId : undefined;
+  };
 
-        const initialState = {
-            tableInfo: table,
-            activeScene: table.activeScene,
-            tokens: tokens,
-            allScenes: table.scenes,
+  /**
+   * Entrada da TV: só a mesa resolvida pelo token de display. Nunca usa
+   * `assertUserInTable` com o id sintético (ele não é membro real).
+   */
+  const joinDisplayTable = async (tableId: string) => {
+    const displayTableId = socket.data.displayTableId as string | undefined;
+    assertCondition(!!displayTableId, 'Sessão de display inválida.', 401);
+    assertCondition(tableId === displayTableId, 'A TV não pode entrar em outra mesa.', 403);
+    const table = await getTableById(tableId);
+    assertCondition(!!table, 'Mesa não encontrada.', 404);
+
+    const displayId = socket.data.user?.id as string | undefined;
+    assertCondition(!!displayId, 'Sessão de display inválida.', 401);
+
+    if (!socket.rooms.has(tableId)) {
+      await socket.join(tableId);
+    }
+    recordTableJoin(socket.id, tableId);
+    if (!socket.data.joinedTables) {
+      socket.data.joinedTables = new Set<string>();
+    }
+    socket.data.joinedTables.add(tableId);
+    joinPresence(tableId, displayId!, 'TV', socket.id);
+
+    const snapshot = await buildSessionSnapshot(tableId, displayId!, 'TV', { roleOverride: 'DISPLAY' });
+    if (!snapshot) {
+      throw new ServiceError('Mesa não encontrada.', 404);
+    }
+    socket.emit('sessionSnapshot', snapshot);
+    sendPresenceUpdated(io, tableId, snapshot.table, snapshot.revision);
+    log.info({ tableId }, 'TV entrou na mesa via token de display');
+    return { tableId, revision: snapshot.revision };
+  };
+
+  /** Ressincronização da TV: mesma mesa do token, snapshot sempre DISPLAY. */
+  const resyncDisplayTable = async (tableId: string) => {
+    const displayTableId = socket.data.displayTableId as string | undefined;
+    assertCondition(!!displayTableId, 'Sessão de display inválida.', 401);
+    assertCondition(tableId === displayTableId, 'A TV não pode ressincronizar outra mesa.', 403);
+    const table = await getTableById(tableId);
+    assertCondition(!!table, 'Mesa não encontrada.', 404);
+
+    const displayId = socket.data.user?.id as string | undefined;
+    assertCondition(!!displayId, 'Sessão de display inválida.', 401);
+
+    if (!socket.rooms.has(tableId)) {
+      await socket.join(tableId);
+      if (!socket.data.joinedTables) {
+        socket.data.joinedTables = new Set<string>();
+      }
+      socket.data.joinedTables.add(tableId);
+      joinPresence(tableId, displayId!, 'TV', socket.id);
+    }
+
+    const snapshot = await buildSessionSnapshot(tableId, displayId!, 'TV', { roleOverride: 'DISPLAY' });
+    if (!snapshot) {
+      throw new ServiceError('Mesa não encontrada.', 404);
+    }
+    socket.emit('sessionSnapshot', snapshot);
+    return { tableId, revision: snapshot.revision };
+  };
+
+  const joinTable = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'joinTable',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        registerJoinAttempt();
+        const { tableId } = validate(zJoinTablePayload, payload);
+
+        if (socket.data.isDisplay) {
+          return joinDisplayTable(tableId);
+        }
+
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+
+        // Autoriza ANTES de entrar na sala. A mesa é carregada sem populate
+        // para que dm/players continuem como ObjectId na checagem de vínculo.
+        const table = await getTableById(tableId);
+        // Normaliza mesa inexistente para FORBIDDEN: não revela existência de
+        // mesas para não membros (joinTable já é limitado por socket).
+        if (!table) {
+          throw new ServiceError('Usuário não faz parte desta mesa.', 403);
+        }
+        assertUserInTable(userId, table);
+
+        if (!socket.rooms.has(tableId)) {
+          await socket.join(tableId);
+        }
+        recordTableJoin(socket.id, tableId);
+        if (!socket.data.joinedTables) {
+          socket.data.joinedTables = new Set<string>();
+        }
+        socket.data.joinedTables.add(tableId);
+
+        const username = socket.data.user?.username || '';
+        joinPresence(tableId, userId, username, socket.id);
+
+        const snapshot = await buildSessionSnapshot(tableId, userId, username);
+        if (!snapshot) {
+          throw new ServiceError('Mesa não encontrada.', 404);
+        }
+
+        socket.emit('sessionSnapshot', snapshot);
+
+        // Compatibilidade temporária com o cliente antigo.
+        socket.emit('initialSessionState', snapshot);
+        const activeSceneId = snapshot.activeScene?._id ?? snapshot.table.activeSceneId ?? null;
+        if (activeSceneId) {
+          socket.emit('persistentsListed', {
+            sceneId: activeSceneId,
+            items: snapshot.measurements,
+          });
+          socket.emit('aurasListed', { sceneId: activeSceneId, items: snapshot.auras });
+        }
+
+        sendPresenceUpdated(io, tableId, snapshot.table, snapshot.revision);
+
+        log.info({ tableId }, 'Socket entrou na mesa via canal realtime');
+        return { tableId, revision: snapshot.revision };
+      },
+    });
+  };
+
+  // Resync idempotente: sempre devolve snapshot completo para membro.
+  const requestResync = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestResync',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zRequestResyncPayload, payload);
+
+        if (socket.data.isDisplay) {
+          return resyncDisplayTable(data.tableId);
+        }
+
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const table = await getTableById(data.tableId);
+        assertCondition(!!table, 'Mesa não encontrada.', 404);
+        assertUserInTable(userId, table!);
+
+        if (!socket.rooms.has(data.tableId)) {
+          await socket.join(data.tableId);
+          if (!socket.data.joinedTables) {
+            socket.data.joinedTables = new Set<string>();
+          }
+          socket.data.joinedTables.add(data.tableId);
+          joinPresence(data.tableId, userId, socket.data.user?.username || '', socket.id);
+        }
+
+        const snapshot = await buildSessionSnapshot(data.tableId, userId, socket.data.user?.username || '');
+        if (!snapshot) {
+          throw new ServiceError('Mesa não encontrada.', 404);
+        }
+        socket.emit('sessionSnapshot', snapshot);
+        return { tableId: data.tableId, revision: snapshot.revision };
+      },
+    });
+  };
+
+  const requestSetActiveScene = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestSetActiveScene',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zSetActiveScenePayload, payload);
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const { scene, table } = await loadSceneContext(data.sceneId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertUserIsDM(userId, table);
+        await assertExpectedRevision(data.tableId, data.expectedRevision);
+
+        await setActiveScene(table._id.toString(), scene._id.toString());
+        const revision = await bumpRevision(data.tableId);
+
+        const bundle = await loadSessionState(data.tableId);
+        assertCondition(!!bundle, 'Mesa não encontrada.', 404);
+
+        // Compatibilidade temporária com o cliente antigo.
+        io.to(data.tableId).emit('sessionStateUpdated', bundle!.state);
+        io.to(data.tableId).emit('persistentsListed', {
+          sceneId: scene._id.toString(),
+          items: bundle!.state.measurements,
+        });
+        io.to(data.tableId).emit('aurasListed', {
+          sceneId: scene._id.toString(),
+          items: bundle!.state.auras,
+        });
+
+        const changes: SessionPatchChanges = {
+          table: bundle!.state.table,
+          activeScene: bundle!.state.activeScene,
+          scenes: bundle!.state.scenes,
+          tokens: bundle!.state.tokens,
+          initiative: bundle!.state.initiative,
+          measurements: bundle!.state.measurements,
+          auras: bundle!.state.auras,
         };
+        return { tableId: data.tableId, revision, changes };
+      },
+    });
+  };
 
-                socket.emit('initialSessionState', initialState);
-                // Envia medições/aura persistentes somente ao novo cliente
-                        if (activeSceneId) {
-                            const persistents = listPersistents(tableId, activeSceneId.toString());
-                            // Envia apenas para o socket que entrou
-                            socket.emit('persistentsListed', { sceneId: activeSceneId.toString(), items: persistents });
-                            const auras = listAuras(tableId, activeSceneId.toString());
-                            socket.emit('aurasListed', { sceneId: activeSceneId.toString(), items: auras });
-                        }
-        } catch (error) {
-        console.error('Erro joinTable:', error);
-        socket.emit('error', { message: `Não foi possível entrar na mesa ${tableId}` });
-        }
-    };
+  const requestUpdateSessionStatus = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestUpdateSessionStatus',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zUpdateSessionStatusPayload, payload);
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const table = await loadClaimedTable(userId, data.tableId, { requireDM: true });
 
-    const requestSetActiveScene = async (data: { tableId: string, sceneId: string }) => {
-        try {
-            const { tableId, sceneId } = data;
-            const userId = socket.data.user?.id; // Pega o usuário da conexão autenticada
+        const updated = await updateTableStatus(table as any, data.newStatus, data.pauseSeconds);
+        const revision = await bumpRevision(data.tableId);
+        const pauseUntil = (updated as any).pauseUntil ? new Date((updated as any).pauseUntil).toISOString() : null;
+        const serverNowMs = Date.now();
 
-            const table = await Table.findById(tableId);
-            if (!table) return;
+        io.to(data.tableId).emit('sessionStatusUpdated', {
+          status: data.newStatus,
+          pauseUntil,
+          serverNowMs,
+          revision,
+        });
 
-            if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode mudar a cena.' });
+        const changes: SessionPatchChanges = {
+          table: { status: data.newStatus, pauseUntil },
+          sessionStatus: { status: data.newStatus, pauseUntil, serverNowMs },
+        };
+        return { tableId: data.tableId, revision, changes };
+      },
+    });
+  };
 
-            await Table.findByIdAndUpdate(tableId, { activeScene: sceneId });
+  const requestStartTransition = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestStartTransition',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zStartTransitionPayload, payload);
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        await loadClaimedTable(userId, data.tableId, { requireDM: true });
+        const durationMs = Math.max(500, Math.min(10000, Number(data.durationMs) || 3000));
+        io.to(data.tableId).emit('sessionTransition', { durationMs });
+        return { tableId: data.tableId, revision: await getRevision(data.tableId) };
+      },
+    });
+  };
 
-            const newState = await getFullSessionState(data.tableId, data.sceneId);
+  const requestSetMap = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestSetMap',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zSetMapPayload, payload);
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const table = await loadClaimedTable(userId, data.tableId, { requireDM: true });
+        assertCondition(!!table.activeScene, 'Nenhuma cena ativa para atualizar o mapa.', 400);
 
-            io.to(data.tableId).emit('sessionStateUpdated', newState);
-            // Após trocar de cena, publicar a lista de persistentes da nova cena
-            const persistents = listPersistents(tableId, sceneId);
-            io.to(tableId).emit('persistentsListed', { sceneId, items: persistents });
-            const auras = listAuras(tableId, sceneId);
-            io.to(tableId).emit('aurasListed', { sceneId, items: auras });
-            // Broadcast nova cena ativa
+        const updatedScene = await updateSceneMap(table.activeScene!.toString(), data.mapUrl);
+        assertCondition(!!updatedScene, 'Cena não encontrada.', 404);
+        const revision = await bumpRevision(data.tableId);
 
-        } catch (error) {
-            console.error('Erro ao definir cena ativa:', error);
-        }
-    };
+        io.to(data.tableId).emit('mapUpdated', {
+          mapUrl: updatedScene!.imageUrl,
+          sceneId: updatedScene!._id.toString(),
+          revision,
+        });
 
-    const requestUpdateSessionStatus = async (data: { tableId: string, newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED', pauseSeconds?: number }) => {
-        try {
-            const { tableId, newStatus, pauseSeconds } = data;
-            const userId = socket.data.user?.id;
+        const bundle = await loadSessionState(data.tableId);
+        const changes: SessionPatchChanges = {
+          activeScene: updatedScene ? mapScene(updatedScene) : null,
+          scenes: bundle?.state.scenes,
+        };
+        return { tableId: data.tableId, revision, changes };
+      },
+    });
+  };
 
-            const table = await Table.findById(tableId);
-            if (!table || table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode alterar o status da sessão.' });
+  const requestReorderScenes = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestReorderScenes',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zReorderScenesPayload, payload);
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const table = await loadClaimedTable(userId, data.tableId, { requireDM: true });
 
-            table.status = newStatus;
-            if (newStatus === 'PAUSED') {
-                const sec = Math.max(0, Math.floor(Number(pauseSeconds) || 0));
-                if (sec > 0) {
-                    const until = new Date(Date.now() + sec * 1000);
-                    (table as any).pauseUntil = until;
-                } else {
-                    (table as any).pauseUntil = null;
-                }
-            } else {
-                (table as any).pauseUntil = null;
-            }
-            await table.save();
+        const updatedTable = await reorderScenes(table as any, data.orderedSceneIds);
+        assertCondition(!!updatedTable, 'Não foi possível reordenar as cenas.', 400);
+        const revision = await bumpRevision(data.tableId);
 
-            // Broadcast novo status
+        const scenes = (updatedTable.scenes as any[]).map((scene) => mapScene(scene));
+        io.to(data.tableId).emit('sceneListUpdated', scenes);
 
-            io.to(tableId).emit('sessionStatusUpdated', { status: newStatus, pauseUntil: (table as any).pauseUntil || null, serverNowMs: Date.now() });
+        return { tableId: data.tableId, revision, changes: { scenes } };
+      },
+    });
+  };
 
-        } catch (error) { 
-            console.error("Erro ao atualizar status da sessão:", error); 
-        }
-    };
+  const requestUpdateGridDimensions = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestUpdateGridDimensions',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zUpdateGridDimensionsPayload, payload);
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const { scene, table } = await loadSceneContext(data.sceneId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertUserIsDM(userId, table);
 
-    // Sinaliza uma transição curta (ex.: 3s) antes do LIVE para todos os clientes
-    const requestStartTransition = async (data: { tableId: string, durationMs?: number }) => {
-        try {
-            const { tableId, durationMs } = data;
-            const userId = socket.data.user?.id;
-            const table = await Table.findById(tableId);
-            if (!table || table.dm.toString() !== userId) return;
-            const dur = Math.max(500, Math.min(10000, Number(durationMs) || 3000));
-            io.to(tableId).emit('sessionTransition', { durationMs: dur });
-        } catch (error) {
-            console.error('Erro ao iniciar transição:', error);
-        }
-    };
+        await updateSceneGridDimensions(scene._id.toString(), data.newGridWidth, data.newGridHeight);
+        const revision = await bumpRevision(data.tableId);
 
-    const requestSetMap = async (data: { mapUrl: string, tableId: string }) => {
-        try {
-            if (typeof data.mapUrl === 'string' && data.tableId) {
-            // Encontra a mesa para obter o ID da cena ativa
-            const table = await Table.findById(data.tableId);
-            if (!table || !table.activeScene) return;
-    
-            const updatedScene = await Scene.findByIdAndUpdate(
-                table.activeScene,
-                { imageUrl: data.mapUrl },
-                { new: true }
-            );
-    
-            if (updatedScene) io.to(data.tableId).emit('mapUpdated', { mapUrl: updatedScene.imageUrl });
-            }
-        } catch (error) {
-            console.error("Erro ao atualizar o mapa da mesa:", error);
-        }
-    };
-    
-    const requestReorderScenes = async (data: { tableId: string, orderedSceneIds: string[] }) => {
-        try {
-            const { tableId, orderedSceneIds } = data;
-            const userId = socket.data.user?.id;
-        
-            const table = await Table.findById(tableId);
-            if (!table) return;
-            if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode reordenar as cenas.' });
-        
-            // Atualiza o array 'scenes' no documento da mesa com a nova ordem de IDs
-            const updatedTable = await Table.findByIdAndUpdate(
-                tableId,
-                { scenes: orderedSceneIds },
-                { new: true }
-            ).populate('scenes'); // Popula para enviar a lista completa de volta
-        
-            if (updatedTable) {
-                socket.to(tableId).emit('sceneListUpdated', updatedTable.scenes);
-            }
-        } catch (error) { 
-            console.error("Erro ao reordenar cenas:", error); 
-        }
-    };
+        const bundle = await loadSessionState(data.tableId);
+        assertCondition(!!bundle, 'Mesa não encontrada.', 404);
+        io.to(data.tableId).emit('sessionStateUpdated', bundle!.state);
 
-    const requestUpdateGridDimensions = async (data: { tableId: string, sceneId: string, newGridWidth: number, newGridHeight: number }) => {
-        try {
-            const { tableId, sceneId, newGridWidth, newGridHeight } = data;
-            const userId = socket.data.user?.id; // Pega o usuário da conexão autenticada
-            const table = await Table.findById(tableId).populate('scenes');
-            if (!table) return;
+        const changes: SessionPatchChanges = {
+          scenes: bundle!.state.scenes,
+          activeScene: bundle!.state.activeScene,
+        };
+        return { tableId: data.tableId, revision, changes };
+      },
+    });
+  };
 
-            if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode atualizar o tamanho do grid.' });
+  const requestUpdateSceneScale = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestUpdateSceneScale',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zUpdateSceneScalePayload, payload);
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const { scene, table } = await loadSceneContext(data.sceneId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertUserIsDM(userId, table);
 
-                        await Scene.findByIdAndUpdate(sceneId, { gridWidth: newGridWidth, gridHeight: newGridHeight });
-            
-            const activeScene = await Scene.findById(sceneId);
-            const tokens = await Token.find({ sceneId: sceneId });
+        await updateSceneScale(scene._id.toString(), data.metersPerSquare);
+        const revision = await bumpRevision(data.tableId);
 
-            const newState = {
-            tableInfo: table,
-            activeScene: activeScene,
-            tokens: tokens,
-            allScenes: table?.scenes || []
-            };
+        const bundle = await loadSessionState(data.tableId);
+        assertCondition(!!bundle, 'Mesa não encontrada.', 404);
+        io.to(data.tableId).emit('sessionStateUpdated', bundle!.state);
 
-            // Envia para todos para garantir reatividade local consistente
-            io.to(tableId).emit('sessionStateUpdated', newState);
-        } catch (error) {
-            console.error('Erro ao atualizar o tamanho do grid:', error);
-        }
-    };
-
-    const requestUpdateSceneScale = async (data: { tableId: string; sceneId: string; metersPerSquare: number }) => {
-        try {
-            const { tableId, sceneId, metersPerSquare } = data;
-            const userId = socket.data.user?.id;
-            const table = await Table.findById(tableId);
-            if (!table) return;
-            if (table.dm.toString() !== userId) return socket.emit('error', { message: 'Apenas o Mestre pode alterar a escala.' });
-            await Scene.findByIdAndUpdate(sceneId, { metersPerSquare });
-            const newState = await getFullSessionState(tableId, sceneId);
-            io.to(tableId).emit('sessionStateUpdated', newState);
-        } catch (error) {
-            console.error('Erro ao atualizar escala da cena:', error);
-        }
-    };
+        const changes: SessionPatchChanges = {
+          scenes: bundle!.state.scenes,
+          activeScene: bundle!.state.activeScene,
+        };
+        return { tableId: data.tableId, revision, changes };
+      },
+    });
+  };
 
   socket.on('joinTable', joinTable);
+  socket.on('requestResync', requestResync);
   socket.on('requestSetActiveScene', requestSetActiveScene);
-    socket.on('requestUpdateSessionStatus', requestUpdateSessionStatus);
-    socket.on('requestStartTransition', requestStartTransition);
+  socket.on('requestUpdateSessionStatus', requestUpdateSessionStatus);
+  socket.on('requestStartTransition', requestStartTransition);
   socket.on('requestSetMap', requestSetMap);
   socket.on('requestReorderScenes', requestReorderScenes);
-    socket.on('requestUpdateGridDimensions', requestUpdateGridDimensions);
-    socket.on('requestUpdateSceneScale', requestUpdateSceneScale);
+  socket.on('requestUpdateGridDimensions', requestUpdateGridDimensions);
+  socket.on('requestUpdateSceneScale', requestUpdateSceneScale);
 }
-  

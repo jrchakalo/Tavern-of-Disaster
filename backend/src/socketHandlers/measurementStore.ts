@@ -1,117 +1,102 @@
-// Centraliza o armazenamento em memória de medições por mesa/cena
-// Chave: tableId -> userId -> measurement
-export type Measurement = {
-  userId: string;
-  username: string;
-  start: { x: number; y: number };
-  end: { x: number; y: number };
-  distance: string;
-  color: string;
-  type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
-  affectedSquares?: string[];
-  sceneId: string;
-};
+import { InMemoryMeasurementStore } from './measurementStore.inmemory';
+import { MongoMeasurementStore } from './measurementStore.mongo';
+import {
+	AuraPayload,
+	MeasurementPayload,
+	PersistentMeasurementPayload,
+} from './measurementStore.types';
 
-const tableMeasurements: Record<string, Record<string, Measurement>> = {};
+// Efêmeras: continuam em memória (não são estado de cena).
+const ephemeralStore = new InMemoryMeasurementStore();
+// Persistentes e auras: Mongo é a fonte da verdade.
+const overlayStore = new MongoMeasurementStore();
 
-// Persistentes por mesa e cena
-export type PersistentMeasurement = Measurement & { id: string };
-const persistentByTableScene: Record<string, Record<string, Record<string, PersistentMeasurement>>> = {};
+export function setMeasurement(tableId: string, userId: string, measurement: MeasurementPayload) {
+	ephemeralStore.setMeasurement(tableId, userId, measurement);
+}
 
-export function setMeasurement(tableId: string, userId: string, measurement: Measurement) {
-  if (!tableMeasurements[tableId]) tableMeasurements[tableId] = {};
-  tableMeasurements[tableId][userId] = measurement;
+export function getMeasurementsForTable(tableId: string) {
+	return ephemeralStore.getEphemeral(tableId);
 }
 
 export function removeMeasurement(tableId: string, userId: string) {
-  if (tableMeasurements[tableId] && tableMeasurements[tableId][userId]) {
-    delete tableMeasurements[tableId][userId];
-  }
+	ephemeralStore.removeMeasurement(tableId, userId);
 }
 
 export function clearMeasurementsForTable(tableId: string) {
-  if (tableMeasurements[tableId]) {
-    tableMeasurements[tableId] = {};
-  }
+	ephemeralStore.clearMeasurementsForTable(tableId);
 }
 
 export function clearAllForUser(userId: string) {
-  Object.keys(tableMeasurements).forEach(tid => {
-    if (tableMeasurements[tid] && tableMeasurements[tid][userId]) {
-      delete tableMeasurements[tid][userId];
-    }
-  });
+	ephemeralStore.clearAllForUser(userId);
 }
 
-export function getTablesForUser(userId: string): string[] {
-  const tables: string[] = [];
-  Object.keys(tableMeasurements).forEach(tid => {
-    if (tableMeasurements[tid] && tableMeasurements[tid][userId]) tables.push(tid);
-  });
-  return tables;
+export function clearMeasurementsForScene(tableId: string, sceneId: string) {
+	ephemeralStore.clearMeasurementsForScene(tableId, sceneId);
 }
 
-export function getMeasurementsForTable(tableId: string): Record<string, Measurement> {
-  return tableMeasurements[tableId] || {};
+export function getTablesForUser(userId: string) {
+	return ephemeralStore.getTablesForUser(userId);
 }
 
-// --- Persistentes ---
-export function addPersistent(tableId: string, sceneId: string, m: PersistentMeasurement) {
-  if (!persistentByTableScene[tableId]) persistentByTableScene[tableId] = {};
-  if (!persistentByTableScene[tableId][sceneId]) persistentByTableScene[tableId][sceneId] = {};
-  persistentByTableScene[tableId][sceneId][m.id] = m;
+export type Measurement = MeasurementPayload;
+export type PersistentMeasurement = PersistentMeasurementPayload;
+export type Aura = AuraPayload;
+
+export async function addPersistent(
+	tableId: string,
+	sceneId: string,
+	measurement: PersistentMeasurementPayload
+) {
+	await overlayStore.addPersistent(tableId, sceneId, measurement);
 }
 
-export function removePersistent(tableId: string, sceneId: string, id: string) {
-  if (persistentByTableScene[tableId] && persistentByTableScene[tableId][sceneId]) {
-    delete persistentByTableScene[tableId][sceneId][id];
-  }
+export async function removePersistent(tableId: string, sceneId: string, id: string) {
+	await overlayStore.removePersistent(tableId, sceneId, id);
 }
 
-export function listPersistents(tableId: string, sceneId: string): PersistentMeasurement[] {
-  return Object.values(persistentByTableScene[tableId]?.[sceneId] || {});
+export async function listPersistents(tableId: string, sceneId: string) {
+	return overlayStore.listPersistents(tableId, sceneId);
 }
 
-export function clearPersistentsForScene(tableId: string, sceneId: string) {
-  if (persistentByTableScene[tableId] && persistentByTableScene[tableId][sceneId]) {
-    persistentByTableScene[tableId][sceneId] = {};
-  }
+export async function clearPersistentsForScene(tableId: string, sceneId: string) {
+	await overlayStore.clearPersistentsForScene(tableId, sceneId);
 }
 
-// --- Token-anchored Auras ---
-export type Aura = {
-  id: string; // we will commonly use tokenId as id for uniqueness per token
-  tokenId: string;
-  sceneId: string;
-  tableId: string;
-  name: string;
-  color: string;
-  radiusMeters: number;
-  ownerId: string; // user who created/controls this aura
-  difficultTerrain?: boolean; // optional flag for DM tools
-};
-
-// Store per table -> scene -> tokenId -> Aura
-const aurasByTableScene: Record<string, Record<string, Record<string, Aura>>> = {};
-
-export function upsertAura(a: Aura) {
-  if (!aurasByTableScene[a.tableId]) aurasByTableScene[a.tableId] = {};
-  if (!aurasByTableScene[a.tableId][a.sceneId]) aurasByTableScene[a.tableId][a.sceneId] = {};
-  aurasByTableScene[a.tableId][a.sceneId][a.tokenId] = a;
+export async function upsertAura(aura: AuraPayload) {
+	await overlayStore.upsertAura(aura);
 }
 
-export function removeAura(tableId: string, sceneId: string, tokenId: string) {
-  if (aurasByTableScene[tableId] && aurasByTableScene[tableId][sceneId]) {
-    delete aurasByTableScene[tableId][sceneId][tokenId];
-  }
+export async function removeAura(tableId: string, sceneId: string, tokenId: string) {
+	await overlayStore.removeAura(tableId, sceneId, tokenId);
 }
 
-export function listAuras(tableId: string, sceneId: string): Aura[] {
-  return Object.values(aurasByTableScene[tableId]?.[sceneId] || {});
+export async function listAuras(tableId: string, sceneId: string) {
+	return overlayStore.listAuras(tableId, sceneId);
 }
 
-export function clearAurasForScene(tableId: string, sceneId: string) {
-  if (aurasByTableScene[tableId] && aurasByTableScene[tableId][sceneId]) {
-    aurasByTableScene[tableId][sceneId] = {};
-  }
+export async function clearAurasForScene(tableId: string, sceneId: string) {
+	await overlayStore.clearAurasForScene(tableId, sceneId);
 }
+
+/**
+ * Limpa o estado efêmero em memória e todos os overlays persistidos da mesa.
+ * Usado na exclusão da mesa.
+ */
+export async function clearAllForTable(tableId: string) {
+	ephemeralStore.clearAllForTable(tableId);
+	await overlayStore.clearAllForTable(tableId);
+}
+
+/**
+ * Limpeza periódica: só faz sentido para as efêmeras em memória. Overlays
+ * persistentes em Mongo não expiram por inatividade (devem sobreviver a restart).
+ */
+export function cleanupInactiveTables(maxIdleMs: number) {
+	ephemeralStore.cleanupInactiveTables?.(maxIdleMs);
+}
+
+export { InMemoryMeasurementStore } from './measurementStore.inmemory';
+export { MongoMeasurementStore, createMongoMeasurementStore } from './measurementStore.mongo';
+export { RedisMeasurementStore, createRedisMeasurementStore } from './measurementStore.redis';
+export * from './measurementStore.types';

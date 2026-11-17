@@ -1,68 +1,114 @@
 import { Server, Socket } from 'socket.io';
-import Table from '../models/Table.model';
-import Scene from '../models/Scene.model';
-import Token from '../models/Token.model';
-import { setMeasurement, removeMeasurement, clearAllForUser, getTablesForUser, addPersistent, removePersistent, listPersistents, upsertAura, removeAura, listAuras, clearPersistentsForScene } from './measurementStore';
-import { nanoid } from 'nanoid';
+import {
+  shareEphemeralMeasurement,
+  removeEphemeralMeasurement,
+  cleanupUserMeasurements,
+  addPersistentMeasurement,
+  removePersistentMeasurement,
+  clearAllMeasurements,
+  upsertTokenAura,
+  removeTokenAura,
+} from '../services/measurementService';
+import { assertUserInTable, assertUserIsDM } from '../services/tableService';
+import { ServiceError, assertCondition } from '../services/serviceErrors';
+import {
+  assertEntityBelongsToTable,
+  loadSceneContext,
+  loadTokenContext,
+} from '../services/authorizationService';
+import { bumpRevision, getRevision } from '../services/revisionService';
+import { getAurasDTO, getMeasurementsDTO } from '../services/sessionService';
+import { randomId } from '../utils/id';
+import { extractAck, runAction } from './ack';
+import { createLogger } from '../logger';
+import { validate } from '../validation/validate';
+import {
+  zShareMeasurementPayload,
+  zAddPersistentMeasurementPayload,
+  zRemovePersistentMeasurementPayload,
+  zClearAllMeasurementsPayload,
+  zRemoveMeasurementPayload,
+  zUpsertAuraPayload,
+  zRemoveAuraPayload,
+  zPingPayload,
+} from '../validation/schemas';
+
+function hintTableId(payload: unknown): string | undefined {
+  const raw = payload as { tableId?: unknown } | undefined;
+  return typeof raw?.tableId === 'string' ? raw.tableId : undefined;
+}
 
 export function registerMeasurementHandlers(io: Server, socket: Socket) {
+  const log = createLogger({ scope: 'socket:measurement', socketId: socket.id, userId: socket.data.user?.id });
+
   // Compartilha medição efêmera. Jogador só pode se for turno do seu token; Mestre sempre.
-  const requestShareMeasurement = async (data: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; color?: string; }) => {
-    try {
-      const user = socket.data.user;
-      if (!user) return;
-      const { tableId, sceneId, start, end, distance, type, affectedSquares } = data;
-      const table = await Table.findById(tableId).populate('dm', '_id username').populate('players', '_id username').populate('activeScene');
-      if (!table) return;
-      if (!table.activeScene || table.activeScene._id.toString() !== sceneId) return; // only for active scene
+  const requestShareMeasurement = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestShareMeasurement',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const user = socket.data.user;
+        assertCondition(!!user, 'Usuário não autenticado.', 401);
+        const data = validate(zShareMeasurementPayload, payload);
+        const { tableId, sceneId } = data;
+        const { scene, table } = await loadSceneContext(sceneId);
+        assertEntityBelongsToTable(table._id.toString(), tableId);
+        assertUserInTable(user!.id, table);
 
-  // Permissão: Mestre sempre; jogador apenas se é dono do token em turno
-      const isDM = table.dm._id.toString() === user.id;
-      let canShare = isDM;
-      if (!isDM) {
-        const scene = await Scene.findById(sceneId);
-        const currentEntry = scene?.initiative?.find((e: any) => e.isCurrentTurn);
-        if (currentEntry?.tokenId) {
-          const token = await Token.findById(currentEntry.tokenId);
-          if (token && token.ownerId?.toString() === user.id) {
-            canShare = true;
-          }
+        const measurement = await shareEphemeralMeasurement(user!, tableId, scene._id.toString(), {
+          start: data.start,
+          end: data.end,
+          distance: data.distance,
+          type: data.type,
+          affectedSquares: data.affectedSquares,
+          color: data.color || '#ff8c00',
+          sceneId: scene._id.toString(),
+        });
+        if (!measurement) {
+          throw new ServiceError('Você não pode compartilhar medição agora.', 403);
         }
-      }
-      if (!canShare) return; // silencioso
-
-  // Cor padrão: Mestre roxo; jogador mantém cor enviada/fallback
-      const color = isDM ? '#3c096c' : (data.color || '#ff8c00');
-      const measurement = {
-        userId: user.id,
-        username: user.username,
-        start, end, distance, color,
-        type: type || 'ruler',
-        affectedSquares: Array.isArray(affectedSquares) ? affectedSquares : undefined,
-        sceneId
-      };
-      setMeasurement(tableId, user.id, measurement);
-      io.to(tableId).emit('measurementShared', measurement);
-    } catch (e) { console.error('Erro share measurement', e); }
+        io.to(tableId).emit('measurementShared', measurement);
+        return { tableId, revision: await getRevision(tableId) };
+      },
+    });
   };
 
-  // Remove medição efêmera própria.
-  const requestRemoveMeasurement = (data: { tableId: string; sceneId: string }) => {
-    const user = socket.data.user;
-    if (!user) return;
-    const { tableId } = data;
-    removeMeasurement(tableId, user.id);
-    io.to(tableId).emit('measurementRemoved', { userId: user.id });
+  // Remove medição efêmera própria (não altera estado persistente).
+  const requestRemoveMeasurement = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestRemoveMeasurement',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const user = socket.data.user;
+        assertCondition(!!user, 'Usuário não autenticado.', 401);
+        const data = validate(zRemoveMeasurementPayload, payload);
+        const { scene, table } = await loadSceneContext(data.sceneId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertUserInTable(user!.id, table);
+
+        removeEphemeralMeasurement(data.tableId, user!.id);
+        io.to(data.tableId).emit('measurementRemoved', { userId: user!.id });
+        return { tableId: data.tableId, revision: await getRevision(data.tableId) };
+      },
+    });
   };
 
   // Limpa medições efêmeras do usuário ao desconectar.
   const handleDisconnect = () => {
     const user = socket.data.user;
     if (!user) return;
-    // Emite remoção para todas as mesas onde o usuário tinha medição, e limpa
-    const tables = getTablesForUser(user.id);
-    tables.forEach(tid => io.to(tid).emit('measurementRemoved', { userId: user.id }));
-    clearAllForUser(user.id);
+    const tables = cleanupUserMeasurements(user.id);
+    tables.forEach((tid) => io.to(tid).emit('measurementRemoved', { userId: user.id }));
   };
 
   socket.on('requestShareMeasurement', requestShareMeasurement);
@@ -71,123 +117,250 @@ export function registerMeasurementHandlers(io: Server, socket: Socket) {
 
   // --- Persistentes ---
   // Cria/guarda medição persistente associada à cena. Mestre sempre; jogador apenas no seu turno.
-  socket.on('requestAddPersistentMeasurement', async (data: { tableId: string; sceneId: string; payload: { id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; color?: string } }) => {
-    try {
-      const user = socket.data.user;
-      if (!user) return;
-      const { tableId, sceneId, payload } = data;
-      const table = await Table.findById(tableId).populate('dm','_id');
-      if (!table) return;
-      const isDM = table.dm._id.toString() === user.id;
-      // Jogador pode adicionar no próprio turno; DM sempre
-      let canAdd = isDM;
-      if (!isDM) {
-        const scene = await Scene.findById(sceneId);
-        const currentEntry = scene?.initiative?.find((e:any)=>e.isCurrentTurn);
-        if (currentEntry?.tokenId) {
-          const tok = await Token.findById(currentEntry.tokenId);
-          canAdd = tok?.ownerId?.toString() === user.id;
-        }
-      }
-    if (!canAdd) return;
-  const color = isDM ? '#3c096c' : (payload.color || '#ff8c00');
-  const id = payload.id || nanoid(8);
-  addPersistent(tableId, sceneId, { id, userId: user.id, username: user.username, color, sceneId, start: payload.start, end: payload.end, distance: payload.distance, type: payload.type, affectedSquares: payload.affectedSquares });
-  io.to(tableId).emit('persistentMeasurementAdded', { tableId, sceneId, ownerId: user.id, userId: user.id, id, start: payload.start, end: payload.end, distance: payload.distance, type: payload.type, affectedSquares: payload.affectedSquares, color, username: user.username });
-    } catch (e) { console.error('requestAddPersistentMeasurement', e);} 
-  });
+  const requestAddPersistentMeasurement = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestAddPersistentMeasurement',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const user = socket.data.user;
+        assertCondition(!!user, 'Usuário não autenticado.', 401);
+        const data = validate(zAddPersistentMeasurementPayload, payload);
+        const { tableId, sceneId } = data;
+        const { scene, table } = await loadSceneContext(sceneId);
+        assertEntityBelongsToTable(table._id.toString(), tableId);
+        assertUserInTable(user!.id, table);
+
+        const persistent = await addPersistentMeasurement(user!, tableId, scene._id.toString(), {
+          ...data.payload,
+          color: data.payload.color || '#ff8c00',
+          sceneId: scene._id.toString(),
+        });
+        const revision = await bumpRevision(tableId);
+
+        io.to(tableId).emit('persistentMeasurementAdded', {
+          tableId,
+          sceneId,
+          revision,
+          ownerId: user!.id,
+          userId: persistent.userId,
+          id: persistent.id,
+          start: persistent.start,
+          end: persistent.end,
+          distance: persistent.distance,
+          type: persistent.type,
+          affectedSquares: persistent.affectedSquares,
+          color: persistent.color,
+          username: persistent.username,
+        });
+
+        return {
+          tableId,
+          revision,
+          changes: { measurements: await getMeasurementsDTO(tableId, scene._id.toString()) },
+        };
+      },
+    });
+  };
 
   // Remove medição persistente (Mestre ou autor).
-  socket.on('requestRemovePersistentMeasurement', async (data: { tableId: string; sceneId: string; id: string }) => {
-    try {
-      const user = socket.data.user; if (!user) return;
-      const { tableId, sceneId, id } = data;
-      const table = await Table.findById(tableId).populate('dm','_id');
-      if (!table) return;
-      const isDM = table.dm._id.toString() === user.id;
-      // Permitir DM sempre; autor pode remover seu próprio
-      const items = listPersistents(tableId, sceneId);
-      const item = items.find(i => i.id === id);
-      if (!item) return;
-      if (!(isDM || item.userId === user.id)) return;
-      removePersistent(tableId, sceneId, id);
-      io.to(tableId).emit('persistentMeasurementRemoved', { sceneId, id });
-    } catch (e) { console.error('requestRemovePersistentMeasurement', e);} 
-  });
+  const requestRemovePersistentMeasurement = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestRemovePersistentMeasurement',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const user = socket.data.user;
+        assertCondition(!!user, 'Usuário não autenticado.', 401);
+        const data = validate(zRemovePersistentMeasurementPayload, payload);
+        const { tableId, sceneId, id } = data;
+        const { scene, table } = await loadSceneContext(sceneId);
+        assertEntityBelongsToTable(table._id.toString(), tableId);
+        assertUserInTable(user!.id, table);
 
-  // Limpar todas as medições compartilhadas da mesa (DM apenas)
+        await removePersistentMeasurement(user!, tableId, scene._id.toString(), id);
+        const revision = await bumpRevision(tableId);
+        io.to(tableId).emit('persistentMeasurementRemoved', { sceneId, id, revision });
+
+        return {
+          tableId,
+          revision,
+          changes: { measurements: await getMeasurementsDTO(tableId, scene._id.toString()) },
+        };
+      },
+    });
+  };
+
   // Limpa (Mestre) tudo: efêmeras + persistentes + auras da cena.
-  socket.on('requestClearAllMeasurements', async (data: { tableId: string; sceneId: string }) => {
-    try {
-      const user = socket.data.user; if (!user) return;
-      const { tableId, sceneId } = data;
-      const table = await Table.findById(tableId).populate('dm','_id');
-      if (!table) return;
-      const isDM = table.dm._id.toString() === user.id;
-      if (!isDM) return;
-      // Limpa em memória e notifica os clientes
-      const { clearMeasurementsForTable, clearAurasForScene } = await import('./measurementStore');
-      clearMeasurementsForTable(tableId);
-      if (sceneId) clearPersistentsForScene(tableId, sceneId);
-      if (sceneId) clearAurasForScene(tableId, sceneId);
-      io.to(tableId).emit('allMeasurementsCleared', { sceneId });
-    } catch (e) { console.error('requestClearAllMeasurements', e); }
-  });
+  const requestClearAllMeasurements = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestClearAllMeasurements',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const user = socket.data.user;
+        assertCondition(!!user, 'Usuário não autenticado.', 401);
+        const data = validate(zClearAllMeasurementsPayload, payload);
+        const { tableId, sceneId } = data;
+        const { scene, table } = await loadSceneContext(sceneId);
+        assertEntityBelongsToTable(table._id.toString(), tableId);
+        assertUserIsDM(user!.id, table);
+
+        await clearAllMeasurements(tableId, scene._id.toString());
+        const revision = await bumpRevision(tableId);
+        io.to(tableId).emit('allMeasurementsCleared', { sceneId, revision });
+
+        return {
+          tableId,
+          revision,
+          changes: {
+            measurements: await getMeasurementsDTO(tableId, scene._id.toString()),
+            auras: await getAurasDTO(tableId, scene._id.toString()),
+          },
+        };
+      },
+    });
+  };
+
+  socket.on('requestAddPersistentMeasurement', requestAddPersistentMeasurement);
+  socket.on('requestRemovePersistentMeasurement', requestRemovePersistentMeasurement);
+  socket.on('requestClearAllMeasurements', requestClearAllMeasurements);
 
   // --- Auras ancoradas ao token ---
   // Inclui/atualiza aura ancorada a token. Permissão: Mestre, dono do token ou dono do token em turno.
-  socket.on('requestUpsertAura', async (data: { tableId: string; sceneId: string; tokenId: string; name: string; color: string; radiusMeters: number; difficultTerrain?: boolean }) => {
-    try {
-      const user = socket.data.user; if (!user) return;
-  const { tableId, sceneId, tokenId, name, color, radiusMeters, difficultTerrain } = data;
-      const table = await Table.findById(tableId).populate('dm','_id');
-      if (!table) return;
-      const token = await Token.findById(tokenId);
-      if (!token) return;
-      const isDM = table.dm._id.toString() === user.id;
-      const isOwner = token.ownerId?.toString() === user.id;
-      // Permitir também o jogador cujo token está no turno atual
-      let isTurnOwner = false;
-      try {
-        const scene = await Scene.findById(sceneId);
-        const currentEntry: any = scene?.initiative?.find((e: any) => e.isCurrentTurn);
-        if (currentEntry?.tokenId) {
-          const turnTok = await Token.findById(currentEntry.tokenId);
-          if (turnTok && turnTok.ownerId?.toString() === user.id) isTurnOwner = true;
-        }
-      } catch {}
-      if (!(isDM || isOwner || isTurnOwner)) return;
-  const aura = { id: tokenId, tokenId, tableId, sceneId, name: name?.trim() || 'Aura', color, radiusMeters: Math.max(0, radiusMeters || 0), ownerId: token.ownerId?.toString() || user.id, difficultTerrain: !!difficultTerrain };
-      upsertAura(aura);
-      io.to(tableId).emit('auraUpserted', aura);
-    } catch (e) { console.error('requestUpsertAura', e); }
-  });
+  const requestUpsertAura = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestUpsertAura',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const user = socket.data.user;
+        assertCondition(!!user, 'Usuário não autenticado.', 401);
+        const data = validate(zUpsertAuraPayload, payload);
+        const { token, scene, table } = await loadTokenContext(data.tokenId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertCondition(scene._id.toString() === data.sceneId, 'Token pertence a outra cena.', 403);
+        assertUserInTable(user!.id, table);
+
+        const aura = await upsertTokenAura(user!, data.tableId, scene._id.toString(), token._id.toString(), {
+          name: data.name,
+          color: data.color,
+          radiusMeters: data.radiusMeters,
+          difficultTerrain: data.difficultTerrain,
+        });
+        const revision = await bumpRevision(data.tableId);
+        io.to(data.tableId).emit('auraUpserted', { ...aura, revision });
+
+        return {
+          tableId: data.tableId,
+          revision,
+          changes: { auras: await getAurasDTO(data.tableId, scene._id.toString()) },
+        };
+      },
+    });
+  };
 
   // Remove aura (apenas Mestre).
-  socket.on('requestRemoveAura', async (data: { tableId: string; sceneId: string; tokenId: string }) => {
-    try {
-      const user = socket.data.user; if (!user) return;
-      const { tableId, sceneId, tokenId } = data;
-      const table = await Table.findById(tableId).populate('dm','_id');
-      if (!table) return;
-      const isDM = table.dm._id.toString() === user.id;
-      if (!isDM) return; // Apenas DM remove
-      removeAura(tableId, sceneId, tokenId);
-      io.to(tableId).emit('auraRemoved', { sceneId, tokenId });
-    } catch (e) { console.error('requestRemoveAura', e); }
-  });
+  const requestRemoveAura = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestRemoveAura',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const user = socket.data.user;
+        assertCondition(!!user, 'Usuário não autenticado.', 401);
+        const data = validate(zRemoveAuraPayload, payload);
+        const { scene, table } = await loadSceneContext(data.sceneId);
+        assertEntityBelongsToTable(table._id.toString(), data.tableId);
+        assertUserInTable(user!.id, table);
 
-  // Ping efêmero (ripple). Apenas verifica se usuário está na mesa e cena ativa bate.
-  // Ping visual curto (ripple). Apenas se cena for a ativa.
-  socket.on('requestPing', async (data: { tableId: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string }) => {
-    try {
-      const user = socket.data.user; if (!user) return;
-      const { tableId, sceneId, squareId, x, y, color } = data;
-      const table = await Table.findById(tableId).populate('activeScene','_id');
-      if (!table) return;
-      if (!table.activeScene || table.activeScene._id.toString() !== sceneId) return;
-      const payload = { id: nanoid(6), userId: user.id, username: user.username, sceneId, squareId, x, y, color, ts: Date.now() };
-      io.to(tableId).emit('pingBroadcast', payload);
-    } catch (e) { console.error('requestPing', e); }
-  });
+        await removeTokenAura(user!, data.tableId, scene._id.toString(), data.tokenId);
+        const revision = await bumpRevision(data.tableId);
+        io.to(data.tableId).emit('auraRemoved', { sceneId: data.sceneId, tokenId: data.tokenId, revision });
+
+        return {
+          tableId: data.tableId,
+          revision,
+          changes: { auras: await getAurasDTO(data.tableId, scene._id.toString()) },
+        };
+      },
+    });
+  };
+
+  socket.on('requestUpsertAura', requestUpsertAura);
+  socket.on('requestRemoveAura', requestRemoveAura);
+
+  // Ping visual curto (ripple). Efêmero: não incrementa revisão.
+  const requestPing = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestPing',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const user = socket.data.user;
+        assertCondition(!!user, 'Usuário não autenticado.', 401);
+        const data = validate(zPingPayload, payload);
+        // A mesa é resolvida pela cena, nunca pelo tableId enviado.
+        const { scene, table } = await loadSceneContext(data.sceneId);
+        const tableId = table._id.toString();
+        assertEntityBelongsToTable(tableId, data.tableId);
+        assertUserInTable(user!.id, table);
+        assertCondition(
+          !!table.activeScene && table.activeScene.toString() === scene._id.toString(),
+          'Só é possível pingar na cena ativa.',
+          400
+        );
+
+        const gridWidth = scene.gridWidth ?? 30;
+        const gridHeight = scene.gridHeight ?? 30;
+        assertCondition(
+          data.x >= 0 && data.x <= gridWidth && data.y >= 0 && data.y <= gridHeight,
+          'Ping fora dos limites da grade.',
+          400
+        );
+
+        const revision = await getRevision(tableId);
+        const ping = {
+          id: randomId(6),
+          userId: user!.id,
+          username: user!.username,
+          sceneId: scene._id.toString(),
+          squareId: data.squareId,
+          x: data.x,
+          y: data.y,
+          color: data.color,
+          ts: Date.now(),
+          revision,
+        };
+        io.to(tableId).emit('pingBroadcast', ping);
+        return { tableId, revision };
+      },
+    });
+  };
+
+  socket.on('requestPing', requestPing);
 }

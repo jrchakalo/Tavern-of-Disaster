@@ -20,9 +20,34 @@
 
 Tavern of Disaster is a virtual tabletop where I mix two passions: web development and RPG. The goal is to build a lean, fast real‑time tool for my groups, iterating features as creativity (and playtest) demands.
 
+Restoration status: **all phases 0–6 are complete locally** (`v0.9.8-phase6`).
+Phases 3–4 delivered realtime sheets + OP2/OPSH and media/scenes; **Phase 5
+(`v0.9.7-phase5`)** added WebRTC mesh audio-first, mute/deafen, camera, screen
+share, TURN/STUN and persisted chat; **Phase 6** added health/ready/protected
+metrics, graceful shutdown, free-tier deploy configs (Render/Vercel/Atlas/
+Supabase/TURN), CI with chaos and a simulated beta playtest (backend 238/238,
+frontend 308/308, E2E 72/72, chaos 14/14). D&D 5e remains the default, with
+OP2/OPSH at equal weight. The beta is **live** at https://tavernofdisaster.vercel.app (API on Render);
+see `docs/OPERATIONS.md`, `docs/qa/PHASE6-BETA-REPORT.md` and
+`docs/qa/PHASE6-BETA-PRODUCTION.md`. Other contracts: `docs/PHASE5_ONLINE_CALL.md`,
+`docs/MEDIA_SCENES.md`, `docs/ORDEM_PARANORMAL.md`, `docs/RESTORATION.md`,
+`docs/REALTIME_PROTOCOL.md`, `docs/TABLE_MODE.md`, `docs/SHEETS_DICE.md` and
+`docs/ORCHESTRATION.md`.
+
 Currently implemented core features:
 
-* Real-time token placement & movement (Socket.IO)
+* Real-time token placement & movement (Socket.IO) with revision-aware state,
+  acks, reconnection and automatic resync
+* Entity-based authorization (token → scene → table → role) and cross-table IDOR
+  protection
+* Mobile player controller (`/play/:id`) with condensed HP/defense/movement card
+* Read-only TV board (`/display/:id`) authenticated by a dedicated display token
+* Offline QR codes for player invite and TV pairing
+* Canonical grid-unit geometry for pings and measurements across devices
+* Realtime D&D 5e / Cyberpunk RED character sheets with HP/CA synced to tokens
+* Server-authoritative dice (exploding `!`), system presets and persisted roll log
+* Automated tests: backend unit + Socket.IO integration, frontend unit,
+  Playwright E2E and a 6-client chaos harness
 * Multi-footprint tokens with footprint collision validation
 * Measurement tools (ruler, cone, circle, square, line, beam) with optional persistence
 * Auras linked to tokens (configurable radius/color)
@@ -65,7 +90,25 @@ Frontend:
 Tooling & Misc:
 * ESLint / TypeScript config
 * npm scripts
-* (Planned) Tests & CI pipeline
+* Jest + Vitest + Playwright + chaos harness
+* GitHub Actions CI (backend, frontend, E2E)
+
+---
+
+## Quick start (Docker)
+
+Everything (MongoDB + backend + frontend) in one command, no local dependencies:
+
+```bash
+docker compose up --build
+```
+
+Then open `http://localhost:8080`. Cameras/phones on the same Wi-Fi can use
+`http://<your-computer-ip>:8080` — the frontend proxies `/api`, `/socket.io` and
+`/uploads`, so the whole table shares one origin.
+
+Data persists in the `mongo-data` and `uploads` Docker volumes. Set `JWT_SECRET`
+in the environment (or a root `.env`) for anything beyond a local test.
 
 ---
 
@@ -74,22 +117,25 @@ Tooling & Misc:
 Backend:
 ```bash
 cd backend
-npm install
+npm ci
+cp ../.env.example .env   # fill MONGO_URI and JWT_SECRET
 npm run dev
 ```
 
 Frontend (in a second terminal):
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
 Default dev endpoints:
 * Backend API / Socket: `http://localhost:3001`
-* Frontend: `http://localhost:5173`
+* Frontend: `http://localhost:5173` (proxies `/api`, `/socket.io` and `/uploads`)
 
-Environment variables: copy `.env.example` to `.env` in the backend folder and set values.
+Environment variables: copy `.env.example` to `backend/.env` and set values.
+`frontend/.env.local` is optional — leave `VITE_API_URL` empty to use the same
+origin. See `docs/RESTORATION.md` for the current restoration plan.
 
 ---
 

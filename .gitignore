@@ -1,6 +1,60 @@
-# IDE specific
+# IDE
 .vscode/
+.idea/
 
-# OS specific
+# OS
 .DS_Store
 Thumbs.db
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Agent worktrees (per-coder branches)
+.worktrees/
+
+# Build output
+dist/
+**/dist/
+coverage/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+!.env.deploy.example
+
+# Local uploads (dev storage driver)
+backend/uploads/
+
+# Local rulebooks/references (copyrighted; never commit PDFs)
+references/*
+!references/README.md
+
+# Test artifacts
+playwright-report/
+test-results/
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+
+# MongoDB dumps (nunca commitar dados de usuários)
+backups/
+*.archive.gz
+*.dump
+
+# Generated config artifacts (source of truth: *.ts)
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/eslint.config.js
+frontend/eslint.config.d.ts
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Deploy secrets (nunca versionar)
+.env.deploy

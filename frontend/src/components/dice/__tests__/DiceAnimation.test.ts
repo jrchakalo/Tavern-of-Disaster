@@ -1,0 +1,341 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mount } from '@vue/test-utils';
+import type { DiceRolledPayload } from '../../../types';
+import DiceAnimation from '../../DiceAnimation.vue';
+
+function payload(overrides: Partial<DiceRolledPayload> = {}): DiceRolledPayload {
+  return {
+    tableId: 'table-1',
+    expression: '1d20+5',
+    rolls: [
+      { die: 20, value: 14, kept: 'kept' },
+      { die: 20, value: 6, kept: 'dropped' },
+    ],
+    modifier: 5,
+    total: 19,
+    metadata: 'Ataque',
+    userId: 'user-1',
+    username: 'Tester',
+    createdAt: '2026-11-16T20:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function stubReducedMotion(matches: boolean) {
+  vi.spyOn(window, 'matchMedia').mockReturnValue({
+    matches,
+    media: '(prefers-reduced-motion: reduce)',
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(() => false),
+  } as unknown as MediaQueryList);
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+  delete (navigator as { vibrate?: unknown }).vibrate;
+});
+
+describe('DiceAnimation (signature moment)', () => {
+  it('draws a real die shape per roll and marks dropped dice with a rule', () => {
+    const wrapper = mount(DiceAnimation, { props: { payload: payload() } });
+
+    expect(wrapper.findAll('.die-art')).toHaveLength(2);
+    expect(wrapper.findAll('.die-art--d20')).toHaveLength(2);
+    expect(wrapper.findAll('[data-kept="dropped"]')).toHaveLength(1);
+    expect(wrapper.find('.die-art.is-dropped').exists()).toBe(true);
+    expect(wrapper.find('.die-art__drop-rule').exists()).toBe(true);
+
+    wrapper.unmount();
+  });
+
+  it('renders d4/d6/d8/d10/d12/d20/d100 as different shapes', () => {
+    const sides = [4, 6, 8, 10, 12, 20, 100];
+    for (const die of sides) {
+      const wrapper = mount(DiceAnimation, {
+        props: {
+          payload: payload({
+            expression: `1d${die}`,
+            rolls: [{ die, value: 1, kept: 'kept' }],
+            total: 1,
+          }),
+        },
+      });
+
+      expect(wrapper.find(`.die-art--d${die}`).exists()).toBe(true);
+      wrapper.unmount();
+    }
+  });
+
+  it('shows the total, actor and an aria-live summary', () => {
+    const wrapper = mount(DiceAnimation, { props: { payload: payload() } });
+
+    expect(wrapper.text()).toContain('Tester');
+    expect(wrapper.text()).toContain('19');
+    expect(wrapper.text()).toContain('1d20+5');
+    expect(wrapper.text()).toContain('1 dado descartado');
+
+    const live = wrapper.get('[role="status"]');
+    expect(live.attributes('aria-live')).toBe('polite');
+    expect(live.text()).toContain('Tester rolou 19 em 1d20+5');
+    expect(live.text()).toContain('Um dado descartado');
+
+    wrapper.unmount();
+  });
+
+  it('immediately shows the final state under reduced motion (no stagger)', () => {
+    stubReducedMotion(true);
+    const wrapper = mount(DiceAnimation, {
+      props: { payload: payload(), variant: 'tv' },
+    });
+
+    expect(wrapper.find('.dice-moment.is-reduced').exists()).toBe(true);
+    expect(wrapper.find('.dice-moment--tv').exists()).toBe(true);
+    expect(wrapper.text()).toContain('19');
+    wrapper.unmount();
+  });
+
+  it('resets the moment when a new roll replaces the current one (latest wins)', async () => {
+    const wrapper = mount(DiceAnimation, { props: { payload: payload() } });
+    expect(wrapper.text()).toContain('1d20+5');
+
+    await wrapper.setProps({
+      payload: payload({
+        expression: '2d6',
+        rolls: [
+          { die: 6, value: 3, kept: 'kept' },
+          { die: 6, value: 4, kept: 'kept' },
+        ],
+        modifier: 0,
+        total: 7,
+        metadata: 'Dano',
+      }),
+    });
+
+    expect(wrapper.text()).not.toContain('1d20+5');
+    expect(wrapper.text()).toContain('2d6');
+    expect(wrapper.text()).toContain('7');
+    expect(wrapper.findAll('.die-art--d6')).toHaveLength(2);
+    wrapper.unmount();
+  });
+
+  it('dismisses by overlay click, close button and Escape', async () => {
+    const clickWrapper = mount(DiceAnimation, { props: { payload: payload() } });
+    await clickWrapper.get('.dice-moment').trigger('click');
+    expect(clickWrapper.emitted('dismiss')).toHaveLength(1);
+    clickWrapper.unmount();
+
+    const buttonWrapper = mount(DiceAnimation, { props: { payload: payload() } });
+    await buttonWrapper.get('.dice-slip__close').trigger('click');
+    expect(buttonWrapper.emitted('dismiss')).toHaveLength(1);
+    buttonWrapper.unmount();
+
+    const escWrapper = mount(DiceAnimation, { props: { payload: payload() } });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await escWrapper.vm.$nextTick();
+    expect(escWrapper.emitted('dismiss')).toHaveLength(1);
+    escWrapper.unmount();
+  });
+
+  it('does not dismiss when the slip itself is clicked', async () => {
+    const wrapper = mount(DiceAnimation, { props: { payload: payload() } });
+    await wrapper.get('.dice-slip').trigger('click');
+    expect(wrapper.emitted('dismiss')).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it('renders without dice when the expression has no dice', () => {
+    const wrapper = mount(DiceAnimation, {
+      props: {
+        payload: payload({
+          expression: '0d6',
+          rolls: [],
+          modifier: 3,
+          total: 3,
+        }),
+      },
+    });
+
+    expect(wrapper.findAll('.die-art')).toHaveLength(0);
+    expect(wrapper.text()).toContain('Sem dados nesta rolagem');
+    expect(wrapper.text()).toContain('3');
+    wrapper.unmount();
+  });
+});
+
+function stubVibration() {
+  const vibrate = vi.fn();
+  Object.defineProperty(navigator, 'vibrate', {
+    value: vibrate,
+    configurable: true,
+    writable: true,
+  });
+  return vibrate;
+}
+
+function mountPlayer(overrides: Partial<DiceRolledPayload> = {}) {
+  return mount(DiceAnimation, {
+    props: { payload: payload(overrides), variant: 'player' as const },
+  });
+}
+
+describe('DiceAnimation — momento do jogador', () => {
+  it('renderiza o bilhete compacto com o total, sem teatro de tela cheia', () => {
+    const wrapper = mountPlayer();
+
+    expect(wrapper.find('.dice-moment--player').exists()).toBe(true);
+    expect(wrapper.get('.dice-slip__total-value').text()).toBe('19');
+    expect(wrapper.text()).toContain('Toque ou Esc para fechar');
+    wrapper.unmount();
+  });
+
+  it('fecha sozinho dentro da janela de 2,6–3,2 s', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const wrapper = mountPlayer();
+
+    vi.advanceTimersByTime(2700);
+    expect(wrapper.emitted('dismiss')).toBeUndefined();
+
+    vi.advanceTimersByTime(100);
+    expect(wrapper.emitted('dismiss')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('a rolagem nova substitui a anterior e reinicia o relógio', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const wrapper = mountPlayer();
+
+    vi.advanceTimersByTime(2000);
+    await wrapper.setProps({
+      payload: payload({
+        expression: '2d6',
+        rolls: [
+          { die: 6, value: 3, kept: 'kept' },
+          { die: 6, value: 4, kept: 'kept' },
+        ],
+        modifier: 0,
+        total: 7,
+        metadata: 'Dano',
+      }),
+    });
+
+    expect(wrapper.text()).not.toContain('1d20+5');
+    expect(wrapper.text()).toContain('2d6');
+    expect(wrapper.get('.dice-slip__total-value').text()).toBe('7');
+
+    vi.advanceTimersByTime(800);
+    expect(wrapper.emitted('dismiss')).toBeUndefined();
+
+    vi.advanceTimersByTime(2000);
+    expect(wrapper.emitted('dismiss')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('não fecha sozinho no DM nem na TV', () => {
+    for (const variant of ['card', 'tv'] as const) {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const wrapper = mount(DiceAnimation, { props: { payload: payload(), variant } });
+      vi.advanceTimersByTime(10_000);
+      expect(wrapper.emitted('dismiss')).toBeUndefined();
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('anuncia o resultado com aria-live sem roubar o foco', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const wrapper = mountPlayer();
+
+    expect(document.activeElement).toBe(trigger);
+    const live = wrapper.get('[role="status"]');
+    expect(live.attributes('aria-live')).toBe('polite');
+    expect(live.text()).toContain('Tester rolou 19 em 1d20+5');
+
+    wrapper.unmount();
+    trigger.remove();
+  });
+
+  it('vibra 20 ms apenas no celular e sem reduced motion', () => {
+    const vibrate = stubVibration();
+    const wrapper = mountPlayer();
+    expect(vibrate).toHaveBeenCalledWith(20);
+    wrapper.unmount();
+
+    vibrate.mockClear();
+    stubReducedMotion(true);
+    const reduced = mountPlayer();
+    expect(reduced.find('.dice-moment.is-reduced').exists()).toBe(true);
+    expect(vibrate).not.toHaveBeenCalled();
+    reduced.unmount();
+
+    vi.restoreAllMocks();
+    vibrate.mockClear();
+    const card = mount(DiceAnimation, { props: { payload: payload(), variant: 'card' } });
+    expect(vibrate).not.toHaveBeenCalled();
+    card.unmount();
+  });
+
+  it('mostra o estado final imediato com reduced motion', () => {
+    stubReducedMotion(true);
+    const wrapper = mountPlayer();
+
+    expect(wrapper.find('.dice-moment.is-reduced').exists()).toBe(true);
+    expect(wrapper.get('.dice-slip__total-value').text()).toBe('19');
+    expect(wrapper.findAll('.die-art')).toHaveLength(2);
+    wrapper.unmount();
+  });
+
+  it('fecha com um toque em qualquer lugar do bilhete no celular', async () => {
+    const wrapper = mountPlayer();
+    await wrapper.get('.dice-slip').trigger('click');
+    expect(wrapper.emitted('dismiss')).toHaveLength(1);
+    wrapper.unmount();
+  });
+});
+
+function mountDm(overrides: Partial<DiceRolledPayload> = {}) {
+  return mount(DiceAnimation, {
+    props: { payload: payload(overrides), variant: 'dm' as const },
+  });
+}
+
+describe('DiceAnimation — card compacto do Mestre', () => {
+  it('renderiza o card de canto com a classe dm e sem scrim de tela cheia', () => {
+    const wrapper = mountDm();
+
+    expect(wrapper.find('.dice-moment--dm').exists()).toBe(true);
+    expect(wrapper.get('.dice-slip__total-value').text()).toBe('19');
+    expect(wrapper.text()).toContain('Clique ou Esc para fechar');
+    expect(wrapper.get('[role="status"]').attributes('aria-live')).toBe('polite');
+    wrapper.unmount();
+  });
+
+  it('fecha sozinho em 3,2 s, mais tarde que o bilhete do jogador', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const wrapper = mountDm();
+
+    vi.advanceTimersByTime(2800);
+    expect(wrapper.emitted('dismiss')).toBeUndefined();
+
+    vi.advanceTimersByTime(400);
+    expect(wrapper.emitted('dismiss')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('fecha ao clicar no card e não vibra no desktop', async () => {
+    const vibrate = stubVibration();
+    const wrapper = mountDm();
+
+    expect(vibrate).not.toHaveBeenCalled();
+    await wrapper.get('.dice-slip').trigger('click');
+    expect(wrapper.emitted('dismiss')).toHaveLength(1);
+    wrapper.unmount();
+  });
+});

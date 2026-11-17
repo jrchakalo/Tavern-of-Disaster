@@ -1,43 +1,614 @@
 import { toast } from './toast';
 import { io, Socket } from 'socket.io-client';
-import { useTableStore } from '../stores/tableStore';
-import { authToken } from './authService';
-import type { TokenInfo, IScene, IInitiativeEntry, PlayerInfo, TokenSize } from '../types';
+import { useTableStore, registerResyncRequester } from '../stores/tableStore';
+import { authToken, currentUser, refreshToken } from './authService';
+import { API_BASE_URL, SOCKET_URL } from './apiBase';
+import { jwtDecode } from 'jwt-decode';
+import type {
+  TokenInfo,
+  IInitiativeEntry,
+  PlayerInfo,
+  TokenSize,
+  SessionStateDTO,
+  SceneDTO,
+  InitiativeEntryDTO,
+  RollDiceParams,
+  DiceRolledPayload,
+  Ack,
+  AckError,
+  ErrorCode,
+  AuraInfo,
+  PresenceEntry,
+  SessionSnapshot,
+  SessionPatch,
+  CharacterDTO,
+  CharacterSummaryDTO,
+  ChatMessage,
+  ChatMessagePayload,
+  ChatSocketEventMap,
+  ChatSocketEventName,
+  MediaIceServersResponse,
+  MediaIncomingIcePayload,
+  MediaIncomingSignalPayload,
+  MediaKickedPayload,
+  MediaErrorPayload,
+  MediaPeerJoinedPayload,
+  MediaPeerLeftPayload,
+  MediaRoomStatePayload,
+  MediaSocketEventMap,
+  MediaSocketEventName,
+  MediaStateUpdatedPayload,
+  MediaState,
+} from '../types';
+
+const ACK_TIMEOUT_MS = 5000;
+const RESYNC_DEBOUNCE_MS = 500;
+const RESYNC_STALE_MS = 15_000;
+const TOKEN_REFRESH_AT = 0.8; // renova quando faltar 20% da validade
+const MAX_TIMEOUT_DELAY_MS = 2_147_483_647;
+
+/** Opções de ack: timeout em ms e `silent` para o chamador dono do feedback. */
+export interface EmitWithAckOptions {
+  timeoutMs?: number;
+  /** Não mostra toast: quem chama trata o erro (ex.: characterStore com fallback REST). */
+  silent?: boolean;
+}
+
+/** Erro quando o servidor não confirma a ação (timeout ou socket ausente). */
+export class SocketAckError extends Error {
+  readonly event: string;
+  readonly reason: 'timeout' | 'disconnected';
+
+  constructor(event: string, reason: 'timeout' | 'disconnected') {
+    const message = reason === 'timeout'
+      ? 'O servidor não confirmou a ação. Tente novamente.'
+      : 'Sem conexão com o servidor.';
+    super(message);
+    this.name = 'SocketAckError';
+    this.event = event;
+    this.reason = reason;
+  }
+}
+
+type TokenMoveEvent = {
+  tableId?: string;
+  sceneId: string;
+  tokenId: string;
+  oldSquareId: string;
+  squareId: string;
+  remainingMovement?: number;
+  movement?: number;
+};
+
+type MeasurementShape = 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam';
+
+type SharedMeasurementEvent = {
+  userId: string;
+  username: string;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  distance: string;
+  color: string;
+  type?: MeasurementShape;
+  affectedSquares?: string[];
+};
+
+type PersistentMeasurementEvent = SharedMeasurementEvent & {
+  id?: string;
+  sceneId?: string;
+  ownerId?: string;
+};
+
+type PingEvent = {
+  id: string;
+  userId: string;
+  username: string;
+  sceneId: string;
+  squareId?: string;
+  x?: number;
+  y?: number;
+  color?: string;
+  ts: number;
+};
+
+type TokenUpdateEvent = {
+  tableId?: string;
+  sceneId?: string;
+  tokenId: string;
+  patch: Partial<TokenInfo>;
+};
+
+type TokensMovementResetEvent = {
+  tableId?: string;
+  sceneId: string;
+  updates: Array<{ tokenId: string; remainingMovement: number; movement?: number }>;
+};
+
+type InitiativeEntryAddedEvent = {
+  tableId?: string;
+  sceneId: string;
+  entry: InitiativeEntryDTO;
+  order: string[];
+};
+
+type InitiativeEntryRemovedEvent = {
+  tableId?: string;
+  sceneId: string;
+  entryId: string;
+  order: string[];
+};
+
+type InitiativeEntryUpdatedEvent = {
+  tableId?: string;
+  sceneId: string;
+  entryId: string;
+  patch: Partial<IInitiativeEntry>;
+};
+
+type InitiativeOrderUpdatedEvent = {
+  tableId?: string;
+  sceneId: string;
+  order: string[];
+  currentTurnId?: string | null;
+};
+
+type InitiativeTurnAdvancedEvent = {
+  tableId?: string;
+  sceneId: string;
+  currentEntryId: string;
+  previousEntryId?: string;
+  currentTokenId?: string;
+  newRound?: boolean;
+};
+
+// Fichas: eventos legados podem chegar como ficha completa (CharacterDTO) ou
+// como resumo; ambos têm `_id`. O caminho canônico é `sessionPatch`.
+type CharacterLegacyUpdatedEvent = Partial<CharacterDTO> & { _id?: string };
+type CharacterLegacyRemovedEvent = { _id?: string; characterId?: string } | string;
+
+export type CharacterSyncEvent =
+  | { type: 'updated'; character: CharacterLegacyUpdatedEvent }
+  | { type: 'removed'; characterId: string };
+
+// Registrado pelo characterStore para manter fichas completas em cache sem
+// ciclo de dependência (socketService não conhece o store de fichas).
+let characterSyncHandler: ((event: CharacterSyncEvent) => void) | null = null;
+export function registerCharacterSyncHandler(fn: ((event: CharacterSyncEvent) => void) | null) {
+  characterSyncHandler = fn;
+}
 
 class SocketService {
   private socket: Socket | null = null;
-  private store = useTableStore();
+  private currentTableId: string | null = null;
+  private windowListenersBound = false;
+  private resyncInFlight = false;
+  private resyncTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastResyncRequestAt = 0;
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshRetryUsed = false;
+  /** Modo TV: conectado com token de display, sem JWT e sem refresh. */
+  private displayMode = false;
+  private displayToken: string | null = null;
+
+  /**
+   * Callbacks da chamada (Fase 5). Ficam no serviço, mas não conhecem a store
+   * de mídia: o `mediaService`/`mediaStore` se registram em tempo de execução.
+   * Os listeners de socket são recriados a cada conexão e removidos no
+   * teardown; os callbacks sobrevivem para permitir rejoin após reconexão.
+   */
+  private mediaEventHandlers = new Map<MediaSocketEventName, Set<(payload: unknown) => void>>();
+  private socketConnectListeners = new Set<() => void>();
+  private socketDisconnectListeners = new Set<() => void>();
+
+  /**
+   * Callbacks do chat (Fase 5). Mesmo padrão da mídia: a store se registra em
+   * runtime e os listeners de socket são recriados a cada conexão. O chat não
+   * usa `revision` nem `sessionPatch`.
+   */
+  private chatEventHandlers = new Map<ChatSocketEventName, Set<(payload: unknown) => void>>();
+
+  /**
+   * O store é resolvido sob demanda: assim o módulo pode ser importado (p.ex.
+   * por componentes de ficha) antes de a Pinia estar ativa no app/teste.
+   */
+  private get store() {
+    return useTableStore();
+  }
+
+  constructor() {
+    // O store pede resync quando detecta buraco de revisão, sem importar este
+    // serviço (evita ciclo de dependência).
+    registerResyncRequester(() => this.requestResync());
+  }
+
+  // ------------------------------------------------------------------
+  // Ack helpers
+  // ------------------------------------------------------------------
+
+  /**
+   * Emite `event` esperando ack do servidor. Rejeita no timeout (com toast,
+   * salvo `silent`) e resolve sempre com o `Ack` do servidor; erro de
+   * aplicação vira toast aqui e o chamador decide o que fazer com
+   * `ack.ok === false`.
+   */
+  emitWithAck<TPayload>(event: string, payload: TPayload, options: EmitWithAckOptions = {}): Promise<Ack> {
+    const timeoutMs = options.timeoutMs ?? ACK_TIMEOUT_MS;
+    const silent = options.silent === true;
+    return new Promise<Ack>((resolve, reject) => {
+      if (!this.socket) {
+        if (!silent) toast.error('Sem conexão com o servidor.');
+        reject(new SocketAckError(event, 'disconnected'));
+        return;
+      }
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        if (!silent) toast.error('O servidor não confirmou a ação. Tente novamente.');
+        reject(new SocketAckError(event, 'timeout'));
+      }, timeoutMs);
+      this.socket.emit(event, payload, (ack: Ack) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (ack && ack.ok === false && !silent) {
+          toast.error(ack.error?.message || 'A ação foi recusada pelo servidor.');
+        }
+        resolve(ack);
+      });
+    });
+  }
+
+  /**
+   * Caminho comum dos eventos de mutação. Se o chamador passou callback, ele é
+   * dono do resultado (sem timeout local). Sem callback, devolve uma Promise
+   * que nunca rejeita: falhas viram toast (timeout) ou `actionError`.
+   */
+  private emitRequest<TPayload>(
+    event: string,
+    payload: TPayload,
+    ack?: (a: Ack) => void,
+    options: EmitWithAckOptions = {},
+  ): Promise<Ack> {
+    if (ack) {
+      return new Promise<Ack>((resolve) => {
+        if (!this.socket) {
+          const failure = this.toAckFailure(event, new SocketAckError(event, 'disconnected'));
+          ack(failure);
+          resolve(failure);
+          return;
+        }
+        this.socket.emit(event, payload, (result: Ack) => {
+          ack(result);
+          resolve(result);
+        });
+      });
+    }
+    return this.emitWithAck(event, payload, options).catch((err: unknown) =>
+      this.toAckFailure(event, err),
+    );
+  }
+
+  private toAckFailure(event: string, err: unknown): AckError {
+    const message = err instanceof SocketAckError
+      ? err.message
+      : 'Não foi possível enviar a ação. Verifique sua conexão.';
+    return {
+      ok: false,
+      error: { code: 'INTERNAL', message },
+      revision: this.store.revision,
+      serverNowMs: Date.now() + this.store.clockSkewMs,
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Conexão
+  // ------------------------------------------------------------------
 
   connect(tableId: string) {
-    if (this.socket) return; // Evita duplicar conexão
+    if (this.socket) {
+      // Socket de display tem auth diferente (token de TV): nunca reaproveitar.
+      if (!this.displayMode && this.currentTableId === tableId) return; // idempotente
+      this.disconnect(); // mesa diferente ou vindo do display: reconecta limpo
+    }
+    this.currentTableId = tableId;
+    this.store.setConnectionStatus('connecting');
 
-    const socketURL = import.meta.env.VITE_API_URL || 'ws://localhost:3001';
+    this.socket = io(SOCKET_URL, {
+      // WebSocket primeiro com polling como fallback para redes restritas.
+      transports: ['websocket', 'polling'],
+      tryAllTransports: true,
+      upgrade: true,
+      // Forma função: reavaliado a cada (re)conexão, pegando token renovado.
+      auth: (cb) => cb({ token: authToken.value }),
+    });
+    this.bindSocketHandlers(this.socket);
+    this.bindWindowListeners();
+    this.scheduleTokenRefresh();
+  }
 
-    this.socket = io(socketURL, {
-      transports: ['websocket'],
-      auth: { token: authToken.value }
+  // ------------------------------------------------------------------
+  // Conexão de display (TV read-only, sem JWT)
+  // ------------------------------------------------------------------
+
+  /** Indica se o socket atual é uma conexão de display (TV). */
+  isDisplayMode(): boolean {
+    return this.displayMode;
+  }
+
+  /**
+   * Há socket autenticado (não-display) conectado? O characterStore usa isto
+   * para preferir o caminho socket e cair para REST quando falso.
+   */
+  isConnected(): boolean {
+    return !this.displayMode && this.socket?.connected === true;
+  }
+
+  /** Id do socket atual; é também o `peerId` da sala de mídia. */
+  get socketId(): string | null {
+    return this.socket?.id ?? null;
+  }
+
+  /** Alias explícito usado pelo mesh WebRTC. */
+  getPeerId(): string | null {
+    return this.socketId;
+  }
+
+  /** Estado de conexão exposto (mesmo valor de `tableStore.connectionStatus`). */
+  get connectionState(): string {
+    return this.store.connectionStatus;
+  }
+
+  // ------------------------------------------------------------------
+  // Callbacks da chamada (sem acoplamento com a store de mídia)
+  // ------------------------------------------------------------------
+
+  onMediaEvent<K extends MediaSocketEventName>(
+    event: K,
+    handler: (payload: MediaSocketEventMap[K]) => void,
+  ): () => void {
+    const set = this.mediaEventHandlers.get(event) ?? new Set<(payload: unknown) => void>();
+    set.add(handler as (payload: unknown) => void);
+    this.mediaEventHandlers.set(event, set);
+    return () => this.offMediaEvent(event, handler);
+  }
+
+  offMediaEvent<K extends MediaSocketEventName>(
+    event: K,
+    handler: (payload: MediaSocketEventMap[K]) => void,
+  ): void {
+    const set = this.mediaEventHandlers.get(event);
+    set?.delete(handler as (payload: unknown) => void);
+    if (set && set.size === 0) this.mediaEventHandlers.delete(event);
+  }
+
+  /** Remove todos os callbacks de mídia (logout / troca de mesa). */
+  clearMediaEventHandlers(): void {
+    this.mediaEventHandlers.clear();
+  }
+
+  // ------------------------------------------------------------------
+  // Callbacks do chat (sem acoplamento com a store)
+  // ------------------------------------------------------------------
+
+  onChatEvent<K extends ChatSocketEventName>(
+    event: K,
+    handler: (payload: ChatSocketEventMap[K]) => void,
+  ): () => void {
+    const set = this.chatEventHandlers.get(event) ?? new Set<(payload: unknown) => void>();
+    set.add(handler as (payload: unknown) => void);
+    this.chatEventHandlers.set(event, set);
+    return () => this.offChatEvent(event, handler);
+  }
+
+  offChatEvent<K extends ChatSocketEventName>(
+    event: K,
+    handler: (payload: ChatSocketEventMap[K]) => void,
+  ): void {
+    const set = this.chatEventHandlers.get(event);
+    set?.delete(handler as (payload: unknown) => void);
+    if (set && set.size === 0) this.chatEventHandlers.delete(event);
+  }
+
+  /** Remove todos os callbacks de chat (logout / troca de mesa). */
+  clearChatEventHandlers(): void {
+    this.chatEventHandlers.clear();
+  }
+
+  private emitChatEvent<K extends ChatSocketEventName>(
+    event: K,
+    payload: ChatSocketEventMap[K],
+  ): void {
+    const handlers = this.chatEventHandlers.get(event);
+    if (!handlers) return;
+    for (const handler of handlers) {
+      try {
+        handler(payload);
+      } catch {
+        // Um handler com defeito não pode derrubar os demais listeners.
+      }
+    }
+  }
+
+  /** Notifica quando o socket (re)conecta — usado para rejoin da chamada. */
+  onSocketConnect(listener: () => void): () => void {
+    this.socketConnectListeners.add(listener);
+    return () => this.socketConnectListeners.delete(listener);
+  }
+
+  /** Notifica quando o socket cai — a chamada permanece para rejoin. */
+  onSocketDisconnect(listener: () => void): () => void {
+    this.socketDisconnectListeners.add(listener);
+    return () => this.socketDisconnectListeners.delete(listener);
+  }
+
+  private emitMediaEvent<K extends MediaSocketEventName>(
+    event: K,
+    payload: MediaSocketEventMap[K],
+  ): void {
+    const handlers = this.mediaEventHandlers.get(event);
+    if (!handlers) return;
+    for (const handler of handlers) {
+      try {
+        handler(payload);
+      } catch {
+        // Um handler com defeito não pode derrubar a sinalização.
+      }
+    }
+  }
+
+  private notifySocketConnected(): void {
+    for (const listener of this.socketConnectListeners) {
+      try { listener(); } catch {}
+    }
+  }
+
+  private notifySocketDisconnected(): void {
+    for (const listener of this.socketDisconnectListeners) {
+      try { listener(); } catch {}
+    }
+  }
+
+  /**
+   * Conecta a TV com o token de display. Não usa JWT, não agenda refresh de
+   * sessão e nunca chama `refreshToken` (contrato: docs/TABLE_MODE.md §3.3).
+   * O backend resolve a mesa dona do token; só `joinTable`/`requestResync`
+   * dessa mesa são aceitos.
+   */
+  connectDisplay(tableId: string, token: string) {
+    if (!token) {
+      this.displayMode = true;
+      this.store.setDisplayMode(true);
+      this.store.setConnectionStatus('error');
+      try { toast.error('Token da TV ausente.'); } catch {}
+      return;
+    }
+    // Idempotente: mesma mesa + mesmo token já conectando/conectado.
+    if (
+      this.socket &&
+      this.displayMode &&
+      this.currentTableId === tableId &&
+      this.displayToken === token
+    ) {
+      return;
+    }
+    this.disconnect(); // limpa socket, timers e listeners anteriores
+    this.displayMode = true;
+    this.displayToken = token;
+    this.currentTableId = tableId;
+    this.store.setDisplayMode(true);
+    this.store.setConnectionStatus('connecting');
+
+    this.socket = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      tryAllTransports: true,
+      upgrade: true,
+      // Token de display no handshake; o servidor rejeita com
+      // connect_error UNAUTHENTICATED se for inválido/revogado.
+      auth: { displayToken: token },
+    });
+    this.bindSocketHandlers(this.socket, { display: true });
+    this.bindWindowListeners();
+  }
+
+  /** Desconecta a TV (equivalente a `disconnect`, com nome explícito p/ UX). */
+  disconnectDisplay() {
+    this.disconnect();
+  }
+
+  private bindSocketHandlers(socket: Socket, options?: { display?: boolean }) {
+    const isDisplay = options?.display === true;
+    socket.on('connect', () => {
+      this.store.setConnectionStatus('connected');
+      if (isDisplay) {
+        // TV: join da mesa do token + resync; sem JWT e sem refresh.
+        void this.joinDisplayTable();
+        return;
+      }
+      this.scheduleTokenRefresh();
+      // A chamada só pode reentrar depois que o `joinTable` confirmar a
+      // membresia; por isso o aviso de reconexão vem no `finally`.
+      void this.joinCurrentTable().finally(() => this.notifySocketConnected());
     });
 
-    this.socket.on('connect', () => {
-      console.log('CONECTADO via SocketService! ID:', this.socket?.id);
-      this.socket?.emit('joinTable', tableId);
+    socket.io.on('reconnect_attempt', () => {
+      this.store.setConnectionStatus('reconnecting');
+    });
+
+    socket.io.on('reconnect_failed', () => {
+      this.store.setConnectionStatus('error');
+    });
+
+    socket.on('disconnect', () => {
+      this.store.setConnectionStatus('disconnected');
+      if (!isDisplay) this.notifySocketDisconnected();
+    });
+
+    socket.on('connect_error', (error: unknown) => {
+      const err = error as { data?: { code?: string }; message?: string } | null;
+      if (isDisplay) {
+        if (err?.data?.code === 'UNAUTHENTICATED') {
+          // Token da TV inválido/revogado: reconectar em loop não resolve.
+          // Derruba o socket para não girar reconexão eterna.
+          socket.disconnect();
+          this.store.setConnectionStatus('error');
+          try {
+            toast.error('Token da TV inválido.');
+          } catch {}
+        }
+        // Outros erros (rede local, servidor fora): Socket.IO continua
+        // tentando; `reconnect_attempt` já marca o status.
+        return;
+      }
+      if (err?.data?.code === 'TOKEN_EXPIRED') {
+        void this.handleTokenExpired();
+        return;
+      }
+      this.store.setConnectionStatus('error');
+      try {
+        toast.error('Erro de conexão. Tentando novamente...');
+      } catch {}
     });
 
   // ---- Recepção de eventos do servidor ----
-    this.socket.on('initialSessionState', (data) => this.store.setInitialState(data));
-    this.socket.on('sessionStateUpdated', (data) => this.store.updateSessionState(data));
-    this.socket.on('tokenPlaced', (data: TokenInfo) => this.store.placeToken(data));
-    this.socket.on('tokenMoved', (data: TokenInfo & { oldSquareId: string }) => this.store.moveToken(data));
-    this.socket.on('tokenRemoved', (data: { tokenId: string }) => { 
+    // Protocolo canônico (revision-aware)
+    socket.on('sessionSnapshot', (snapshot: SessionSnapshot) => {
+      this.store.applySnapshot(snapshot);
+    });
+    socket.on('sessionPatch', (patch: SessionPatch) => {
+      this.store.applyPatch(patch);
+    });
+    socket.on('presenceUpdated', (payload: { tableId: string; presence: PresenceEntry[] }) => {
+      if (payload.tableId === this.currentTableId) this.store.setPresence(payload.presence);
+    });
+    // Ações sem callback que falharam no servidor
+    socket.on('actionError', (payload: { event?: string; error?: { code?: ErrorCode; message?: string } }) => {
+      try {
+        toast.error(payload?.error?.message || 'A ação foi recusada pelo servidor.');
+      } catch {}
+    });
+
+    // Legados (mantidos por compatibilidade; não alteram `revision`)
+    socket.on('initialSessionState', (data: SessionStateDTO) => this.store.setInitialState(data));
+    socket.on('sessionStateUpdated', (data: SessionStateDTO) => this.store.updateSessionState(data));
+    socket.on('tokenPlaced', (data: TokenInfo) => this.store.placeToken(data));
+    socket.on('tokenMoved', (data: TokenMoveEvent) => this.store.moveToken(data));
+    socket.on('tokenRemoved', (data: { tokenId: string }) => { 
       this.store.removeToken(data.tokenId);
       try { toast.success('Token removido.'); } catch {}
     });
-    this.socket.on('tokenOwnerUpdated', (data: { tokenId: string, newOwner: PlayerInfo }) => this.store.updateTokenOwner(data.tokenId, data.newOwner));
-  this.socket.on('tokenUpdated', (data: TokenInfo) => this.store.applyTokenUpdate(data));
-    this.socket.on('tokensUpdated', (data: TokenInfo[]) => this.store.updateAllTokens(data));
-  this.socket.on('initiativeUpdated', (data: IInitiativeEntry[]) => { this.store.initiativeList = data; });
-    this.socket.on('sceneListUpdated', (data: IScene[]) => { this.store.scenes = data; });
-    this.socket.on('sessionStatusUpdated', (data: { status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'; pauseUntil?: string | null; serverNowMs?: number }) => {
+    socket.on('tokenOwnerUpdated', (data: { tokenId: string, newOwner: PlayerInfo }) => this.store.updateTokenOwner(data.tokenId, data.newOwner));
+    socket.on('tokenUpdated', (data: TokenUpdateEvent) => this.store.applyTokenUpdate(data));
+    socket.on('tokensMovementReset', (data: TokensMovementResetEvent) => this.store.applyTokensMovementReset(data));
+    socket.on('tokensUpdated', (data: TokenInfo[]) => this.store.updateAllTokens(data));
+    socket.on('initiativeEntryAdded', (payload: InitiativeEntryAddedEvent) => this.store.handleInitiativeEntryAdded(payload));
+    socket.on('initiativeEntryRemoved', (payload: InitiativeEntryRemovedEvent) => this.store.handleInitiativeEntryRemoved(payload));
+    socket.on('initiativeEntryUpdated', (payload: InitiativeEntryUpdatedEvent) => this.store.handleInitiativeEntryUpdated(payload));
+    socket.on('initiativeOrderUpdated', (payload: InitiativeOrderUpdatedEvent) => this.store.handleInitiativeOrderUpdated(payload));
+    socket.on('initiativeTurnAdvanced', (payload: InitiativeTurnAdvancedEvent) => this.store.handleInitiativeTurnAdvanced(payload));
+    socket.on('initiativeReset', (payload: { tableId?: string; sceneId: string }) => this.store.handleInitiativeReset(payload.sceneId));
+    socket.on('sceneListUpdated', (data: SceneDTO[]) => { this.store.setScenesFromDTO(data); });
+    socket.on('sessionStatusUpdated', (data: { status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'; pauseUntil?: string | null; serverNowMs?: number }) => {
       this.store.sessionStatus = data.status;
       this.store.pauseUntil = data.pauseUntil ? new Date(data.pauseUntil) : null;
       if (typeof data.serverNowMs === 'number') {
@@ -45,166 +616,651 @@ class SocketService {
         this.store.clockSkewMs = data.serverNowMs - localNow;
       }
     });
-    this.socket.on('sessionTransition', (data: { durationMs: number }) => { this.store.transitionMs = data.durationMs || 3000; this.store.transitionAt = Date.now(); });
-    this.socket.on('mapUpdated', (data: { mapUrl: string }) => { this.store.currentMapUrl = data.mapUrl; });
+    socket.on('sessionTransition', (data: { durationMs: number }) => { this.store.transitionMs = data.durationMs || 3000; this.store.transitionAt = Date.now(); });
+    socket.on('mapUpdated', (data: { mapUrl: string }) => { this.store.currentMapUrl = data.mapUrl; });
+    socket.on('diceRolled', this.handleDiceRolled);
+    // Fichas: eventos legados (o canônico é `sessionPatch.changes.characters*`).
+    // Atualizam o resumo no tableStore e avisam o characterStore para manter a
+    // ficha completa em cache quando o payload trouxer a ficha inteira.
+    socket.on('characterUpdated', this.handleCharacterUpdated);
+    socket.on('characterRemoved', this.handleCharacterRemoved);
     // Medições efêmeras / compartilhadas
-  this.socket.on('measurementShared', (m) => this.store.upsertSharedMeasurement(m));
-  this.socket.on('measurementRemoved', (data: { userId: string }) => this.store.removeSharedMeasurement(data.userId));
-  this.socket.on('allMeasurementsCleared', (data?: { sceneId?: string }) => {
+  socket.on('measurementShared', (m: SharedMeasurementEvent) => this.store.upsertSharedMeasurement(m));
+  socket.on('measurementRemoved', (data: { userId: string }) => this.store.removeSharedMeasurement(data.userId));
+  socket.on('allMeasurementsCleared', (data?: { sceneId?: string }) => {
     this.store.clearSharedMeasurements();
     if (data?.sceneId) this.store.clearPersistentMeasurementsForScene(data.sceneId);
   });
     // Medições persistentes (ficam até serem removidas ou limpar turno)
-  this.socket.on('persistentMeasurementAdded', (m) => this.store.addPersistentMeasurement({ ...m, userId: m.userId || m.ownerId }));
-  this.socket.on('persistentMeasurementRemoved', (data: { sceneId: string; id: string }) => {
+  socket.on('persistentMeasurementAdded', (m) => this.store.addPersistentMeasurement({ ...m, userId: m.userId || m.ownerId }));
+  socket.on('persistentMeasurementRemoved', (data: { sceneId: string; id: string }) => {
     this.store.removePersistentMeasurement(data.id);
     try { toast.success('Medição removida.'); } catch {}
   });
-  this.socket.on('persistentsListed', (data: { sceneId: string; items: any[] }) => {
+  socket.on('persistentsListed', (data: { sceneId: string; items: PersistentMeasurementEvent[] }) => {
     // Atualiza apenas quando a lista corresponde à cena ativa, evitando sobrescrever outra cena por engano
     if (data.sceneId === this.store.activeSceneId) {
-      const items = (data.items || []).map(m => ({ ...m, userId: m.userId || m.ownerId }));
+      const items = (data.items || []).map(m => ({
+        ...m,
+        id: m.id ?? `${m.userId}-${data.sceneId}`,
+        userId: m.userId || m.ownerId || '',
+        sceneId: data.sceneId,
+      }));
       this.store.setPersistentMeasurementsForScene(data.sceneId, items);
     }
   });
 
     // Auras ancoradas a tokens
-  this.socket.on('aurasListed', (data: { sceneId: string; items: any[] }) => {
+  socket.on('aurasListed', (data: { sceneId: string; items: AuraInfo[] }) => {
     if (data.sceneId === this.store.activeSceneId) {
       this.store.setAurasForScene(data.sceneId, data.items || []);
     }
   });
-  this.socket.on('auraUpserted', (aura) => {
+  socket.on('auraUpserted', (aura: AuraInfo) => {
     if (aura.sceneId === this.store.activeSceneId) {
       this.store.upsertAuraLocal(aura);
     }
   });
-  this.socket.on('auraRemoved', (data: { sceneId: string; tokenId: string }) => {
+  socket.on('auraRemoved', (data: { sceneId: string; tokenId: string }) => {
     if (data.sceneId === this.store.activeSceneId) {
       this.store.removeAuraLocal(data.tokenId);
     }
   });
 
   // Pings rápidos (efeito ripple)
-    this.socket.on('pingBroadcast', (p: any) => {
+    socket.on('pingBroadcast', (p: PingEvent) => {
       this.store.addPing(p);
     });
 
-  // Erros de conexão / feedback simples
-    this.socket.on('connect_error', (error) => console.error('SocketService - Erro de conexão:', error.message));
-      this.socket.on('tokenPlacementError', (error) => toast.error(`Erro ao colocar token: ${error.message}`));
+    // Erros específicos
+        socket.on('tokenPlacementError', (error: { message?: string }) => toast.error(`Erro ao colocar token: ${error.message || 'erro desconhecido'}`));
+        socket.on('diceRollError', this.handleDiceRollError);
+
+    // ---- Chamada de mídia (Fase 5) ----
+    // Sinalização e estado são efêmeros: nenhum destes eventos toca `revision`
+    // nem `sessionPatch`. Os callbacks são resolvidos em runtime.
+    socket.on('mediaRoomState', (payload: MediaRoomStatePayload) => {
+      this.emitMediaEvent('mediaRoomState', payload);
+    });
+    socket.on('mediaPeerJoined', (payload: MediaPeerJoinedPayload) => {
+      this.emitMediaEvent('mediaPeerJoined', payload);
+    });
+    socket.on('mediaPeerLeft', (payload: MediaPeerLeftPayload) => {
+      this.emitMediaEvent('mediaPeerLeft', payload);
+    });
+    socket.on('mediaOffer', (payload: MediaIncomingSignalPayload) => {
+      this.emitMediaEvent('mediaOffer', payload);
+    });
+    socket.on('mediaAnswer', (payload: MediaIncomingSignalPayload) => {
+      this.emitMediaEvent('mediaAnswer', payload);
+    });
+    socket.on('mediaIce', (payload: MediaIncomingIcePayload) => {
+      this.emitMediaEvent('mediaIce', payload);
+    });
+    socket.on('mediaStateUpdated', (payload: MediaStateUpdatedPayload) => {
+      this.emitMediaEvent('mediaStateUpdated', payload);
+    });
+    socket.on('mediaKicked', (payload: MediaKickedPayload) => {
+      this.emitMediaEvent('mediaKicked', payload);
+    });
+    socket.on('mediaError', (payload: MediaErrorPayload) => {
+      this.emitMediaEvent('mediaError', payload);
+    });
+
+    // ---- Chat (Fase 5) ----
+    // Efêmero no transporte: não incrementa `revision` e não gera patch.
+    socket.on('chatMessage', (payload: ChatMessage) => {
+      this.emitChatEvent('chatMessage', payload);
+    });
   }
-  // ---- Emissores de requisições ----
-  // Medições persistentes
-  addPersistentMeasurement(payload: { tableId: string; sceneId: string; id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; color?: string }) {
-    const { tableId, sceneId, id, start, end, distance, type, affectedSquares, color } = payload;
-    this.socket?.emit('requestAddPersistentMeasurement', { tableId, sceneId, payload: { id, start, end, distance, type, affectedSquares, color } });
+
+  private async joinCurrentTable() {
+    const tableId = this.currentTableId;
+    if (!tableId || !this.socket) return;
+    try {
+      const ack = await this.emitWithAck('joinTable', tableId);
+      if (ack.ok) {
+        // Join bem-sucedido: permite novo ciclo de refresh em expirações futuras.
+        this.refreshRetryUsed = false;
+        void this.requestResync({ tableId, sinceRevision: this.store.revision });
+      } else if (ack.error.code === 'FORBIDDEN' || ack.error.code === 'UNAUTHENTICATED') {
+        // Toast já mostrado pelo emitWithAck; não fica na mesa.
+        this.disconnect();
+      }
+    } catch {
+      // Timeout/toast já tratados; Socket.IO continua tentando reconectar.
+    }
   }
-  removePersistentMeasurement(payload: { tableId: string; sceneId: string; id: string }) {
-    this.socket?.emit('requestRemovePersistentMeasurement', payload);
+
+  /**
+   * Join da TV na mesa dona do token de display. Em falha de autorização,
+   * para de tentar (sem loop de reconnect com token inválido).
+   */
+  private async joinDisplayTable() {
+    const tableId = this.currentTableId;
+    if (!tableId || !this.socket) return;
+    try {
+      const ack = await this.emitWithAck('joinTable', tableId);
+      if (ack.ok) {
+        void this.requestResync({ tableId, sinceRevision: this.store.revision });
+      } else {
+        // Join recusado (rate limit, mesa encerrada etc.): não fica na mesa.
+        this.store.setConnectionStatus('error');
+        this.teardownSocket();
+      }
+    } catch {
+      // Timeout/toast já tratados; Socket.IO continua tentando reconectar.
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Reconexão, rejoin e resync
+  // ------------------------------------------------------------------
+
+  /**
+   * Pede ressincronização completa. Com debounce curto e flag de voo para
+   * evitar tempestade de resync (foco + visibility + online juntos).
+   */
+  requestResync(payload?: { tableId?: string; sinceRevision?: number }) {
+    const tableId = payload?.tableId ?? this.currentTableId;
+    if (!tableId || !this.socket?.connected) return;
+    if (this.resyncInFlight) return;
+    const elapsed = Date.now() - this.lastResyncRequestAt;
+    if (elapsed < RESYNC_DEBOUNCE_MS) {
+      if (!this.resyncTimer) {
+        this.resyncTimer = setTimeout(() => {
+          this.resyncTimer = null;
+          this.doRequestResync(tableId);
+        }, RESYNC_DEBOUNCE_MS - elapsed);
+      }
+      return;
+    }
+    this.doRequestResync(tableId);
+  }
+
+  private doRequestResync(tableId: string) {
+    if (this.resyncInFlight || !this.socket?.connected) return;
+    this.resyncInFlight = true;
+    this.lastResyncRequestAt = Date.now();
+    const payload = { tableId, sinceRevision: this.store.revision };
+    this.emitWithAck('requestResync', payload)
+      .catch(() => {
+        // Toast já mostrado; próximo gatilho (foco/visibilidade) tenta de novo.
+      })
+      .finally(() => {
+        this.resyncInFlight = false;
+      });
+  }
+
+  private bindWindowListeners() {
+    if (this.windowListenersBound) return;
+    this.windowListenersBound = true;
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+    window.addEventListener('focus', this.handleResume);
+    window.addEventListener('online', this.handleResume);
+  }
+
+  private unbindWindowListeners() {
+    if (!this.windowListenersBound) return;
+    this.windowListenersBound = false;
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+    window.removeEventListener('focus', this.handleResume);
+    window.removeEventListener('online', this.handleResume);
+  }
+
+  private handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') this.handleResume();
+  };
+
+  private handleResume = () => {
+    if (!this.socket?.connected) return;
+    const stale = Date.now() - this.store.lastSyncAt > RESYNC_STALE_MS;
+    const reconnecting = this.store.connectionStatus === 'reconnecting';
+    if (stale || reconnecting) {
+      this.requestResync();
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // Refresh de sessão (JWT)
+  // ------------------------------------------------------------------
+
+  /** Agenda a renovação para 80% da vida útil do token atual. */
+  private scheduleTokenRefresh() {
+    this.clearRefreshTimer();
+    const token = authToken.value;
+    if (!token) return;
+    let refreshAtMs: number | null = null;
+    try {
+      const decoded = jwtDecode<{ exp?: number; iat?: number }>(token);
+      if (decoded?.exp) {
+        if (decoded.iat && decoded.exp > decoded.iat) {
+          const lifetimeMs = (decoded.exp - decoded.iat) * 1000;
+          refreshAtMs = decoded.iat * 1000 + lifetimeMs * TOKEN_REFRESH_AT;
+        } else {
+          const remainingMs = decoded.exp * 1000 - Date.now();
+          refreshAtMs = Date.now() + remainingMs * TOKEN_REFRESH_AT;
+        }
+      }
+    } catch {
+      return; // token ilegível: sem agendamento (nunca logar o token)
+    }
+    if (refreshAtMs === null) return;
+    const delay = Math.min(Math.max(refreshAtMs - Date.now(), 0), MAX_TIMEOUT_DELAY_MS);
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      void refreshToken().then(() => this.scheduleTokenRefresh());
+    }, delay);
+  }
+
+  private clearRefreshTimer() {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
+  /** Conect_error com TOKEN_EXPIRED: renova uma vez e recria o socket. */
+  private async handleTokenExpired() {
+    if (this.refreshRetryUsed) {
+      this.store.setConnectionStatus('error');
+      toast.error('Sessão expirada. Faça login novamente.');
+      return;
+    }
+    this.refreshRetryUsed = true;
+    const token = await refreshToken();
+    if (token && this.currentTableId) {
+      // O auth em forma de função pega o token novo na reconexão.
+      this.teardownSocket();
+      this.connect(this.currentTableId);
+    } else {
+      this.store.setConnectionStatus('error');
+      toast.error('Sessão expirada. Faça login novamente.');
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Ciclo de vida
+  // ------------------------------------------------------------------
+
+  /** Desmonta o socket atual sem limpar a mesa corrente (usado no refresh). */
+  private teardownSocket() {
+    this.clearResyncTimer();
+    this.clearRefreshTimer();
+    this.resyncInFlight = false;
+    const socket = this.socket;
+    this.socket = null;
+    if (socket) {
+      socket.removeAllListeners();
+      socket.io?.removeAllListeners();
+      socket.disconnect();
+    }
+  }
+
+  private clearResyncTimer() {
+    if (this.resyncTimer) {
+      clearTimeout(this.resyncTimer);
+      this.resyncTimer = null;
+    }
   }
 
   disconnect() {
-    this.socket?.disconnect();
-    this.socket = null;
-    console.log('SocketService - Desconectado.');
+    this.teardownSocket();
+    this.currentTableId = null;
+    this.refreshRetryUsed = false;
+    // Reset do modo display: flags do serviço + estado do store (UX lê isto).
+    this.displayMode = false;
+    this.displayToken = null;
+    this.store.setDisplayMode(false);
+    this.unbindWindowListeners();
+    this.store.setConnectionStatus('disconnected');
+  }
+  // ---- Emissores de requisições ----
+  // Todos os eventos de mutação aceitam um callback opcional de ack e devolvem
+  // uma Promise<Ack> (que nunca rejeita no caminho fire-and-forget: falhas
+  // viram toast e podem ser inspecionadas via ack.ok).
+  // Medições persistentes
+  addPersistentMeasurement(payload: { tableId: string; sceneId: string; id?: string; start:{x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler'|'cone'|'circle'|'square'|'line'|'beam'; affectedSquares?: string[]; color?: string }, ack?: (a: Ack) => void) {
+    const { tableId, sceneId, id, start, end, distance, type, affectedSquares, color } = payload;
+    return this.emitRequest('requestAddPersistentMeasurement', { tableId, sceneId, payload: { id, start, end, distance, type, affectedSquares, color } }, ack);
+  }
+  removePersistentMeasurement(payload: { tableId: string; sceneId: string; id: string }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestRemovePersistentMeasurement', payload, ack);
   }
 
   // Cena / sessão
-  setActiveScene(tableId: string, sceneId: string) {
-    this.socket?.emit('requestSetActiveScene', { tableId, sceneId });
+  setActiveScene(tableId: string, sceneId: string, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestSetActiveScene', { tableId, sceneId }, ack);
   }
 
-  updateSessionStatus(tableId: string, newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED', options?: { pauseSeconds?: number }) {
-    this.socket?.emit('requestUpdateSessionStatus', { tableId, newStatus, pauseSeconds: options?.pauseSeconds });
+  updateSessionStatus(tableId: string, newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED', options?: { pauseSeconds?: number }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestUpdateSessionStatus', { tableId, newStatus, pauseSeconds: options?.pauseSeconds }, ack);
   }
 
-  startTransition(tableId: string, durationMs?: number) {
-    this.socket?.emit('requestStartTransition', { tableId, durationMs });
+  startTransition(tableId: string, durationMs?: number, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestStartTransition', { tableId, durationMs }, ack);
   }
 
-  setMap(tableId: string, mapUrl: string) {
-    this.socket?.emit('requestSetMap', { tableId, mapUrl });
+  setMap(tableId: string, mapUrl: string, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestSetMap', { tableId, mapUrl }, ack);
   }
 
-  reorderScenes(tableId: string, orderedSceneIds: string[]) {
-    this.socket?.emit('requestReorderScenes', { tableId, orderedSceneIds });
+  reorderScenes(tableId: string, orderedSceneIds: string[], ack?: (a: Ack) => void) {
+    return this.emitRequest('requestReorderScenes', { tableId, orderedSceneIds }, ack);
   }
 
-  updateGridDimensions(tableId: string, sceneId: string, newGridWidth: number, newGridHeight: number) {
-  this.socket?.emit('requestUpdateGridDimensions', { tableId, sceneId, newGridWidth, newGridHeight });
+  updateGridDimensions(tableId: string, sceneId: string, newGridWidth: number, newGridHeight: number, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestUpdateGridDimensions', { tableId, sceneId, newGridWidth, newGridHeight }, ack);
   }
 
-  updateSceneScale(tableId: string, sceneId: string, metersPerSquare: number) {
-    this.socket?.emit('requestUpdateSceneScale', { tableId, sceneId, metersPerSquare });
+  updateSceneScale(tableId: string, sceneId: string, metersPerSquare: number, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestUpdateSceneScale', { tableId, sceneId, metersPerSquare }, ack);
   }
 
   // Tokens
-  placeToken(payload: { tableId: string; sceneId: string; squareId: string; name: string; imageUrl: string; movement: number; ownerId: string; size: TokenSize; }) {
-    this.socket?.emit('requestPlaceToken', payload);
+  placeToken(payload: { tableId: string; sceneId: string; squareId: string; name: string; imageUrl?: string; movement: number; ownerId?: string; size: TokenSize; canOverlap?: boolean; characterId?: string | null; }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestPlaceToken', payload, ack);
   }
 
-  moveToken(payload: { tableId: string; tokenId: string; targetSquareId: string; }) {
-    this.socket?.emit('requestMoveToken', payload);
+  moveToken(payload: { tableId: string; tokenId: string; targetSquareId: string; expectedRevision?: number; }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestMoveToken', payload, ack);
   }
 
-  assignToken(payload: { tableId: string; tokenId: string; newOwnerId: string; }) {
-    this.socket?.emit('requestAssignToken', payload);
+  assignToken(payload: { tableId: string; tokenId: string; newOwnerId: string; }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestAssignToken', payload, ack);
   }
 
-  editToken(payload: { tableId: string; tokenId: string; name?: string; movement?: number; imageUrl?: string; ownerId?: string; size?: string; resetRemainingMovement?: boolean }) {
-    this.socket?.emit('requestEditToken', payload);
+  editToken(
+    payload: {
+      tableId: string;
+      tokenId: string;
+      name?: string;
+      movement?: number;
+      imageUrl?: string;
+      ownerId?: string;
+      size?: string;
+      resetRemainingMovement?: boolean;
+      canOverlap?: boolean;
+      characterId?: string | null;
+    },
+    ack?: (a: Ack) => void,
+  ) {
+    const { tableId, tokenId, ...patch } = payload;
+    return this.emitRequest('requestEditToken', { tableId, tokenId, patch }, ack);
   }
 
-  undoMove(tableId: string, tokenId: string) {
-    this.socket?.emit('requestUndoMove', { tableId, tokenId });
+  /** Exclui o token e a entrada de iniciativa associada (somente Mestre). */
+  deleteToken(payload: { tableId: string; tokenId: string }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestDeleteToken', payload, ack);
+  }
+
+  undoMove(tableId: string, tokenId: string, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestUndoMove', { tableId, tokenId }, ack);
   }
 
   // Iniciativa
-  nextTurn(tableId: string, sceneId: string) {
-    this.socket?.emit('requestNextTurn', { tableId, sceneId });
+  nextTurn(tableId: string, sceneId: string, expectedRevision?: number, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestNextTurn', { tableId, sceneId, expectedRevision }, ack);
   }
 
-  removeFromInitiative(payload: { tableId: string; sceneId: string; initiativeEntryId: string; }) {
-    this.socket?.emit('requestRemoveFromInitiative', payload);
+  removeFromInitiative(payload: { tableId: string; sceneId: string; initiativeEntryId: string; }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestRemoveFromInitiative', payload, ack);
   }
 
-  editInitiativeEntry(payload: { tableId: string; sceneId: string; initiativeEntryId: string; newName: string; }) {
-    this.socket?.emit('requestEditInitiativeEntry', payload);
+  /** Adiciona um token já existente ao turno (somente Mestre). */
+  addTokenToInitiative(payload: { tableId: string; sceneId: string; tokenId: string; }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestAddCharacterToInitiative', payload, ack);
   }
 
-  reorderInitiative(payload: { tableId: string; sceneId: string; newOrder: IInitiativeEntry[]; }) {
-    this.socket?.emit('requestReorderInitiative', payload);
+  /** Limpa toda a iniciativa da cena e as medições (somente Mestre). */
+  resetInitiative(tableId: string, sceneId: string, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestResetInitiative', { tableId, sceneId }, ack);
+  }
+
+  editInitiativeEntry(payload: { tableId: string; sceneId: string; initiativeEntryId: string; newName: string; }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestEditInitiativeEntry', payload, ack);
+  }
+
+  reorderInitiative(payload: { tableId: string; sceneId: string; newOrder: IInitiativeEntry[]; }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestReorderInitiative', payload, ack);
   }
 
   // Medições efêmeras (régua, cone, círculo, quadrado, linha, feixe)
-  shareMeasurement(payload: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: 'ruler' | 'cone' | 'circle' | 'square' | 'line' | 'beam'; affectedSquares?: string[]; color?: string }) {
+  shareMeasurement(payload: { tableId: string; sceneId: string; start: {x:number;y:number}; end:{x:number;y:number}; distance: string; type?: MeasurementShape; affectedSquares?: string[]; color?: string }, ack?: (a: Ack) => void) {
     // Guarda preferência local de cor para fallback
-    const uid = this.store && (this.store as any).currentTable?.dm?._id ? undefined : undefined;
-    if ((this.store as any).setUserMeasurementColor) {
-      try { (this.store as any).setUserMeasurementColor((this.store as any).currentUser?.id || '', payload.color || ''); } catch {}
+    if (this.store.setUserMeasurementColor) {
+      try { this.store.setUserMeasurementColor(currentUser.value?.id || '', payload.color || ''); } catch {}
     }
-    this.socket?.emit('requestShareMeasurement', payload);
+    return this.emitRequest('requestShareMeasurement', payload, ack);
   }
-  removeMyMeasurement(payload: { tableId: string; sceneId: string }) {
-    this.socket?.emit('requestRemoveMeasurement', payload);
+  removeMyMeasurement(payload: { tableId: string; sceneId: string }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestRemoveMeasurement', payload, ack);
   }
 
-  clearAllMeasurements(tableId: string, sceneId: string) {
-    this.socket?.emit('requestClearAllMeasurements', { tableId, sceneId });
+  /**
+   * `options.silent` permite que a ficha exiba o erro da rolagem uma única vez
+   * (sem o toast automático do serviço).
+   */
+  rollDice(params: RollDiceParams, ack?: (a: Ack) => void, options: EmitWithAckOptions = {}) {
+    return this.emitRequest('requestRollDice', params, ack, options);
+  }
+
+  clearAllMeasurements(tableId: string, sceneId: string, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestClearAllMeasurements', { tableId, sceneId }, ack);
   }
 
   // Auras
-  upsertAura(payload: { tableId: string; sceneId: string; tokenId: string; name: string; color: string; radiusMeters: number }) {
-    this.socket?.emit('requestUpsertAura', payload);
+  upsertAura(payload: { tableId: string; sceneId: string; tokenId: string; name: string; color: string; radiusMeters: number }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestUpsertAura', payload, ack);
   }
-  removeAura(payload: { tableId: string; sceneId: string; tokenId: string }) {
-    this.socket?.emit('requestRemoveAura', payload);
+  removeAura(payload: { tableId: string; sceneId: string; tokenId: string }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestRemoveAura', payload, ack);
   }
 
   // Ping
-  sendPing(payload: { tableId: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string }) {
-    this.socket?.emit('requestPing', payload);
+  /**
+   * Emite um ping efêmero. `x/y` são coordenadas em UNIDADES DE GRADE
+   * (0..gridWidth / 0..gridHeight da cena ativa; ver docs/TABLE_MODE.md §5.3),
+   * NUNCA pixels de dispositivo. A conversão pixel→grade é responsabilidade
+   * do chamador via `gridGeometry.pixelToGrid`; o servidor valida os limites
+   * e responde VALIDATION sem broadcast quando fora do grid.
+   */
+  sendPing(payload: { tableId: string; sceneId: string; squareId?: string; x?: number; y?: number; color?: string }, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestPing', payload, ack);
+  }
+
+  private handleDiceRolled = (payload: DiceRolledPayload) => {
+    this.store.handleDiceRoll(payload);
+  };
+
+  private handleDiceRollError = (error: { message?: string }) => {
+    const message = error?.message || 'Erro ao executar rolagem.';
+    toast.error(message);
+  };
+
+  // ------------------------------------------------------------------
+  // Fichas: eventos legados e mutações com ack
+  // ------------------------------------------------------------------
+
+  /**
+   * Extrai o resumo canônico do payload legado (ficha completa OU resumo).
+   * `ownerId` pode vir populado (objeto) ou cru (string).
+   */
+  private summaryFromCharacterPayload(payload: CharacterLegacyUpdatedEvent): CharacterSummaryDTO | null {
+    const id = payload?._id;
+    if (!id) return null;
+    const ownerId = typeof payload.ownerId === 'string'
+      ? payload.ownerId
+      : ((payload.ownerId as { _id?: string } | null | undefined)?._id ?? '');
+    return {
+      _id: id,
+      name: payload.name ?? '',
+      ownerId,
+      systemKey: payload.systemKey,
+      level: payload.profile?.level,
+      currentHP: payload.stats?.currentHP,
+      maxHP: payload.stats?.maxHP,
+      defense: payload.stats?.defense,
+      currentPD: payload.stats?.currentPD,
+      maxPD: payload.stats?.maxPD,
+      armorPoints: payload.stats?.armorPoints,
+      armorPointsMax: payload.stats?.armorPointsMax,
+      currentPE: payload.stats?.currentPE,
+      maxPE: payload.stats?.maxPE,
+      currentSAN: payload.stats?.currentSAN,
+      maxSAN: payload.stats?.maxSAN,
+      sanityMode: payload.sanityMode,
+      tokenId: undefined,
+    };
+  }
+
+  private handleCharacterUpdated = (
+    payload: CharacterLegacyUpdatedEvent & { character?: CharacterLegacyUpdatedEvent },
+  ) => {
+    // O backend emite `{ tableId, revision, characterId, character: summary }`;
+    // versões antigas emitiam a ficha plana. Normaliza os dois formatos para
+    // que a ficha aberta no DM/TV acompanhe PV/CA alterados por outro cliente.
+    const characterPayload = payload.character ?? payload;
+    const summary = this.summaryFromCharacterPayload(characterPayload);
+    if (summary) {
+      this.store.upsertCharacterSummary(summary);
+    }
+    try {
+      characterSyncHandler?.({ type: 'updated', character: characterPayload });
+    } catch {
+      // Cache de fichas é best-effort; nunca quebra o handler de socket.
+    }
+  };
+
+  private handleCharacterRemoved = (payload: CharacterLegacyRemovedEvent) => {
+    const characterId = typeof payload === 'string'
+      ? payload
+      : payload?._id ?? payload?.characterId;
+    if (!characterId) return;
+    this.store.removeCharacterSummaries([characterId]);
+    try {
+      characterSyncHandler?.({ type: 'removed', characterId });
+    } catch {
+      // Cache de fichas é best-effort; nunca quebra o handler de socket.
+    }
+  };
+
+  /**
+   * Caminho das mutações de ficha. A TV (modo display) é somente leitura:
+   * devolve ack de falha sem emitir nada (contrato: docs/TABLE_MODE.md).
+   */
+  private emitCharacterRequest<TPayload>(event: string, payload: TPayload, ack?: (a: Ack) => void): Promise<Ack> {
+    if (this.displayMode) {
+      const failure: AckError = {
+        ok: false,
+        error: { code: 'FORBIDDEN', message: 'A TV é somente leitura.' },
+        revision: this.store.revision,
+        serverNowMs: Date.now() + this.store.clockSkewMs,
+      };
+      if (ack) ack(failure);
+      return Promise.resolve(failure);
+    }
+    return this.emitRequest(event, payload, ack);
+  }
+
+  createCharacter(payload: { tableId: string; character: Partial<CharacterDTO> }, ack?: (a: Ack) => void) {
+    return this.emitCharacterRequest('requestCreateCharacter', payload, ack);
+  }
+
+  updateCharacter(payload: { tableId: string; characterId: string; patch: Partial<CharacterDTO> }, ack?: (a: Ack) => void) {
+    return this.emitCharacterRequest('requestUpdateCharacter', payload, ack);
+  }
+
+  deleteCharacter(payload: { tableId: string; characterId: string }, ack?: (a: Ack) => void) {
+    return this.emitCharacterRequest('requestDeleteCharacter', payload, ack);
+  }
+
+  updateCharacterHp(payload: { tableId: string; characterId: string; currentHP: number }, ack?: (a: Ack) => void) {
+    return this.emitCharacterRequest('requestUpdateCharacterHp', payload, ack);
+  }
+
+  // ------------------------------------------------------------------
+  // Mídia / chamada (docs/PHASE5_ONLINE_CALL.md §2)
+  //
+  // Sem `revision`: as respostas são acks simples e os erros são tratados
+  // pelo `mediaService`/`mediaStore` (não pelo toast genérico de mutação).
+  // ------------------------------------------------------------------
+
+  joinMedia(tableId: string, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaJoin', { tableId }, ack, { silent: true });
+  }
+
+  leaveMedia(tableId: string, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaLeave', { tableId }, ack, { silent: true });
+  }
+
+  sendMediaOffer(payload: { tableId: string; toPeerId: string; sdp: RTCSessionDescriptionInit }, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaOffer', payload, ack, { silent: true });
+  }
+
+  sendMediaAnswer(payload: { tableId: string; toPeerId: string; sdp: RTCSessionDescriptionInit }, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaAnswer', payload, ack, { silent: true });
+  }
+
+  sendMediaIce(payload: { tableId: string; toPeerId: string; candidate: RTCIceCandidateInit | null }, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaIce', payload, ack, { silent: true });
+  }
+
+  updateMediaState(
+    payload: { tableId: string; mic: MediaState['mic']; deafened: boolean; camera: MediaState['camera']; screen: boolean },
+    ack?: (a: Ack) => void,
+  ) {
+    return this.emitRequest('mediaState', payload, ack, { silent: true });
+  }
+
+  /**
+   * Indicador de fala é efêmero e de alta frequência: vai direto no socket,
+   * sem ack, sem toast e sem revision. O `mediaService` já limita a ~4/s.
+   */
+  updateMediaSpeaking(payload: { tableId: string; speaking: boolean }): void {
+    if (!this.socket?.connected) return;
+    this.socket.emit('mediaSpeaking', payload);
+  }
+
+  kickFromMedia(payload: { tableId: string; peerId: string }, ack?: (a: Ack) => void) {
+    return this.emitRequest('mediaKick', payload, ack, { silent: true });
+  }
+
+  // ------------------------------------------------------------------
+  // Chat (docs/PHASE5_ONLINE_CALL.md §3)
+  //
+  // Sem `revision`: o ack só confirma o envio; a mensagem canônica chega
+  // pelo broadcast `chatMessage`. O erro é tratado uma única vez pela
+  // `chatStore` (por isso `silent: true`, sem toast duplicado).
+  // ------------------------------------------------------------------
+
+  sendChatMessage(payload: ChatMessagePayload, ack?: (a: Ack) => void) {
+    return this.emitRequest('requestSendChatMessage', payload, ack, { silent: true });
+  }
+
+  /** ICE/TURN autenticado; nunca loga URLs/credenciais TURN. */
+  async fetchIceServers(tableId: string): Promise<MediaIceServersResponse> {
+    const token = authToken.value;
+    if (!token) {
+      throw new Error('Sessão expirada. Entre novamente para usar a chamada.');
+    }
+    const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/ice-servers`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await response.json().catch(() => ({})) as Partial<MediaIceServersResponse> & { message?: string };
+    if (!response.ok) {
+      throw new Error(data.message || 'Não foi possível obter os servidores da chamada.');
+    }
+    if (!Array.isArray(data.iceServers)) {
+      throw new Error('O servidor retornou uma configuração de chamada inválida.');
+    }
+    return {
+      iceServers: data.iceServers,
+      ttlSeconds: typeof data.ttlSeconds === 'number' ? data.ttlSeconds : 3600,
+      mode: 'mesh',
+      turnConfigured: data.turnConfigured === true,
+      maxPeers: typeof data.maxPeers === 'number' ? data.maxPeers : 8,
+    };
   }
 }
 

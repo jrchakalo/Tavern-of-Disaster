@@ -4,6 +4,7 @@ export interface IInitiativeEntry {
   _id: Types.ObjectId; // Cada entrada terá um ID único para facilitar a reordenação e exclusão
   characterName: string;
   tokenId?: Types.ObjectId;
+  characterId?: Types.ObjectId;
   isCurrentTurn: boolean;
 }
 
@@ -17,11 +18,13 @@ export interface IScene extends Document {
   type: 'battlemap' | 'image';
   initiative: IInitiativeEntry[];
   metersPerSquare?: number; // escala dinâmica
+  turnVersion: number; // CAS para avanço atômico de turno
 }
 
 const InitiativeEntrySchema: Schema<IInitiativeEntry> = new Schema({
   characterName: { type: String, required: true },
   tokenId: { type: Schema.Types.ObjectId, ref: 'Token', required: false },
+  characterId: { type: Schema.Types.ObjectId, ref: 'Character', required: false },
   isCurrentTurn: { type: Boolean, default: false },
 });
 
@@ -39,6 +42,7 @@ const SceneSchema: Schema<IScene> = new Schema({
   },
   initiative: [InitiativeEntrySchema],
   metersPerSquare: { type: Number, default: 1.5 },
+  turnVersion: { type: Number, default: 0, min: 0 },
 }, {
   timestamps: true
 });

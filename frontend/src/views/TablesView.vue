@@ -1,364 +1,583 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
-import { authToken, currentUser } from '../services/authService';
-import { toast } from '../services/toast';
-import Icon from '../components/Icon.vue';
-import type { ITable } from '../types';
+import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
+import { authToken, currentUser } from '../services/authService'
+import { toast } from '../services/toast'
+import { API_BASE_URL } from '../services/apiBase'
+import { isTableDm, resolveTableEntry } from '../services/tableEntry'
+import { useSystemStore } from '../stores/systemStore'
+import { useUserStore } from '../stores/userStore'
+import Icon from '../components/Icon.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
+import TableRow from '../components/lobby/TableRow.vue'
+import CreateTableDialog from '../components/lobby/CreateTableDialog.vue'
+import JoinTableDialog from '../components/lobby/JoinTableDialog.vue'
+import TvLinkDialog from '../components/lobby/TvLinkDialog.vue'
+import TableSettingsDialog from '../components/lobby/TableSettingsDialog.vue'
+import type { ITable } from '../types'
 
-const router = useRouter();
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-const newTableName = ref('');
-const userTables = ref<ITable[]>([]);
-const inviteCodeInput = ref('');
-const editingTable = ref<ITable | null>(null);
-const editName = ref('');
-const managingPlayers = ref<ITable | null>(null);
-const removing = ref(false);
-const leaving = ref<ITable | null>(null);
-const deleting = ref<ITable | null>(null);
-const feedback = ref('');
+const route = useRoute()
+const router = useRouter()
 
+const systemStore = useSystemStore()
+const userStore = useUserStore()
+const { systems } = storeToRefs(systemStore)
+const { profile } = storeToRefs(userStore)
 
-async function fetchMyTables() {
-  if (!authToken.value) return; // Sem token
+const tables = ref<ITable[]>([])
+const loading = ref(true)
+const loadError = ref('')
+const authenticated = computed(() => Boolean(authToken.value))
 
+const createOpen = ref(false)
+const createDefaultKey = ref('dnd5e')
+const createSubmitting = ref(false)
+const createError = ref('')
+
+const joinOpen = ref(false)
+const joinPrefill = ref('')
+
+const tvOpen = ref(false)
+const tvTable = ref<ITable | null>(null)
+
+const settingsOpen = ref(false)
+const settingsTable = ref<ITable | null>(null)
+const pendingSettingsId = ref('')
+
+const tvCanManage = computed(() => isTableDm(tvTable.value, currentUser.value?.id))
+const preferredSystemKey = computed(
+  () => systemStore.getById(profile.value?.preferredSystemId)?.key ?? 'dnd5e',
+)
+
+async function fetchMyTables(options: { silent?: boolean } = {}) {
+  if (!authToken.value) {
+    loading.value = false
+    return
+  }
+  if (!options.silent) loading.value = true
+  loadError.value = ''
   try {
     const response = await fetch(`${API_BASE_URL}/api/tables/mytables`, {
-      method: 'GET',
-      headers: {
-  'Authorization': `Bearer ${authToken.value}`,
-      },
-    });
-    if (response.ok) {
-      userTables.value = await response.json();
-    } else {
-      console.error('Falha ao buscar mesas.');
+      headers: { Authorization: `Bearer ${authToken.value}` },
+    })
+    const data = (await response.json().catch(() => null)) as ITable[] | { message?: string } | null
+    if (!response.ok) {
+      const message =
+        data && !Array.isArray(data) && data.message
+          ? data.message
+          : 'Não foi possível carregar suas mesas.'
+      throw new Error(message)
     }
-  } catch (error) {
-    console.error('Erro de rede ao buscar mesas:', error);
+    tables.value = Array.isArray(data) ? data : []
+  } catch (err) {
+    loadError.value =
+      err instanceof TypeError
+        ? 'Sem conexão com o servidor. Verifique a rede e tente de novo.'
+        : err instanceof Error
+          ? err.message
+          : 'Não foi possível carregar suas mesas.'
+  } finally {
+    loading.value = false
+    openPendingSettings()
   }
 }
 
-function openEdit(table: ITable) {
-  editingTable.value = table;
-  editName.value = table.name;
-}
-async function saveEdit() {
-  if (!editingTable.value || !authToken.value) return;
+async function initSystems() {
+  if (systemStore.isLoaded) return
   try {
-    const res = await fetch(`${API_BASE_URL}/api/tables/${editingTable.value._id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken.value}` }, body: JSON.stringify({ name: editName.value })
-    });
-    const data = await res.json();
-    if (res.ok) { feedback.value = 'Mesa atualizada.'; editingTable.value = null; fetchMyTables(); }
-    else feedback.value = data.message || 'Erro.';
-  } catch (e) { feedback.value = 'Falha rede.'; }
-}
-function managePlayers(table: ITable) { managingPlayers.value = table; }
-async function removePlayer(playerId: string) {
-  if (!managingPlayers.value || !authToken.value) return;
-  // Non-blocking flow: action proceeds and feedback via toast
-  const res = await fetch(`${API_BASE_URL}/api/tables/${managingPlayers.value._id}/players/${playerId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${authToken.value}` }});
-  const data = await res.json();
-  if (res.ok) { 
-    toast.success('Jogador removido.');
-    fetchMyTables(); 
-  } else {
-    toast.error(data.message || 'Erro');
+    await systemStore.fetchAll()
+  } catch {
+    // O seletor cai no fallback D&D 5e; a criação continua disponível.
   }
-}
-function openLeave(table: ITable) { leaving.value = table; }
-async function confirmLeave() {
-  if (!leaving.value || !authToken.value) return;
-  const res = await fetch(`${API_BASE_URL}/api/tables/${leaving.value._id}/leave`, { method: 'POST', headers: { Authorization: `Bearer ${authToken.value}` }});
-  const data = await res.json();
-  if (res.ok) { 
-    toast.success('Você saiu da mesa.');
-    leaving.value = null; 
-    fetchMyTables(); 
-  } else {
-    toast.error(data.message || 'Erro');
-  }
-}
-function openDelete(table: ITable) { deleting.value = table; }
-async function confirmDelete() {
-  if (!deleting.value || !authToken.value) return;
-  const res = await fetch(`${API_BASE_URL}/api/tables/${deleting.value._id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${authToken.value}` }});
-  const data = await res.json();
-  if (res.ok) { 
-    toast.success('Mesa excluída.');
-    deleting.value = null; 
-    fetchMyTables(); 
-  } else {
-    toast.error(data.message || 'Erro');
-  }
-}
-function copyInvite(invite: string) {
-  navigator.clipboard.writeText(invite).then(()=>{ feedback.value = 'Código copiado!'; setTimeout(()=>feedback.value='',2000); });
 }
 
-async function handleCreateTable() {
-  if (!newTableName.value.trim() || !authToken.value) return;
+async function initProfile() {
+  if (profile.value || !authToken.value) return
+  try {
+    await userStore.fetchProfile()
+  } catch {
+    // Sem preferência: o seletor abre em D&D 5e.
+  }
+}
 
+function openCreate(systemKey?: string) {
+  createDefaultKey.value = systemKey || preferredSystemKey.value
+  createError.value = ''
+  createOpen.value = true
+}
+
+function openJoin(code = '') {
+  joinPrefill.value = code
+  joinOpen.value = true
+}
+
+function openTv(table: ITable) {
+  tvTable.value = table
+  tvOpen.value = true
+}
+
+function openSettings(table: ITable) {
+  settingsTable.value = table
+  settingsOpen.value = true
+}
+
+function openPendingSettings() {
+  if (!pendingSettingsId.value) return
+  const table = tables.value.find((entry) => entry._id === pendingSettingsId.value)
+  if (!table) return
+  pendingSettingsId.value = ''
+  openSettings(table)
+}
+
+async function assignSystem(tableId: string, systemId: string) {
+  if (!authToken.value || !systemId) return
+  const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/system`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken.value}`,
+    },
+    body: JSON.stringify({ systemId }),
+  })
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as { message?: string } | null
+    throw new Error(data?.message || 'O sistema da mesa não foi aplicado.')
+  }
+}
+
+async function handleCreate(payload: { name: string; systemId: string; systemKey: string }) {
+  if (!authToken.value || createSubmitting.value) return
+  createSubmitting.value = true
+  createError.value = ''
   try {
     const response = await fetch(`${API_BASE_URL}/api/tables/create`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken.value}`, // Envia o token para autenticação
+        Authorization: `Bearer ${authToken.value}`,
       },
-      body: JSON.stringify({ name: newTableName.value }),
-    });
-
-    const newTableData = await response.json();
-
-    if (response.ok) {
-  toast.success(`Mesa "${newTableData.name}" criada! Código: ${newTableData.inviteCode}`);
-  newTableName.value = '';
-  fetchMyTables();
-    } else {
-  toast.error(`Erro ao criar mesa: ${newTableData.message}`);
+      body: JSON.stringify({ name: payload.name }),
+    })
+    const data = (await response.json().catch(() => null)) as (ITable & { message?: string }) | null
+    if (!response.ok || !data?._id) {
+      throw new Error(data?.message || 'Não foi possível criar a mesa.')
     }
-  } catch (error) {
-    console.error('Erro de rede ao criar mesa:', error);
+
+    if (payload.systemId) {
+      try {
+        await assignSystem(data._id, payload.systemId)
+        data.systemId = payload.systemId
+      } catch (error) {
+        toast.warning(
+          error instanceof Error
+            ? `Mesa criada, mas o sistema não foi aplicado: ${error.message}`
+            : 'Mesa criada, mas o sistema não foi aplicado.',
+        )
+      }
+    }
+
+    toast.success(`Mesa “${data.name}” criada.`)
+    createOpen.value = false
+    await fetchMyTables({ silent: true })
+    router.push(resolveTableEntry(data, currentUser.value?.id) ?? '/tables')
+  } catch (err) {
+    createError.value =
+      err instanceof TypeError
+        ? 'Sem conexão com o servidor. Tente de novo.'
+        : err instanceof Error
+          ? err.message
+          : 'Não foi possível criar a mesa.'
+  } finally {
+    createSubmitting.value = false
   }
 }
 
-function goToTable(tableId: string) {
-  router.push({ name: 'table', params: { tableId: tableId } });
+function handleJoined(routeTarget: string) {
+  toast.success('Você entrou na mesa.')
+  void fetchMyTables({ silent: true })
+  router.push(routeTarget)
 }
 
-async function handleJoinTable() {
-  if (!inviteCodeInput.value.trim() || !authToken.value) return;
+function handleNeedAuth(code: string) {
+  router.push({
+    name: 'login',
+    query: { redirect: `/tables?join=${encodeURIComponent(code)}` },
+  })
+}
 
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/tables/join`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken.value}`,
-      },
-      body: JSON.stringify({ inviteCode: inviteCodeInput.value }),
-    });
-
-    const data = await response.json();
-
-    if (response.ok) {
-  toast.info(data.message || 'Operação realizada.');
-  inviteCodeInput.value = '';
-  fetchMyTables();
-    } else {
-  toast.error(`Erro ao entrar na mesa: ${data.message}`);
-    }
-  } catch (error) {
-    console.error('Erro de rede ao entrar na mesa:', error);
+async function refreshAfterChange() {
+  await fetchMyTables({ silent: true })
+  if (!settingsTable.value) return
+  const current = tables.value.find((table) => table._id === settingsTable.value?._id)
+  if (current) settingsTable.value = current
+  else {
+    settingsTable.value = null
+    settingsOpen.value = false
   }
 }
 
-onMounted(() => {
-  fetchMyTables();
-});
+function handleRemoved() {
+  settingsOpen.value = false
+  settingsTable.value = null
+  void fetchMyTables({ silent: true })
+}
 
+function applyQuery() {
+  const query = route.query
+  const system = typeof query.system === 'string' ? query.system : ''
+  const create = query.create === '1'
+  const join = typeof query.join === 'string' ? query.join : ''
+  const settings = typeof query.settings === 'string' ? query.settings : ''
+
+  if (system) openCreate(system)
+  else if (create) openCreate()
+  if (join) openJoin(join)
+  if (settings) {
+    pendingSettingsId.value = settings
+    openPendingSettings()
+  }
+}
+
+onMounted(async () => {
+  await initSystems()
+  await initProfile()
+  applyQuery()
+  await fetchMyTables()
+})
+
+watch(
+  () => route.query,
+  () => applyQuery(),
+)
 </script>
 
 <template>
-  <div class="lobby-container">
-    <h1>Minhas Mesas</h1>
-
-    <form class="create-table-form" @submit.prevent="handleCreateTable">
-      <input type="text" v-model="newTableName" placeholder="Nome da nova mesa" required />
-      <button type="submit">Criar Nova Mesa</button>
-    </form>
-
-    <form class="join-table-form" @submit.prevent="handleJoinTable">
-      <input type="text" v-model="inviteCodeInput" placeholder="Código de convite da mesa" required />
-      <button type="submit">Entrar na Mesa</button>
-    </form>
-
-    <div class="tables-list">
-      <h2>Suas Mesas Atuais:</h2>
-      <div v-if="userTables.length === 0" class="no-tables">
-        Você ainda não participa de nenhuma mesa. Crie uma nova ou junte-se a uma!
+  <div class="tables-page">
+    <header class="tables-head">
+      <div class="tables-head__copy">
+        <p class="tables-head__kicker">Mesas</p>
+        <h1>Suas mesas</h1>
+        <p class="tables-head__lead">
+          Abra como Mestre ou Jogador, copie o convite e ajuste a mesa. A TV é sempre uma tela só de
+          leitura.
+        </p>
       </div>
-      <ul v-else>
-        <li v-for="table in userTables" :key="table._id">
-          <div class="row-main" @click="goToTable(table._id)">
-            <span class="table-name">{{ table.name }}</span>
-            <span class="table-role">{{ table.dm._id === currentUser?.id ? '(Mestre)' : '(Jogador)' }}</span>
-          </div>
-          <div class="row-actions">
-            <button @click.stop="copyInvite(table.inviteCode)" title="Copiar código"><Icon name="copy" size="18" /></button>
-            <button v-if="table.dm._id === currentUser?.id" @click.stop="openEdit(table)" title="Renomear"><Icon name="edit" size="18" /></button>
-            <button v-if="table.dm._id === currentUser?.id" @click.stop="managePlayers(table)" title="Gerenciar jogadores"><Icon name="users" size="18" /></button>
-            <button v-if="table.dm._id === currentUser?.id" @click.stop="openDelete(table)" title="Excluir mesa" class="danger"><Icon name="delete" size="18" /></button>
-            <button v-else @click.stop="openLeave(table)" title="Sair da mesa" class="danger"><Icon name="exit" size="18" /></button>
-          </div>
-        </li>
+
+      <div class="tables-head__actions">
+        <button type="button" class="btn" @click="openCreate()">
+          <Icon name="plus" :size="16" />
+          Criar mesa
+        </button>
+        <button type="button" class="btn outline" @click="openJoin()">
+          <Icon name="link" :size="16" />
+          Entrar com código
+        </button>
+      </div>
+    </header>
+
+    <div v-if="loadError && tables.length" class="tables-banner" role="alert">
+      <p>{{ loadError }}</p>
+      <button type="button" class="btn btn-sm outline" @click="fetchMyTables()">
+        Tentar de novo
+      </button>
+    </div>
+
+    <p v-if="loading" class="tables-status" role="status">Carregando suas mesas…</p>
+
+    <div v-if="loading" class="tables-skeleton" aria-hidden="true">
+      <div v-for="row in 3" :key="row" class="tables-skeleton__row">
+        <span class="tables-skeleton__name" />
+        <span class="tables-skeleton__meta" />
+      </div>
+    </div>
+
+    <EmptyState
+      v-else-if="!tables.length && loadError"
+      tone="error"
+      eyebrow="Falha de rede"
+      title="Não foi possível carregar suas mesas"
+      :description="loadError"
+    >
+      <button type="button" class="btn" @click="fetchMyTables()">
+        <Icon name="refresh" :size="16" />
+        Tentar de novo
+      </button>
+    </EmptyState>
+
+    <EmptyState
+      v-else-if="!tables.length"
+      eyebrow="Arquivo vazio"
+      title="Nenhuma mesa ainda"
+      description="Crie a primeira mesa ou entre com o código que um Mestre enviou. O convite abre a mesa no papel certo."
+    >
+      <div class="first-table">
+        <p class="first-table__title">Sua primeira mesa em quatro passos</p>
+        <ol>
+          <li>Crie a mesa e escolha o sistema.</li>
+          <li>Mostre o código ou o link para os jogadores.</li>
+          <li>Crie a cena, a grade e os tokens.</li>
+          <li>Inicie a sessão e abra a TV na sala.</li>
+        </ol>
+      </div>
+      <div class="empty-actions">
+        <button type="button" class="btn" @click="openCreate()">
+          <Icon name="plus" :size="16" />
+          Criar mesa
+        </button>
+        <button type="button" class="btn outline" @click="openJoin()">
+          <Icon name="link" :size="16" />
+          Entrar com código
+        </button>
+        <RouterLink to="/systems" class="btn ghost">Ver sistemas</RouterLink>
+      </div>
+    </EmptyState>
+
+    <template v-else>
+      <div class="table-list__head" aria-hidden="true">
+        <span>Mesa</span>
+        <span>Papel e estado</span>
+        <span>Ações</span>
+      </div>
+      <ul class="table-list">
+        <TableRow
+          v-for="table in tables"
+          :key="table._id"
+          :table="table"
+          :user-id="currentUser?.id"
+          variant="manage"
+          @tv="openTv(table)"
+          @settings="openSettings(table)"
+        />
       </ul>
-      <div class="feedback" v-if="feedback">{{ feedback }}</div>
-    </div>
+    </template>
 
-    <!-- Modal editar nome -->
-    <div v-if="editingTable" class="modal">
-      <div class="modal-content">
-        <h3>Renomear Mesa</h3>
-        <input v-model="editName" />
-        <div class="modal-actions">
-          <button @click="saveEdit">Salvar</button>
-          <button @click="editingTable=null">Cancelar</button>
-        </div>
-      </div>
-    </div>
+    <CreateTableDialog
+      v-model:open="createOpen"
+      :systems="systems"
+      :default-system-key="createDefaultKey"
+      :submitting="createSubmitting"
+      :server-error="createError"
+      @submit="handleCreate"
+    />
 
-    <!-- Modal gerenciar jogadores -->
-    <div v-if="managingPlayers" class="modal">
-      <div class="modal-content">
-        <h3>Jogadores</h3>
-        <ul class="players-list">
-          <li v-for="p in managingPlayers.players" :key="p._id">
-            <span>{{ p.username }} <em v-if="p._id === managingPlayers.dm._id">(Mestre)</em></span>
-            <button v-if="p._id !== managingPlayers.dm._id" @click="removePlayer(p._id)" class="danger small">Remover</button>
-          </li>
-        </ul>
-        <div class="modal-actions">
-          <button @click="managingPlayers=null">Fechar</button>
-        </div>
-      </div>
-    </div>
+    <JoinTableDialog
+      v-model:open="joinOpen"
+      :authenticated="authenticated"
+      :initial-code="joinPrefill"
+      @joined="handleJoined"
+      @need-auth="handleNeedAuth"
+    />
 
-    <!-- Modal sair -->
-    <div v-if="leaving" class="modal">
-      <div class="modal-content">
-        <h3>Sair da mesa "{{ leaving.name }}"?</h3>
-        <div class="modal-actions">
-          <button class="danger" @click="confirmLeave">Confirmar</button>
-          <button @click="leaving=null">Cancelar</button>
-        </div>
-      </div>
-    </div>
+    <TvLinkDialog v-model:open="tvOpen" :table="tvTable" :can-manage="tvCanManage" />
 
-    <!-- Modal excluir -->
-    <div v-if="deleting" class="modal">
-      <div class="modal-content">
-        <h3>Excluir mesa "{{ deleting.name }}"?</h3>
-        <p>Esta ação remove cenas e tokens definitivamente.</p>
-        <div class="modal-actions">
-          <button class="danger" @click="confirmDelete">Excluir</button>
-          <button @click="deleting=null">Cancelar</button>
-        </div>
-      </div>
-    </div>
+    <TableSettingsDialog
+      v-model:open="settingsOpen"
+      :table="settingsTable"
+      :systems="systems"
+      :current-user-id="currentUser?.id"
+      @updated="refreshAfterChange"
+      @removed="handleRemoved"
+    />
   </div>
 </template>
 
 <style scoped>
-.lobby-container {
+.tables-page {
   width: 100%;
-  max-width: 800px;
-  text-align: center;
+  max-width: 1120px;
+  margin-inline: auto;
+  padding: var(--s-7) var(--s-6) var(--s-9);
 }
 
-.create-table-form {
-  margin: 20px 0;
+.tables-head {
   display: flex;
-  gap: 10px;
-  justify-content: center;
   flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-6);
+  padding-bottom: var(--s-6);
+  border-bottom: 2px solid var(--line-strong);
 }
 
-.create-table-form input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); width:100%; max-width:420px; background:var(--color-surface-alt); color:var(--color-text); }
-.create-table-form input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
-
-.create-table-form button { padding:10px 15px; border:1px solid var(--color-border-strong); border-radius:var(--radius-sm); background:var(--color-accent); color:var(--color-text); font-weight:600; cursor:pointer; }
-.create-table-form button:hover { background:var(--color-accent-alt); }
-
-.tables-list {
-  margin-top: 40px;
-  text-align: left;
+.tables-head__copy {
+  max-width: 56ch;
 }
 
-.tables-list ul {
-  list-style-type: none;
+.tables-head__kicker {
+  margin: 0 0 var(--s-2);
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+}
+
+.tables-head h1 {
+  margin: 0;
+}
+
+.tables-head__lead {
+  margin: var(--s-3) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  line-height: 1.6;
+}
+
+.tables-head__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+
+.tables-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-top: var(--s-5);
+  padding: var(--s-3) var(--s-4);
+  border-left: 2px solid var(--danger);
+  background: rgb(178 58 50 / 0.1);
+}
+
+.tables-banner p {
+  margin: 0;
+  color: var(--danger-ink);
+  font-size: var(--text-sm);
+}
+
+.tables-status {
+  margin: var(--s-6) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+}
+
+.tables-skeleton {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--s-5);
+}
+
+.tables-skeleton__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-5) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.tables-skeleton__name {
+  display: block;
+  width: min(280px, 60%);
+  height: 18px;
+  border-radius: var(--radius-xs);
+  background: var(--raised);
+}
+
+.tables-skeleton__meta {
+  display: block;
+  width: min(180px, 40%);
+  height: 11px;
+  border-radius: var(--radius-xs);
+  background: var(--raised);
+}
+
+.table-list__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--s-5);
+  margin-top: var(--s-5);
+  padding: 0 0 var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+}
+
+.table-list__head span:nth-child(2) {
+  text-align: right;
+}
+
+.table-list__head span:nth-child(3) {
+  min-width: 280px;
+  text-align: right;
+}
+
+.table-list {
+  margin: 0;
   padding: 0;
+  list-style: none;
 }
 
-.tables-list li { background:var(--color-surface); padding:15px; margin-bottom:10px; border-radius:var(--radius-sm); cursor:default; display:grid; grid-template-columns:1fr auto; gap:10px; transition:background var(--transition-fast), border-color var(--transition-fast); border:1px solid var(--color-border); }
-.tables-list li:hover { background:var(--color-surface-alt); border-color:var(--color-border-strong); }
+.first-table {
+  width: 100%;
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--ink-0);
+}
 
-.table-details {
+.first-table__title {
+  margin: 0 0 var(--s-3);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.first-table ol {
+  display: grid;
+  gap: var(--s-2);
+  margin: 0;
+  padding-left: var(--s-6);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.empty-actions {
   display: flex;
-  align-items: center;
-  gap: 20px;
   flex-wrap: wrap;
+  gap: var(--s-3);
+  width: 100%;
+  margin-top: var(--s-5);
 }
 
-.invite-code {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.9em;
-  color: #ddd;
+@media (max-width: 900px) {
+  .tables-head__actions .btn,
+  .empty-actions .btn {
+    min-height: 44px;
+  }
 }
 
-.invite-code code { background:var(--color-surface-alt); padding:4px 8px; border-radius:var(--radius-sm); font-family:'Courier New', monospace; color:var(--color-accent); font-weight:600; border:1px solid var(--color-border); }
+@media (max-width: 860px) {
+  .tables-page {
+    padding: var(--s-6) var(--s-5) var(--s-8);
+  }
 
-.feedback { margin-top:16px; color:var(--color-accent); font-size:0.9em; }
+  .tables-head__actions {
+    width: 100%;
+  }
 
-.table-name {
-  font-weight: bold;
-  font-size: 1.2em;
+  .tables-head__actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .table-list__head {
+    display: none;
+  }
 }
-.row-main { display:flex; gap:12px; align-items:center; cursor:pointer; }
-.row-actions { display:flex; gap:8px; flex-wrap: wrap; }
-.row-actions button { background:var(--color-surface-alt); border:1px solid var(--color-border); color:var(--color-text); cursor:pointer; padding:6px 8px; border-radius:var(--radius-sm); transition:background var(--transition-fast); }
-.row-actions button:hover { background:var(--color-surface); }
-.row-actions button.danger { background:var(--color-danger); border-color:#d06060; }
-.row-actions button.danger:hover { background:#d06060; }
-
-/* Modais */
-.modal { position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; justify-content:center; align-items:center; z-index:200; }
-.modal-content { background:linear-gradient(180deg,var(--color-surface),var(--color-surface-alt)); padding:24px 20px; border-radius:var(--radius-md); width:380px; max-width:90%; display:flex; flex-direction:column; gap:14px; border:1px solid var(--color-border); box-shadow:var(--elev-3); }
-.modal-content h3 { margin:0; }
-.modal-content input { padding:8px; border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface-alt); color:var(--color-text); }
-.modal-content input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
-.modal-actions { display:flex; justify-content:space-between; gap:10px; }
-.modal-actions button { background:var(--color-surface-alt); border:1px solid var(--color-border); color:var(--color-text); padding:8px 14px; border-radius:var(--radius-sm); cursor:pointer; font-weight:500; }
-.modal-actions button:hover { background:var(--color-surface); }
-.modal-actions button.danger { background:var(--color-danger); border-color:#d06060; }
-.modal-actions button.danger:hover { background:#d06060; }
-.players-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px; }
-.players-list li { display:flex; justify-content:space-between; align-items:center; background:var(--color-surface-alt); padding:6px 10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); }
-.players-list button.small { padding:4px 8px; font-size:0.75rem; }
-
-.table-role { font-style:italic; color:var(--color-text-muted); min-width:80px; text-align:right; }
-
-.no-tables { color:var(--color-text-muted); margin-top:20px; text-align:center; }
-
-.join-table-form {
-  margin-top: 10px;
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.join-table-form input { padding:10px; border-radius:var(--radius-sm); border:1px solid var(--color-border); width:100%; max-width:420px; background:var(--color-surface-alt); color:var(--color-text); }
 
 @media (max-width: 560px) {
-  .tables-list li { grid-template-columns: 1fr; }
-  .table-role { min-width: auto; text-align: left; }
-}
-.join-table-form input:focus { outline:2px solid var(--color-border-strong); outline-offset:2px; }
+  .tables-head__actions {
+    flex-direction: column;
+  }
 
-.join-table-form button { padding:10px 15px; border:1px solid #63b887; border-radius:var(--radius-sm); background:var(--color-success); color:var(--color-text); font-weight:600; cursor:pointer; }
-.join-table-form button:hover { background:#63b887; }
+  .empty-actions {
+    flex-direction: column;
+  }
 
-/* Mobile sizing reductions */
-@media (max-width: 560px) {
-  .create-table-form input,
-  .join-table-form input { max-width: 300px; font-size: 0.95rem; padding: 8px; }
-  .create-table-form button,
-  .join-table-form button { padding: 8px 12px; font-size: 0.95rem; }
+  .empty-actions :deep(.btn) {
+    width: 100%;
+  }
 }
 </style>
