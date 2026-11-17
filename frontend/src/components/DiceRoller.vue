@@ -468,12 +468,12 @@ function roll() {
 .dice-roller {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--color-border);
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(21, 18, 28, 0.95), rgba(12, 10, 18, 0.95));
-  color: var(--color-text);
+  gap: var(--s-4);
+  padding: var(--s-5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--text);
   min-width: 280px;
 }
 .dice-roller.mode-popup {
@@ -487,27 +487,28 @@ function roll() {
 }
 .eyebrow {
   margin: 0;
-  text-transform: uppercase;
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  color: var(--color-text-muted, #c9c5d4);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 .dice-header h3 {
   margin: 4px 0 0;
 }
 .close-btn {
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  width: 32px;
-  height: 32px;
-  background: transparent;
-  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
   cursor: pointer;
 }
 .field-label {
-  font-size: 0.82rem;
-  color: var(--color-text-muted, #cfd2dd);
   margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
 }
 .expression-row {
   display: flex;
@@ -516,11 +517,14 @@ function roll() {
 .expression-row input,
 .expression-row select {
   flex: 1;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: rgba(0, 0, 0, 0.2);
-  color: var(--color-text);
-  padding: 10px 12px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--ink-0);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
 }
 .expression-row select {
   max-width: 180px;
@@ -531,16 +535,16 @@ function roll() {
   gap: 8px;
   flex-wrap: wrap;
   font-size: 0.85rem;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
 }
 .explosive-hint {
   margin: 0;
-  padding: 6px 10px;
-  border: 1px solid rgba(210, 156, 68, 0.5);
-  border-radius: 8px;
-  background: rgba(210, 156, 68, 0.12);
-  font-size: 0.78rem;
-  color: var(--color-text);
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--manila) 55%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--manila) 12%, transparent);
+  font-size: var(--text-xs);
+  color: var(--text);
 }
 .explosive-hint code {
   font-weight: 700;
@@ -548,35 +552,39 @@ function roll() {
 }
 .dice-status {
   margin: 0;
-  padding: 6px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 .dice-status--pending {
-  border-color: rgba(59, 130, 246, 0.45);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 .dice-status--success {
-  border-color: rgba(34, 197, 94, 0.5);
-  color: var(--color-text);
+  border-color: var(--success);
+  color: var(--success-ink);
   font-weight: 600;
 }
 .dice-status--error {
-  border-color: rgba(239, 68, 68, 0.55);
-  color: var(--color-danger, #f87171);
+  border-color: var(--danger);
+  color: var(--danger-ink);
 }
 .shortcut-btn {
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
+  min-height: 36px;
   padding: 4px 10px;
-  background: transparent;
-  color: inherit;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
   cursor: pointer;
 }
 .shortcut-btn:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+  border-color: var(--accent-ink);
+  color: var(--accent-ink);
 }
 .actions {
   display: flex;
@@ -584,19 +592,26 @@ function roll() {
 }
 .actions button {
   flex: 1;
-  border-radius: 10px;
+  min-height: 44px;
   padding: 10px 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  font-weight: 500;
   cursor: pointer;
 }
 .actions .primary {
-  background: var(--color-accent);
-  color: #0f0f15;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
 }
 .actions .ghost {
-  background: rgba(255, 255, 255, 0.05);
-  color: inherit;
+  background: transparent;
+  color: var(--text);
 }
 .system-presets {
   display: flex;
@@ -609,20 +624,21 @@ function roll() {
   gap: 8px;
 }
 .system-preset-btn {
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
 }
 .system-preset-btn small {
   font-size: 0.75rem;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
 }
 .presets ul {
   list-style: none;
@@ -637,10 +653,10 @@ function roll() {
   align-items: center;
   justify-content: space-between;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
 }
 .presets li.active {
-  border-color: var(--color-accent);
+  border-color: var(--accent-ink);
 }
 .preset-btn {
   flex: 1;
@@ -654,7 +670,7 @@ function roll() {
 .remove-btn {
   border: none;
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 1.2rem;
   cursor: pointer;
   padding: 0 8px;
