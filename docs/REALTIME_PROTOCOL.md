@@ -235,6 +235,7 @@ Todos aceitam ack e `expectedRevision?` quando fazem sentido.
 | `requestReorderScenes` | DM | sim | sim | |
 | `requestUpdateGridDimensions` | DM | sim | sim | |
 | `requestUpdateSceneScale` | DM | sim | sim | |
+| `requestUpdateScene` | DM | sim | sim | payload `{ tableId, sceneId, patch: { name?, type?, gridWidth?, gridHeight?, metersPerSquare? } }`; emite `sessionPatch` com `scenes`/`activeScene` |
 | `requestPlaceToken` | DM | sim | sim | dono deve ser membro |
 | `requestMoveToken` | DM ou dono no turno | sim | sim | `expectedRevision` |
 | `requestAssignToken` | DM | sim | sim | novo dono deve ser membro |
