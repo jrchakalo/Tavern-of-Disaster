@@ -216,31 +216,38 @@ const pingList = computed(() => {
 
 .display-board__placeholder {
   position: absolute;
-  inset: 0;
+  top: clamp(16px, 3vh, 32px);
+  left: 50%;
+  z-index: 6;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s-4);
-  padding: clamp(24px, 4vw, 64px);
-  text-align: center;
+  align-items: flex-start;
+  gap: var(--s-2);
+  width: min(560px, calc(100% - 48px));
+  padding: var(--s-5) var(--s-6);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-overlay);
+  text-align: left;
+  transform: translateX(-50%);
 }
 
 .display-board__placeholder-title {
   margin: 0;
   color: var(--text);
   font-family: var(--font-display);
-  font-size: clamp(1.5rem, 1.4vw + 1rem, 2.25rem);
+  font-size: clamp(1.25rem, 0.6vw + 1rem, 1.625rem);
   font-weight: 600;
-  line-height: 1.1;
+  line-height: 1.15;
 }
 
 .display-board__placeholder-copy {
-  max-width: 44ch;
+  max-width: 52ch;
   margin: 0;
   color: var(--text-muted);
-  font-size: clamp(1.125rem, 0.5vw + 0.85rem, 1.375rem);
-  line-height: 1.4;
+  font-size: clamp(0.9375rem, 0.3vw + 0.85rem, 1.125rem);
+  line-height: 1.45;
 }
 
 .display-board__grid {
