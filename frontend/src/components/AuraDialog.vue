@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
+import BaseDialog from './ui/BaseDialog.vue';
 
 const props = defineProps<{ open: boolean; tokenId: string | null; defaultName?: string; defaultColor?: string; defaultRadiusMeters?: number; isDM?: boolean; isOwner?: boolean; }>();
 const emit = defineEmits<{ (e:'close'):void; (e:'save', payload:{ name:string; color:string; radiusMeters:number }):void; (e:'remove'):void }>();
@@ -24,67 +25,68 @@ function onSubmit() {
 </script>
 
 <template>
-  <div v-if="open" class="aura-dialog" @click.stop>
-    <h3>Aura/Efeito Persistente</h3>
-    <label>Nome
-      <input v-model="name" />
-    </label>
-    <label>Raio (m)
-      <input type="number" step="0.1" min="0" v-model.number="radiusMeters" />
-    </label>
-    <label>Cor
-      <input type="color" v-model="color" />
-    </label>
-    <div class="actions">
-      <button @click="onSubmit">Salvar</button>
-      <button v-if="canRemove" class="danger" @click="$emit('remove')">Remover aura</button>
-      <button @click="$emit('close')">Fechar</button>
-    </div>
-  </div>
-  <div v-else />
-  
+  <BaseDialog :open="open" title="Aura/efeito persistente" @close="emit('close')">
+    <form class="aura-dialog" @submit.prevent="onSubmit">
+      <div class="aura-dialog__field">
+        <label for="aura-name">Nome</label>
+        <input id="aura-name" v-model="name" type="text" maxlength="60" data-autofocus />
+      </div>
+
+      <div class="aura-dialog__row">
+        <div class="aura-dialog__field">
+          <label for="aura-radius">Raio (m)</label>
+          <input id="aura-radius" v-model.number="radiusMeters" type="number" step="0.1" min="0" />
+        </div>
+        <div class="aura-dialog__field aura-dialog__field--color">
+          <label for="aura-color">Cor</label>
+          <input id="aura-color" v-model="color" type="color" />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button v-if="canRemove" class="danger" type="button" @click="emit('remove')">Remover aura</button>
+        <span class="actions__spacer" aria-hidden="true"></span>
+        <button type="button" @click="emit('close')">Fechar</button>
+        <button type="submit">Salvar</button>
+      </div>
+    </form>
+  </BaseDialog>
 </template>
 
 <style scoped>
 .aura-dialog {
-  position: absolute;
-  top: 120px;
-  left: 50%;
-  z-index: 1001;
-  min-width: 280px;
-  max-width: min(340px, calc(100vw - 24px));
-  padding: var(--s-5);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  background: var(--panel);
-  color: var(--text);
-  box-shadow: var(--shadow-overlay);
-}
-
-.aura-dialog h3 {
-  margin: 0 0 var(--s-4);
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-size: var(--text-lg);
-  font-weight: 600;
-  line-height: var(--leading-snug);
-}
-
-.aura-dialog label {
   display: flex;
-  align-items: center;
-  gap: var(--s-3);
-  margin: 0 0 var(--s-3);
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.aura-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.aura-dialog__field label {
   color: var(--text-muted);
   font-size: var(--text-xs);
   font-weight: 500;
-  letter-spacing: 0;
+}
+
+.aura-dialog__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-4);
+  align-items: end;
+}
+
+.aura-dialog__field--color {
+  width: 72px;
 }
 
 .aura-dialog input[type='text'],
 .aura-dialog input[type='number'] {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
   min-height: 40px;
   padding: 8px 10px;
   border: 1px solid var(--line-strong);
@@ -96,9 +98,8 @@ function onSubmit() {
 }
 
 .aura-dialog input[type='color'] {
-  flex: 0 0 auto;
-  inline-size: 44px;
-  block-size: 44px;
+  inline-size: 100%;
+  block-size: 40px;
   padding: 2px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
@@ -106,9 +107,7 @@ function onSubmit() {
   cursor: pointer;
 }
 
-.aura-dialog input[type='text']:focus-visible,
-.aura-dialog input[type='number']:focus-visible,
-.aura-dialog input[type='color']:focus-visible {
+.aura-dialog input:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -117,10 +116,13 @@ function onSubmit() {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s-2);
-  justify-content: flex-end;
-  margin-top: var(--s-4);
+  align-items: center;
   padding-top: var(--s-3);
   border-top: 1px solid var(--line);
+}
+
+.actions__spacer {
+  flex: 1 1 auto;
 }
 
 .aura-dialog .actions button {
@@ -143,24 +145,18 @@ function onSubmit() {
   background: var(--raised-2);
 }
 
-.aura-dialog .actions button:active {
-  transform: translateY(1px);
-  transition-duration: var(--dur-press);
-}
-
 .aura-dialog .actions button:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-/* Primeiro botão do rodapé é a ação primária (Salvar). */
-.aura-dialog .actions button:first-child {
+.aura-dialog .actions button[type='submit'] {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--on-accent);
 }
 
-.aura-dialog .actions button:first-child:hover {
+.aura-dialog .actions button[type='submit']:hover {
   border-color: var(--accent-hover);
   background: var(--accent-hover);
 }
