@@ -164,8 +164,7 @@ async function handleRegister() {
           maxlength="50"
           :disabled="submitting"
           :aria-invalid="errors.username ? 'true' : undefined"
-          aria-describedby="username-hint username-error"
-          data-autofocus
+          :aria-describedby="errors.username ? 'username-hint username-error' : 'username-hint'"
           @input="clearError('username')"
         />
         <p id="username-hint" class="field-hint">É o nome que você usa para entrar.</p>

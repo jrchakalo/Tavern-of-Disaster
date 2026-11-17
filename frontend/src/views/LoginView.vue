@@ -124,7 +124,6 @@ async function handleLogin() {
           :disabled="submitting"
           :aria-invalid="errors.identifier ? 'true' : undefined"
           :aria-describedby="errors.identifier ? 'identifier-error' : undefined"
-          data-autofocus
           @input="clearError('identifier')"
         />
         <p v-if="errors.identifier" id="identifier-error" class="field-error" role="alert">
