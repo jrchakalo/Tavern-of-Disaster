@@ -202,7 +202,8 @@ watch(
 
 .app-wordmark {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
+  min-height: 44px;
   gap: 0.32em;
   color: var(--text);
   font-family: var(--font-display);
@@ -235,7 +236,7 @@ watch(
 .app-nav__link {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 var(--s-3);
   border: 0;
   border-bottom: 2px solid transparent;
