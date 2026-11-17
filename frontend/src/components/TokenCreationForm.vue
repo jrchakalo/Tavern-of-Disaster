@@ -7,6 +7,7 @@ import type { PlayerInfo, TokenSize, Character } from '../types';
 import { tokenSizes } from '../types';
 
 const tokenName = ref('');
+const nameError = ref('');
 const tokenImageUrl = ref('');
 const tokenMovement = ref(9);
 const assignedOwnerId = ref('');
@@ -39,9 +40,10 @@ function ownerLabel(player: PlayerInfo): string {
 
 function handleSubmit() {
   if (!tokenName.value.trim()) {
-    toast.warning('O nome do token é obrigatório.');
+    nameError.value = 'Dê um nome ao token para encontrá-lo no mapa e na iniciativa.';
     return;
   }
+  nameError.value = '';
   emit('create-token', {
     name: tokenName.value.trim(),
     imageUrl: tokenImageUrl.value.trim() || undefined,
@@ -116,9 +118,22 @@ watch(
     @close="handleCancel"
   >
     <form class="token-form" @submit.prevent="handleSubmit">
-      <div class="field-group">
+      <div class="field-group" :class="{ 'field-group--error': nameError }">
         <label for="token-name">Nome</label>
-        <input id="token-name" v-model="tokenName" type="text" placeholder="Nome do personagem ou NPC" required autofocus />
+        <input
+          id="token-name"
+          v-model="tokenName"
+          type="text"
+          placeholder="Nome do personagem ou NPC"
+          required
+          autofocus
+          :aria-invalid="nameError ? 'true' : undefined"
+          :aria-describedby="nameError ? 'token-name-error' : undefined"
+          @input="nameError = ''"
+        />
+        <p v-if="nameError" id="token-name-error" class="field-error" role="alert">
+          {{ nameError }}
+        </p>
       </div>
 
       <div class="field-group">
@@ -240,6 +255,26 @@ watch(
   justify-content: flex-end;
   gap: var(--s-3);
   padding-top: var(--s-2);
+}
+.field-error {
+  margin: var(--s-2) 0 0;
+  color: var(--danger-ink);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+.field-group--error input {
+  border-color: var(--danger);
+}
+@media (max-width: 900px) {
+  .token-form input,
+  .token-form select,
+  .upload-btn {
+    min-height: 44px;
+  }
+
+  :deep(.base-dialog__footer .btn) {
+    min-height: 44px;
+  }
 }
 @media (max-width: 480px) {
   .field-row { grid-template-columns: 1fr; }

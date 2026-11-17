@@ -190,7 +190,7 @@ watch(isLoggedIn, (loggedIn) => {
       <section class="landing-hero">
         <div class="landing-hero__inner">
           <div class="landing-copy">
-            <p class="landing-copy__eyebrow">MESA COMPARTILHADA · TV + CELULARES</p>
+            <p class="landing-copy__eyebrow">Mesa compartilhada: TV e celulares</p>
             <h1>A taverna é a TV. O controle está na mão de cada jogador.</h1>
             <p class="landing-copy__lead">
               Crie a mesa, mostre o código e comece a sessão. Sem instalar nada — presencial ou
@@ -874,7 +874,7 @@ watch(isLoggedIn, (loggedIn) => {
   overflow: hidden;
   color: var(--text-muted);
   font-family: var(--font-data);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1463,6 +1463,16 @@ watch(isLoggedIn, (loggedIn) => {
   gap: var(--s-3);
   width: 100%;
   margin-top: var(--s-5);
+}
+
+/* Alvos de 44 px em telas de toque (tablet incluso, não só celular). */
+@media (max-width: 900px) {
+  .lobby-head__actions .btn,
+  .continue__actions .btn,
+  .lobby-empty-actions .btn,
+  .closing__actions .btn {
+    min-height: 44px;
+  }
 }
 
 @media (max-width: 1000px) {

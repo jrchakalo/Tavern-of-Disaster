@@ -179,4 +179,16 @@ function submit() {
   color: var(--danger-ink);
   font-size: var(--text-sm);
 }
+
+@media (max-width: 900px) {
+  .create-table input,
+  .create-table select {
+    min-height: 44px;
+  }
+
+  :deep(.base-dialog__footer .btn),
+  .btn {
+    min-height: 44px;
+  }
+}
 </style>

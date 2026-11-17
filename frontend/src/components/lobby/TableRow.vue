@@ -215,6 +215,10 @@ async function copyInvite() {
     grid-column: 1 / -1;
     justify-content: flex-start;
   }
+
+  .table-row__actions .btn {
+    min-height: 44px;
+  }
 }
 
 @media (max-width: 480px) {

@@ -236,4 +236,11 @@ async function handleLogin() {
   font-size: var(--text-sm);
   text-align: center;
 }
+
+.auth-form__alt a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: var(--s-2);
+}
 </style>

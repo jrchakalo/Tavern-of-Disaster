@@ -371,6 +371,12 @@ async function leaveTable() {
   gap: var(--s-6);
 }
 
+/* O container recebe foco programático do diálogo; o anel é do próximo controle. */
+.settings:focus,
+.settings:focus-visible {
+  outline: none;
+}
+
 .settings input,
 .settings select {
   min-height: 44px;
@@ -503,13 +509,18 @@ async function leaveTable() {
   font-size: var(--text-md);
 }
 
-@media (max-width: 640px) {
-  .settings .btn {
+@media (max-width: 900px) {
+  .settings .btn,
+  .btn {
     min-height: 44px;
   }
 
   .settings__inline .btn {
     width: 100%;
+  }
+
+  :deep(.base-dialog__footer .btn) {
+    min-height: 44px;
   }
 }
 </style>

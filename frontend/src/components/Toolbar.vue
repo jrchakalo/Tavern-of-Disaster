@@ -1,6 +1,6 @@
 <!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 import Icon from './Icon.vue';
 import { toast } from '../services/toast';
 
@@ -42,28 +42,8 @@ function togglePersistent() {
   emit('toggle-persistent', !props.persistentMode);
 }
 
-// Paleta (agora como modal para funcionar bem no mobile)
-// Cores revisadas para evitar repetidas ou muito próximas; manter roxo do DM (#3c096c)
-const COLORS = [
-  '#f44336', // vermelho
-  '#ff9800', // laranja
-  '#facc15', // amarelo
-  '#22c55e', // verde
-  '#06b6d4', // ciano
-  '#3b82f6', // azul
-  '#a855f7', // violeta
-  '#ec4899', // rosa
-  '#795548', // marrom
-  '#3c096c', // roxo (DM)
-] as const;
-const showPalette = ref(false);
-const showColorButton = computed(() => !props.isDM);
-function pickColor(color: string) {
-  if (props.isDM && color !== '#3c096c') return;
-  if (!props.isDM && color === '#3c096c') return;
-  emit('color-selected', color);
-  showPalette.value = false;
-}
+// Paleta de cor removida na varredura D6: era um controle morto e permitia
+// roxo/violeta na UI. A cor de medição vem do perfil do usuário.
 
 // Two-step confirm (non-blocking) for clear-all
 const clearConfirming = ref(false);
@@ -85,7 +65,6 @@ function requestClearAll() {
 const collapsed = ref(false);
 function toggleCollapse() {
   collapsed.value = !collapsed.value;
-  if (collapsed.value) showPalette.value = false;
 }
 </script>
 
@@ -175,36 +154,6 @@ function toggleCollapse() {
         <Icon name="dice" />
         <span class="tool-label">Dados</span>
       </button>
-
-      <template v-if="showColorButton">
-        <hr class="divider" />
-        <button class="tool-button" type="button" title="Cor" aria-label="Selecionar cor" @click="showPalette = !showPalette">
-          <Icon name="color" />
-          <span class="tool-label">Cor</span>
-        </button>
-      </template>
-
-      <!-- Modal de paleta de cores: teleport para o <body> para evitar problemas de centragem no desktop -->
-      <teleport to="body">
-        <div v-if="showPalette" class="modal-backdrop" @click.self="showPalette=false">
-          <div class="palette-modal" role="dialog" aria-modal="true" aria-label="Selecionar cor">
-            <div class="modal-header">
-              <h3 class="modal-title">Selecionar cor</h3>
-              <button class="close-btn" type="button" @click="showPalette=false" aria-label="Fechar">×</button>
-            </div>
-            <div class="palette-grid">
-              <button
-                v-for="c in COLORS.filter(col => col !== '#3c096c')"
-                :key="c"
-                class="color-swatch"
-                type="button"
-                :style="{ backgroundColor: c, outline: (selectedColor===c ? '3px solid #fff' : '1px solid #999') }"
-                @click="pickColor(c)"
-              />
-            </div>
-          </div>
-        </div>
-      </teleport>
     </div>
   </div>
 </template>
@@ -236,8 +185,8 @@ function toggleCollapse() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--raised);
@@ -317,45 +266,7 @@ function toggleCollapse() {
 .variant-sheet .tool-label { display: inline; }
 .variant-sheet .divider { display: none; }
 
-/* Modal (popup) da paleta */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgb(4 6 7 / 0.72);
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.palette-modal {
-  background: var(--panel);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-overlay);
-  padding: var(--s-4);
-  width: min(360px, 92vw);
-  color: var(--text);
-}
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--s-3);
-}
-.modal-title { font-size: var(--text-base); font-family: var(--font-display); margin: 0; }
-.close-btn {
-  background: var(--raised);
-  color: var(--text);
-  border: 1px solid var(--line-strong);
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-}
-.palette-grid { display: grid; grid-template-columns: repeat(3, 40px); gap: var(--s-3); }
-.color-swatch { width: 40px; height: 40px; border-radius: var(--radius-sm); cursor: pointer; padding: 0; }
+/* Modal (popup) da paleta removido na D6 junto com o controle morto. */
 
 @media (max-width: 1023px) {
   .toolbar-container.variant-floating {
@@ -369,11 +280,11 @@ function toggleCollapse() {
     align-items: center;
     justify-content: center;
     padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0));
-    border-radius: 16px 16px 0 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     border-left: none;
     border-right: none;
     border-bottom: none;
-    box-shadow: 0 -6px 16px rgb(0 0 0 / 0.35);
+    box-shadow: none;
     max-width: unset;
     overflow-x: auto;
   }
