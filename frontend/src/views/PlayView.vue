@@ -28,11 +28,14 @@ import DiceAnimation from '../components/DiceAnimation.vue';
 import CharacterSheet from '../components/CharacterSheet.vue';
 import BaseDialog from '../components/ui/BaseDialog.vue';
 import BaseSheet from '../components/ui/BaseSheet.vue';
+import Icon from '../components/Icon.vue';
 import PlayerNav from '../components/player/PlayerNav.vue';
 import PlayerTurnBar from '../components/player/PlayerTurnBar.vue';
 import PlayerEmptyActions from '../components/player/PlayerEmptyActions.vue';
 import PlayerChatSheet from '../components/player/PlayerChatSheet.vue';
 import PlayerCallSheet from '../components/player/PlayerCallSheet.vue';
+import PlayerToolsSheet from '../components/play/PlayerToolsSheet.vue';
+import { usePlayerTools, type PlayerMeasurement, type SquareTap } from '../components/play/usePlayerTools';
 import CharacterCreateDialog from '../components/character/CharacterCreateDialog.vue';
 import CharacterList from '../components/character/CharacterList.vue';
 import type { CharacterCreatePayload } from '../components/character/characterCreateTypes';
@@ -65,6 +68,7 @@ const {
   metersPerSquare,
   auras,
   pings,
+  sharedMeasurements,
   isDM,
   recentRolls,
   characters: characterSummaries,
@@ -389,18 +393,33 @@ watch(activeTab, (tab) => {
   if (tab === 'chat') chatStore.openPanel();
   else chatStore.closePanel();
   if (tab !== 'ficha') fichaSheetOpen.value = false;
+  if (tab !== 'mesa') toolsOpen.value = false;
 });
 
 function closeTab() {
   activeTab.value = 'mesa';
   fichaSheetOpen.value = false;
+  toolsOpen.value = false;
 }
 
 async function selectTab(tab: PlayerTab) {
-  if (tab === activeTab.value && tab !== 'mesa') {
+  if (tab === 'mesa') {
+    if (activeTab.value === 'mesa') {
+      if (toolsOpen.value) {
+        toolsOpen.value = false;
+      } else {
+        openTools();
+      }
+      return;
+    }
     closeTab();
     return;
   }
+  if (tab === activeTab.value) {
+    closeTab();
+    return;
+  }
+  toolsOpen.value = false;
   activeTab.value = tab;
   if (tab === 'ficha') {
     fichaSheetOpen.value = true;
@@ -427,6 +446,100 @@ const boardRef = ref<{
   centerOnMe: () => void;
 } | null>(null);
 
+// ---------------------------------------------------------------------------
+// Ferramentas do jogador: régua (2 toques) e ping (1 toque).
+// ---------------------------------------------------------------------------
+
+const PLAYER_MEASUREMENT_COLOR = '#ff8c00';
+const toolsOpen = ref(false);
+const playerTools = usePlayerTools({
+  tableId: () => tableId,
+  sceneId: () => activeScene.value?._id ?? null,
+  gridWidth: () => gridWidth.value,
+  metersPerSquare: () => scale.value,
+  color: () => PLAYER_MEASUREMENT_COLOR,
+  userId: () => currentUser.value?.id ?? 'local',
+  username: () => currentUser.value?.username ?? 'Você',
+  shareMeasurement: (payload) => socketService.shareMeasurement(payload),
+  removeMyMeasurement: (payload) => socketService.removeMyMeasurement(payload),
+  sendPing: (payload) => socketService.sendPing(payload),
+  onError: (message) => toast.warning(message),
+});
+const {
+  tool: playerTool,
+  rulerStart: playerRulerStart,
+  localMeasurement,
+} = playerTools;
+
+const canUseTools = computed(
+  () => isLive.value && canWrite.value && Boolean(activeScene.value) && !isImageScene.value,
+);
+
+const ownSharedMeasurement = computed(() => {
+  const userId = currentUser.value?.id;
+  if (!userId) return null;
+  return sharedMeasurements.value[userId] ?? null;
+});
+
+const hasMeasurement = computed(() =>
+  Boolean(localMeasurement.value || ownSharedMeasurement.value),
+);
+
+const boardMeasurements = computed<PlayerMeasurement[]>(() => {
+  const ownId = currentUser.value?.id ?? null;
+  const shared = Object.values(sharedMeasurements.value) as PlayerMeasurement[];
+  const local = localMeasurement.value;
+  if (!local) return shared;
+  return [...shared.filter((measurement) => measurement.userId !== ownId), local];
+});
+
+const toolBanner = computed(() => playerTools.hint.value);
+
+const measurementAnnouncement = computed(() =>
+  localMeasurement.value ? `Distância medida: ${localMeasurement.value.distance}.` : '',
+);
+
+const measurementNote = computed(() =>
+  isMyTurn.value
+    ? ''
+    : 'A régua fica só no seu celular enquanto não for seu turno. O ping aparece para todos.',
+);
+
+function openTools() {
+  moveMode.value = false;
+  pendingMove.value = null;
+  toolsOpen.value = true;
+}
+
+function startRulerTool() {
+  moveMode.value = false;
+  pendingMove.value = null;
+  toolsOpen.value = false;
+  playerTools.startRuler();
+}
+
+function startPingTool() {
+  moveMode.value = false;
+  pendingMove.value = null;
+  toolsOpen.value = false;
+  playerTools.startPing();
+}
+
+function cancelPlayerTool() {
+  playerTools.cancel();
+}
+
+async function clearPlayerMeasurement() {
+  await playerTools.clearMeasurement();
+  toolsOpen.value = false;
+  toast.success('Régua removida.');
+}
+
+async function handleSquareTap(tap: SquareTap) {
+  await playerTools.tapSquare(tap);
+}
+
+
 function formatMeters(value: number) {
   return `${value.toFixed(1).replace('.', ',')} m`;
 }
@@ -450,6 +563,8 @@ watch(sessionStatus, (status) => {
     moveMode.value = false;
     pendingMove.value = null;
     clearUndo();
+    playerTools.cancel();
+    toolsOpen.value = false;
   }
 });
 
@@ -460,6 +575,22 @@ watch(isImageScene, (isImage) => {
   moveMode.value = false;
   pendingMove.value = null;
   clearUndo();
+  playerTools.resetMeasurement();
+  toolsOpen.value = false;
+});
+
+// Trocar de cena invalida a régua local e qualquer ferramenta armada.
+watch(
+  () => activeScene.value?._id ?? null,
+  () => {
+    playerTools.resetMeasurement();
+    toolsOpen.value = false;
+  },
+);
+
+// Mover e medir são modos exclusivos: armar um desarma o outro.
+watch(moveMode, (armed) => {
+  if (armed) playerTools.cancel();
 });
 
 watch(
@@ -732,12 +863,24 @@ function onDocumentPointerDown(event: PointerEvent) {
   closeMenu();
 }
 
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return;
+  if (playerTool.value !== 'none') {
+    event.preventDefault();
+    playerTools.cancel();
+    return;
+  }
+  if (toolsOpen.value) toolsOpen.value = false;
+}
+
 onMounted(() => {
   document.addEventListener('pointerdown', onDocumentPointerDown);
+  document.addEventListener('keydown', onDocumentKeydown);
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown);
+  document.removeEventListener('keydown', onDocumentKeydown);
 });
 
 function openProfile() {
@@ -949,6 +1092,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="play-shell">
     <p class="sr-only" aria-live="assertive" aria-atomic="true">{{ liveMessage }}</p>
+    <p class="sr-only" aria-live="polite" aria-atomic="true">{{ measurementAnnouncement }}</p>
 
     <header class="play-header">
       <div class="play-header__identity">
@@ -1080,11 +1224,35 @@ onBeforeUnmount(() => {
         :meters-per-square="metersPerSquare"
         :auras="auras"
         :pings="pings"
+        :tool="playerTool"
+        :shared-measurements="boardMeasurements"
+        :local-measurement="localMeasurement"
+        :ruler-start="playerRulerStart"
         @request-move="handleRequestMove"
         @move-blocked="handleMoveBlocked"
         @token-details="openTokenDetails"
         @center-unavailable="centerUnavailable"
+        @square-tap="handleSquareTap"
       />
+
+      <button
+        v-if="canWrite && !isImageScene"
+        type="button"
+        class="board-tools-btn"
+        :aria-expanded="toolsOpen"
+        aria-haspopup="dialog"
+        @click="openTools"
+      >
+        <Icon name="wrench" :size="16" />
+        <span>Ferramentas</span>
+      </button>
+
+      <div v-if="toolBanner" class="tool-banner" role="status" aria-live="polite">
+        <span class="tool-banner__hint">{{ toolBanner }}</span>
+        <button type="button" class="tool-banner__cancel" @click="cancelPlayerTool">
+          Cancelar
+        </button>
+      </div>
 
       <div v-if="!isLive" class="session-overlay" role="region" aria-label="Estado da sessão">
         <div class="session-overlay__card">
@@ -1338,6 +1506,18 @@ onBeforeUnmount(() => {
       :open="activeTab === 'chamada'"
       :table-id="tableId"
       @close="closeTab"
+    />
+
+    <PlayerToolsSheet
+      :open="toolsOpen"
+      :has-measurement="hasMeasurement"
+      :active-tool="playerTool"
+      :available="canUseTools"
+      :note="measurementNote"
+      @close="toolsOpen = false"
+      @measure="startRulerTool"
+      @ping="startPingTool"
+      @clear="clearPlayerMeasurement"
     />
 
     <CharacterSheet
@@ -1635,6 +1815,91 @@ onBeforeUnmount(() => {
 .play-board--image {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.board-tools-btn {
+  position: absolute;
+  top: var(--s-2);
+  left: var(--s-2);
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: rgb(18 23 26 / 0.94);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.board-tools-btn:hover:not(:disabled) {
+  border-color: var(--accent-ink);
+  background: var(--raised);
+}
+
+.board-tools-btn:disabled {
+  opacity: 0.55;
+  color: var(--text-muted);
+}
+
+.tool-banner {
+  position: absolute;
+  right: var(--s-2);
+  bottom: var(--s-2);
+  left: var(--s-2);
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 52px;
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
+  border: 1px solid var(--accent-ink);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-overlay);
+}
+
+.tool-banner__hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  line-height: 1.3;
+}
+
+.tool-banner__cancel {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.tool-banner__cancel:hover {
+  border-color: var(--accent-ink);
+  background: var(--raised-2);
+}
+
+@media (max-width: 360px) {
+  .board-tools-btn span {
+    display: none;
+  }
+
+  .board-tools-btn {
+    padding: 0;
+    width: 44px;
+    justify-content: center;
+  }
 }
 
 .session-overlay {

@@ -18,6 +18,7 @@ import {
   type BoardPing,
   type BoardTokenEntry,
 } from './boardGeometry';
+import type { PlayerMeasurement, PlayerTool, SquareTap } from './usePlayerTools';
 import {
   clampZoom,
   centerOnPoint,
@@ -47,6 +48,14 @@ const props = withDefaults(
     metersPerSquare?: number;
     auras?: AuraInfo[];
     pings?: BoardPing[];
+    /** Ferramenta ativa: em `ruler`/`ping` o toque seleciona quadrado, sem pan. */
+    tool?: PlayerTool;
+    /** Medições compartilhadas pela mesa (coordenadas em unidades de grade). */
+    sharedMeasurements?: PlayerMeasurement[];
+    /** Medição local do jogador (aparece mesmo se o share falhar). */
+    localMeasurement?: PlayerMeasurement | null;
+    /** Primeiro quadrado da régua, em unidades de grade. */
+    rulerStart?: GridPoint | null;
   }>(),
   {
     squares: () => [],
@@ -61,6 +70,10 @@ const props = withDefaults(
     metersPerSquare: 1.5,
     auras: () => [],
     pings: () => [],
+    tool: 'none',
+    sharedMeasurements: () => [],
+    localMeasurement: null,
+    rulerStart: null,
   },
 );
 
@@ -70,6 +83,7 @@ const emit = defineEmits<{
   (e: 'token-details', token: TokenInfo): void;
   (e: 'center-unavailable'): void;
   (e: 'camera-change', scale: number): void;
+  (e: 'square-tap', tap: SquareTap): void;
 }>();
 
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -141,6 +155,61 @@ const reachableIds = computed<Set<string>>(() => {
 const auraList = computed(() =>
   auraElements(props.auras ?? [], entries.value, boardSize.value.squareSize, props.metersPerSquare),
 );
+
+const toolActive = computed(() => props.tool !== 'none');
+
+/**
+ * Linhas de medição no espaço do tabuleiro. O protocolo fala em unidades de
+ * grade (1 = um quadrado): multiplicar pelo `squareSize` dá o pixel local.
+ */
+const measurementLines = computed(() => {
+  const size = boardSize.value.squareSize;
+  if (!(size > 0)) return [];
+  const list: PlayerMeasurement[] = [...(props.sharedMeasurements ?? [])];
+  if (props.localMeasurement) {
+    const ownId = props.localMeasurement.userId;
+    const withoutOwn = list.filter((entry) => entry.userId !== ownId);
+    list.splice(0, list.length, ...withoutOwn, props.localMeasurement);
+  }
+  const fontSize = Math.max(10, Math.min(22, size * 0.42));
+  return list.map((measurement, index) => {
+    const start = { x: measurement.start.x * size, y: measurement.start.y * size };
+    const end = { x: measurement.end.x * size, y: measurement.end.y * size };
+    return {
+      id: `${measurement.userId || 'medicao'}-${index}`,
+      x1: start.x,
+      y1: start.y,
+      x2: end.x,
+      y2: end.y,
+      labelX: (start.x + end.x) / 2,
+      labelY: (start.y + end.y) / 2,
+      distance: measurement.distance,
+      color: measurement.color || '#ff8c00',
+      fontSize,
+    };
+  });
+});
+
+const rulerStartMarker = computed(() => {
+  const size = boardSize.value.squareSize;
+  if (!props.rulerStart || !(size > 0)) return null;
+  return {
+    cx: props.rulerStart.x * size,
+    cy: props.rulerStart.y * size,
+    r: Math.max(4, Math.min(14, size * 0.18)),
+  };
+});
+
+const measurementStroke = computed(() =>
+  Math.max(2, Math.min(6, boardSize.value.squareSize * 0.08)),
+);
+
+const canvasLabel = computed(() => {
+  const base = `Tabuleiro ${props.gridWidth} por ${props.gridHeight}. Zoom ${zoomLabel.value}.`;
+  if (props.tool === 'ruler') return `${base} Régua: toque em dois quadrados.`;
+  if (props.tool === 'ping') return `${base} Ping: toque num quadrado.`;
+  return base;
+});
 
 const cameraStyle = computed(() => ({
   transform: `translate3d(${camera.x}px, ${camera.y}px, 0) scale(${camera.scale})`,
@@ -262,6 +331,7 @@ function focusFromClient(clientX: number, clientY: number) {
 }
 
 function handleWheel(event: WheelEvent) {
+  if (toolActive.value) return;
   if (wheelLock) return;
   wheelLock = true;
   requestAnimationFrame(() => {
@@ -375,6 +445,13 @@ function handlePointerDown(event: PointerEvent) {
   }
 
   if (pointers.size >= 2) {
+    // Com ferramenta ativa o segundo dedo não vira pinça: o gesto acidental
+    // não pode mexer na câmera no meio da medição.
+    if (toolActive.value) {
+      gesture = 'none';
+      resetPress();
+      return;
+    }
     startPinch();
     resetPress();
     return;
@@ -385,12 +462,14 @@ function handlePointerDown(event: PointerEvent) {
   pressMoved = false;
   longPressTriggered = false;
   gesture = props.moveMode && props.interactive ? 'none' : 'pan';
+  if (toolActive.value) gesture = 'none';
   panStart = { x: event.clientX, y: event.clientY, camX: camera.x, camY: camera.y };
 
   clearLongPress();
   const startClient = { x: event.clientX, y: event.clientY };
   pressTimer = setTimeout(() => {
     pressTimer = null;
+    if (toolActive.value) return;
     const token = tokenAtPoint(startClient.x, startClient.y);
     if (token) {
       longPressTriggered = true;
@@ -403,7 +482,7 @@ function handlePointerMove(event: PointerEvent) {
   if (!pointers.has(event.pointerId)) return;
   pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
-  if (gesture === 'pinch' && pointers.size >= 2) {
+  if (gesture === 'pinch' && pointers.size >= 2 && !toolActive.value) {
     const ratio = pointerDistance() / pinchStart.dist;
     applyCamera(
       zoomAround(
@@ -448,6 +527,16 @@ function handlePointerUp(event: PointerEvent) {
   // `pointerup` atrasado não pode virar movimento.
   if (!wasActivePress && !wasPan && !wasPinch) return;
   if (wasLongPress || wasPan || wasPinch || wasMoved) return;
+
+  // Ferramenta ativa: o toque escolhe um quadrado, mesmo em cima de um token.
+  if (toolActive.value) {
+    const grid = gridPointAt(event.clientX, event.clientY);
+    if (!grid) return;
+    const squareId = gridToSquareId(grid, props.gridWidth, props.gridHeight);
+    if (!squareId) return;
+    emit('square-tap', { squareId, point: grid });
+    return;
+  }
 
   const token = tokenAtPoint(event.clientX, event.clientY);
   if (token) {
@@ -519,10 +608,10 @@ const pingList = computed(() => {
       <div
         ref="canvasRef"
         class="board-canvas"
-        :class="{ 'is-compact-labels': compactLabels }"
+        :class="{ 'is-compact-labels': compactLabels, 'tool-active': toolActive }"
         :style="{ width: `${boardSize.width}px`, height: `${boardSize.height}px` }"
         role="group"
-        :aria-label="`Tabuleiro ${gridWidth} por ${gridHeight}. Zoom ${zoomLabel}.`"
+        :aria-label="canvasLabel"
         @pointerdown="handlePointerDown"
         @pointermove="handlePointerMove"
         @pointerup="handlePointerUp"
@@ -548,6 +637,41 @@ const pingList = computed(() => {
           :is-measuring="false"
           :memo-key="gridWidth * 1000 + gridHeight"
         />
+
+        <svg
+          v-if="boardSize.width > 0 && (measurementLines.length || rulerStartMarker)"
+          class="board-measurements"
+          :viewBox="`0 0 ${boardSize.width} ${boardSize.height}`"
+          aria-hidden="true"
+        >
+          <g v-for="line in measurementLines" :key="line.id">
+            <line
+              :x1="line.x1"
+              :y1="line.y1"
+              :x2="line.x2"
+              :y2="line.y2"
+              :stroke="line.color"
+              :stroke-width="measurementStroke"
+              stroke-linecap="round"
+            />
+            <circle :cx="line.x1" :cy="line.y1" :r="measurementStroke * 1.4" :fill="line.color" />
+            <text
+              class="board-measurements__label"
+              :x="line.labelX"
+              :y="line.labelY"
+              :font-size="line.fontSize"
+            >
+              {{ line.distance }}
+            </text>
+          </g>
+          <circle
+            v-if="rulerStartMarker"
+            class="board-measurements__start"
+            :cx="rulerStartMarker.cx"
+            :cy="rulerStartMarker.cy"
+            :r="rulerStartMarker.r"
+          />
+        </svg>
 
         <div
           v-for="aura in auraList"
@@ -713,6 +837,39 @@ const pingList = computed(() => {
 
 .board-grid :deep(.grid-viewport) {
   overflow: hidden;
+}
+
+.board-measurements {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.board-measurements__label {
+  fill: var(--paper);
+  font-family: var(--font-data);
+  font-weight: 500;
+  text-anchor: middle;
+  dominant-baseline: central;
+  paint-order: stroke;
+  stroke: var(--ink-0);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.board-measurements__start {
+  fill: var(--manila);
+  stroke: var(--ink-0);
+  stroke-width: 2;
+}
+
+.board-canvas.tool-active {
+  cursor: crosshair;
+  box-shadow: inset 0 0 0 2px var(--accent-ink);
 }
 
 .board-aura {
