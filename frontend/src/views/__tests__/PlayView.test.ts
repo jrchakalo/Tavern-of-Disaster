@@ -198,15 +198,16 @@ describe('PlayView — shell do jogador', () => {
     expect(socketServiceMock.disconnect).toHaveBeenCalledTimes(1);
   }, 15000);
 
-  it('keeps the revision as a visually hidden debug hook and does not show role', async () => {
+  it('keeps revision and role as visually hidden debug hooks', async () => {
     const wrapper = mountPlay();
     await flushPromises();
 
     const revision = wrapper.get('.play-header__revision');
     expect(revision.text()).toBe('rev 7');
     expect(revision.classes()).toContain('sr-only');
-    expect(wrapper.find('.play-header__role').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain('Jogador');
+    const role = wrapper.get('.play-header__role');
+    expect(role.classes()).toContain('sr-only');
+    expect(role.text()).toBe('Jogador');
     wrapper.unmount();
   });
 
