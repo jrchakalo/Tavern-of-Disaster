@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import Icon from '../Icon.vue'
 import { useSystemStore } from '../../stores/systemStore'
 import { isTableDm, resolveTableEntry } from '../../services/tableEntry'
-import { systemDisplayName } from '../../services/systemLabels'
+import { SYSTEM_DISPLAY_NAMES, systemDisplayName } from '../../services/systemLabels'
 import { inviteLinkFor } from '../../services/tableLinks'
 import { copyToClipboard } from '../../services/clipboard'
 import { toast } from '../../services/toast'
@@ -34,7 +34,10 @@ const entryLabel = computed(() => (isDm.value ? 'Mestrar' : 'Jogar'))
 const systemName = computed(() => {
   const system = systemStore.getById(props.table.systemId ?? null)
   if (system) return systemDisplayName(system)
-  return props.table.systemName ?? (props.table.systemKey ? props.table.systemKey : 'Sem sistema')
+  if (props.table.systemKey && SYSTEM_DISPLAY_NAMES[props.table.systemKey]) {
+    return SYSTEM_DISPLAY_NAMES[props.table.systemKey]
+  }
+  return props.table.systemName ?? 'Sem sistema'
 })
 const playerCount = computed(() => props.table.players?.length ?? 0)
 const playerLabel = computed(() =>

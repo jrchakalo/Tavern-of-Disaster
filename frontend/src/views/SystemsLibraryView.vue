@@ -180,7 +180,6 @@ onMounted(() => {
         <div class="system-file__body">
           <header class="system-file__head">
             <div class="system-file__title">
-              <p class="system-file__key">{{ system.key }}</p>
               <h2>{{ systemDisplayName(system) }}</h2>
             </div>
             <span v-if="isDefault(system)" class="badge warning">Padrão da plataforma</span>
