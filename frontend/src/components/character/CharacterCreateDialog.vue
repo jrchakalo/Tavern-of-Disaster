@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import type { CharacterProfile, SystemDTO } from '../../types';
 import BaseDialog from '../ui/BaseDialog.vue';
-import type { CharacterCreatePayload } from './characterCreateTypes';
+import type { CharacterCreatePayload, CharacterOwner } from './characterCreateTypes';
 
 const props = withDefaults(
   defineProps<{
@@ -13,6 +13,8 @@ const props = withDefaults(
     /** Nome do dono exibido; o dono é fixo no fluxo do jogador. */
     ownerName?: string;
     ownerId?: string;
+    /** Lista de donos (Mestre + membros): só o Mestre recebe esta prop. */
+    owners?: CharacterOwner[];
     /** Só o Mestre escolhe sistema; o jogador herda o da mesa. */
     canChooseSystem?: boolean;
     systems?: SystemDTO[];
@@ -24,6 +26,7 @@ const props = withDefaults(
     systemName: 'D&D 5e',
     ownerName: '',
     ownerId: '',
+    owners: () => [],
     canChooseSystem: false,
     systems: () => [],
     submitting: false,
@@ -38,11 +41,20 @@ const emit = defineEmits<{
 
 const name = ref('');
 const selectedSystemKey = ref(props.systemKey);
+const selectedOwnerId = ref(props.ownerId);
 const concept = ref('');
 const className = ref('');
 const level = ref('');
 const nameError = ref('');
 const nameInput = ref<HTMLInputElement | null>(null);
+
+const hasOwnerChoice = computed(() => props.owners.length > 0);
+
+const leadText = computed(() =>
+  hasOwnerChoice.value
+    ? 'O Mestre pode criar a ficha no nome de qualquer membro da mesa e vincular a um token depois.'
+    : 'Você pode criar a ficha agora e vincular a um token depois. O Mestre faz o vínculo quando o tabuleiro estiver pronto.',
+);
 
 const effectiveSystemName = computed(() => {
   const selected = props.systems.find((system) => system.key === selectedSystemKey.value);
@@ -54,6 +66,7 @@ const effectiveSystemName = computed(() => {
 function reset() {
   name.value = '';
   selectedSystemKey.value = props.systemKey || 'dnd5e';
+  selectedOwnerId.value = props.ownerId || props.owners[0]?._id || '';
   concept.value = '';
   className.value = '';
   level.value = '';
@@ -93,7 +106,9 @@ function submit() {
     systemKey: selectedSystemKey.value || 'dnd5e',
     ...(Object.keys(profile).length ? { profile } : {}),
     ...(concept.value.trim() ? { notes: concept.value.trim() } : {}),
-    ...(props.ownerId ? { ownerId: props.ownerId } : {}),
+    ...(props.ownerId || (hasOwnerChoice.value && selectedOwnerId.value)
+      ? { ownerId: hasOwnerChoice.value ? selectedOwnerId.value : props.ownerId }
+      : {}),
   };
   emit('submit', payload);
 }
@@ -103,8 +118,7 @@ function submit() {
   <BaseDialog :open="open" title="Nova ficha" @close="emit('cancel')">
     <form id="character-create-form" class="character-create" novalidate @submit.prevent="submit">
       <p class="character-create__lead">
-        Você pode criar a ficha agora e vincular a um token depois. O Mestre faz o vínculo
-        quando o tabuleiro estiver pronto.
+        {{ leadText }}
       </p>
 
       <div class="character-create__field">
@@ -145,8 +159,18 @@ function submit() {
         </div>
 
         <div class="character-create__field">
-          <span class="character-create__label">Dono</span>
-          <p class="character-create__readonly">
+          <label class="character-create__label" for="character-create-owner">Dono</label>
+          <template v-if="hasOwnerChoice">
+            <select id="character-create-owner" v-model="selectedOwnerId">
+              <option v-for="owner in owners" :key="owner._id" :value="owner._id">
+                {{ owner.username }}{{ owner.isDM ? ' (Mestre)' : '' }}
+              </option>
+            </select>
+            <span class="character-create__hint">
+              O Mestre cria em nome de qualquer membro. O dono pode abrir a ficha no celular.
+            </span>
+          </template>
+          <p v-else class="character-create__readonly">
             <span>{{ ownerName || 'Você' }}</span>
             <span class="character-create__hint">Ficha vinculada à sua conta</span>
           </p>

@@ -72,4 +72,50 @@ describe('CharacterCreateDialog', () => {
     expect(wrapper.text()).toContain('Definido pela mesa');
     wrapper.unmount();
   });
+
+  it('Mestre escolhe o dono e envia ownerId no payload', async () => {
+    const wrapper = mountDialog({
+      canChooseSystem: true,
+      ownerId: 'dm-1',
+      owners: [
+        { _id: 'dm-1', username: 'Mestre', isDM: true },
+        { _id: 'user-2', username: 'Ana', isDM: false },
+      ],
+      systems: [
+        { _id: 'sys-1', key: 'dnd5e', name: 'D&D 5e' },
+        { _id: 'sys-2', key: 'ordem-paranormal-2', name: 'Ordem Paranormal 2' },
+      ],
+    });
+
+    expect(wrapper.get('#character-create-owner').element.value).toBe('dm-1');
+    expect(wrapper.text()).toContain('Mestre (Mestre)');
+
+    await wrapper.get('#character-create-owner').setValue('user-2');
+    await wrapper.get('#character-create-name').setValue('Lyra');
+    await wrapper.get('#character-create-system').setValue('ordem-paranormal-2');
+    await wrapper.get('form.character-create').trigger('submit');
+
+    const payload = wrapper.emitted('submit')?.[0]?.[0] as {
+      systemKey: string;
+      ownerId?: string;
+    };
+    expect(payload.systemKey).toBe('ordem-paranormal-2');
+    expect(payload.ownerId).toBe('user-2');
+    wrapper.unmount();
+  });
+
+  it('mantém o dono fixo quando o jogador cria a própria ficha', async () => {
+    const wrapper = mountDialog({
+      ownerId: 'user-2',
+      owners: [],
+    });
+
+    expect(wrapper.find('#character-create-owner').exists()).toBe(false);
+    await wrapper.get('#character-create-name').setValue('Lyra');
+    await wrapper.get('form.character-create').trigger('submit');
+
+    const payload = wrapper.emitted('submit')?.[0]?.[0] as { ownerId?: string };
+    expect(payload.ownerId).toBe('user-2');
+    wrapper.unmount();
+  });
 });

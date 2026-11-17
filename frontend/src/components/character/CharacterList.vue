@@ -11,15 +11,26 @@ const props = withDefaults(
     tableSystemName?: string;
     emptyTitle?: string;
     emptyText?: string;
+    /** Rótulo acessível da região. */
+    label?: string;
     /** Inclui o dono na linha (útil para o Mestre). */
     showOwner?: boolean;
+    /** Nome legível por `ownerId`; sem ele a linha mostra o id cru. */
+    ownerNames?: Record<string, string>;
+    /** Ação secundária do vazio (o Mestre não precisa “pedir ao Mestre”). */
+    showAskMaster?: boolean;
+    emptyActionLabel?: string;
   }>(),
   {
     loading: false,
     tableSystemName: '',
     emptyTitle: 'Nenhuma ficha nesta mesa',
     emptyText: 'Você pode criar a ficha agora e vincular a um token depois.',
+    label: 'Suas fichas nesta mesa',
     showOwner: false,
+    ownerNames: () => ({}),
+    showAskMaster: true,
+    emptyActionLabel: 'Criar ficha',
   },
 );
 
@@ -40,6 +51,11 @@ const sortedCharacters = computed(() =>
   [...props.characters].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
 );
 
+function ownerLabel(character: CharacterDTO): string {
+  if (!character.ownerId) return 'Sem dono';
+  return props.ownerNames[character.ownerId] || character.ownerId;
+}
+
 function systemLabel(character: CharacterDTO): string {
   if (character.systemKey && SYSTEM_LABELS[character.systemKey]) {
     return SYSTEM_LABELS[character.systemKey];
@@ -59,7 +75,7 @@ function vitalsLabel(character: CharacterDTO): string {
 </script>
 
 <template>
-  <section class="character-list" aria-label="Suas fichas nesta mesa">
+  <section class="character-list" :aria-label="label">
     <div v-if="loading" class="character-list__loading" role="status">
       <span class="character-list__skeleton" aria-hidden="true"></span>
       Carregando fichas…
@@ -70,9 +86,14 @@ function vitalsLabel(character: CharacterDTO): string {
       <p class="character-list__empty-text">{{ emptyText }}</p>
       <div class="character-list__empty-actions">
         <button type="button" class="btn character-list__create" @click="emit('create')">
-          Criar ficha
+          {{ emptyActionLabel }}
         </button>
-        <button type="button" class="btn secondary" @click="emit('ask-master')">
+        <button
+          v-if="showAskMaster"
+          type="button"
+          class="btn secondary"
+          @click="emit('ask-master')"
+        >
           Pedir ao Mestre
         </button>
       </div>
@@ -101,7 +122,8 @@ function vitalsLabel(character: CharacterDTO): string {
             <span v-if="vitalsLabel(character)" class="character-list__vitals">
               {{ vitalsLabel(character) }}
             </span>
-            <span v-if="showOwner" class="character-list__owner">Dono: {{ character.ownerId }}</span>
+            <span v-if="showOwner" class="character-list__owner">Dono: {{ ownerLabel(character) }}</span>
+            <slot name="meta" :character="character" />
           </p>
         </div>
 
@@ -112,6 +134,10 @@ function vitalsLabel(character: CharacterDTO): string {
         >
           Abrir ficha
         </button>
+
+        <div v-if="$slots.tools" class="character-list__tools">
+          <slot name="tools" :character="character" />
+        </div>
       </li>
     </ul>
   </section>
@@ -185,6 +211,7 @@ function vitalsLabel(character: CharacterDTO): string {
 
 .character-list__item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--s-3);
   min-width: 0;
@@ -256,12 +283,28 @@ function vitalsLabel(character: CharacterDTO): string {
   font-size: var(--text-2xs);
 }
 
+.character-list__meta > * + *::before {
+  content: '·';
+  margin-right: var(--s-2);
+  color: var(--text-faint);
+}
+
 .character-list__vitals {
   color: var(--text);
 }
 
 .character-list__owner {
-  color: var(--text-faint);
+  color: var(--text-muted);
+}
+
+.character-list__tools {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  min-width: 0;
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--line);
 }
 
 .character-list__open {

@@ -150,4 +150,20 @@ describe('DMPanel', () => {
     expect(wrapper.text()).toContain('D&D 5e vale como padrão');
     wrapper.unmount();
   });
+
+  it('abre a biblioteca de fichas pela aba Sessão', async () => {
+    const wrapper = mountPanel({
+      activeTab: 'session',
+      characters: [{ _id: 'char-1', name: 'Lyra', ownerId: 'u-2', tableId: 'table-1' }],
+      tokensOnMap: [],
+    });
+
+    const open = wrapper.findAll('button').find((button) => button.text() === 'Abrir fichas');
+    expect(open).toBeTruthy();
+    await open!.trigger('click');
+
+    expect(wrapper.emitted('open-character-library')).toHaveLength(1);
+    expect(wrapper.text()).toContain('1 ficha · 1 sem token nesta cena');
+    wrapper.unmount();
+  });
 });

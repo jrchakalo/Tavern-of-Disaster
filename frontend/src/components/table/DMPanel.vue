@@ -78,6 +78,7 @@ const emit = defineEmits<{
   (e: 'undo-move'): void;
   (e: 'next-turn'): void;
   (e: 'open-character-sheet', characterId: string): void;
+  (e: 'open-character-library'): void;
   (e: 'add-token'): void;
   (e: 'select-token', tokenId: string): void;
 }>();
@@ -208,6 +209,21 @@ const systemDefaultNote = computed(() => {
     return 'Nenhum sistema fixado nesta mesa. D&D 5e vale como padrão para novas fichas; escolher um sistema não migra fichas existentes.';
   }
   return 'Define presets de dados e atributos de novas fichas. Fichas existentes não migram.';
+});
+
+const linkedCharacterIds = computed(
+  () => new Set(props.tokensOnMap.map((token) => token.characterId).filter((id): id is string => Boolean(id))),
+);
+
+const charactersWithoutToken = computed(
+  () => props.characters.filter((character) => !linkedCharacterIds.value.has(character._id)).length,
+);
+
+const characterSummary = computed(() => {
+  if (!props.characters.length) return 'Nenhuma ficha na mesa ainda.';
+  const total = props.characters.length;
+  const withoutToken = charactersWithoutToken.value;
+  return `${total} ${total === 1 ? 'ficha' : 'fichas'} · ${withoutToken} sem token nesta cena.`;
 });
 </script>
 
@@ -433,6 +449,22 @@ const systemDefaultNote = computed(() => {
             <div><dt>Iniciativa</dt><dd>{{ rowCount }} {{ rowCount === 1 ? 'entrada' : 'entradas' }}</dd></div>
           </dl>
           <p class="panel-hint">Encerrar a sessão pede confirmação e mostra a tela final para jogadores e TV.</p>
+        </section>
+
+        <section class="panel-block" aria-labelledby="dm-sheets-title">
+          <div class="panel-block__head">
+            <h4 id="dm-sheets-title">Fichas da mesa</h4>
+            <button
+              type="button"
+              class="btn btn-xs"
+              @click="emit('open-character-library')"
+            >Abrir fichas</button>
+          </div>
+          <p class="panel-hint">{{ characterSummary }}</p>
+          <p class="panel-hint">
+            O Mestre abre qualquer ficha, cria em nome de um jogador e vincula fichas aos tokens
+            da cena ativa.
+          </p>
         </section>
       </section>
 

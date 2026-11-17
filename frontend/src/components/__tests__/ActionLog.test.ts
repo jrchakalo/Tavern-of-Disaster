@@ -41,4 +41,23 @@ describe('ActionLog', () => {
     expect(wrapper.find('[data-type="roll"]').exists()).toBe(true);
     expect(wrapper.find('[data-type="system"]').exists()).toBe(true);
   });
+
+  it('filtra por categoria sem duplicar: Ações exclui rolagens', () => {
+    const wrapper = mount(ActionLog, { props: { logs, category: 'action' } });
+
+    const entries = wrapper.findAll('.log-entry');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.attributes('data-type')).toBe('system');
+    // Os chips de tipo só refinam “Tudo”; a aba já é o filtro principal.
+    expect(wrapper.find('.log-filters').exists()).toBe(false);
+  });
+
+  it('explica o vazio da aba Rolagens', () => {
+    const wrapper = mount(ActionLog, {
+      props: { logs: [logs[1]!], category: 'roll' },
+    });
+
+    expect(wrapper.findAll('.log-entry')).toHaveLength(0);
+    expect(wrapper.text()).toContain('Nenhuma rolagem nesta sessão ainda');
+  });
 });
