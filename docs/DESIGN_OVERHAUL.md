@@ -276,7 +276,7 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
 - [x] Contraste AA, teclado, foco, labels, toasts, 44 px, 320 px, reduced motion.
       (guard `npm run check:contrast`; auditoria axe final em D6a.)
 - [x] E2E (81/81), caos, axe (9/9 rotas), unitários e build verdes.
-- [ ] Deploy Render/Vercel e smoke de produção.
+- [x] Deploy Render/Vercel e smoke de produção (2026-11-17).
 
 ### 8.1 Resultados dos gates (2026-11-17)
 
@@ -291,6 +291,7 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
 | axe (9 rotas) | **0 critical/serious** |
 | Caos (6 clientes) | **PASS** |
 | Assets públicos | 1,6 MB (logo 45 KB, vídeos 118–384 KB) |
+| Produção | frontend Vercel + API Render no ar; login por identificador validado |
 
 ## 9. Invariantes
 
