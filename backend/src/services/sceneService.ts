@@ -97,6 +97,31 @@ export async function updateSceneScale(sceneId: string, metersPerSquare: number)
   await Scene.findByIdAndUpdate(sceneId, { metersPerSquare });
 }
 
+export async function updateScene(sceneId: string, patch: ScenePayload): Promise<IScene> {
+  const update: Record<string, unknown> = {};
+  if (patch.name !== undefined) {
+    assertCondition(!!patch.name && patch.name.trim().length > 0, 'Nome inválido.', 400);
+    update.name = patch.name.trim();
+  }
+  if (patch.type !== undefined) update.type = patch.type;
+  if (patch.gridWidth !== undefined) {
+    assertCondition(patch.gridWidth > 0, 'Dimensões inválidas.', 400);
+    update.gridWidth = patch.gridWidth;
+  }
+  if (patch.gridHeight !== undefined) {
+    assertCondition(patch.gridHeight > 0, 'Dimensões inválidas.', 400);
+    update.gridHeight = patch.gridHeight;
+  }
+  if (patch.metersPerSquare !== undefined) {
+    assertCondition(patch.metersPerSquare > 0, 'Escala inválida.', 400);
+    update.metersPerSquare = patch.metersPerSquare;
+  }
+  assertCondition(Object.keys(update).length > 0, 'Nada para atualizar.', 400);
+  const updated = await Scene.findByIdAndUpdate(sceneId, update, { new: true });
+  assertCondition(!!updated, 'Cena não encontrada.', 404);
+  return updated!;
+}
+
 export async function updateSceneMap(sceneId: string, mapUrl: string) {
   const previousScene = await Scene.findById(sceneId).select('imageUrl');
   const updatedScene = await Scene.findByIdAndUpdate(sceneId, { imageUrl: mapUrl }, { new: true });

@@ -2,6 +2,7 @@ import { Server, Socket } from 'socket.io';
 import { getTableById, assertUserIsDM, assertUserInTable, updateTableStatus } from '../services/tableService';
 import {
   setActiveScene,
+  updateScene,
   updateSceneMap,
   reorderScenes,
   updateSceneGridDimensions,
@@ -29,6 +30,7 @@ import {
   zUpdateSessionStatusPayload,
   zStartTransitionPayload,
   zSetMapPayload,
+  zUpdateScenePayload,
   zReorderScenesPayload,
   zUpdateGridDimensionsPayload,
   zUpdateSceneScalePayload,
@@ -375,6 +377,35 @@ export function registerTableHandlers(io: Server, socket: Socket) {
     });
   };
 
+  const requestUpdateScene = async (payload: unknown, ackArg?: unknown) => {
+    const ack = extractAck(ackArg);
+    await runAction({
+      io,
+      socket,
+      event: 'requestUpdateScene',
+      ack,
+      log,
+      tableIdHint: hintTableId(payload),
+      body: async () => {
+        const data = validate(zUpdateScenePayload, payload);
+        const userId = socket.data.user?.id;
+        assertCondition(!!userId, 'Usuário não autenticado.', 401);
+        const table = await loadClaimedTable(userId, data.tableId, { requireDM: true });
+        const sceneBelongs = table.scenes.some((scene) => scene.toString() === data.sceneId);
+        assertCondition(sceneBelongs, 'Cena não pertence a esta mesa.', 404);
+
+        const updated = await updateScene(data.sceneId, data.patch);
+        const revision = await bumpRevision(data.tableId);
+        const bundle = await loadSessionState(data.tableId);
+        const changes: SessionPatchChanges = { scenes: bundle?.state.scenes };
+        if (table.activeScene?.toString() === data.sceneId) {
+          changes.activeScene = mapScene(updated);
+        }
+        return { tableId: data.tableId, revision, changes };
+      },
+    });
+  };
+
   const requestReorderScenes = async (payload: unknown, ackArg?: unknown) => {
     const ack = extractAck(ackArg);
     await runAction({
@@ -474,6 +505,7 @@ export function registerTableHandlers(io: Server, socket: Socket) {
   socket.on('requestUpdateSessionStatus', requestUpdateSessionStatus);
   socket.on('requestStartTransition', requestStartTransition);
   socket.on('requestSetMap', requestSetMap);
+  socket.on('requestUpdateScene', requestUpdateScene);
   socket.on('requestReorderScenes', requestReorderScenes);
   socket.on('requestUpdateGridDimensions', requestUpdateGridDimensions);
   socket.on('requestUpdateSceneScale', requestUpdateSceneScale);

@@ -953,6 +953,15 @@ class SocketService {
     return this.emitRequest('requestUpdateGridDimensions', { tableId, sceneId, newGridWidth, newGridHeight }, ack);
   }
 
+  updateScene(
+    tableId: string,
+    sceneId: string,
+    patch: { name?: string; type?: 'battlemap' | 'image'; gridWidth?: number; gridHeight?: number; metersPerSquare?: number },
+    ack?: (a: Ack) => void,
+  ) {
+    return this.emitRequest('requestUpdateScene', { tableId, sceneId, patch }, ack);
+  }
+
   updateSceneScale(tableId: string, sceneId: string, metersPerSquare: number, ack?: (a: Ack) => void) {
     return this.emitRequest('requestUpdateSceneScale', { tableId, sceneId, metersPerSquare }, ack);
   }

@@ -109,6 +109,23 @@ export const zSetMapPayload = z.object({
   mapUrl: sanitizeText(z.string().trim().min(1).max(2048)),
 });
 
+export const zUpdateScenePayload = z.object({
+  tableId,
+  sceneId,
+  patch: z
+    .object({
+      name: z.string().trim().min(1).max(120).optional(),
+      type: z.enum(['battlemap', 'image']).optional(),
+      gridWidth: z.number().int().min(1).max(5000).optional(),
+      gridHeight: z.number().int().min(1).max(5000).optional(),
+      metersPerSquare: z.number().positive().max(10000).optional(),
+    })
+    .strict()
+    .refine((value) => Object.keys(value).length > 0, {
+      message: 'Envie ao menos um campo da cena.',
+    }),
+});
+
 export const zReorderScenesPayload = z.object({
   tableId,
   orderedSceneIds: z.array(objectId).min(1).max(200),
@@ -913,6 +930,7 @@ export type UpdateSessionStatusPayload = z.infer<typeof zUpdateSessionStatusPayl
 export type StartTransitionPayload = z.infer<typeof zStartTransitionPayload>;
 export type SetMapPayload = z.infer<typeof zSetMapPayload>;
 export type ReorderScenesPayload = z.infer<typeof zReorderScenesPayload>;
+export type UpdateScenePayload = z.infer<typeof zUpdateScenePayload>;
 export type UpdateGridDimensionsPayload = z.infer<typeof zUpdateGridDimensionsPayload>;
 export type UpdateSceneScalePayload = z.infer<typeof zUpdateSceneScalePayload>;
 export type EditInitiativeEntryPayload = z.infer<typeof zEditInitiativeEntryPayload>;
