@@ -3549,8 +3549,8 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--raised);
