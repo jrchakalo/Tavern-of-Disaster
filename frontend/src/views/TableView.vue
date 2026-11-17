@@ -590,8 +590,6 @@ async function handleCharacterSave(payload: Partial<Character>) {
 
 async function handleCharacterDelete() {
   if (!tableId || !activeCharacterId.value) return;
-  const confirmed = window.confirm('Remover esta ficha? Esta ação não pode ser desfeita.');
-  if (!confirmed) return;
   try {
     await characterStore.deleteCharacter(tableId, activeCharacterId.value);
     toast.success('Ficha removida.');
