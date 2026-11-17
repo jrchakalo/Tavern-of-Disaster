@@ -1,0 +1,605 @@
+<script setup lang="ts">
+import { computed, nextTick, ref, watch } from 'vue';
+import SceneManager from '../SceneManager.vue';
+import DMSessionControls from '../DMSessionControls.vue';
+import TableSharePanel from './TableSharePanel.vue';
+import InitiativePanel from '../InitiativePanel.vue';
+import DiceRoller from '../DiceRoller.vue';
+import type { AssetUsage } from '../../services/storageService';
+import type {
+  Character,
+  IInitiativeEntry,
+  IScene,
+  PlayerInfo,
+  SystemDTO,
+  TokenInfo,
+} from '../../types';
+
+export type DmPanelTab = 'scene' | 'initiative' | 'session' | 'invite';
+
+interface Props {
+  activeTab: DmPanelTab;
+  tableId: string;
+  sessionStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED';
+  pauseInput: number;
+  pauseRemaining: number;
+  inviteCode: string;
+  displayConnected: boolean;
+  scenes: IScene[];
+  activeSceneId: string | null;
+  mapUrlInput: string;
+  newSceneName: string;
+  newSceneImageUrl: string;
+  newSceneType: 'battlemap' | 'image';
+  isUploadingMap: boolean;
+  mapUploadProgress: number;
+  mapUploadError: string;
+  assetUsage: AssetUsage | null;
+  initiativeList: IInitiativeEntry[];
+  tokensOnMap: TokenInfo[];
+  metersPerSquare: number;
+  currentUser: PlayerInfo | null;
+  isDM: boolean;
+  myActiveToken: TokenInfo | null;
+  currentTurnTokenId: string | null;
+  gridWidth: number;
+  gridHeight: number;
+  systemOptions: SystemDTO[];
+  selectedSystemId: string;
+  characters: Character[];
+  currentSystem: SystemDTO | null;
+  round: number | null;
+}
+
+const props = defineProps<Props>();
+
+const emit = defineEmits<{
+  (e: 'update:activeTab', tab: DmPanelTab): void;
+  (e: 'update:pauseInput', value: number): void;
+  (e: 'update-status', status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'): void;
+  (e: 'start-session'): void;
+  (e: 'set-active-scene', sceneId: string): void;
+  (e: 'edit-scene', scene: IScene): void;
+  (e: 'delete-scene', sceneId: string): void;
+  (e: 'reorder-scenes', scenes: IScene[]): void;
+  (e: 'set-map'): void;
+  (e: 'create-scene'): void;
+  (e: 'update:mapUrlInput', value: string): void;
+  (e: 'update:newSceneName', value: string): void;
+  (e: 'update:newSceneImageUrl', value: string): void;
+  (e: 'update:newSceneType', value: 'battlemap' | 'image'): void;
+  (e: 'upload-map-file', file: File): void;
+  (e: 'apply-grid', value: { width: number; height: number; metersPerSquare: number }): void;
+  (e: 'system-change', systemId: string): void;
+  (e: 'edit-token', tokenId: string): void;
+  (e: 'remove-entry', entryId: string): void;
+  (e: 'reorder-initiative', order: IInitiativeEntry[]): void;
+  (e: 'reset-initiative'): void;
+  (e: 'undo-move'): void;
+  (e: 'next-turn'): void;
+  (e: 'open-character-sheet', characterId: string): void;
+  (e: 'add-token'): void;
+  (e: 'select-token', tokenId: string): void;
+}>();
+
+const tabs: Array<{ key: DmPanelTab; label: string; icon: string }> = [
+  { key: 'scene', label: 'Cena', icon: 'book' },
+  { key: 'initiative', label: 'Iniciativa', icon: 'users' },
+  { key: 'session', label: 'Sessão', icon: 'info' },
+  { key: 'invite', label: 'Convidar', icon: 'copy' },
+];
+
+const activeScene = computed(() => props.scenes.find((scene) => scene._id === props.activeSceneId) ?? null);
+const isBattlemap = computed(() => activeScene.value?.type !== 'image');
+
+const gridWidthDraft = ref(props.gridWidth);
+const gridHeightDraft = ref(props.gridHeight);
+const scaleDraft = ref(props.metersPerSquare);
+
+watch(() => props.gridWidth, (value) => { gridWidthDraft.value = value; });
+watch(() => props.gridHeight, (value) => { gridHeightDraft.value = value; });
+watch(() => props.metersPerSquare, (value) => { scaleDraft.value = value; });
+
+const rowCount = computed(() => props.initiativeList.length);
+const currentEntry = computed(() => props.initiativeList.find((entry) => entry.isCurrentTurn) ?? null);
+
+const tabButtonRefs = ref<HTMLButtonElement[]>([]);
+
+function selectTab(tab: DmPanelTab) {
+  if (tab !== props.activeTab) emit('update:activeTab', tab);
+}
+
+async function onTabKeydown(event: KeyboardEvent, index: number) {
+  const keys = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'];
+  if (!keys.includes(event.key)) return;
+  event.preventDefault();
+  let nextIndex = index;
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % tabs.length;
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + tabs.length) % tabs.length;
+  if (event.key === 'Home') nextIndex = 0;
+  if (event.key === 'End') nextIndex = tabs.length - 1;
+  const nextTab = tabs[nextIndex];
+  if (!nextTab) return;
+  selectTab(nextTab.key);
+  await nextTick();
+  tabButtonRefs.value[nextIndex]?.focus();
+}
+
+function applyGrid() {
+  const width = Math.max(1, Math.min(200, Math.round(Number(gridWidthDraft.value) || props.gridWidth)));
+  const height = Math.max(1, Math.min(200, Math.round(Number(gridHeightDraft.value) || props.gridHeight)));
+  const scale = Math.max(0.1, Math.min(50, Number(scaleDraft.value) || props.metersPerSquare));
+  gridWidthDraft.value = width;
+  gridHeightDraft.value = height;
+  scaleDraft.value = scale;
+  emit('apply-grid', { width, height, metersPerSquare: scale });
+}
+
+function isInTurn(token: TokenInfo): boolean {
+  return props.initiativeList.some((entry) => entry.tokenId === token._id);
+}
+
+function tokenOwnerName(token: TokenInfo): string {
+  return token.ownerId?.username || 'Sem dono';
+}
+</script>
+
+<template>
+  <div class="dm-panel-content">
+    <header class="dm-panel__header">
+      <div class="dm-panel__tabs" role="tablist" aria-label="Painel do Mestre">
+        <button
+          v-for="(tab, index) in tabs"
+          :key="tab.key"
+          :ref="(el) => { if (el) tabButtonRefs[index] = el as HTMLButtonElement; }"
+          type="button"
+          role="tab"
+          class="dm-panel__tab"
+          :class="{ 'is-active': activeTab === tab.key }"
+          :id="`panel-tab-${tab.key}`"
+          :aria-selected="activeTab === tab.key"
+          :aria-controls="`dm-tabpanel-${tab.key}`"
+          :tabindex="activeTab === tab.key ? 0 : -1"
+          @click="selectTab(tab.key)"
+          @keydown="onTabKeydown($event, index)"
+        >
+          <span>{{ tab.label }}</span>
+        </button>
+      </div>
+      <button type="button" class="btn btn-sm dm-panel__add" @click="emit('add-token')">
+        ＋ Token
+      </button>
+    </header>
+
+    <div class="dm-panel__body">
+      <section
+        v-show="activeTab === 'scene'"
+        :id="'dm-tabpanel-scene'"
+        role="tabpanel"
+        aria-labelledby="panel-tab-scene"
+        class="dm-panel__section dm-panel__section--scene"
+        tabindex="0"
+      >
+        <SceneManager
+          :scenes="scenes"
+          :active-scene-id="activeSceneId"
+          :is-collapsed="false"
+          :map-url-input="mapUrlInput"
+          :new-scene-name="newSceneName"
+          :new-scene-image-url="newSceneImageUrl"
+          :new-scene-type="newSceneType"
+          :is-uploading-map="isUploadingMap"
+          :upload-progress="mapUploadProgress"
+          :upload-error="mapUploadError"
+          :usage="assetUsage"
+          @toggle="() => undefined"
+          @set-active-scene="emit('set-active-scene', $event)"
+          @edit-scene="emit('edit-scene', $event)"
+          @delete-scene="emit('delete-scene', $event)"
+          @reorder="emit('reorder-scenes', $event)"
+          @set-map="emit('set-map')"
+          @create-scene="emit('create-scene')"
+          @update:mapUrlInput="emit('update:mapUrlInput', $event)"
+          @update:newSceneName="emit('update:newSceneName', $event)"
+          @update:newSceneImageUrl="emit('update:newSceneImageUrl', $event)"
+          @update:newSceneType="emit('update:newSceneType', $event)"
+          @upload-map-file="emit('upload-map-file', $event)"
+        />
+
+        <section v-if="isBattlemap" class="panel-block" aria-labelledby="grid-title">
+          <h4 id="grid-title">Grade</h4>
+          <div class="grid-row">
+            <label>
+              <span>Colunas</span>
+              <input v-model.number="gridWidthDraft" class="input-sm" type="number" min="1" max="200" />
+            </label>
+            <label>
+              <span>Linhas</span>
+              <input v-model.number="gridHeightDraft" class="input-sm" type="number" min="1" max="200" />
+            </label>
+          </div>
+          <label class="grid-scale">
+            <span>Escala (m por quadrado)</span>
+            <input v-model.number="scaleDraft" class="input-sm" type="number" step="0.1" min="0.1" max="50" />
+          </label>
+          <p class="panel-hint">
+            {{ (scaleDraft || 0).toFixed(2) }}m ≈ {{ Math.round((scaleDraft || 0) * 3.28084) }}ft por quadrado.
+          </p>
+          <button type="button" class="btn btn-sm" @click="applyGrid">Aplicar grade</button>
+        </section>
+      </section>
+
+      <section
+        v-show="activeTab === 'initiative'"
+        :id="'dm-tabpanel-initiative'"
+        role="tabpanel"
+        aria-labelledby="panel-tab-initiative"
+        class="dm-panel__section"
+        tabindex="0"
+      >
+        <section class="panel-block" aria-labelledby="tokens-title">
+          <div class="panel-block__head">
+            <h4 id="tokens-title">Tokens na cena</h4>
+            <button type="button" class="btn btn-xs" @click="emit('add-token')">＋ Token</button>
+          </div>
+          <p v-if="!tokensOnMap.length" class="panel-hint">
+            Nenhum token no mapa. Use <strong>＋ Token</strong> e toque em um quadrado.
+          </p>
+          <ul v-else class="token-list">
+            <li v-for="token in tokensOnMap" :key="token._id">
+              <button
+                type="button"
+                class="token-list__main"
+                :aria-label="`Abrir inspetor de ${token.name}`"
+                @click="emit('select-token', token._id)"
+              >
+                <span class="token-dot" :style="{ background: token.color || 'var(--text-faint)' }" aria-hidden="true" />
+                <span class="token-list__name">{{ token.name }}</span>
+                <span class="token-list__owner">{{ tokenOwnerName(token) }}</span>
+                <span v-if="isInTurn(token)" class="badge success">No turno</span>
+              </button>
+            </li>
+          </ul>
+        </section>
+
+        <section v-if="isBattlemap" class="panel-block" aria-labelledby="initiative-title">
+          <h4 id="initiative-title" class="sr-only">Turno</h4>
+          <InitiativePanel
+            embedded
+            :initiative-list="initiativeList"
+            :tokens-on-map="tokensOnMap"
+            :meters-per-square="metersPerSquare"
+            :current-user="currentUser"
+            :isDM="isDM"
+            :my-active-token="myActiveToken"
+            :round="round"
+            @edit-token="emit('edit-token', $event)"
+            @remove-entry="emit('remove-entry', $event)"
+            @reorder="emit('reorder-initiative', $event)"
+            @reset-initiative="emit('reset-initiative')"
+            @undo-move="emit('undo-move')"
+            @next-turn="emit('next-turn')"
+            @open-character-sheet="emit('open-character-sheet', $event)"
+            @add-token="emit('add-token')"
+          />
+        </section>
+        <p v-else class="panel-hint">
+          Cenas do tipo imagem não usam iniciativa. Troque para uma cena de batalha na aba Cena.
+        </p>
+
+        <section v-if="isBattlemap" class="panel-block" aria-labelledby="dice-title">
+          <h4 id="dice-title">Dados</h4>
+          <p class="panel-hint">
+            {{ currentEntry ? `Rolagem no turno de ${currentEntry.characterName}.` : 'Nenhum turno ativo.' }}
+          </p>
+          <DiceRoller
+            :table-id="tableId"
+            :available-characters="characters"
+            :current-token-id="currentTurnTokenId"
+            :active-character-id="null"
+            :system="currentSystem"
+            mode="embedded"
+          />
+        </section>
+      </section>
+
+      <section
+        v-show="activeTab === 'session'"
+        :id="'dm-tabpanel-session'"
+        role="tabpanel"
+        aria-labelledby="panel-tab-session"
+        class="dm-panel__section"
+        tabindex="0"
+      >
+        <DMSessionControls
+          :session-status="sessionStatus"
+          :pause-input="pauseInput"
+          :pause-remaining="pauseRemaining"
+          :is-collapsed="false"
+          @toggle="() => undefined"
+          @update:pauseInput="emit('update:pauseInput', $event)"
+          @update-status="emit('update-status', $event)"
+          @start-session="emit('start-session')"
+        />
+
+        <section class="panel-block" aria-labelledby="system-title">
+          <h4 id="system-title">Sistema da mesa</h4>
+          <select
+            id="table-system-select"
+            class="system-select"
+            :value="selectedSystemId"
+            aria-label="Sistema da mesa"
+            @change="emit('system-change', ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">Sem sistema</option>
+            <option v-for="system in systemOptions" :key="system._id" :value="system._id">
+              {{ system.name }}
+            </option>
+          </select>
+          <p class="panel-hint">
+            Define os presets de dados e os atributos das fichas. Fichas existentes não migram.
+          </p>
+        </section>
+
+        <section class="panel-block" aria-labelledby="session-summary-title">
+          <h4 id="session-summary-title">Resumo</h4>
+          <dl class="summary-list">
+            <div><dt>Cena</dt><dd>{{ activeScene?.name || 'Nenhuma cena ativa' }}</dd></div>
+            <div><dt>Turno</dt><dd>{{ currentEntry?.characterName || 'Sem turno ativo' }}</dd></div>
+            <div v-if="round"><dt>Rodada</dt><dd>{{ round }}</dd></div>
+            <div><dt>Iniciativa</dt><dd>{{ rowCount }} {{ rowCount === 1 ? 'entrada' : 'entradas' }}</dd></div>
+          </dl>
+          <p class="panel-hint">Encerrar a sessão pede confirmação e mostra a tela final para jogadores e TV.</p>
+        </section>
+      </section>
+
+      <section
+        v-show="activeTab === 'invite'"
+        :id="'dm-tabpanel-invite'"
+        role="tabpanel"
+        aria-labelledby="panel-tab-invite"
+        class="dm-panel__section"
+        tabindex="0"
+      >
+        <TableSharePanel
+          :table-id="tableId"
+          :invite-code="inviteCode"
+          :display-connected="displayConnected"
+        />
+      </section>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.dm-panel-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  color: var(--text);
+}
+.dm-panel__header {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+.dm-panel__tabs {
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--s-1);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.dm-panel__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dm-panel__tab:hover { color: var(--text); background: var(--raised); }
+.dm-panel__tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.dm-panel__tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent-ink);
+}
+.dm-panel__add {
+  flex: none;
+  margin-bottom: var(--s-2);
+}
+.dm-panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s-4);
+}
+.dm-panel__section { outline: none; }
+.dm-panel__section:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.panel-block {
+  margin-top: var(--s-5);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+}
+.panel-block:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.panel-block h4 {
+  margin: 0 0 var(--s-3);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.panel-block__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-bottom: var(--s-3);
+}
+.panel-block__head h4 { margin: 0; }
+.panel-hint {
+  margin: 0 0 var(--s-3);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+.grid-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-3);
+}
+.grid-row label,
+.grid-scale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin: 0 0 var(--s-3);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.token-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.token-list__main {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.token-list__main:hover { border-color: var(--line-strong); background: var(--raised-2); }
+.token-list__main:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.token-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.token-list__name { font-size: var(--text-sm); font-weight: 600; }
+.token-list__owner {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badge { flex: none; }
+.system-select { width: 100%; }
+.summary-list { display: flex; flex-direction: column; gap: var(--s-2); margin: 0; }
+.summary-list div { display: flex; justify-content: space-between; gap: var(--s-3); }
+.summary-list dt { color: var(--text-muted); font-size: var(--text-xs); }
+.summary-list dd { margin: 0; font-size: var(--text-sm); font-weight: 500; }
+:deep(.scene-manager > .subsection-toggle) { display: none; }
+:deep(.scene-manager) { margin: 0; border-top: 0; padding-top: 0; }
+:deep(.scene-manager h4) {
+  margin: 0 0 var(--s-3);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+:deep(.scene-manager .panel-section) {
+  margin-top: var(--s-4);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+}
+:deep(.scene-manager .scene-list) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin: 0 0 var(--s-3);
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+}
+:deep(.scene-manager .scene-list li) {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+:deep(.scene-manager .scene-list li.active-scene) {
+  border-color: var(--accent-ink);
+  box-shadow: inset 3px 0 0 var(--accent-ink);
+}
+:deep(.scene-manager .scene-buttons) {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  margin-left: auto;
+}
+:deep(.scene-manager .scene-buttons button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 var(--s-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+:deep(.scene-manager .scene-buttons button:hover:not(:disabled)) { background: var(--raised-2); }
+:deep(.scene-manager .scene-buttons button:disabled) { color: var(--text-faint); cursor: not-allowed; }
+:deep(.scene-manager .scene-buttons .icon-btn) { width: 32px; padding: 0; }
+:deep(.scene-manager .drag-handle) { display: inline-flex; color: var(--text-muted); cursor: grab; }
+:deep(.scene-manager .create-scene-form) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+}
+:deep(.scene-manager .map-controls) { display: flex; flex-direction: column; gap: var(--s-2); }
+:deep(.scene-manager .upload-button) { width: 100%; }
+:deep(.scene-manager .usage-info) { margin-top: var(--s-2); }
+:deep(.dm-panel__section--session .panel-section > .subsection-toggle),
+:deep(.dm-panel__section .panel-section > .subsection-toggle) { display: none; }
+:deep(.session-controls) { display: flex; flex-direction: column; gap: var(--s-2); }
+:deep(.session-controls .row) { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+:deep(.session-controls label) { margin: 0; }
+:deep(.session-controls .session-btn) { align-self: flex-start; }
+:deep(.dm-panel__section .panel-section) { margin-top: 0; border-top: 0; padding-top: 0; }
+:deep(.dice-roller) {
+  padding: var(--s-3);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  min-width: 0;
+}
+@media (max-width: 420px) {
+  .dm-panel__tab { padding: 0 var(--s-2); }
+  .dm-panel__tab span { font-size: var(--text-xs); }
+  :deep(.scene-manager .scene-buttons button) { min-height: 44px; }
+}
+</style>

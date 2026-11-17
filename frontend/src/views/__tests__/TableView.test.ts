@@ -226,6 +226,7 @@ describe('TableView scene media feedback', () => {
   }
 
   it('envia mapa com progresso, aplica a URL e atualiza o uso', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({ sessionStatus: ref('PREPARING') });
     let resolveUpload: ((url: string) => void) | null = null;
     storageMocks.uploadMap.mockImplementation((_file, _tableId, onProgress) => {
       onProgress?.(37);
@@ -236,7 +237,7 @@ describe('TableView scene media feedback', () => {
 
     const wrapper = mountTable();
     await flushPromises();
-    const manager = findStub(wrapper, 'SceneManager');
+    const manager = findStub(wrapper, 'DMPanel');
     expect(manager).toBeTruthy();
 
     const file = new File(['px'], 'map.png', { type: 'image/png' });
@@ -245,15 +246,15 @@ describe('TableView scene media feedback', () => {
 
     expect(storageMocks.uploadMap).toHaveBeenCalledWith(file, 'table-1', expect.any(Function));
     expect(manager!.props('isUploadingMap')).toBe(true);
-    expect(manager!.props('uploadProgress')).toBe(37);
+    expect(manager!.props('mapUploadProgress')).toBe(37);
 
     resolveUpload!('/uploads/maps/new-map.webp');
     await flushPromises();
 
     expect(socketServiceMock.setMap).toHaveBeenCalledWith('table-1', '/uploads/maps/new-map.webp');
     expect(manager!.props('isUploadingMap')).toBe(false);
-    expect(manager!.props('uploadProgress')).toBe(100);
-    expect(manager!.props('usage')).toEqual(usageFixture);
+    expect(manager!.props('mapUploadProgress')).toBe(100);
+    expect(manager!.props('assetUsage')).toEqual(usageFixture);
     expect(storageMocks.fetchAssetUsage).toHaveBeenCalledTimes(2);
     expect(toastMock.success).toHaveBeenCalledWith('Mapa atualizado com sucesso.');
 
@@ -261,19 +262,20 @@ describe('TableView scene media feedback', () => {
   });
 
   it('mantém o erro de upload visível no painel', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({ sessionStatus: ref('PREPARING') });
     storageMocks.uploadMap.mockRejectedValue(
       new Error('A mesa atingiu o limite de armazenamento.'),
     );
 
     const wrapper = mountTable();
     await flushPromises();
-    const manager = findStub(wrapper, 'SceneManager');
+    const manager = findStub(wrapper, 'DMPanel');
     expect(manager).toBeTruthy();
 
     manager!.vm.$emit('upload-map-file', new File(['px'], 'big.png', { type: 'image/png' }));
     await flushPromises();
 
-    expect(manager!.props('uploadError')).toBe('A mesa atingiu o limite de armazenamento.');
+    expect(manager!.props('mapUploadError')).toBe('A mesa atingiu o limite de armazenamento.');
     expect(toastMock.error).toHaveBeenCalledWith('A mesa atingiu o limite de armazenamento.');
 
     wrapper.unmount();
@@ -308,6 +310,94 @@ describe('TableView scene media feedback', () => {
     await nextTick();
     expect(wrapper.find('.scene-image-error').exists()).toBe(false);
 
+    wrapper.unmount();
+  });
+});
+
+describe('TableView token lifecycle', () => {
+  function mountTable() {
+    return shallowMount(TableView, {
+      global: {
+        stubs: {
+          teleport: true,
+          Transition: false,
+        },
+      },
+    });
+  }
+
+  it('entra em modo de colocação e abre o formulário no primeiro quadrado livre', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({
+      squares: ref([
+        { id: 'sq-0', token: { _id: 'occupied' } },
+        { id: 'sq-1', token: null },
+      ]),
+    });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    await wrapper.find('.rail-add').trigger('click');
+    expect(wrapper.find('.placement-banner').exists()).toBe(true);
+
+    const firstFree = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Usar primeiro livre'));
+    expect(firstFree).toBeTruthy();
+    await firstFree!.trigger('click');
+
+    expect(wrapper.find('.placement-banner').exists()).toBe(false);
+    const form = wrapper.findAllComponents({ name: 'TokenCreationForm' });
+    expect(form.length).toBe(1);
+    wrapper.unmount();
+  });
+
+  it('mostra ator, movimento restante, rodada e ações na turn bar', async () => {
+    const token = {
+      _id: 'token-1',
+      name: 'Ghoul',
+      movement: 9,
+      remainingMovement: 6,
+      ownerId: { _id: 'dm-1', username: 'DM' },
+    };
+    tableStoreStub.__refs = createTableStoreRefs({
+      initiativeList: ref([
+        { _id: 'entry-1', characterName: 'Ghoul', tokenId: 'token-1', isCurrentTurn: true },
+      ]),
+      tokensOnMap: ref([token]),
+      currentTurnTokenId: ref('token-1'),
+    });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const text = wrapper.find('.turn-bar').text();
+    expect(text).toContain('Ghoul');
+    expect(text).toContain('6.0 m de 9.0 m');
+    expect(text).toContain('Rodada 1');
+    expect(text).toContain('Passar turno');
+
+    const nextButton = wrapper
+      .findAll('.turn-bar__actions button')
+      .find((button) => button.text().includes('Passar turno'));
+    expect(nextButton).toBeTruthy();
+    await nextButton!.trigger('click');
+    expect(socketServiceMock.nextTurn).toHaveBeenCalledWith('table-1', 'scene-1');
+    wrapper.unmount();
+  });
+
+  it('abre o inspetor ao clicar num token no tabuleiro', async () => {
+    const token = { _id: 'token-1', name: 'Ghoul', movement: 9, remainingMovement: 9 };
+    tableStoreStub.__refs = createTableStoreRefs({ tokensOnMap: ref([token]) });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const viewport = wrapper.findAllComponents({ name: 'MapViewport' })[0];
+    const onSquareLeftClick = viewport!.props('onSquareLeftClick') as (square: unknown) => void;
+    onSquareLeftClick({ id: 'sq-0', token });
+    await nextTick();
+
+    const inspector = wrapper.findAllComponents({ name: 'TokenEditForm' })[0];
+    expect(inspector!.props('open')).toBe(true);
+    expect(inspector!.props('token')).toMatchObject({ _id: 'token-1' });
     wrapper.unmount();
   });
 });
