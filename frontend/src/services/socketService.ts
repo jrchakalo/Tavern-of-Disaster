@@ -1114,13 +1114,19 @@ class SocketService {
     };
   }
 
-  private handleCharacterUpdated = (payload: CharacterLegacyUpdatedEvent) => {
-    const summary = this.summaryFromCharacterPayload(payload);
+  private handleCharacterUpdated = (
+    payload: CharacterLegacyUpdatedEvent & { character?: CharacterLegacyUpdatedEvent },
+  ) => {
+    // O backend emite `{ tableId, revision, characterId, character: summary }`;
+    // versões antigas emitiam a ficha plana. Normaliza os dois formatos para
+    // que a ficha aberta no DM/TV acompanhe PV/CA alterados por outro cliente.
+    const characterPayload = payload.character ?? payload;
+    const summary = this.summaryFromCharacterPayload(characterPayload);
     if (summary) {
       this.store.upsertCharacterSummary(summary);
     }
     try {
-      characterSyncHandler?.({ type: 'updated', character: payload });
+      characterSyncHandler?.({ type: 'updated', character: characterPayload });
     } catch {
       // Cache de fichas é best-effort; nunca quebra o handler de socket.
     }

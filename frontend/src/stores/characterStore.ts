@@ -130,12 +130,35 @@ export const useCharacterStore = defineStore('character', () => {
       return;
     }
     const payload = event.character;
-    if (!payload._id || !looksLikeFullCharacter(payload)) return;
-    const fullCharacter = payload as unknown as Character;
+    if (!payload._id) return;
+    const characterId = payload._id;
+
+    if (looksLikeFullCharacter(payload)) {
+      const fullCharacter = payload as unknown as Character;
+      Object.entries(charactersByTable.value).forEach(([tableId, list]) => {
+        if (list.some((char) => char._id === characterId)) {
+          upsertLocalCharacter(tableId, fullCharacter);
+        }
+      });
+      return;
+    }
+
+    // O servidor também emite a **ficha resumida** em `characterUpdated`
+    // (PV/CA/nome). Mescla no cache completo para a ficha aberta no DM/TV
+    // refletir mudanças feitas por outro cliente sem refetch.
     Object.entries(charactersByTable.value).forEach(([tableId, list]) => {
-      if (list.some((char) => char._id === fullCharacter._id)) {
-        upsertLocalCharacter(tableId, fullCharacter);
-      }
+      const existing = list.find((char) => char._id === characterId);
+      if (!existing) return;
+      upsertLocalCharacter(tableId, {
+        ...existing,
+        name: payload.name ?? existing.name,
+        avatarUrl: payload.avatarUrl ?? existing.avatarUrl,
+        systemKey: payload.systemKey ?? existing.systemKey,
+        profile: payload.profile
+          ? { ...existing.profile, ...payload.profile }
+          : existing.profile,
+        stats: payload.stats ? { ...existing.stats, ...payload.stats } : existing.stats,
+      });
     });
   }
   registerCharacterSyncHandler(handleCharacterSync);

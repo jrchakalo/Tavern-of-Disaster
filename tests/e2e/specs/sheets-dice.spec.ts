@@ -598,11 +598,13 @@ async function openPlayerCharacterSheet(page: Page, characterName: string) {
 }
 
 async function closeSheet(page: Page): Promise<void> {
-  const close = page.locator('.character-sheet button[aria-label="Fechar"]');
-  if (await close.count()) {
-    await close.first().click().catch(() => undefined);
-    await expect(page.locator('.character-sheet')).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
-  }
+  const sheet = page.locator('.character-sheet');
+  if (!(await sheet.isVisible().catch(() => false))) return;
+  const close = sheet.locator('button[aria-label="Fechar"]').first();
+  if (await close.count()) await close.click().catch(() => undefined);
+  const discard = page.getByRole('button', { name: 'Descartar e fechar' });
+  if (await discard.isVisible().catch(() => false)) await discard.click().catch(() => undefined);
+  await expect(sheet).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
 }
 
 async function readSheetNumber(sheet: ReturnType<Page['locator']>, label: RegExp): Promise<number> {

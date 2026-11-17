@@ -643,6 +643,7 @@ test('rolagem do DM chega ao jogador remoto e o log persiste', async () => {
   expect(payload.total).toBe(kept + payload.modifier);
   expect(payload.modifier).toBe(4);
 
+  await openDmLog(dmPage!);
   await expect(
     dmPage!.locator('.log-entry[data-type="roll"]', { hasText: DICE_EXPRESSION }).first(),
   ).toBeVisible({ timeout: UI_TIMEOUT_MS });
