@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import type { IInitiativeEntry, TokenInfo } from '../../types';
 import { characterResourceBadges } from '../character/summary';
 
@@ -12,6 +12,12 @@ const props = withDefaults(
     orientation?: 'horizontal' | 'vertical';
     /** Fichas que este cliente pode abrir (dono/DM) — vira `.character-link`. */
     openableCharacterIds?: string[];
+    /** Rodada da iniciativa, quando o servidor expõe esse dado. */
+    round?: number | null;
+    /** Uma linha: ator atual + próximo. Usado no rodapé do jogador. */
+    compact?: boolean;
+    /** Rola até o ator atual ao montar/trocar de turno. */
+    autoScroll?: boolean;
   }>(),
   {
     tokens: () => [],
@@ -19,12 +25,19 @@ const props = withDefaults(
     currentUserId: null,
     orientation: 'horizontal',
     openableCharacterIds: () => [],
+    round: null,
+    compact: false,
+    autoScroll: true,
   },
 );
 
-const emit = defineEmits<{ (e: 'open-character-sheet', characterId: string): void }>();
+const emit = defineEmits<{
+  (e: 'open-character-sheet', characterId: string): void;
+  (e: 'open-sheet'): void;
+}>();
 
 const openableIds = computed(() => new Set(props.openableCharacterIds));
+const listRef = ref<HTMLElement | null>(null);
 
 const enriched = computed(() =>
   props.entries.map((entry) => {
@@ -32,17 +45,94 @@ const enriched = computed(() =>
     const isMine = Boolean(
       token && props.currentUserId && token.ownerId && token.ownerId._id === props.currentUserId,
     );
-    const remaining = token ? `${token.remainingMovement.toFixed(1)}m` : '—';
+    const remaining = token ? `${token.remainingMovement.toFixed(1).replace('.', ',')} m` : '—';
     const vitals = token?.character ?? null;
     const resources = characterResourceBadges(vitals);
     return { entry, token, isMine, remaining, vitals, resources };
   }),
 );
+
+const currentIndex = computed(() => enriched.value.findIndex((item) => item.entry.isCurrentTurn));
+const current = computed(() => (currentIndex.value >= 0 ? enriched.value[currentIndex.value] : null));
+const next = computed(() => {
+  if (!enriched.value.length) return null;
+  if (currentIndex.value < 0) return enriched.value[0] ?? null;
+  return enriched.value[(currentIndex.value + 1) % enriched.value.length] ?? null;
+});
+
+const roundLabel = computed(() => (props.round && props.round > 0 ? `Rodada ${props.round}` : ''));
+const compactLabel = computed(() => {
+  if (!current.value) return 'Iniciativa não iniciada';
+  return roundLabel.value ? `${roundLabel.value}` : 'Turno';
+});
+const compactActor = computed(() => current.value?.entry.characterName ?? '');
+const nextIsMine = computed(() => Boolean(next.value?.isMine && next.value?.entry._id !== current.value?.entry._id));
+
+const reducedMotion = computed(() => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+});
+
+async function scrollToCurrent() {
+  if (!props.autoScroll || props.compact) return;
+  await nextTick();
+  const list = listRef.value;
+  if (!list) return;
+  const element = list.querySelector<HTMLElement>('[data-current="true"]');
+  if (!element) return;
+  if (typeof element.scrollIntoView === 'function') {
+    element.scrollIntoView({
+      inline: 'center',
+      block: 'nearest',
+      behavior: reducedMotion.value ? 'auto' : 'smooth',
+    });
+    return;
+  }
+  // Fallback determinístico (jsdom/navegadores antigos): mantém o ator visível.
+  const left = element.offsetLeft - list.clientWidth / 2 + element.clientWidth / 2;
+  if (list.scrollTo) list.scrollTo({ left: Math.max(0, left), behavior: 'auto' });
+  else list.scrollLeft = Math.max(0, left);
+}
+
+watch(
+  () => [current.value?.entry._id ?? '', props.entries.length, props.orientation] as const,
+  () => {
+    void scrollToCurrent();
+  },
+  { immediate: true, flush: 'post' },
+);
 </script>
 
 <template>
-  <div class="initiative-strip" :class="`orientation-${orientation}`">
-    <p v-if="!enriched.length" class="initiative-strip__empty">Nenhuma entrada de iniciativa.</p>
+  <button
+    v-if="compact"
+    type="button"
+    class="initiative-line"
+    aria-haspopup="dialog"
+    :aria-label="`${compactLabel}${compactActor ? `, ${compactActor}` : ''}. Abrir iniciativa.`"
+    @click="emit('open-sheet')"
+  >
+    <span
+      class="initiative-line__dot"
+      :style="{ background: current?.token?.color || 'var(--text-faint)' }"
+      aria-hidden="true"
+    ></span>
+    <span class="initiative-line__copy">
+      <span class="initiative-line__label">{{ compactLabel }}</span>
+      <span v-if="compactActor" class="initiative-line__actor">{{ compactActor }}</span>
+    </span>
+    <span v-if="nextIsMine" class="initiative-line__next">Próximo: você</span>
+    <span class="initiative-line__action" aria-hidden="true">Iniciativa</span>
+  </button>
+
+  <div
+    v-else
+    ref="listRef"
+    class="initiative-strip"
+    :class="`orientation-${orientation}`"
+    :aria-label="roundLabel ? `Iniciativa, ${roundLabel}` : 'Iniciativa'"
+  >
+    <p v-if="!enriched.length" class="initiative-strip__empty">Iniciativa não iniciada.</p>
     <template v-else>
       <article
         v-for="item in enriched"
@@ -50,11 +140,12 @@ const enriched = computed(() =>
         class="initiative-item"
         :class="{ 'is-current': item.entry.isCurrentTurn, 'is-mine': item.isMine }"
         :aria-current="item.entry.isCurrentTurn ? 'true' : undefined"
+        :data-current="item.entry.isCurrentTurn ? 'true' : undefined"
       >
         <div class="initiative-item__top">
           <span
             class="initiative-item__dot"
-            :style="{ background: item.token?.color || 'var(--color-text-muted)' }"
+            :style="{ background: item.token?.color || 'var(--text-faint)' }"
             aria-hidden="true"
           ></span>
           <button
@@ -66,13 +157,10 @@ const enriched = computed(() =>
           >
             {{ item.entry.characterName }}
           </button>
-          <span
-            v-else
-            class="initiative-item__name"
-            :title="item.entry.characterName"
-          >
+          <span v-else class="initiative-item__name" :title="item.entry.characterName">
             {{ item.entry.characterName }}
           </span>
+          <span v-if="item.isMine" class="initiative-item__mine">Você</span>
         </div>
         <div v-if="item.vitals" class="initiative-item__vitals">
           <span
@@ -80,7 +168,7 @@ const enriched = computed(() =>
             class="initiative-item__hp"
             :title="`PV ${item.vitals.currentHP ?? 0} / ${item.vitals.maxHP}`"
           >
-            PV {{ item.vitals.currentHP ?? 0 }} / {{ item.vitals.maxHP }}
+            PV {{ item.vitals.currentHP ?? 0 }}/{{ item.vitals.maxHP }}
           </span>
           <span v-if="item.vitals.defense != null" class="initiative-item__def">
             CA {{ item.vitals.defense }}
@@ -107,12 +195,75 @@ const enriched = computed(() =>
 </template>
 
 <style scoped>
+.initiative-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: 40px;
+  padding: 0 var(--s-4);
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-sans);
+  text-align: left;
+}
+
+.initiative-line:hover {
+  background: var(--raised);
+}
+
+.initiative-line__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.initiative-line__copy {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.initiative-line__label {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+}
+
+.initiative-line__actor {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.initiative-line__next {
+  flex: 0 0 auto;
+  color: var(--accent-ink);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+}
+
+.initiative-line__action {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: var(--text-2xs);
+}
+
 .initiative-strip {
   display: flex;
-  gap: 8px;
-  padding: 4px 12px;
+  gap: var(--s-2);
+  padding: var(--s-1) var(--s-4);
   overflow-x: auto;
   overflow-y: hidden;
+  scroll-snap-type: x proximity;
   scrollbar-width: thin;
 }
 
@@ -123,117 +274,127 @@ const enriched = computed(() =>
   overflow-x: hidden;
   overflow-y: auto;
   padding: 0;
+  scroll-snap-type: y proximity;
 }
 
 .initiative-strip__empty {
   margin: 0;
-  padding: 8px 12px;
-  color: var(--color-text-muted);
-  font-size: 0.84rem;
+  padding: var(--s-3) var(--s-4);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
 .initiative-item {
   flex: 0 0 auto;
-  min-width: 118px;
-  max-width: 168px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  min-width: 132px;
+  max-width: 180px;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  scroll-snap-align: center;
 }
 
 .initiative-item.is-current {
-  border-color: var(--color-warning);
-  background: linear-gradient(180deg, rgba(210, 156, 68, 0.18), rgba(210, 156, 68, 0.05));
+  border-color: var(--manila);
+  background: var(--raised);
 }
 
 .initiative-item.is-mine {
-  box-shadow: inset 0 0 0 1px var(--color-accent-alt);
+  box-shadow: inset 0 0 0 1px var(--accent-ink);
 }
 
 .initiative-strip.orientation-vertical .initiative-item {
   min-width: 0;
   max-width: none;
+  padding: var(--s-3);
 }
 
 .initiative-item__top {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--s-2);
   min-width: 0;
 }
 
 .initiative-item__dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   flex: 0 0 auto;
   border-radius: 50%;
 }
 
 .initiative-item__name {
-  font-size: 0.84rem;
-  font-weight: 600;
-  white-space: nowrap;
   overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 600;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .character-link {
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--color-accent-alt);
+  color: var(--accent-ink);
   font: inherit;
-  font-size: 0.84rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: 600;
   text-align: left;
+  text-decoration: underline;
+  text-decoration-color: rgb(127 182 201 / 0.4);
+  text-underline-offset: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
 }
 
-.character-link:hover,
-.character-link:focus-visible {
-  text-decoration: underline;
+.character-link:hover {
+  color: var(--text);
 }
 
-.character-link:focus-visible {
-  outline: 2px solid var(--color-warning);
-  outline-offset: 2px;
-  border-radius: 4px;
+.initiative-item__mine {
+  margin-left: auto;
+  padding: 0 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  color: var(--accent-ink);
+  font-family: var(--font-data);
+  font-size: 0.5625rem;
 }
 
 .initiative-item__vitals {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-top: 4px;
-  font-size: 0.74rem;
+  gap: 2px 8px;
+  margin-top: var(--s-2);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
 }
 
 .initiative-item__hp {
-  font-weight: 700;
-  color: var(--color-text);
+  font-weight: 500;
+  color: var(--text);
 }
 
 .initiative-item__def {
-  font-weight: 700;
-  color: var(--color-accent-alt);
+  font-weight: 500;
+  color: var(--accent-ink);
 }
 
 .initiative-item__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-top: 4px;
-  font-size: 0.72rem;
-  color: var(--color-text-muted);
+  gap: 2px 8px;
+  margin-top: var(--s-2);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
 }
 
 .initiative-item__turn {
-  color: var(--color-warning);
-  font-weight: 700;
+  color: var(--manila);
+  font-weight: 500;
 }
 
 @media (prefers-reduced-motion: reduce) {

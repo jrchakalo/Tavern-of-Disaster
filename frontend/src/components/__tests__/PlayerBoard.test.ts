@@ -175,6 +175,25 @@ describe('PlayerBoard pointer input', () => {
     wrapper.unmount();
   });
 
+  it('opens details when tapping within the 44px token hit area', async () => {
+    const wrapper = await mountBoard({
+      gridWidth: 30,
+      gridHeight: 30,
+      moveMode: true,
+      interactive: true,
+    });
+    const el = wrapper.find('.board-canvas').element;
+
+    // Célula de 20px; o centro do token sq-0 fica em (10,10). Um toque a 20px
+    // ainda precisa abrir detalhes (hit box mínima de 44×44), e não mover.
+    firePointer(el, 'pointerdown', { pointerId: 9, pointerType: 'touch', clientX: 30, clientY: 10 });
+    firePointer(el, 'pointerup', { pointerId: 9, pointerType: 'touch', clientX: 30, clientY: 10 });
+
+    expect(wrapper.emitted('token-details')?.[0]?.[0]).toMatchObject({ _id: 'tok-1' });
+    expect(wrapper.emitted('request-move')).toBeUndefined();
+    wrapper.unmount();
+  });
+
   it('renders pings from grid coordinates', async () => {
     const wrapper = await mountBoard({
       moveMode: false,

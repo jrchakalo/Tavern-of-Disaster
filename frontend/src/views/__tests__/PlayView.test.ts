@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { ref } from 'vue';
 
@@ -27,9 +27,11 @@ const socketServiceMock = vi.hoisted(() => ({
   connect: vi.fn(),
   disconnect: vi.fn(),
   moveToken: vi.fn(),
+  undoMove: vi.fn(),
   nextTurn: vi.fn(),
   sendChatMessage: vi.fn(),
   onChatEvent: vi.fn(() => () => {}),
+  requestResync: vi.fn(),
 }));
 vi.mock('../../services/socketService', () => ({ socketService: socketServiceMock }));
 
@@ -119,6 +121,8 @@ function createRefs(overrides: Record<string, unknown> = {}) {
     auras: ref([]),
     pings: ref([]),
     isDM: ref(false),
+    recentRolls: ref([]),
+    characters: ref([]),
     ...overrides,
   };
 }
@@ -147,8 +151,12 @@ beforeEach(() => {
   socketServiceMock.connect.mockClear();
   socketServiceMock.disconnect.mockClear();
   socketServiceMock.moveToken.mockClear();
+  socketServiceMock.undoMove.mockClear();
   socketServiceMock.nextTurn.mockClear();
+  socketServiceMock.requestResync.mockClear();
   socketServiceMock.moveToken.mockResolvedValue({ ok: true, revision: 8, serverNowMs: 0 });
+  socketServiceMock.undoMove.mockResolvedValue({ ok: true, revision: 9, serverNowMs: 0 });
+  socketServiceMock.nextTurn.mockResolvedValue({ ok: true, revision: 8, serverNowMs: 0 });
   socketServiceMock.sendChatMessage.mockReset();
   socketServiceMock.sendChatMessage.mockResolvedValue({ ok: true, revision: 8, serverNowMs: 0 });
   socketServiceMock.onChatEvent.mockClear();
@@ -160,32 +168,45 @@ beforeEach(() => {
   Object.values(toastMock).forEach((fn) => fn.mockClear());
 });
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 function mountPlay() {
   return mount(PlayView, {
-    global: { stubs: { PlayerBoard: true } },
+    global: { stubs: { PlayerBoard: true, teleport: true } },
   });
 }
 
-describe('PlayView', () => {
-  it('mounts, shows table name and connection status, and connects/disconnects', async () => {
+function visibleTurnBar(wrapper: ReturnType<typeof mountPlay>) {
+  return wrapper.find('.turn-bar');
+}
+
+describe('PlayView — shell do jogador', () => {
+  it('mounts, shows table name, status and connection, and connects/disconnects', async () => {
     const wrapper = mountPlay();
     await flushPromises();
 
     expect(wrapper.text()).toContain('Taverna do Destino');
+    expect(wrapper.text()).toContain('Salão Principal');
+    expect(wrapper.text()).toContain('Ao vivo');
     expect(wrapper.text()).toContain('Conectado');
     expect(socketServiceMock.connect).toHaveBeenCalledWith('table-1');
     expect(tableAccessMock.joinTableByInvite).not.toHaveBeenCalled();
 
     wrapper.unmount();
     expect(socketServiceMock.disconnect).toHaveBeenCalledTimes(1);
-  });
+  }, 15000);
 
-  it('shows revision and role badge from the session protocol', async () => {
+  it('keeps the revision as a visually hidden debug hook and does not show role', async () => {
     const wrapper = mountPlay();
     await flushPromises();
 
-    expect(wrapper.text()).toContain('rev 7');
-    expect(wrapper.text()).toContain('Jogador');
+    const revision = wrapper.get('.play-header__revision');
+    expect(revision.text()).toBe('rev 7');
+    expect(revision.classes()).toContain('sr-only');
+    expect(wrapper.find('.play-header__role').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Jogador');
     wrapper.unmount();
   });
 
@@ -216,12 +237,24 @@ describe('PlayView', () => {
     expect(wrapper.text()).toContain('Código de convite inválido.');
     expect(socketServiceMock.connect).not.toHaveBeenCalled();
 
-    await wrapper.get('.invite-overlay__card button.control-btn').trigger('click');
+    await wrapper.get('.invite-overlay__card button.btn').trigger('click');
     expect(routerMock.back.mock.calls.length + routerMock.push.mock.calls.length).toBe(1);
     wrapper.unmount();
   });
 
-  it('ends the turn through the socket with the current revision', async () => {
+  it('shows the onboarding empty state with the three CTAs when the player has no token', async () => {
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    expect(wrapper.find('.session-overlay--empty').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Seu personagem ainda não está no tabuleiro');
+    expect(wrapper.text()).toContain('Criar ficha');
+    expect(wrapper.text()).toContain('Vincular token');
+    expect(wrapper.text()).toContain('Pedir ao Mestre');
+    wrapper.unmount();
+  });
+
+  it('keeps the turn bar and its actions inside the player turn', async () => {
     tableStoreStub.__refs = createRefs({
       currentTurnTokenId: ref('tok-1'),
       myActiveToken: ref(baseToken),
@@ -233,7 +266,10 @@ describe('PlayView', () => {
     const wrapper = mountPlay();
     await flushPromises();
 
-    const endTurn = wrapper.get('button.control-btn--end');
+    expect(visibleTurnBar(wrapper).exists()).toBe(true);
+    expect(wrapper.get('.turn-bar').text()).toContain('Seu turno');
+    const endTurn = wrapper.get('.turn-bar__btn--secondary');
+    expect(endTurn.text()).toContain('Encerrar turno');
     expect(endTurn.attributes('disabled')).toBeUndefined();
     await endTurn.trigger('click');
 
@@ -241,16 +277,49 @@ describe('PlayView', () => {
     wrapper.unmount();
   });
 
-  it('disables movement controls outside the player turn', async () => {
+  it('collapses to the initiative line outside the player turn', async () => {
+    tableStoreStub.__refs = createRefs({
+      tokensOnMap: ref([{ ...baseToken, characterId: 'char-1' }]),
+      currentTurnTokenId: ref('tok-2'),
+      myActiveToken: ref(null),
+      initiativeList: ref([
+        { _id: 'init-1', characterName: 'Lyra', tokenId: 'tok-1', isCurrentTurn: false },
+        { _id: 'init-2', characterName: 'Goblin', tokenId: 'tok-2', isCurrentTurn: true },
+      ]),
+    });
+
     const wrapper = mountPlay();
     await flushPromises();
 
-    expect(wrapper.get('button.control-btn--move').attributes('disabled')).toBeDefined();
-    expect(wrapper.get('button.control-btn--end').attributes('disabled')).toBeDefined();
+    expect(visibleTurnBar(wrapper).exists()).toBe(false);
+    const line = wrapper.get('.initiative-line');
+    expect(line.text()).toContain('Goblin');
+    await line.trigger('click');
+    expect(wrapper.get('.initiative-sheet').exists()).toBe(true);
     wrapper.unmount();
   });
 
-  it('renders the condensed character card (PV, defesa, movimento) from the character REST', async () => {
+  it('explains disabled actions when the socket is offline during the turn', async () => {
+    tableStoreStub.__refs = createRefs({
+      connectionStatus: ref('disconnected'),
+      currentTurnTokenId: ref('tok-1'),
+      myActiveToken: ref(baseToken),
+      initiativeList: ref([
+        { _id: 'init-1', characterName: 'Lyra', tokenId: 'tok-1', isCurrentTurn: true },
+      ]),
+    });
+
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    expect(wrapper.get('.play-offline').text()).toContain('Sem conexão');
+    expect(wrapper.get('.turn-bar__btn--primary').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('.turn-bar__btn--secondary').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('.turn-bar').text()).toContain('Sem conexão');
+    wrapper.unmount();
+  });
+
+  it('renders the compact character card with readable labels', async () => {
     characterMock.getMyCharacters.mockResolvedValue([
       {
         _id: 'char-1',
@@ -268,18 +337,17 @@ describe('PlayView', () => {
     const wrapper = mountPlay();
     await flushPromises();
 
-    expect(characterMock.getMyCharacters).toHaveBeenCalledWith('table-1');
     const card = wrapper.get('.token-card');
     expect(card.text()).toContain('Lyra');
     expect(card.text()).toContain('PV 42 / 50');
-    expect(card.text()).toContain('Def 16');
-    expect(card.text()).toContain('6.0m / 9.0m');
-    expect(card.text()).toContain('4 / 6 quad');
+    expect(card.text()).toContain('CA 16');
+    expect(card.text()).toContain('6,0 m');
+    expect(card.text()).toContain('4/6 quad');
     expect(card.text()).toContain('Seu turno');
     wrapper.unmount();
   });
 
-  it('keeps the player card visible outside their turn and blocks movement', async () => {
+  it('keeps the player card visible outside their turn as awaiting', async () => {
     characterMock.getMyCharacters.mockResolvedValue([
       {
         _id: 'char-1',
@@ -289,7 +357,6 @@ describe('PlayView', () => {
         stats: { currentHP: 42, maxHP: 50, defense: 16 },
       },
     ]);
-    // Turno atual é de outro token; o token do jogador segue na mesa.
     tableStoreStub.__refs = createRefs({
       tokensOnMap: ref([{ ...baseToken, characterId: 'char-1' }]),
       currentTurnTokenId: ref('tok-2'),
@@ -306,16 +373,12 @@ describe('PlayView', () => {
     const card = wrapper.get('.token-card');
     expect(card.text()).toContain('Lyra');
     expect(card.text()).toContain('PV 42 / 50');
-    expect(card.text()).toContain('Def 16');
-    expect(card.text()).toContain('6.0m / 9.0m');
     expect(card.text()).toContain('Aguardando');
-
-    expect(wrapper.get('button.control-btn--move').attributes('disabled')).toBeDefined();
-    expect(wrapper.get('button.control-btn--end').attributes('disabled')).toBeDefined();
+    expect(visibleTurnBar(wrapper).exists()).toBe(false);
     wrapper.unmount();
   });
 
-  it('sends requestMoveToken with expectedRevision when the player taps a reachable square', async () => {
+  it('asks for confirmation before moving and cancels without a request', async () => {
     tableStoreStub.__refs = createRefs({
       currentTurnTokenId: ref('tok-1'),
       myActiveToken: ref(baseToken),
@@ -324,8 +387,34 @@ describe('PlayView', () => {
     const wrapper = mountPlay();
     await flushPromises();
 
-    await wrapper.get('button.control-btn--move').trigger('click');
+    await wrapper.get('.turn-bar__btn--primary').trigger('click');
     wrapper.findComponent(PlayerBoard).vm.$emit('request-move', 'sq-4');
+    await flushPromises();
+
+    const confirm = wrapper.get('.move-confirm');
+    expect(confirm.text()).toContain('quad');
+    expect(confirm.text()).toContain('m');
+    expect(socketServiceMock.moveToken).not.toHaveBeenCalled();
+
+    await confirm.findAll('button')[0].trigger('click');
+    expect(wrapper.find('.move-confirm').exists()).toBe(false);
+    expect(socketServiceMock.moveToken).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('sends requestMoveToken with expectedRevision after confirmation and offers undo', async () => {
+    tableStoreStub.__refs = createRefs({
+      currentTurnTokenId: ref('tok-1'),
+      myActiveToken: ref(baseToken),
+    });
+
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    await wrapper.get('.turn-bar__btn--primary').trigger('click');
+    wrapper.findComponent(PlayerBoard).vm.$emit('request-move', 'sq-4');
+    await flushPromises();
+    await wrapper.get('.move-confirm__actions .btn:not(.secondary)').trigger('click');
     await flushPromises();
 
     expect(socketServiceMock.moveToken).toHaveBeenCalledWith({
@@ -335,6 +424,11 @@ describe('PlayView', () => {
       expectedRevision: 7,
     });
     expect(toastMock.success).toHaveBeenCalled();
+    expect(wrapper.get('.undo-bar').text()).toContain('Desfazer');
+
+    await wrapper.get('.undo-bar__action').trigger('click');
+    await flushPromises();
+    expect(socketServiceMock.undoMove).toHaveBeenCalledWith('table-1', 'tok-1');
     wrapper.unmount();
   });
 
@@ -355,7 +449,7 @@ describe('PlayView', () => {
     wrapper.unmount();
   });
 
-  it('opens the read-only token details sheet on long press', async () => {
+  it('opens the token details sheet on tap and closes from the action footer', async () => {
     tableStoreStub.__refs = createRefs({
       currentTurnTokenId: ref('tok-1'),
       myActiveToken: ref({ ...baseToken, characterId: 'char-1' }),
@@ -377,7 +471,7 @@ describe('PlayView', () => {
     await flushPromises();
 
     const sheet = wrapper.get('.details-sheet');
-    expect(sheet.text()).toContain('Lyra');
+    expect(sheet.text()).toContain('Defesa (CA)');
     expect(sheet.text()).toContain('42 / 50');
 
     await wrapper.get('.details-sheet__close').trigger('click');
@@ -385,19 +479,72 @@ describe('PlayView', () => {
     wrapper.unmount();
   });
 
-  it('registra o listener de chat e abre o painel pelo toolbar', async () => {
+  it('registers the chat listener and switches the bottom nav to Chat', async () => {
     const wrapper = mountPlay();
     await flushPromises();
 
     expect(socketServiceMock.onChatEvent).toHaveBeenCalledWith('chatMessage', expect.any(Function));
 
-    const toggle = wrapper.get('[data-testid="chat-toggle"]');
-    expect(toggle.text()).toContain('Chat');
-    await toggle.trigger('click');
+    const chatTab = wrapper.get('[data-testid="chat-toggle"]');
+    expect(chatTab.text()).toContain('Chat');
+    await chatTab.trigger('click');
     await flushPromises();
 
-    expect(wrapper.find('[data-testid="chat-panel"]').exists()).toBe(true);
+    expect(chatTab.attributes('aria-current')).toBe('page');
     expect(wrapper.get('[data-testid="chat-panel"]').attributes('aria-label')).toBe('Chat da mesa');
+
+    await wrapper.get('[data-tab="mesa"]').trigger('click');
+    expect(wrapper.get('[data-tab="mesa"]').attributes('aria-current')).toBe('page');
+    wrapper.unmount();
+  });
+
+  it('switches between Ficha, Dados and Chamada tabs', async () => {
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    await wrapper.get('[data-tab="ficha"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('[data-tab="ficha"]').attributes('aria-current')).toBe('page');
+
+    await wrapper.get('[data-tab="dados"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('[data-tab="dados"]').attributes('aria-current')).toBe('page');
+
+    await wrapper.get('[data-tab="chamada"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('[data-tab="chamada"]').attributes('aria-current')).toBe('page');
+    wrapper.unmount();
+  });
+
+  it('confirms before leaving the table and navigates to the tables route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ message: 'Você saiu da mesa.' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    await wrapper.get('.play-header__menu-btn').trigger('click');
+    const leaveMenuItem = wrapper
+      .findAll('.play-menu__item')
+      .find((item) => item.text() === 'Sair da mesa');
+    expect(leaveMenuItem).toBeTruthy();
+    await leaveMenuItem!.trigger('click');
+
+    const leaveButtons = wrapper
+      .findAll('button')
+      .filter((button) => button.text() === 'Sair da mesa' && button.classes('danger'));
+    expect(leaveButtons).toHaveLength(1);
+    await leaveButtons[0].trigger('click');
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/tables/table-1/leave'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(routerMock.push).toHaveBeenCalledWith({ name: 'tables' });
     wrapper.unmount();
   });
 });

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import type { Character, SystemDTO } from '../types';
 
 import SheetTabs from './character/SheetTabs.vue';
@@ -40,6 +40,50 @@ const draft = ref<SheetDraft>(buildDraft(null));
 const activeTab = ref<SheetTabKey>('identidade');
 /** Houve edição desde a última sincronização: protege o rascunho de patches externos. */
 const dirty = ref(false);
+
+const sheetRef = ref<HTMLElement | null>(null);
+let previouslyFocused: HTMLElement | null = null;
+
+watch(
+  () => props.open,
+  async (open) => {
+    if (open) {
+      previouslyFocused =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      await nextTick();
+      sheetRef.value?.focus();
+      return;
+    }
+    const target = previouslyFocused;
+    previouslyFocused = null;
+    if (target?.isConnected) {
+      await nextTick();
+      target.focus();
+    }
+  },
+  { immediate: true },
+);
+
+function trapFocus(event: KeyboardEvent) {
+  if (event.key !== 'Tab') return;
+  const root = sheetRef.value;
+  if (!root) return;
+  const focusables = Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
 
 /** Fichas de sistema próprio expõem `buildPatch` para o rodapé salvar. */
 type SystemSheetHandle = { buildPatch: () => Partial<Character> };
@@ -193,8 +237,21 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
 
 <template>
   <teleport to="body">
-    <div v-if="open" class="character-sheet-overlay" @click.self="emit('close')">
-      <div class="character-sheet" role="dialog" aria-modal="true" aria-label="Ficha do personagem">
+    <div
+      v-if="open"
+      class="character-sheet-overlay"
+      @click.self="emit('close')"
+      @keydown.esc="emit('close')"
+      @keydown="trapFocus"
+    >
+      <div
+        ref="sheetRef"
+        class="character-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Ficha do personagem"
+        tabindex="-1"
+      >
         <header class="sheet-header">
           <div class="sheet-header__text">
             <p class="sheet-label">Ficha do Personagem</p>
@@ -334,23 +391,33 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
 .character-sheet-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.65);
+  background: rgb(4 6 7 / 0.78);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 120;
-  padding: 16px;
+  padding:
+    max(16px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  overscroll-behavior: contain;
 }
 .character-sheet {
   width: min(760px, 95vw);
-  max-height: 95vh;
+  max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);
   overflow-y: auto;
-  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-alt));
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  background: var(--panel);
   border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--elev-3);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-overlay);
   padding: 20px;
-  color: var(--color-text);
+  color: var(--text);
+}
+.character-sheet:focus {
+  outline: none;
 }
 .sheet-header {
   display: flex;
@@ -362,10 +429,9 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
   min-width: 0;
 }
 .sheet-label {
-  text-transform: uppercase;
   font-size: 0.7rem;
-  letter-spacing: 1px;
-  color: var(--color-text-muted);
+  letter-spacing: 0;
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 .sheet-header h2 {
@@ -418,7 +484,8 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
   gap: 12px;
   position: sticky;
   bottom: -20px;
-  background: linear-gradient(180deg, transparent, var(--color-surface) 30%);
+  background: var(--panel);
+  border-top: 1px solid var(--line);
   padding: 8px 0 4px;
 }
 .sheet-footer .spacer {
@@ -431,9 +498,14 @@ function draftToRecords(kind: 'attacks' | 'features' | 'inventory'): RecordRow[]
   }
   .character-sheet {
     width: 100%;
-    max-height: 96dvh;
+    max-height: calc(100dvh - env(safe-area-inset-top));
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+  }
+  .character-sheet :deep(input),
+  .character-sheet :deep(select),
+  .character-sheet :deep(textarea) {
+    font-size: var(--text-base);
   }
   .sheet-footer {
     bottom: -16px;
