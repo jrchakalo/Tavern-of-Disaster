@@ -90,7 +90,7 @@ class FakePeerConnection {
   constructor(public config?: RTCConfiguration) {
     FakePeerConnection.instances.push(this);
   }
-  addTrack(track: FakeTrack, _stream: FakeMediaStream) {
+  addTrack(track: FakeTrack) {
     const sender = new FakeSender(track);
     this.senders.push(sender);
     return sender;
