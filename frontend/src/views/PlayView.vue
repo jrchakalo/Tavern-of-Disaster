@@ -102,6 +102,7 @@ const inviteCode = computed(() => {
 });
 const isMember = computed(() => you.value?.role === 'DM' || you.value?.role === 'PLAYER');
 const canWrite = computed(() => you.value?.role === 'DM' || you.value?.role === 'PLAYER');
+const roleLabel = computed(() => (you.value?.role === 'DM' ? 'Mestre' : 'Jogador'));
 
 const joining = ref(false);
 const inviteError = ref('');
@@ -896,6 +897,7 @@ onBeforeUnmount(() => {
       </button>
 
       <span class="play-header__revision sr-only" :title="`Revisão ${revision}`">rev {{ revision }}</span>
+      <span class="play-header__role sr-only">{{ roleLabel }}</span>
 
       <div v-if="menuOpen" ref="menuRef" class="play-menu" role="menu" aria-label="Opções da mesa">
         <p class="play-menu__meta">{{ presenceCount }} na mesa · {{ sceneName }}</p>
