@@ -230,6 +230,64 @@ describe('TableView scene media feedback', () => {
     return found.length > 0 ? found[0] : null;
   }
 
+  it('aplica alterações da cena pelo socket e reflete no estado local', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({ sessionStatus: ref('PREPARING') });
+    (socketServiceMock.updateScene as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      revision: 3,
+    });
+
+    const wrapper = mountTable();
+    await flushPromises();
+    const manager = findStub(wrapper, 'DMPanel');
+    expect(manager).toBeTruthy();
+
+    await (manager!.props('updateScene') as (sceneId: string, patch: unknown) => Promise<void>)(
+      'scene-1',
+      { name: 'Cripta Nova', gridWidth: 20, metersPerSquare: 2 },
+    );
+    await flushPromises();
+
+    expect(socketServiceMock.updateScene).toHaveBeenCalledWith('table-1', 'scene-1', {
+      name: 'Cripta Nova',
+      gridWidth: 20,
+      metersPerSquare: 2,
+    });
+    expect(tableStoreStub.__refs.scenes.value[0]).toMatchObject({
+      _id: 'scene-1',
+      name: 'Cripta Nova',
+      gridWidth: 20,
+      metersPerSquare: 2,
+    });
+    expect(toastMock.success).toHaveBeenCalledWith('Cena atualizada.');
+
+    wrapper.unmount();
+  });
+
+  it('propaga erro de atualização da cena com toast', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({ sessionStatus: ref('PREPARING') });
+    (socketServiceMock.updateScene as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      error: { code: 'FORBIDDEN', message: 'Apenas o Mestre altera a cena.' },
+      revision: 2,
+    });
+
+    const wrapper = mountTable();
+    await flushPromises();
+    const manager = findStub(wrapper, 'DMPanel');
+    expect(manager).toBeTruthy();
+
+    await expect(
+      (manager!.props('updateScene') as (sceneId: string, patch: unknown) => Promise<void>)(
+        'scene-1',
+        { name: 'Cripta Nova' },
+      ),
+    ).rejects.toThrow('Apenas o Mestre altera a cena.');
+    expect(toastMock.error).toHaveBeenCalledWith('Apenas o Mestre altera a cena.');
+
+    wrapper.unmount();
+  });
+
   it('cria e ativa a cena em um passo pelo callback do painel', async () => {
     tableStoreStub.__refs = createTableStoreRefs({ sessionStatus: ref('PREPARING') });
     const created = {

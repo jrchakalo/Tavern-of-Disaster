@@ -31,7 +31,7 @@ import CharacterLibrary from '../components/table/CharacterLibrary.vue';
 import HistoryDrawer from '../components/table/HistoryDrawer.vue';
 import CharacterCreateDialog from '../components/character/CharacterCreateDialog.vue';
 import type { CharacterCreatePayload, CharacterOwner } from '../components/character/characterCreateTypes';
-import type { SceneCreatePayload } from '../components/SceneManager.vue';
+import type { SceneCreatePayload, SceneUpdatePatch } from '../components/SceneManager.vue';
 import MediaDock from '../components/media/MediaDock.vue';
 import ParticipantGrid from '../components/media/ParticipantGrid.vue';
 import ChatPanel from '../components/chat/ChatPanel.vue';
@@ -953,31 +953,20 @@ watch(
   { immediate: true },
 );
 
-async function handleApplyGrid(value: { width: number; height: number; metersPerSquare: number }) {
-  if (!activeSceneId.value) {
-    toast.warning('Nenhuma cena ativa para aplicar a grade.');
-    return;
+async function handleUpdateScene(sceneId: string, patch: SceneUpdatePatch): Promise<void> {
+  if (!tableId) throw new Error('Mesa inválida para atualizar a cena.');
+  if (!sceneId) throw new Error('Cena inválida.');
+  const ack = await socketService.updateScene(tableId, sceneId, patch);
+  if (!ack.ok) {
+    const message = ack.error.message || 'Não foi possível atualizar a cena.';
+    toast.error(message);
+    throw new Error(message);
   }
-  const gridAck = await socketService.updateGridDimensions(
-    tableId,
-    activeSceneId.value,
-    value.width,
-    value.height,
-  );
-  if (!gridAck.ok) {
-    toast.error(gridAck.error.message || 'Não foi possível aplicar a grade.');
-    return;
+  const index = scenes.value.findIndex((scene) => scene._id === sceneId);
+  if (index !== -1) {
+    scenes.value[index] = { ...scenes.value[index]!, ...patch };
   }
-  const scaleAck = await socketService.updateSceneScale(
-    tableId,
-    activeSceneId.value,
-    value.metersPerSquare,
-  );
-  if (!scaleAck.ok) {
-    toast.error(scaleAck.error.message || 'A grade mudou, mas a escala não foi aplicada.');
-    return;
-  }
-  toast.success('Grade aplicada.');
+  toast.success('Cena atualizada.');
 }
 
 function handleMapImageLoad() {
@@ -1228,7 +1217,7 @@ const handleMiddleClickFree: MiddleClickHandler = (event) => {
 };
 
 // Mestre altera escala; jogadores recebem
-// A grade e a escala são aplicadas explicitamente em `handleApplyGrid` (aba Cena),
+// A grade e a escala são aplicadas explicitamente em “Aplicar alterações” (aba Cena),
 // evitando mutações destrutivas a cada tecla.
 
 function handleRightClick(square: GridSquare, event: MouseEvent) {
@@ -1397,7 +1386,7 @@ async function handleCreateScene(payload: SceneCreatePayload): Promise<void> {
       payload.metersPerSquare,
     );
     if (!scaleAck.ok) {
-      toast.warning('Cena criada, mas a escala não foi aplicada. Ajuste em “Aplicar grade”.');
+      toast.warning('Cena criada, mas a escala não foi aplicada. Ajuste em “Aplicar alterações” na aba Cena.');
     }
   }
 
@@ -2156,7 +2145,7 @@ function formatDistance(meters: number): string {
   return `${metersStr}m (${feetRounded}ft)`;
 }
 
-// A grade é aplicada explicitamente em `handleApplyGrid` (aba Cena).
+// A grade é aplicada explicitamente em “Aplicar alterações” (aba Cena).
 
 // Limpa seleção ao trocar de cena ou quando o item selecionado some
 watch(activeSceneId, () => {
@@ -2740,6 +2729,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             :recent-rolls="tableStore.recentRolls"
             :connection-status="connectionStatus"
             :create-scene="handleCreateScene"
+            :update-scene="handleUpdateScene"
             :delete-scene="handleDeleteScene"
             :rename-scene="handleRenameScene"
             :activate-scene="handleActivateScene"
@@ -2749,7 +2739,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             @update-status="handleUpdateSessionStatus"
             @start-session="startSessionWithTransition"
             @reorder-scenes="onSceneReorder"
-            @apply-grid="handleApplyGrid"
             @edit-token="handleOpenTokenInspector"
             @remove-entry="handleRemoveFromInitiative"
             @reorder-initiative="handleInitiativeReorder"
@@ -2906,6 +2895,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :recent-rolls="tableStore.recentRolls"
         :connection-status="connectionStatus"
         :create-scene="handleCreateScene"
+        :update-scene="handleUpdateScene"
         :delete-scene="handleDeleteScene"
         :rename-scene="handleRenameScene"
         :activate-scene="handleActivateScene"
@@ -2915,7 +2905,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         @update-status="handleUpdateSessionStatus"
         @start-session="startSessionWithTransition"
         @reorder-scenes="onSceneReorder"
-        @apply-grid="handleApplyGrid"
         @edit-token="handleOpenTokenInspector"
         @remove-entry="handleRemoveFromInitiative"
         @reorder-initiative="handleInitiativeReorder"

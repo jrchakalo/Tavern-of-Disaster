@@ -432,8 +432,13 @@ test('DM cria cena com upload pela UI e o jogador vê a URL nova sem reload', as
   const w = world!;
 
   await openScenePanelTab(dmPage!);
-  const form = dmPage!.locator('.scene-manager .create-scene-form');
-  await expect(form).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await dmPage!
+    .locator('.scene-manager__head')
+    .getByRole('button', { name: 'Criar cena', exact: true })
+    .click();
+  const createDialog = dmPage!.getByRole('dialog', { name: 'Nova cena' });
+  await expect(createDialog).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  const form = createDialog.locator('form.create-scene-form');
   await form.locator('#scene-name').fill(SCENE_UPLOAD_NAME);
   const input = form.locator('input[type=file]');
   await expect(input).toHaveCount(1);
@@ -445,7 +450,7 @@ test('DM cria cena com upload pela UI e o jogador vê a URL nova sem reload', as
       response.url().includes(`/api/assets/maps/${w.table._id}`),
     { timeout: UI_TIMEOUT_MS },
   );
-  await form.getByRole('button', { name: 'Criar cena', exact: true }).click();
+  await createDialog.getByRole('button', { name: 'Criar cena agora', exact: true }).click();
   const response = await responsePromise;
   expect(response.status()).toBe(201);
   const uploaded = (await response.json()) as UploadResponse;
@@ -476,12 +481,17 @@ test('DM troca para a segunda cena e o jogador converge na imagem e na revisão'
 
   await openScenePanelTab(dmPage!);
   const before = await resync(w.dmSocket, w.table._id);
-  const form = dmPage!.locator('.scene-manager .create-scene-form');
-  await expect(form).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  await dmPage!
+    .locator('.scene-manager__head')
+    .getByRole('button', { name: 'Criar cena', exact: true })
+    .click();
+  const createDialog = dmPage!.getByRole('dialog', { name: 'Nova cena' });
+  await expect(createDialog).toBeVisible({ timeout: UI_TIMEOUT_MS });
+  const form = createDialog.locator('form.create-scene-form');
   await form.locator('#scene-name').fill(SCENE_TWO_NAME);
   await form.locator('#scene-image-url').fill(secondAbsolute);
   await expect(form.locator('.scene-check input[type="checkbox"]')).toBeChecked();
-  await form.getByRole('button', { name: 'Criar cena', exact: true }).click();
+  await createDialog.getByRole('button', { name: 'Criar cena agora', exact: true }).click();
   const sceneTwoRow = sceneRow(dmPage!, SCENE_TWO_NAME);
   await expect(sceneTwoRow).toBeVisible({ timeout: UI_TIMEOUT_MS });
   await expect(sceneTwoRow, 'Criar cena já ativa a cena; não há segundo clique.').toHaveClass(

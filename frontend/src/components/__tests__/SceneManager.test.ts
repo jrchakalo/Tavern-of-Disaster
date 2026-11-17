@@ -36,6 +36,7 @@ const usage: AssetUsage = {
 
 function mountManager(overrides: Record<string, unknown> = {}) {
   const createScene = vi.fn(async () => undefined);
+  const updateScene = vi.fn(async () => undefined);
   const deleteScene = vi.fn(async () => undefined);
   const renameScene = vi.fn(async () => undefined);
   const activateScene = vi.fn(async () => undefined);
@@ -46,6 +47,7 @@ function mountManager(overrides: Record<string, unknown> = {}) {
       activeSceneId: 'scene-1',
       tableId: 'table-1',
       createScene,
+      updateScene,
       deleteScene,
       renameScene,
       activateScene,
@@ -53,7 +55,12 @@ function mountManager(overrides: Record<string, unknown> = {}) {
     },
     global: { stubs: { teleport: true } },
   });
-  return { wrapper, createScene, deleteScene, renameScene, activateScene };
+  return { wrapper, createScene, updateScene, deleteScene, renameScene, activateScene };
+}
+
+async function openCreateDialog(wrapper: ReturnType<typeof mountManager>['wrapper']) {
+  await wrapper.get('.scene-create-btn').trigger('click');
+  await nextTick();
 }
 
 function dialogByTitle(wrapper: ReturnType<typeof mountManager>['wrapper'], title: string) {
@@ -103,6 +110,103 @@ describe('SceneManager — cena em um passo', () => {
     wrapper.unmount();
   });
 
+  it('mostra a cena ativa em destaque com imagem, nome, tipo e selo Ativa', () => {
+    const { wrapper } = mountManager();
+    const current = wrapper.get('.scene-current');
+    expect(current.text()).toContain('Cena atual');
+    expect(current.get('.scene-current__name').text()).toBe('Cena 1');
+    expect(current.text()).toContain('Cena de batalha');
+    expect(current.get('.badge--active').text()).toBe('Ativa');
+    expect(current.find('.scene-current__thumb').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('aplica nome, grade e escala em um único botão', async () => {
+    const { wrapper, updateScene } = mountManager();
+    await wrapper.get('#scene-current-name').setValue('Cripta Nova');
+    await wrapper.get('#scene-current-columns').setValue(20);
+    await wrapper.get('#scene-current-rows').setValue(15);
+    await wrapper.get('#scene-current-scale').setValue(2);
+
+    await wrapper.get('form.scene-edit').trigger('submit');
+    await flushPromises();
+
+    expect(updateScene).toHaveBeenCalledWith('scene-1', {
+      name: 'Cripta Nova',
+      gridWidth: 20,
+      gridHeight: 15,
+      metersPerSquare: 2,
+    });
+    expect(wrapper.get('.scene-status').text()).toContain('Alterações aplicadas');
+    wrapper.unmount();
+  });
+
+  it('troca a cena para imagem, esconde a grade e explica o modo', async () => {
+    const { wrapper, updateScene } = mountManager();
+    await wrapper.get('.scene-edit input[value="image"]').setValue(true);
+
+    expect(wrapper.find('#scene-current-columns').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Imagem não usa grade nem iniciativa.');
+
+    await wrapper.get('form.scene-edit').trigger('submit');
+    await flushPromises();
+
+    expect(updateScene).toHaveBeenCalledWith('scene-1', { type: 'image' });
+    wrapper.unmount();
+  });
+
+  it('não aplica ao digitar; avisa tokens fora e clampa no submit', async () => {
+    const { wrapper, updateScene } = mountManager({
+      tokensOnMap: [
+        { _id: 'token-1', name: 'Ghoul', squareId: 'sq-500', ownerId: null, color: '#fff' },
+      ],
+    });
+
+    await wrapper.get('#scene-current-columns').setValue(10);
+    await wrapper.get('#scene-current-rows').setValue(10);
+    expect(updateScene).not.toHaveBeenCalled();
+    expect(wrapper.get('.scene-warning').text()).toContain('1 token(s)');
+
+    await wrapper.get('#scene-current-columns').setValue(0);
+    await wrapper.get('#scene-current-rows').setValue(999);
+    await wrapper.get('#scene-current-scale').setValue(999);
+    await wrapper.get('form.scene-edit').trigger('submit');
+    await flushPromises();
+
+    expect(updateScene).toHaveBeenCalledWith('scene-1', {
+      gridWidth: 1,
+      gridHeight: 200,
+      metersPerSquare: 50,
+    });
+    wrapper.unmount();
+  });
+
+  it('ativa a próxima cena da lista e volta para a primeira no fim', async () => {
+    const second = {
+      ...scenes[0]!,
+      _id: 'scene-2',
+      name: 'Cena 2',
+    };
+    const { wrapper, activateScene } = mountManager({ scenes: [...scenes, second] });
+
+    await wrapper.get('.scene-next-btn').trigger('click');
+    await flushPromises();
+    expect(activateScene).toHaveBeenCalledWith('scene-2');
+
+    await wrapper.setProps({ activeSceneId: 'scene-2' });
+    await nextTick();
+    await wrapper.get('.scene-next-btn').trigger('click');
+    await flushPromises();
+    expect(activateScene).toHaveBeenLastCalledWith('scene-1');
+    wrapper.unmount();
+  });
+
+  it('desabilita Próxima cena quando há menos de duas cenas', () => {
+    const { wrapper } = mountManager();
+    expect(wrapper.get('.scene-next-btn').attributes('disabled')).toBeDefined();
+    wrapper.unmount();
+  });
+
   it('explica o primeiro passo quando não há cenas', () => {
     const { wrapper } = mountManager({ scenes: [], activeSceneId: null });
     expect(wrapper.text()).toContain('Nenhuma cena ainda.');
@@ -110,8 +214,11 @@ describe('SceneManager — cena em um passo', () => {
     wrapper.unmount();
   });
 
-  it('cria cena com nome, grade, tipo e ativação em um único submit', async () => {
+  it('cria cena em diálogo, com nome, grade, tipo e ativação em um único submit', async () => {
     const { wrapper, createScene } = mountManager();
+    expect(wrapper.find('.scene-manager > .create-scene-form').exists()).toBe(false);
+    await openCreateDialog(wrapper);
+    expect(dialogByTitle(wrapper, 'Nova cena')?.props('open')).toBe(true);
     await wrapper.get('#scene-name').setValue('Cripta');
     await wrapper.get('#scene-columns').setValue(24);
     await wrapper.get('#scene-rows').setValue(18);
@@ -131,14 +238,16 @@ describe('SceneManager — cena em um passo', () => {
       activate: true,
     });
     expect(wrapper.get('#scene-name').element).toHaveProperty('value', '');
+    expect(dialogByTitle(wrapper, 'Nova cena')?.props('open')).toBe(false);
     wrapper.unmount();
   });
 
   it('envia a imagem escolhida e usa a URL no payload da cena', async () => {
     const { wrapper, createScene } = mountManager();
+    await openCreateDialog(wrapper);
     await wrapper.get('#scene-name').setValue('Cripta');
     const file = new File(['px'], 'mapa.png', { type: 'image/png' });
-    const input = wrapper.get('input[type="file"]');
+    const input = wrapper.get('.create-scene-form input[type="file"]');
     Object.defineProperty(input.element, 'files', { configurable: true, value: [file] });
     await input.trigger('change');
 
@@ -156,6 +265,7 @@ describe('SceneManager — cena em um passo', () => {
   it('mostra erro inline e tenta de novo sem reenviar a imagem', async () => {
     const { wrapper, createScene } = mountManager();
     createScene.mockRejectedValueOnce(new Error('Servidor indisponível.'));
+    await openCreateDialog(wrapper);
     await wrapper.get('#scene-name').setValue('Cripta');
 
     await wrapper.get('form.create-scene-form').trigger('submit');
@@ -164,6 +274,7 @@ describe('SceneManager — cena em um passo', () => {
     const error = wrapper.get('.upload-error');
     expect(error.attributes('role')).toBe('alert');
     expect(error.text()).toContain('Servidor indisponível.');
+    expect(dialogByTitle(wrapper, 'Nova cena')?.props('open')).toBe(true);
 
     const retry = wrapper.findAll('button').find((button) => button.text() === 'Tentar de novo');
     expect(retry).toBeTruthy();
@@ -177,6 +288,7 @@ describe('SceneManager — cena em um passo', () => {
 
   it('clampa colunas, linhas e escala para os limites válidos', async () => {
     const { wrapper, createScene } = mountManager();
+    await openCreateDialog(wrapper);
     await wrapper.get('#scene-name').setValue('Limites');
     await wrapper.get('#scene-columns').setValue(0);
     await wrapper.get('#scene-rows').setValue(999);
