@@ -26,11 +26,9 @@ const socketServiceMock = vi.hoisted(() => new Proxy({}, {
 vi.mock('../../services/socketService', () => ({ socketService: socketServiceMock }));
 
 const storageMocks = vi.hoisted(() => ({
-  uploadMap: vi.fn(),
   fetchAssetUsage: vi.fn(),
 }));
 vi.mock('../../services/storageService', () => ({
-  uploadMap: storageMocks.uploadMap,
   fetchAssetUsage: storageMocks.fetchAssetUsage,
 }));
 
@@ -164,9 +162,12 @@ const usageFixture = {
 
 beforeEach(() => {
   tableStoreStub.__refs = createTableStoreRefs();
-  storageMocks.uploadMap.mockReset();
   storageMocks.fetchAssetUsage.mockReset();
   storageMocks.fetchAssetUsage.mockResolvedValue(usageFixture);
+  (socketServiceMock.setActiveScene as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, revision: 2 });
+  (socketServiceMock.updateSessionStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, revision: 2 });
+  (socketServiceMock.updateSceneScale as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, revision: 2 });
+  (socketServiceMock.reorderScenes as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, revision: 2 });
   mockMatchMedia(false);
 });
 
@@ -225,60 +226,86 @@ describe('TableView scene media feedback', () => {
     return found.length > 0 ? found[0] : null;
   }
 
-  it('envia mapa com progresso, aplica a URL e atualiza o uso', async () => {
+  it('cria e ativa a cena em um passo pelo callback do painel', async () => {
     tableStoreStub.__refs = createTableStoreRefs({ sessionStatus: ref('PREPARING') });
-    let resolveUpload: ((url: string) => void) | null = null;
-    storageMocks.uploadMap.mockImplementation((_file, _tableId, onProgress) => {
-      onProgress?.(37);
-      return new Promise<string>((resolve) => {
-        resolveUpload = resolve;
-      });
-    });
+    const created = {
+      _id: 'scene-2',
+      tableId: 'table-1',
+      name: 'Cripta',
+      imageUrl: '/uploads/maps/cripta.webp',
+      type: 'battlemap',
+      gridWidth: 24,
+      gridHeight: 18,
+      metersPerSquare: 1.5,
+    };
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify(created), { status: 201 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
 
     const wrapper = mountTable();
     await flushPromises();
     const manager = findStub(wrapper, 'DMPanel');
     expect(manager).toBeTruthy();
 
-    const file = new File(['px'], 'map.png', { type: 'image/png' });
-    manager!.vm.$emit('upload-map-file', file);
-    await nextTick();
-
-    expect(storageMocks.uploadMap).toHaveBeenCalledWith(file, 'table-1', expect.any(Function));
-    expect(manager!.props('isUploadingMap')).toBe(true);
-    expect(manager!.props('mapUploadProgress')).toBe(37);
-
-    resolveUpload!('/uploads/maps/new-map.webp');
+    await (manager!.props('createScene') as (payload: unknown) => Promise<void>)({
+      name: 'Cripta',
+      imageUrl: '/uploads/maps/cripta.webp',
+      type: 'battlemap',
+      gridWidth: 24,
+      gridHeight: 18,
+      metersPerSquare: 1.5,
+      activate: true,
+    });
     await flushPromises();
 
-    expect(socketServiceMock.setMap).toHaveBeenCalledWith('table-1', '/uploads/maps/new-map.webp');
-    expect(manager!.props('isUploadingMap')).toBe(false);
-    expect(manager!.props('mapUploadProgress')).toBe(100);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/tables/table-1/scenes'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string);
+    expect(body).toEqual({
+      name: 'Cripta',
+      imageUrl: '/uploads/maps/cripta.webp',
+      gridWidth: 24,
+      gridHeight: 18,
+      type: 'battlemap',
+    });
+    expect(tableStoreStub.__refs.scenes.value.map((scene) => scene._id)).toContain('scene-2');
+    expect(socketServiceMock.setActiveScene).toHaveBeenCalledWith('table-1', 'scene-2');
     expect(manager!.props('assetUsage')).toEqual(usageFixture);
-    expect(storageMocks.fetchAssetUsage).toHaveBeenCalledTimes(2);
-    expect(toastMock.success).toHaveBeenCalledWith('Mapa atualizado com sucesso.');
+    expect(toastMock.success).toHaveBeenCalledWith('Cena “Cripta” criada e ativada.');
 
     wrapper.unmount();
+    vi.unstubAllGlobals();
   });
 
-  it('mantém o erro de upload visível no painel', async () => {
+  it('propaga erro de criação para o formulário', async () => {
     tableStoreStub.__refs = createTableStoreRefs({ sessionStatus: ref('PREPARING') });
-    storageMocks.uploadMap.mockRejectedValue(
-      new Error('A mesa atingiu o limite de armazenamento.'),
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify({ message: 'Mesa sem permissão.' }), { status: 403 }),
     );
+    vi.stubGlobal('fetch', fetchMock);
 
     const wrapper = mountTable();
     await flushPromises();
     const manager = findStub(wrapper, 'DMPanel');
     expect(manager).toBeTruthy();
 
-    manager!.vm.$emit('upload-map-file', new File(['px'], 'big.png', { type: 'image/png' }));
-    await flushPromises();
-
-    expect(manager!.props('mapUploadError')).toBe('A mesa atingiu o limite de armazenamento.');
-    expect(toastMock.error).toHaveBeenCalledWith('A mesa atingiu o limite de armazenamento.');
+    await expect(
+      (manager!.props('createScene') as (payload: unknown) => Promise<void>)({
+        name: 'Cripta',
+        imageUrl: '',
+        type: 'battlemap',
+        gridWidth: 24,
+        gridHeight: 18,
+        metersPerSquare: 1.5,
+        activate: true,
+      }),
+    ).rejects.toThrow('Mesa sem permissão.');
 
     wrapper.unmount();
+    vi.unstubAllGlobals();
   });
 
   it('mostra carregamento e erro ao falhar a imagem da cena', async () => {

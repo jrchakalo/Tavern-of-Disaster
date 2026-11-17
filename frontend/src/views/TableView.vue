@@ -6,7 +6,7 @@ import { storeToRefs } from 'pinia';
 import { authToken, currentUser } from '../services/authService';
 import { toast } from '../services/toast';
 import { socketService } from '../services/socketService';
-import { uploadMap, fetchAssetUsage, type AssetUsage } from '../services/storageService';
+import { fetchAssetUsage, type AssetUsage } from '../services/storageService';
 import { API_BASE_URL } from '../services/apiBase';
 import { clampGridPoint, pixelToGrid } from '../services/gridGeometry';
 import { useTableStore } from '../stores/tableStore';
@@ -28,6 +28,7 @@ import ActionLog from '../components/ActionLog.vue';
 import DiceRoller from '../components/DiceRoller.vue';
 import DiceAnimation from '../components/DiceAnimation.vue';
 import DMPanel, { type DmPanelTab } from '../components/table/DMPanel.vue';
+import type { SceneCreatePayload } from '../components/SceneManager.vue';
 import MediaDock from '../components/media/MediaDock.vue';
 import ParticipantGrid from '../components/media/ParticipantGrid.vue';
 import ChatPanel from '../components/chat/ChatPanel.vue';
@@ -61,13 +62,6 @@ const targetSquareIdForToken = ref<string | null>(null);
 // Auras dialog state
 const showAuraDialog = ref(false);
 const auraDialogTokenId = ref<string | null>(null);
-const mapUrlInput = ref(''); // URL digitada para imagem de cena
-const newSceneName = ref('');
-const newSceneImageUrl = ref('');
-const newSceneType = ref<'battlemap' | 'image'>('battlemap'); // Tipo da nova cena
-const isUploadingMap = ref(false);
-const mapUploadProgress = ref(0);
-const mapUploadError = ref('');
 const assetUsage = ref<AssetUsage | null>(null);
 const sceneLoadError = ref('');
 const isSceneImageLoading = ref(false);
@@ -607,7 +601,7 @@ const persistentsForActiveScene = computed(() =>
 
 function handleSetActiveScene(sceneId: string) {
   if (!sceneId) return;
-  socketService.setActiveScene(tableId, sceneId);
+  void handleActivateScene(sceneId).catch(() => undefined);
 }
 
 function goToPreviousScene() {
@@ -625,14 +619,16 @@ function goToNextScene() {
 function applySessionStatus(newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED') {
   const options: { pauseSeconds?: number } = {};
   if (newStatus === 'PAUSED') options.pauseSeconds = Math.max(0, Math.floor((pauseInput.value * 60) || 0));
-  socketService.updateSessionStatus(tableId, newStatus, options);
+  void socketService.updateSessionStatus(tableId, newStatus, options).then((ack) => {
+    if (!ack.ok) {
+      toast.error(ack.error.message || 'Não foi possível mudar o estado da sessão.');
+    }
+  });
 }
 
 function handleUpdateSessionStatus(newStatus: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED') {
-  if (newStatus === 'ENDED') {
-    requestEndSession();
-    return;
-  }
+  // A confirmação de “Encerrar” vive no DMSessionControls; o menu da top bar
+  // usa requestEndSession, que abre o diálogo compartilhado abaixo.
   applySessionStatus(newStatus);
 }
 
@@ -807,12 +803,6 @@ function triggerDiceAnimation(payload: DiceRolledPayload) {
   }, DICE_ANIMATION_DURATION);
 }
 
-function setMap() {
-  if (mapUrlInput.value.trim() !== '') {
-    socketService.setMap(tableId, mapUrlInput.value);
-  }
-}
-
 async function refreshAssetUsage() {
   if (!tableId || !isDM.value) return;
   try {
@@ -820,34 +810,6 @@ async function refreshAssetUsage() {
   } catch (error) {
     // Uso é informativo: não bloqueia o painel, mas fica registrado no console.
     console.warn('[assets] não foi possível consultar o uso de armazenamento', error);
-  }
-}
-
-async function handleMapFileUpload(file: File) {
-  if (!tableId) {
-    mapUploadError.value = 'Mesa inválida para upload de mapa.';
-    toast.error(mapUploadError.value);
-    return;
-  }
-  mapUploadError.value = '';
-  mapUploadProgress.value = 0;
-  try {
-    isUploadingMap.value = true;
-    const url = await uploadMap(file, tableId, (percent) => {
-      mapUploadProgress.value = Math.max(0, Math.min(100, Math.round(percent)));
-    });
-    mapUploadProgress.value = 100;
-    mapUrlInput.value = url;
-    setMap();
-    toast.success('Mapa atualizado com sucesso.');
-  } catch (error) {
-    console.error('[map-upload] erro ao enviar arquivo', error);
-    const message = error instanceof Error ? error.message : 'Não foi possível enviar o mapa.';
-    mapUploadError.value = message;
-    toast.error(message);
-  } finally {
-    isUploadingMap.value = false;
-    await refreshAssetUsage();
   }
 }
 
@@ -873,13 +835,26 @@ async function handleApplyGrid(value: { width: number; height: number; metersPer
     toast.warning('Nenhuma cena ativa para aplicar a grade.');
     return;
   }
-  const [gridAck, scaleAck] = await Promise.all([
-    socketService.updateGridDimensions(tableId, activeSceneId.value, value.width, value.height),
-    socketService.updateSceneScale(tableId, activeSceneId.value, value.metersPerSquare),
-  ]);
-  if (gridAck.ok && scaleAck.ok) {
-    toast.success('Grade aplicada.');
+  const gridAck = await socketService.updateGridDimensions(
+    tableId,
+    activeSceneId.value,
+    value.width,
+    value.height,
+  );
+  if (!gridAck.ok) {
+    toast.error(gridAck.error.message || 'Não foi possível aplicar a grade.');
+    return;
   }
+  const scaleAck = await socketService.updateSceneScale(
+    tableId,
+    activeSceneId.value,
+    value.metersPerSquare,
+  );
+  if (!scaleAck.ok) {
+    toast.error(scaleAck.error.message || 'A grade mudou, mas a escala não foi aplicada.');
+    return;
+  }
+  toast.success('Grade aplicada.');
 }
 
 function handleMapImageLoad() {
@@ -894,8 +869,12 @@ function handleMapImageError() {
 }
 
 function onSceneDragEnd() {
-  const orderedSceneIds = scenes.value.map(scene => scene._id);
-  socketService.reorderScenes(tableId, orderedSceneIds);
+  const orderedSceneIds = scenes.value.map((scene) => scene._id);
+  void socketService.reorderScenes(tableId, orderedSceneIds).then((ack) => {
+    if (!ack.ok) {
+      toast.error(ack.error.message || 'Não foi possível salvar a ordem das cenas.');
+    }
+  });
 }
 
 function onSceneReorder(updatedScenes: IScene[]) {
@@ -1240,95 +1219,144 @@ function handleToolbarEditAura() {
   showAuraDialog.value = true;
 }
 
-async function handleCreateScene() {
-  if (!newSceneName.value.trim() || !tableId) return;
+type SceneApiBody = Partial<IScene> & { message?: string };
 
+async function readSceneResponse(response: Response): Promise<SceneApiBody | null> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/scenes`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken.value}`,
-      },
-      body: JSON.stringify({ 
-        name: newSceneName.value,
-        imageUrl: newSceneImageUrl.value,
-        gridSize: 30, // Tamanho padrão do grid
-        type: newSceneType.value, // Envia o tipo da cena
-      }),
-    });
-
-    const newScene = await response.json();
-    if (response.ok) {
-      scenes.value.push(newScene); // Adiciona a nova cena à lista local
-      newSceneName.value = '';
-      newSceneImageUrl.value = '';
-    } else {
-      toast.error(newScene.message || 'Erro ao criar cena.');
-    }
-  } catch (error) { console.error("Erro ao criar cena", error); }
+    return (await response.json()) as SceneApiBody;
+  } catch {
+    return null;
+  }
 }
 
-function handleEditScene(scene: IScene) {
-  // Abre um prompt simples do navegador para pegar os novos valores
-  const newName = prompt("Digite o novo nome para a cena:", scene.name);
+async function handleCreateScene(payload: SceneCreatePayload): Promise<void> {
+  if (!tableId) throw new Error('Mesa inválida para criar cena.');
+  const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/scenes`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken.value}`,
+    },
+    body: JSON.stringify({
+      name: payload.name,
+      imageUrl: payload.imageUrl,
+      gridWidth: payload.gridWidth,
+      gridHeight: payload.gridHeight,
+      type: payload.type,
+    }),
+  });
+  const data = await readSceneResponse(response);
+  if (!response.ok) {
+    throw new Error(data?.message || 'Não foi possível criar a cena.');
+  }
+  if (!data?._id) {
+    throw new Error('O servidor não retornou a cena criada.');
+  }
 
-  if (newName === null) return; // Usuário cancelou
+  const created = data as IScene;
+  if (!scenes.value.some((scene) => scene._id === created._id)) {
+    scenes.value = [...scenes.value, created];
+  }
 
-  // Chama a nova API PUT para editar
-  fetch(`${API_BASE_URL}/api/tables/${tableId}/scenes/${scene._id}`, {
+  // A rota REST de criação não aceita escala; aplicamos pelo socket, que
+  // também transmite o estado canônico para os outros clientes.
+  if (
+    created.type !== 'image' &&
+    Math.abs((created.metersPerSquare ?? 1.5) - payload.metersPerSquare) > 0.001
+  ) {
+    const scaleAck = await socketService.updateSceneScale(
+      tableId,
+      created._id,
+      payload.metersPerSquare,
+    );
+    if (!scaleAck.ok) {
+      toast.warning('Cena criada, mas a escala não foi aplicada. Ajuste em “Aplicar grade”.');
+    }
+  }
+
+  let activationFailed = false;
+  if (payload.activate) {
+    const ack = await socketService.setActiveScene(tableId, created._id);
+    if (!ack.ok) {
+      activationFailed = true;
+      toast.warning(
+        ack.error.message ||
+          'Cena criada, mas não foi possível ativá-la. Use “Ativar” na lista.',
+      );
+    }
+  }
+
+  await refreshAssetUsage();
+  if (!activationFailed) {
+    toast.success(
+      payload.activate
+        ? `Cena “${created.name}” criada e ativada.`
+        : `Cena “${created.name}” criada.`,
+    );
+  }
+}
+
+async function handleActivateScene(sceneId: string): Promise<void> {
+  if (!tableId) throw new Error('Mesa inválida para ativar cena.');
+  const ack = await socketService.setActiveScene(tableId, sceneId);
+  if (!ack.ok) {
+    toast.error(ack.error.message || 'Não foi possível ativar a cena.');
+    throw new Error(ack.error.message || 'Não foi possível ativar a cena.');
+  }
+}
+
+async function handleRenameScene(sceneId: string, name: string): Promise<void> {
+  if (!tableId) throw new Error('Mesa inválida para renomear cena.');
+  const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/scenes/${sceneId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken.value}`,
+      Authorization: `Bearer ${authToken.value}`,
     },
-    body: JSON.stringify({ name: newName }),
-  })
-  .then(res => res.json())
-  .then(updatedScene => {
-    if (updatedScene._id) {
-      // Atualiza a cena na lista local para refletir a mudança imediatamente
-      const index = scenes.value.findIndex(s => s._id === updatedScene._id);
-      if (index !== -1) {
-        scenes.value[index] = updatedScene;
-      }
-    } else {
-      toast.error(updatedScene.message || 'Erro ao editar cena.');
-    }
-  })
-  .catch(err => console.error("Erro ao editar cena:", err));
+    body: JSON.stringify({ name }),
+  });
+  const data = await readSceneResponse(response);
+  if (!response.ok || !data?._id) {
+    throw new Error(data?.message || 'Não foi possível renomear a cena.');
+  }
+  const index = scenes.value.findIndex((scene) => scene._id === sceneId);
+  if (index !== -1) {
+    scenes.value[index] = { ...scenes.value[index]!, ...(data as IScene) };
+  }
+  toast.success('Cena renomeada.');
 }
 
-async function handleDeleteScene(sceneId: string) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/scenes/${sceneId}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${authToken.value}`,
-      },
-    });
+async function handleDeleteScene(sceneId: string): Promise<void> {
+  if (!tableId) throw new Error('Mesa inválida para excluir cena.');
+  const response = await fetch(`${API_BASE_URL}/api/tables/${tableId}/scenes/${sceneId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${authToken.value}`,
+    },
+  });
+  const data = await readSceneResponse(response);
+  if (!response.ok) {
+    throw new Error(data?.message || 'Não foi possível excluir a cena.');
+  }
 
-    const data = await response.json();
-    if (response.ok) {
-      // Remove a cena da lista local para refletir a mudança imediatamente
-      const wasActive = activeSceneId.value === sceneId;
-      scenes.value = scenes.value.filter(s => s._id !== sceneId);
-      if (wasActive) {
-        const first = scenes.value[0];
-        if (first) {
-          // Atualiza ativa localmente e avisa o servidor para manter sincronizado
-          handleSetActiveScene(first._id);
-        } else {
-          // Sem cenas restantes
-          // Zera mapa e ativos locais
-          currentMapUrl.value = null;
-        }
+  const wasActive = activeSceneId.value === sceneId;
+  scenes.value = scenes.value.filter((scene) => scene._id !== sceneId);
+  if (wasActive) {
+    const next = scenes.value[0];
+    if (next) {
+      // O servidor já promoveu a próxima cena; se o ack de ativação falhar, o
+      // toast do erro acima orienta o Mestre a usar “Ativar” na lista.
+      try {
+        await handleActivateScene(next._id);
+      } catch {
+        // feedback já exibido por handleActivateScene
       }
-      toast.success(data.message || 'Cena excluída.');
     } else {
-      toast.error(data.message || 'Erro ao excluir cena.');
+      currentMapUrl.value = null;
     }
-  } catch (error) { console.error("Erro ao excluir cena:", error); }
+  }
+  await refreshAssetUsage();
+  toast.success(data?.message || 'Cena excluída.');
 }
 
 // Função para quando um ponteiro (dedo/mouse) toca a tela
@@ -2179,7 +2207,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
       </RouterLink>
 
       <div class="topbar-identity">
-        <h1 class="topbar-title">{{ tableName }}</h1>
+        <h1 class="topbar-title" :title="tableName">{{ tableName }}</h1>
         <div v-if="isDM" class="scene-switch" aria-label="Cena ativa">
           <span class="scene-switch__label">Cena</span>
           <button
@@ -2188,17 +2216,25 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             aria-label="Cena anterior"
             :disabled="!canGoPrevScene"
             @click="goToPreviousScene"
-          >‹</button>
-          <strong class="scene-switch__name">{{ activeScene?.name || 'Nenhuma cena ativa' }}</strong>
+          >
+            <Icon name="chevronLeft" :size="16" aria-hidden="true" />
+          </button>
+          <strong class="scene-switch__name" :title="activeScene?.name || 'Nenhuma cena ativa'">
+            {{ activeScene?.name || 'Nenhuma cena ativa' }}
+          </strong>
           <button
             type="button"
             class="scene-switch__button"
             aria-label="Próxima cena"
             :disabled="!canGoNextScene"
             @click="goToNextScene"
-          >›</button>
+          >
+            <Icon name="chevronRight" :size="16" aria-hidden="true" />
+          </button>
         </div>
-        <p v-else class="topbar-scene">{{ activeScene?.name || 'Nenhuma cena ativa' }}</p>
+        <p v-else class="topbar-scene" :title="activeScene?.name || 'Nenhuma cena ativa'">
+          {{ activeScene?.name || 'Nenhuma cena ativa' }}
+        </p>
       </div>
 
       <div class="topbar-status">
@@ -2252,13 +2288,13 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
               type="button"
               role="menuitem"
               @click="closeSessionMenu(); applySessionStatus('PREPARING')"
-            >Preparar sessão</button>
+            >Reabrir sessão</button>
             <button
               v-if="sessionStatus === 'PREPARING'"
               type="button"
               role="menuitem"
               @click="startSessionWithTransition"
-            >Começar sessão</button>
+            >Iniciar sessão</button>
             <button
               v-if="sessionStatus === 'LIVE'"
               type="button"
@@ -2356,13 +2392,13 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         <div v-if="canUseMap" class="turn-bar" role="status" aria-live="polite">
           <div class="turn-bar__scene">
             <span class="turn-bar__eyebrow">Cena</span>
-            <strong>{{ activeScene?.name || 'Nenhuma cena ativa' }}</strong>
+            <strong :title="activeScene?.name || 'Nenhuma cena ativa'">{{ activeScene?.name || 'Nenhuma cena ativa' }}</strong>
           </div>
           <div class="turn-bar__actor" :class="{ 'is-empty': !currentTurnEntry }">
             <span v-if="currentTurnEntry" class="turn-dot" aria-hidden="true"></span>
             <template v-if="currentTurnEntry">
               <span class="turn-bar__label">Turno de</span>
-              <strong>{{ currentTurnEntry.characterName }}</strong>
+              <strong :title="currentTurnEntry.characterName">{{ currentTurnEntry.characterName }}</strong>
               <span v-if="currentTurnMovement" class="turn-bar__movement">{{ currentTurnMovement }}</span>
             </template>
             <span v-else class="turn-bar__label">Nenhum turno ativo</span>
@@ -2568,13 +2604,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             :display-connected="displayConnected"
             :scenes="scenes"
             :active-scene-id="activeSceneId"
-            :map-url-input="mapUrlInput"
-            :new-scene-name="newSceneName"
-            :new-scene-image-url="newSceneImageUrl"
-            :new-scene-type="newSceneType"
-            :is-uploading-map="isUploadingMap"
-            :map-upload-progress="mapUploadProgress"
-            :map-upload-error="mapUploadError"
             :asset-usage="assetUsage"
             :initiative-list="initiativeList"
             :tokens-on-map="tokensOnMap"
@@ -2590,21 +2619,15 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             :characters="charactersForTable"
             :current-system="currentSystem"
             :round="roundNumber"
+            :create-scene="handleCreateScene"
+            :delete-scene="handleDeleteScene"
+            :rename-scene="handleRenameScene"
+            :activate-scene="handleActivateScene"
             @update:active-tab="selectPanelTab($event)"
             @update:pause-input="pauseInput = $event"
             @update-status="handleUpdateSessionStatus"
             @start-session="startSessionWithTransition"
-            @set-active-scene="handleSetActiveScene"
-            @edit-scene="handleEditScene"
-            @delete-scene="handleDeleteScene"
             @reorder-scenes="onSceneReorder"
-            @set-map="setMap"
-            @create-scene="handleCreateScene"
-            @update:map-url-input="mapUrlInput = $event"
-            @update:new-scene-name="newSceneName = $event"
-            @update:new-scene-image-url="newSceneImageUrl = $event"
-            @update:new-scene-type="newSceneType = $event"
-            @upload-map-file="handleMapFileUpload"
             @apply-grid="handleApplyGrid"
             @system-change="handleSystemChange"
             @edit-token="handleOpenTokenInspector"
@@ -2717,13 +2740,6 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :display-connected="displayConnected"
         :scenes="scenes"
         :active-scene-id="activeSceneId"
-        :map-url-input="mapUrlInput"
-        :new-scene-name="newSceneName"
-        :new-scene-image-url="newSceneImageUrl"
-        :new-scene-type="newSceneType"
-        :is-uploading-map="isUploadingMap"
-        :map-upload-progress="mapUploadProgress"
-        :map-upload-error="mapUploadError"
         :asset-usage="assetUsage"
         :initiative-list="initiativeList"
         :tokens-on-map="tokensOnMap"
@@ -2739,21 +2755,15 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         :characters="charactersForTable"
         :current-system="currentSystem"
         :round="roundNumber"
+        :create-scene="handleCreateScene"
+        :delete-scene="handleDeleteScene"
+        :rename-scene="handleRenameScene"
+        :activate-scene="handleActivateScene"
         @update:active-tab="activePanelTab = $event"
         @update:pause-input="pauseInput = $event"
         @update-status="handleUpdateSessionStatus"
         @start-session="startSessionWithTransition"
-        @set-active-scene="handleSetActiveScene"
-        @edit-scene="handleEditScene"
-        @delete-scene="handleDeleteScene"
         @reorder-scenes="onSceneReorder"
-        @set-map="setMap"
-        @create-scene="handleCreateScene"
-        @update:map-url-input="mapUrlInput = $event"
-        @update:new-scene-name="newSceneName = $event"
-        @update:new-scene-image-url="newSceneImageUrl = $event"
-        @update:new-scene-type="newSceneType = $event"
-        @upload-map-file="handleMapFileUpload"
         @apply-grid="handleApplyGrid"
         @system-change="handleSystemChange"
         @edit-token="handleOpenTokenInspector"
@@ -2949,7 +2959,9 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   display: inline-flex;
   flex: none;
   align-items: center;
+  justify-content: center;
   gap: var(--s-2);
+  min-width: 44px;
   min-height: 44px;
   padding: 0 var(--s-2);
   border: 1px solid transparent;
@@ -2991,6 +3003,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   font-size: var(--text-2xs);
 }
 .scene-switch__button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3000,11 +3013,16 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
   border-radius: var(--radius-xs);
   background: var(--raised);
   color: var(--text);
-  font-size: var(--text-base);
   line-height: 1;
+}
+.scene-switch__button::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
 }
 .scene-switch__button:disabled { color: var(--text-faint); cursor: not-allowed; }
 .scene-switch__button:not(:disabled):hover { border-color: var(--line-strong); }
+.scene-switch__button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .scene-switch__name {
   max-width: 220px;
   overflow: hidden;
@@ -3699,8 +3717,8 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 .mobile-fab:hover { background: var(--accent-hover); }
 .mobile-fab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-/* Painel mobile: limita a folha para o tabuleiro continuar visível. */
-.mobile-panel-content { max-height: min(42dvh, 420px); }
+/* Painel mobile: folha alta o bastante para a aba Cena, com um único scroll. */
+.mobile-panel-content { max-height: min(72dvh, 640px); }
 .mobile-panel-content :deep(.dm-panel__add) { display: none; }
 
 /* Mídia: o card flutuante não pode cobrir o rail nem o FAB. */
