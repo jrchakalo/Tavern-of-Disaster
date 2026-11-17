@@ -33,7 +33,7 @@ const emit = defineEmits<{ (e: 'open-sheet'): void }>();
 const summary = computed(() => tokenCharacter(props.token));
 
 const name = computed(
-  () => props.character?.name || summary.value?.name || props.token?.name || 'Nenhum token ativo',
+  () => props.character?.name || summary.value?.name || props.token?.name || 'Seu personagem',
 );
 const avatarUrl = computed(() => props.character?.avatarUrl || props.token?.imageUrl || null);
 const initial = computed(() => name.value.charAt(0).toUpperCase());
@@ -51,30 +51,26 @@ const hp = computed(() => {
 const defense = computed(() => summary.value?.defense ?? props.character?.stats?.defense ?? null);
 const level = computed(() => props.character?.profile?.level ?? null);
 /** PD/PE/SAN/armadura (OP2/OPSH) ao lado do PV; vazio para D&D 5e. */
-const resources = computed(() =>
-  characterResourceBadges(summary.value, props.character),
-);
+const resources = computed(() => characterResourceBadges(summary.value, props.character));
 
-const meters = computed(() =>
-  props.token
-    ? `${props.token.remainingMovement.toFixed(1)}m / ${props.token.movement.toFixed(1)}m`
-    : '—',
+const scale = computed(() => (props.metersPerSquare > 0 ? props.metersPerSquare : 1.5));
+const remainingMeters = computed(() => props.token?.remainingMovement ?? 0);
+const totalMeters = computed(() => props.token?.movement ?? 0);
+const remainingSquares = computed(() =>
+  Math.floor(remainingMeters.value / scale.value + 1e-6),
 );
-
-const squares = computed(() => {
+const totalSquares = computed(() => Math.floor(totalMeters.value / scale.value + 1e-6));
+const metersLabel = computed(() => {
   if (!props.token) return '—';
-  const scale = props.metersPerSquare > 0 ? props.metersPerSquare : 1.5;
-  const remaining = Math.floor(props.token.remainingMovement / scale + 1e-6);
-  const total = Math.floor(props.token.movement / scale + 1e-6);
-  return `${remaining} / ${total}`;
+  return `${remainingMeters.value.toFixed(1).replace('.', ',')} m`;
 });
+const squaresLabel = computed(() =>
+  props.token ? `${remainingSquares.value}/${totalSquares.value} quad` : '—',
+);
 
-const status = computed(() => {
-  if (!props.token) return 'Sem token';
-  return props.isMyTurn ? 'Seu turno' : 'Aguardando';
-});
+const status = computed(() => (props.isMyTurn ? 'Seu turno' : 'Aguardando'));
 
-const dotColor = computed(() => props.token?.color || 'var(--color-text-muted)');
+const dotColor = computed(() => props.token?.color || 'var(--text-faint)');
 
 const characterId = computed(
   () => props.character?._id ?? summary.value?._id ?? props.token?.characterId ?? null,
@@ -87,7 +83,7 @@ const canAdjustHp = computed(
 /**
  * Ajuste rápido de PV (§8.2): caminho canônico `characterStore.updateHp`
  * (socket com ack) com fallbacks do `hpSync`. Erro já notificado pelo
- * socketService não garaante um segundo toast ("errors once").
+ * socketService não gera um segundo toast ("errors once").
  */
 async function adjustHp(delta: number) {
   if (!canAdjustHp.value || !props.tableId || !characterId.value) return;
@@ -113,24 +109,15 @@ function handleCardClick() {
   if (props.openable) emit('open-sheet');
 }
 
-function handleCardKeydown(event: KeyboardEvent) {
-  if (!props.openable) return;
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    emit('open-sheet');
-  }
-}
 </script>
 
 <template>
   <article
+    v-if="token"
     class="token-card"
     :class="{ 'token-card--openable': openable }"
-    :aria-label="`Ficha: ${name}`"
-    :role="openable ? 'button' : undefined"
-    :tabindex="openable ? 0 : undefined"
+    aria-label="Seu personagem"
     @click="handleCardClick"
-    @keydown="handleCardKeydown"
   >
     <span class="token-card__avatar" :style="{ background: dotColor }" aria-hidden="true">
       <img v-if="avatarUrl" :src="avatarUrl" alt="" draggable="false" />
@@ -148,9 +135,9 @@ function handleCardKeydown(event: KeyboardEvent) {
       </button>
       <p v-else class="token-card__name">{{ name }}</p>
       <p class="token-card__meta">
-        <span v-if="hp !== null" class="token-card__hp" :title="`PV ${hp}`">PV {{ hp }}</span>
-        <span v-if="defense !== null" class="token-card__defense" :title="`Defesa ${defense}`">
-          Def {{ defense }}
+        <span v-if="hp !== null" class="token-card__hp" :title="`Pontos de vida ${hp}`">PV {{ hp }}</span>
+        <span v-if="defense !== null" class="token-card__defense" :title="`Defesa (CA) ${defense}`">
+          CA {{ defense }}
         </span>
         <span
           v-for="resource in resources"
@@ -165,7 +152,7 @@ function handleCardKeydown(event: KeyboardEvent) {
           Nv {{ level }}
         </span>
         <span class="token-card__movement" title="Movimento restante / total">
-          {{ meters }} · {{ squares }} quad
+          {{ metersLabel }} · {{ squaresLabel }}
         </span>
       </p>
     </div>
@@ -195,12 +182,13 @@ function handleCardKeydown(event: KeyboardEvent) {
 .token-card {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--s-3);
   min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-surface);
+  min-height: 56px;
+  padding: var(--s-2) var(--s-4);
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
 }
 
 .token-card--openable {
@@ -208,24 +196,23 @@ function handleCardKeydown(event: KeyboardEvent) {
 }
 
 .token-card--openable:hover {
-  border-color: var(--color-border-strong);
+  background: var(--raised);
 }
 
 .token-card--openable:focus-visible {
-  outline: 2px solid var(--color-accent-alt);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 .token-card__avatar {
   position: relative;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 auto;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
+  width: 36px;
+  height: 36px;
   overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--line-strong);
   border-radius: 50%;
 }
 
@@ -236,9 +223,10 @@ function handleCardKeydown(event: KeyboardEvent) {
 }
 
 .token-card__initial {
-  font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: 600;
 }
 
 .token-card__info {
@@ -248,94 +236,116 @@ function handleCardKeydown(event: KeyboardEvent) {
 
 .token-card__name {
   margin: 0;
-  font-size: 0.92rem;
-  font-weight: 600;
-  white-space: nowrap;
   overflow: hidden;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Nome vira link quando a ficha pode ser aberta (QA: .character-link). */
 button.token-card__name.character-link {
-  display: block;
+  display: flex;
+  align-items: center;
   max-width: 100%;
+  min-height: 44px;
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--color-accent-alt);
+  color: var(--accent-ink);
   font: inherit;
-  font-size: 0.92rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: 600;
   text-align: left;
+  text-decoration: underline;
+  text-decoration-color: rgb(127 182 201 / 0.4);
+  text-underline-offset: 3px;
   cursor: pointer;
 }
 
-button.token-card__name.character-link:hover,
-button.token-card__name.character-link:focus-visible {
-  text-decoration: underline;
-}
-
-button.token-card__name.character-link:focus-visible {
-  outline: 2px solid var(--color-warning);
-  outline-offset: 2px;
-  border-radius: 4px;
+button.token-card__name.character-link:hover {
+  color: var(--text);
 }
 
 .token-card__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 8px;
-  margin: 2px 0 0;
-  font-size: 0.74rem;
-  color: var(--color-text-muted);
+  gap: 0 var(--s-3);
+  margin: 1px 0 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
 }
 
 .token-card__hp {
-  font-weight: 700;
-  color: var(--color-text);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.token-card__defense {
+  color: var(--accent-ink);
+  font-weight: 500;
+}
+
+.token-card__movement {
+  color: var(--text-muted);
 }
 
 .token-card__level {
-  font-weight: 700;
-  color: var(--color-accent-alt);
+  color: var(--accent-ink);
+  font-weight: 500;
 }
 
 .token-card__hp-actions {
   display: flex;
-  gap: 4px;
   flex: 0 0 auto;
+  gap: var(--s-1);
 }
 
 .token-card__hp-btn {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--color-border-strong);
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-alt);
-  color: var(--color-text);
-  font-size: 1.05rem;
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--font-data);
+  font-size: var(--text-lg);
   line-height: 1;
-  cursor: pointer;
 }
 
 .token-card__hp-btn:hover {
-  border-color: var(--color-accent-alt);
-  color: var(--color-accent-alt);
-}
-
-.token-card__hp-btn:focus-visible {
-  outline: 2px solid var(--color-warning);
-  outline-offset: 1px;
+  border-color: var(--accent-ink);
+  color: var(--accent-ink);
 }
 
 .token-card__status {
   flex: 0 0 auto;
-  font-size: 0.74rem;
-  font-weight: 700;
-  color: var(--color-text-muted);
+  padding-left: var(--s-2);
+  color: var(--text-faint);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
 }
 
 .token-card__status.is-my-turn {
-  color: var(--color-warning);
+  color: var(--manila);
+}
+
+@media (max-width: 360px) {
+  .token-card {
+    padding-inline: var(--s-3);
+  }
+
+  .token-card__status {
+    display: none;
+  }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .token-card {
+    display: none;
+  }
 }
 </style>

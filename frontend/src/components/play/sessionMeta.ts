@@ -20,6 +20,8 @@ export interface SessionExtras {
   revision?: number;
   you?: SessionYou | null;
   presence?: PresenceEntry[];
+  /** Rodada da iniciativa quando o snapshot a expõe (campo opcional). */
+  round?: number | null;
 }
 
 function unwrap<T>(value: unknown): T | undefined {
@@ -42,10 +44,12 @@ export function readSessionExtras(store: unknown): SessionExtras {
   const revision = unwrap<number>(source.revision);
   const you = unwrap<SessionYou>(source.you);
   const presence = unwrap<PresenceEntry[]>(source.presence);
+  const round = unwrap<number>(source.round);
   return {
     revision: typeof revision === 'number' ? revision : undefined,
     you: you ?? null,
     presence: Array.isArray(presence) ? presence : undefined,
+    round: typeof round === 'number' && Number.isFinite(round) ? round : null,
   };
 }
 
