@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import SceneManager from '../SceneManager.vue';
+
+import SceneManager, { type SceneCreatePayload } from '../SceneManager.vue';
 import DMSessionControls from '../DMSessionControls.vue';
 import TableSharePanel from './TableSharePanel.vue';
 import InitiativePanel from '../InitiativePanel.vue';
 import DiceRoller from '../DiceRoller.vue';
+import BaseDialog from '../ui/BaseDialog.vue';
 import type { AssetUsage } from '../../services/storageService';
 import type {
   Character,
@@ -17,6 +19,11 @@ import type {
 
 export type DmPanelTab = 'scene' | 'initiative' | 'session' | 'invite';
 
+const MIN_GRID = 1;
+const MAX_GRID = 200;
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 50;
+
 interface Props {
   activeTab: DmPanelTab;
   tableId: string;
@@ -27,13 +34,6 @@ interface Props {
   displayConnected: boolean;
   scenes: IScene[];
   activeSceneId: string | null;
-  mapUrlInput: string;
-  newSceneName: string;
-  newSceneImageUrl: string;
-  newSceneType: 'battlemap' | 'image';
-  isUploadingMap: boolean;
-  mapUploadProgress: number;
-  mapUploadError: string;
   assetUsage: AssetUsage | null;
   initiativeList: IInitiativeEntry[];
   tokensOnMap: TokenInfo[];
@@ -49,9 +49,18 @@ interface Props {
   characters: Character[];
   currentSystem: SystemDTO | null;
   round: number | null;
+  createScene?: (payload: SceneCreatePayload) => Promise<void>;
+  deleteScene?: (sceneId: string) => Promise<void>;
+  renameScene?: (sceneId: string, name: string) => Promise<void>;
+  activateScene?: (sceneId: string) => Promise<void>;
 }
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  createScene: async () => undefined,
+  deleteScene: async () => undefined,
+  renameScene: async () => undefined,
+  activateScene: async () => undefined,
+});
 
 const emit = defineEmits<{
   (e: 'update:activeTab', tab: DmPanelTab): void;
@@ -59,16 +68,7 @@ const emit = defineEmits<{
   (e: 'update-status', status: 'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'): void;
   (e: 'start-session'): void;
   (e: 'set-active-scene', sceneId: string): void;
-  (e: 'edit-scene', scene: IScene): void;
-  (e: 'delete-scene', sceneId: string): void;
   (e: 'reorder-scenes', scenes: IScene[]): void;
-  (e: 'set-map'): void;
-  (e: 'create-scene'): void;
-  (e: 'update:mapUrlInput', value: string): void;
-  (e: 'update:newSceneName', value: string): void;
-  (e: 'update:newSceneImageUrl', value: string): void;
-  (e: 'update:newSceneType', value: 'battlemap' | 'image'): void;
-  (e: 'upload-map-file', file: File): void;
   (e: 'apply-grid', value: { width: number; height: number; metersPerSquare: number }): void;
   (e: 'system-change', systemId: string): void;
   (e: 'edit-token', tokenId: string): void;
@@ -95,10 +95,54 @@ const isBattlemap = computed(() => activeScene.value?.type !== 'image');
 const gridWidthDraft = ref(props.gridWidth);
 const gridHeightDraft = ref(props.gridHeight);
 const scaleDraft = ref(props.metersPerSquare);
+const gridConfirmOpen = ref(false);
+const gridFeedback = ref('');
 
 watch(() => props.gridWidth, (value) => { gridWidthDraft.value = value; });
 watch(() => props.gridHeight, (value) => { gridHeightDraft.value = value; });
 watch(() => props.metersPerSquare, (value) => { scaleDraft.value = value; });
+
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(parsed)));
+}
+
+function clampScale(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return props.metersPerSquare;
+  return Math.max(MIN_SCALE, Math.min(MAX_SCALE, parsed));
+}
+
+const nextGrid = computed(() => ({
+  width: clampInt(gridWidthDraft.value, MIN_GRID, MAX_GRID, props.gridWidth),
+  height: clampInt(gridHeightDraft.value, MIN_GRID, MAX_GRID, props.gridHeight),
+  metersPerSquare: clampScale(scaleDraft.value),
+}));
+
+const gridDirty = computed(
+  () =>
+    nextGrid.value.width !== props.gridWidth ||
+    nextGrid.value.height !== props.gridHeight ||
+    Math.abs(nextGrid.value.metersPerSquare - props.metersPerSquare) > 0.0001,
+);
+
+const gridShrinks = computed(
+  () => nextGrid.value.width < props.gridWidth || nextGrid.value.height < props.gridHeight,
+);
+
+const tokensOutsideDraft = computed(() => {
+  if (!gridShrinks.value) return 0;
+  const width = Math.max(1, props.gridWidth);
+  return props.tokensOnMap.filter((token) => {
+    const match = /^sq-(\d+)$/.exec(token.squareId ?? '');
+    if (!match) return false;
+    const index = Number(match[1]);
+    const x = index % width;
+    const y = Math.floor(index / width);
+    return x >= nextGrid.value.width || y >= nextGrid.value.height;
+  }).length;
+});
 
 const rowCount = computed(() => props.initiativeList.length);
 const currentEntry = computed(() => props.initiativeList.find((entry) => entry.isCurrentTurn) ?? null);
@@ -125,14 +169,30 @@ async function onTabKeydown(event: KeyboardEvent, index: number) {
   tabButtonRefs.value[nextIndex]?.focus();
 }
 
-function applyGrid() {
-  const width = Math.max(1, Math.min(200, Math.round(Number(gridWidthDraft.value) || props.gridWidth)));
-  const height = Math.max(1, Math.min(200, Math.round(Number(gridHeightDraft.value) || props.gridHeight)));
-  const scale = Math.max(0.1, Math.min(50, Number(scaleDraft.value) || props.metersPerSquare));
-  gridWidthDraft.value = width;
-  gridHeightDraft.value = height;
-  scaleDraft.value = scale;
-  emit('apply-grid', { width, height, metersPerSquare: scale });
+function requestApplyGrid() {
+  gridFeedback.value = '';
+  const value = nextGrid.value;
+  gridWidthDraft.value = value.width;
+  gridHeightDraft.value = value.height;
+  scaleDraft.value = value.metersPerSquare;
+  if (!gridDirty.value) {
+    gridFeedback.value = 'A grade já está com esses valores.';
+    return;
+  }
+  gridConfirmOpen.value = true;
+}
+
+function confirmApplyGrid() {
+  gridConfirmOpen.value = false;
+  gridFeedback.value = '';
+  emit('apply-grid', nextGrid.value);
+}
+
+function discardGridDraft() {
+  gridWidthDraft.value = props.gridWidth;
+  gridHeightDraft.value = props.gridHeight;
+  scaleDraft.value = props.metersPerSquare;
+  gridFeedback.value = '';
 }
 
 function isInTurn(token: TokenInfo): boolean {
@@ -142,6 +202,13 @@ function isInTurn(token: TokenInfo): boolean {
 function tokenOwnerName(token: TokenInfo): string {
   return token.ownerId?.username || 'Sem dono';
 }
+
+const systemDefaultNote = computed(() => {
+  if (!props.selectedSystemId) {
+    return 'Nenhum sistema fixado nesta mesa. D&D 5e vale como padrão para novas fichas; escolher um sistema não migra fichas existentes.';
+  }
+  return 'Define presets de dados e atributos de novas fichas. Fichas existentes não migram.';
+});
 </script>
 
 <template>
@@ -183,50 +250,68 @@ function tokenOwnerName(token: TokenInfo): string {
         <SceneManager
           :scenes="scenes"
           :active-scene-id="activeSceneId"
-          :is-collapsed="false"
-          :map-url-input="mapUrlInput"
-          :new-scene-name="newSceneName"
-          :new-scene-image-url="newSceneImageUrl"
-          :new-scene-type="newSceneType"
-          :is-uploading-map="isUploadingMap"
-          :upload-progress="mapUploadProgress"
-          :upload-error="mapUploadError"
+          :table-id="tableId"
           :usage="assetUsage"
-          @toggle="() => undefined"
-          @set-active-scene="emit('set-active-scene', $event)"
-          @edit-scene="emit('edit-scene', $event)"
-          @delete-scene="emit('delete-scene', $event)"
-          @reorder="emit('reorder-scenes', $event)"
-          @set-map="emit('set-map')"
-          @create-scene="emit('create-scene')"
-          @update:mapUrlInput="emit('update:mapUrlInput', $event)"
-          @update:newSceneName="emit('update:newSceneName', $event)"
-          @update:newSceneImageUrl="emit('update:newSceneImageUrl', $event)"
-          @update:newSceneType="emit('update:newSceneType', $event)"
-          @upload-map-file="emit('upload-map-file', $event)"
+          :create-scene="createScene"
+          :delete-scene="deleteScene"
+          :rename-scene="renameScene"
+          :activate-scene="activateScene"
+          :reorder-scenes="(list: IScene[]) => emit('reorder-scenes', list)"
         />
 
-        <section v-if="isBattlemap" class="panel-block" aria-labelledby="grid-title">
+        <section v-if="activeScene" class="panel-block" aria-labelledby="grid-title">
           <h4 id="grid-title">Grade</h4>
-          <div class="grid-row">
-            <label>
-              <span>Colunas</span>
-              <input v-model.number="gridWidthDraft" class="input-sm" type="number" min="1" max="200" />
-            </label>
-            <label>
-              <span>Linhas</span>
-              <input v-model.number="gridHeightDraft" class="input-sm" type="number" min="1" max="200" />
-            </label>
-          </div>
-          <label class="grid-scale">
-            <span>Escala (m por quadrado)</span>
-            <input v-model.number="scaleDraft" class="input-sm" type="number" step="0.1" min="0.1" max="50" />
-          </label>
           <p class="panel-hint">
-            {{ (scaleDraft || 0).toFixed(2) }}m ≈ {{ Math.round((scaleDraft || 0) * 3.28084) }}ft por quadrado.
+            Grade atual: <strong>{{ gridWidth }} × {{ gridHeight }}</strong> ·
+            {{ metersPerSquare.toFixed(1) }} m por quadrado.
           </p>
-          <button type="button" class="btn btn-sm" @click="applyGrid">Aplicar grade</button>
+
+          <div v-if="isBattlemap" class="grid-fields">
+            <div class="grid-row">
+              <label for="grid-columns">
+                <span>Colunas</span>
+                <input id="grid-columns" v-model.number="gridWidthDraft" class="input-sm grid-input" type="number" inputmode="numeric" min="1" max="200" step="1" />
+              </label>
+              <label for="grid-rows">
+                <span>Linhas</span>
+                <input id="grid-rows" v-model.number="gridHeightDraft" class="input-sm grid-input" type="number" inputmode="numeric" min="1" max="200" step="1" />
+              </label>
+            </div>
+            <label class="grid-scale" for="grid-scale">
+              <span>Escala (m por quadrado)</span>
+              <input id="grid-scale" v-model.number="scaleDraft" class="input-sm grid-input" type="number" inputmode="decimal" step="0.1" min="0.1" max="50" />
+            </label>
+
+            <p class="panel-warning" role="note">
+              Alterar a grade pode deslocar tokens que ficarem fora dos novos limites.
+              <template v-if="tokensOutsideDraft">
+                <strong>{{ tokensOutsideDraft }} token(s)</strong> desta cena ficariam fora.
+              </template>
+            </p>
+
+            <p class="panel-hint">
+              Alinhamento fino (offset) ainda não está disponível: ajuste a arte da imagem
+              para casar com a grade antes de enviar.
+            </p>
+
+            <div class="grid-actions">
+              <button type="button" class="btn btn-sm" @click="requestApplyGrid">Aplicar grade</button>
+              <button
+                v-if="gridDirty"
+                type="button"
+                class="btn btn-sm btn-ghost"
+                @click="discardGridDraft"
+              >Descartar</button>
+            </div>
+            <p v-if="gridFeedback" class="panel-hint" role="status">{{ gridFeedback }}</p>
+          </div>
+          <p v-else class="panel-hint">
+            Cenas do tipo imagem não usam grade. Troque o tipo na criação ou em outra cena.
+          </p>
         </section>
+        <p v-else class="panel-hint">
+          Crie e ative uma cena para calibrar a grade.
+        </p>
       </section>
 
       <section
@@ -331,20 +416,18 @@ function tokenOwnerName(token: TokenInfo): string {
             aria-label="Sistema da mesa"
             @change="emit('system-change', ($event.target as HTMLSelectElement).value)"
           >
-            <option value="">Sem sistema</option>
+            <option value="">Padrão da plataforma (D&amp;D 5e)</option>
             <option v-for="system in systemOptions" :key="system._id" :value="system._id">
               {{ system.name }}
             </option>
           </select>
-          <p class="panel-hint">
-            Define os presets de dados e os atributos das fichas. Fichas existentes não migram.
-          </p>
+          <p class="panel-hint">{{ systemDefaultNote }}</p>
         </section>
 
         <section class="panel-block" aria-labelledby="session-summary-title">
           <h4 id="session-summary-title">Resumo</h4>
           <dl class="summary-list">
-            <div><dt>Cena</dt><dd>{{ activeScene?.name || 'Nenhuma cena ativa' }}</dd></div>
+            <div><dt>Cena</dt><dd :title="activeScene?.name || 'Nenhuma cena ativa'">{{ activeScene?.name || 'Nenhuma cena ativa' }}</dd></div>
             <div><dt>Turno</dt><dd>{{ currentEntry?.characterName || 'Sem turno ativo' }}</dd></div>
             <div v-if="round"><dt>Rodada</dt><dd>{{ round }}</dd></div>
             <div><dt>Iniciativa</dt><dd>{{ rowCount }} {{ rowCount === 1 ? 'entrada' : 'entradas' }}</dd></div>
@@ -368,6 +451,30 @@ function tokenOwnerName(token: TokenInfo): string {
         />
       </section>
     </div>
+
+    <BaseDialog
+      :open="gridConfirmOpen"
+      title="Aplicar grade?"
+      @update:open="gridConfirmOpen = $event"
+      @close="gridConfirmOpen = false"
+    >
+      <p class="grid-dialog-copy">
+        A grade de <strong>“{{ activeScene?.name || 'cena ativa' }}”</strong> passará de
+        <strong>{{ gridWidth }} × {{ gridHeight }}</strong> para
+        <strong>{{ nextGrid.width }} × {{ nextGrid.height }}</strong>
+        ({{ nextGrid.metersPerSquare.toFixed(1) }} m por quadrado).
+      </p>
+      <p v-if="tokensOutsideDraft" class="grid-dialog-warning" role="alert">
+        {{ tokensOutsideDraft }} token(s) ficariam fora da nova grade e podem perder a posição.
+      </p>
+      <p v-else class="grid-dialog-copy">
+        Os tokens dentro dos novos limites mantêm a posição.
+      </p>
+      <template #footer>
+        <button type="button" class="btn btn-sm alt" @click="gridConfirmOpen = false">Cancelar</button>
+        <button type="button" class="btn btn-sm" @click="confirmApplyGrid">Aplicar grade</button>
+      </template>
+    </BaseDialog>
   </div>
 </template>
 
@@ -398,6 +505,7 @@ function tokenOwnerName(token: TokenInfo): string {
   display: inline-flex;
   align-items: center;
   gap: var(--s-2);
+  min-width: 44px;
   min-height: 44px;
   padding: 0 var(--s-3);
   border: 0;
@@ -428,12 +536,13 @@ function tokenOwnerName(token: TokenInfo): string {
   overscroll-behavior: contain;
   padding: var(--s-4);
 }
-.dm-panel__section { outline: none; }
+.dm-panel__section { outline: none; min-width: 0; }
 .dm-panel__section:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 .panel-block {
   margin-top: var(--s-5);
   padding-top: var(--s-4);
   border-top: 1px solid var(--line);
+  min-width: 0;
 }
 .panel-block:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .panel-block h4 {
@@ -457,6 +566,17 @@ function tokenOwnerName(token: TokenInfo): string {
   font-size: var(--text-xs);
   line-height: var(--leading-body);
 }
+.panel-warning {
+  margin: 0 0 var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid rgb(217 180 91 / 0.45);
+  border-radius: var(--radius-xs);
+  background: rgb(217 180 91 / 0.08);
+  color: var(--manila);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-body);
+}
+.grid-fields { display: flex; flex-direction: column; min-width: 0; }
 .grid-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -471,6 +591,9 @@ function tokenOwnerName(token: TokenInfo): string {
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
+.grid-input { width: 100%; min-width: 0; min-height: 44px; font-size: 16px; }
+.grid-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.grid-actions .btn { min-height: 44px; }
 .token-list {
   display: flex;
   flex-direction: column;
@@ -506,100 +629,44 @@ function tokenOwnerName(token: TokenInfo): string {
   white-space: nowrap;
 }
 .badge { flex: none; }
-.system-select { width: 100%; }
+.system-select { width: 100%; min-height: 44px; }
 .summary-list { display: flex; flex-direction: column; gap: var(--s-2); margin: 0; }
 .summary-list div { display: flex; justify-content: space-between; gap: var(--s-3); }
 .summary-list dt { color: var(--text-muted); font-size: var(--text-xs); }
-.summary-list dd { margin: 0; font-size: var(--text-sm); font-weight: 500; }
-:deep(.scene-manager > .subsection-toggle) { display: none; }
-:deep(.scene-manager) { margin: 0; border-top: 0; padding-top: 0; }
-:deep(.scene-manager h4) {
-  margin: 0 0 var(--s-3);
-  color: var(--text);
-  font-family: var(--font-sans);
+.summary-list dd {
+  margin: 0;
+  overflow: hidden;
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: 500;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-:deep(.scene-manager .panel-section) {
-  margin-top: var(--s-4);
-  padding-top: var(--s-4);
-  border-top: 1px solid var(--line);
-}
-:deep(.scene-manager .scene-list) {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-1);
-  margin: 0 0 var(--s-3);
-  padding: 0;
-  list-style: none;
-  max-height: 220px;
-  overflow-y: auto;
-}
-:deep(.scene-manager .scene-list li) {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  padding: var(--s-2) var(--s-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--raised);
-  color: var(--text);
-  font-size: var(--text-sm);
-}
-:deep(.scene-manager .scene-list li.active-scene) {
-  border-color: var(--accent-ink);
-  box-shadow: inset 3px 0 0 var(--accent-ink);
-}
-:deep(.scene-manager .scene-buttons) {
-  display: flex;
-  align-items: center;
-  gap: var(--s-1);
-  margin-left: auto;
-}
-:deep(.scene-manager .scene-buttons button) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 32px;
-  padding: 0 var(--s-2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-xs);
-  background: var(--panel);
-  color: var(--text);
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-:deep(.scene-manager .scene-buttons button:hover:not(:disabled)) { background: var(--raised-2); }
-:deep(.scene-manager .scene-buttons button:disabled) { color: var(--text-faint); cursor: not-allowed; }
-:deep(.scene-manager .scene-buttons .icon-btn) { width: 32px; padding: 0; }
-:deep(.scene-manager .drag-handle) { display: inline-flex; color: var(--text-muted); cursor: grab; }
-:deep(.scene-manager .create-scene-form) {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
-  margin-top: var(--s-4);
-  padding-top: var(--s-4);
-  border-top: 1px solid var(--line);
-}
-:deep(.scene-manager .map-controls) { display: flex; flex-direction: column; gap: var(--s-2); }
-:deep(.scene-manager .upload-button) { width: 100%; }
-:deep(.scene-manager .usage-info) { margin-top: var(--s-2); }
-:deep(.dm-panel__section--session .panel-section > .subsection-toggle),
-:deep(.dm-panel__section .panel-section > .subsection-toggle) { display: none; }
-:deep(.session-controls) { display: flex; flex-direction: column; gap: var(--s-2); }
-:deep(.session-controls .row) { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
-:deep(.session-controls label) { margin: 0; }
-:deep(.session-controls .session-btn) { align-self: flex-start; }
-:deep(.dm-panel__section .panel-section) { margin-top: 0; border-top: 0; padding-top: 0; }
 :deep(.dice-roller) {
   padding: var(--s-3);
   border-radius: var(--radius-md);
   background: var(--raised);
   min-width: 0;
 }
+.grid-dialog-copy {
+  margin: 0 0 var(--s-3);
+  color: var(--text-muted);
+  line-height: var(--leading-body);
+}
+.grid-dialog-warning {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid rgb(217 180 91 / 0.5);
+  border-radius: var(--radius-xs);
+  background: rgb(217 180 91 / 0.1);
+  color: var(--manila);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+:deep(.session-controls > .subsection-toggle),
+:deep(.scene-manager .subsection-toggle) { display: none; }
 @media (max-width: 420px) {
   .dm-panel__tab { padding: 0 var(--s-2); }
   .dm-panel__tab span { font-size: var(--text-xs); }
-  :deep(.scene-manager .scene-buttons button) { min-height: 44px; }
 }
 </style>

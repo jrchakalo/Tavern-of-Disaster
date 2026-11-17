@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { shallowMount } from '@vue/test-utils';
-import { ref } from 'vue';
+import { describe, expect, it, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
+import { nextTick, ref } from 'vue';
 import DMPanel from '../DMPanel.vue';
+import BaseDialog from '../../ui/BaseDialog.vue';
 
 function props(overrides: Record<string, unknown> = {}) {
   return {
@@ -12,15 +13,8 @@ function props(overrides: Record<string, unknown> = {}) {
     pauseRemaining: 0,
     inviteCode: 'INV',
     displayConnected: false,
-    scenes: [{ _id: 'scene-1', tableId: 'table-1', name: 'Cripta', type: 'battlemap' }],
+    scenes: [{ _id: 'scene-1', tableId: 'table-1', name: 'Cripta', type: 'battlemap', gridWidth: 30, gridHeight: 30, metersPerSquare: 1.5 }],
     activeSceneId: 'scene-1',
-    mapUrlInput: '',
-    newSceneName: '',
-    newSceneImageUrl: '',
-    newSceneType: 'battlemap',
-    isUploadingMap: false,
-    mapUploadProgress: 0,
-    mapUploadError: '',
     assetUsage: null,
     initiativeList: [],
     tokensOnMap: [],
@@ -36,13 +30,31 @@ function props(overrides: Record<string, unknown> = {}) {
     characters: [],
     currentSystem: null,
     round: 1,
+    createScene: vi.fn(async () => undefined),
+    deleteScene: vi.fn(async () => undefined),
+    renameScene: vi.fn(async () => undefined),
+    activateScene: vi.fn(async () => undefined),
     ...overrides,
   };
 }
 
+function mountPanel(overrides: Record<string, unknown> = {}) {
+  return mount(DMPanel, {
+    attachTo: document.body,
+    props: props(overrides),
+    global: { stubs: { teleport: true } },
+  });
+}
+
+function gridDialog(wrapper: ReturnType<typeof mountPanel>) {
+  return wrapper
+    .findAllComponents(BaseDialog)
+    .find((dialog) => dialog.props('title') === 'Aplicar grade?');
+}
+
 describe('DMPanel', () => {
   it('troca de aba ao clicar e ao navegar pelo teclado', async () => {
-    const wrapper = shallowMount(DMPanel, { props: props() });
+    const wrapper = mountPanel();
     const tabs = wrapper.findAll('[role="tab"]');
     expect(tabs.length).toBe(4);
 
@@ -55,12 +67,10 @@ describe('DMPanel', () => {
   });
 
   it('lista tokens da cena e abre o inspetor pelo teclado', async () => {
-    const wrapper = shallowMount(DMPanel, {
-      props: props({
-        tokensOnMap: ref([
-          { _id: 'token-1', name: 'Ghoul', ownerId: { _id: 'dm-1', username: 'DM' }, color: '#3c096c' },
-        ]).value,
-      }),
+    const wrapper = mountPanel({
+      tokensOnMap: ref([
+        { _id: 'token-1', name: 'Ghoul', ownerId: { _id: 'dm-1', username: 'DM' }, color: '#3c096c' },
+      ]).value,
     });
     const tokenButton = wrapper.find('.token-list__main');
     expect(tokenButton.exists()).toBe(true);
@@ -70,14 +80,74 @@ describe('DMPanel', () => {
     wrapper.unmount();
   });
 
-  it('emite apply-grid com os valores validados', async () => {
-    const wrapper = shallowMount(DMPanel, { props: props() });
-    const apply = wrapper.findAll('button').find((button) => button.text() === 'Aplicar grade');
-    expect(apply).toBeTruthy();
-    await apply!.trigger('click');
+  it('não aplica grade ao digitar; só emite depois da confirmação', async () => {
+    const wrapper = mountPanel();
+    await wrapper.get('#grid-columns').setValue(20);
+    await nextTick();
+
+    expect(wrapper.emitted('apply-grid')).toBeUndefined();
+
+    const request = wrapper.findAll('button').find((button) => button.text() === 'Aplicar grade');
+    expect(request).toBeTruthy();
+    await request!.trigger('click');
+    await nextTick();
+
+    expect(wrapper.emitted('apply-grid')).toBeUndefined();
+    const dialog = gridDialog(wrapper);
+    expect(dialog?.props('open')).toBe(true);
+    expect(dialog?.text()).toContain('30 × 30');
+    expect(dialog?.text()).toContain('20 × 30');
+
+    const confirm = wrapper
+      .findAll('button')
+      .filter((button) => button.text() === 'Aplicar grade')
+      .at(-1);
+    await confirm!.trigger('click');
+    await nextTick();
+
     expect(wrapper.emitted('apply-grid')?.[0]).toEqual([
-      { width: 30, height: 30, metersPerSquare: 1.5 },
+      { width: 20, height: 30, metersPerSquare: 1.5 },
     ]);
+    wrapper.unmount();
+  });
+
+  it('clampa a grade antes de confirmar e avisa sobre tokens fora dos limites', async () => {
+    const wrapper = mountPanel({
+      tokensOnMap: [
+        { _id: 'token-1', name: 'Ghoul', squareId: 'sq-899', ownerId: null, color: '#fff' },
+      ],
+    });
+    await wrapper.get('#grid-columns').setValue(0);
+    await wrapper.get('#grid-rows').setValue(999);
+    await wrapper.get('#grid-scale').setValue(999);
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Aplicar grade')!.trigger('click');
+    await nextTick();
+
+    const dialog = gridDialog(wrapper);
+    expect(dialog?.text()).toContain('1 × 200');
+    expect(dialog?.text()).toContain('fora da nova grade');
+    wrapper.unmount();
+  });
+
+  it('avisa que a grade atual e a escala vêm da cena real', () => {
+    const wrapper = mountPanel({
+      gridWidth: 24,
+      gridHeight: 18,
+      metersPerSquare: 1.5,
+      scenes: [{ _id: 'scene-1', tableId: 'table-1', name: 'Cripta', type: 'battlemap', gridWidth: 24, gridHeight: 18, metersPerSquare: 1.5 }],
+    });
+    const text = wrapper.text();
+    expect(text).toContain('Grade atual: 24 × 18');
+    expect(text).toContain('1.5 m por quadrado');
+    wrapper.unmount();
+  });
+
+  it('usa D&D 5e como padrão visível quando a mesa não tem sistema', async () => {
+    const wrapper = mountPanel({ activeTab: 'session', selectedSystemId: '' });
+    await flushPromises();
+    expect(wrapper.text()).toContain('Padrão da plataforma (D&D 5e)');
+    expect(wrapper.text()).toContain('D&D 5e vale como padrão');
     wrapper.unmount();
   });
 });
