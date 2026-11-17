@@ -34,6 +34,9 @@ const socketServiceMock = vi.hoisted(() => ({
   sendChatMessage: vi.fn(),
   onChatEvent: vi.fn(() => () => {}),
   requestResync: vi.fn(),
+  shareMeasurement: vi.fn(async () => ({ ok: true, revision: 8, serverNowMs: 0 })),
+  removeMyMeasurement: vi.fn(async () => ({ ok: true, revision: 8, serverNowMs: 0 })),
+  sendPing: vi.fn(async () => ({ ok: true, revision: 8, serverNowMs: 0 })),
 }));
 vi.mock('../../services/socketService', () => ({ socketService: socketServiceMock }));
 
@@ -131,6 +134,7 @@ function createRefs(overrides: Record<string, unknown> = {}) {
     metersPerSquare: ref(1.5),
     auras: ref([]),
     pings: ref([]),
+    sharedMeasurements: ref({}),
     isDM: ref(false),
     recentRolls: ref([]),
     characters: ref([]),
@@ -717,6 +721,62 @@ describe('PlayView — shell do jogador', () => {
 
     expect(wrapper.find('.player-image').exists()).toBe(false);
     expect(wrapper.findComponent(PlayerBoard).exists()).toBe(true);
+    wrapper.unmount();
+  });
+});
+
+describe('PlayView — ferramentas do jogador', () => {
+  it('abre a Mesa pela nav, arma a régua e mostra o banner com cancelar', async () => {
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    const mesaTab = wrapper.get('.player-nav [data-tab="mesa"]');
+    await mesaTab.trigger('click');
+    await flushPromises();
+
+    const tools = wrapper.get('.player-tools');
+    expect(tools.text()).toContain('Medir');
+    expect(tools.text()).toContain('Ping');
+    expect(wrapper.get('.board-tools-btn').attributes('aria-expanded')).toBe('true');
+
+    await wrapper.get('.player-tools__measure').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.get('.tool-banner').text()).toContain('Toque no primeiro quadrado');
+    expect(wrapper.get('.tool-banner').text()).toContain('Cancelar');
+    expect(wrapper.get('.board-tools-btn').attributes('aria-expanded')).toBe('false');
+
+    await wrapper.get('.tool-banner__cancel').trigger('click');
+    expect(wrapper.find('.tool-banner').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('mostra Limpar quando o jogador já tem uma régua na mesa', async () => {
+    tableStoreStub.__refs = createRefs({
+      sharedMeasurements: ref({
+        'user-1': {
+          userId: 'user-1',
+          username: 'Tester',
+          start: { x: 0.5, y: 0.5 },
+          end: { x: 2.5, y: 0.5 },
+          distance: '3,0 m',
+          color: '#ff8c00',
+          type: 'ruler',
+        },
+      }),
+    });
+
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    expect(wrapper.find('.player-tools__clear').exists()).toBe(true);
+    await wrapper.get('.player-tools__clear').trigger('click');
+    await flushPromises();
+
+    expect(socketServiceMock.removeMyMeasurement).toHaveBeenCalledWith({
+      tableId: 'table-1',
+      sceneId: 'scene-1',
+    });
     wrapper.unmount();
   });
 });
