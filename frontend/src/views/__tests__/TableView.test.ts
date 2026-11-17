@@ -13,6 +13,7 @@ vi.mock('pinia', async () => {
 });
 
 import TableView from '../TableView.vue';
+import { useMediaStore } from '../../stores/mediaStore';
 
 const mockRoute = { params: { tableId: 'table-1' } };
 vi.mock('vue-router', () => ({ useRoute: () => mockRoute }));
@@ -762,6 +763,168 @@ describe('TableView cockpit D6b (mídia, chat e dados)', () => {
 
     expect(findStub(wrapper, 'ChatPanel')!.props('open')).toBe(false);
     expect(findStub(wrapper, 'HistoryDrawer')!.props('open')).toBe(true);
+    wrapper.unmount();
+  });
+});
+
+describe('TableView pré-chamada', () => {
+  function mountTable() {
+    return shallowMount(TableView, {
+      global: { stubs: { teleport: true, Transition: false } },
+    });
+  }
+
+  function findStub(wrapper: ReturnType<typeof mountTable>, name: string) {
+    const found = wrapper.findAllComponents({ name });
+    return found.length > 0 ? found[0] : null;
+  }
+
+  function findByTitle(wrapper: ReturnType<typeof mountTable>, title: string) {
+    return wrapper
+      .findAllComponents({ name: 'BaseDialog' })
+      .find((dialog) => dialog.props('title') === title) ?? null;
+  }
+
+  it('a pílula da chamada abre a pré-chamada em vez de pedir microfone direto', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const dock = findStub(wrapper, 'MediaDock');
+    expect(dock).toBeTruthy();
+    dock!.vm.$emit('join-requested');
+    await nextTick();
+
+    const dialog = findByTitle(wrapper, 'Entrar na chamada');
+    expect(dialog).toBeTruthy();
+    expect(dialog!.props('open')).toBe(true);
+    expect(dock!.props('variant')).toBe('inline');
+    wrapper.unmount();
+  });
+
+  it('entra mudo pela pré-chamada e fecha o diálogo ao conectar', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const mediaStore = useMediaStore();
+    mediaStore.joined = false;
+    mediaStore.mic = 'on';
+    const joinSpy = vi.spyOn(mediaStore, 'join').mockImplementation(async () => {
+      mediaStore.joined = true;
+    });
+    const toggleSpy = vi.spyOn(mediaStore, 'toggleMic').mockImplementation(() => {
+      mediaStore.mic = 'muted';
+    });
+
+    findStub(wrapper, 'MediaDock')!.vm.$emit('join-requested');
+    await nextTick();
+    const dialog = findByTitle(wrapper, 'Entrar na chamada');
+    expect(dialog!.props('open')).toBe(true);
+
+    const vm = wrapper.vm as unknown as { joinFromPreCall: (muted: boolean) => Promise<void> };
+    await vm.joinFromPreCall(true);
+    await flushPromises();
+
+    expect(joinSpy).toHaveBeenCalledWith('table-1');
+    expect(toggleSpy).toHaveBeenCalledTimes(1);
+    expect(dialog!.props('open')).toBe(false);
+
+    joinSpy.mockRestore();
+    toggleSpy.mockRestore();
+    mediaStore.joined = false;
+    mediaStore.mic = 'on';
+    wrapper.unmount();
+  });
+
+  it('mantém o erro de permissão inline e não fecha a pré-chamada', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    const mediaStore = useMediaStore();
+    mediaStore.joined = false;
+    const joinSpy = vi.spyOn(mediaStore, 'join').mockImplementation(async () => {
+      mediaStore.joined = false;
+      mediaStore.error = 'Permissão de microfone negada.';
+    });
+
+    findStub(wrapper, 'MediaDock')!.vm.$emit('join-requested');
+    await nextTick();
+    const dialog = findByTitle(wrapper, 'Entrar na chamada');
+
+    const vm = wrapper.vm as unknown as { joinFromPreCall: (muted: boolean) => Promise<void> };
+    await vm.joinFromPreCall(false);
+    await flushPromises();
+
+    expect(dialog!.props('open')).toBe(true);
+    expect(mediaStore.error).toBe('Permissão de microfone negada.');
+
+    joinSpy.mockRestore();
+    mediaStore.clearError();
+    wrapper.unmount();
+  });
+});
+
+describe('TableView cena de imagem', () => {
+  function mountTable() {
+    return shallowMount(TableView, {
+      global: { stubs: { teleport: true, Transition: false } },
+    });
+  }
+
+  function findStub(wrapper: ReturnType<typeof mountTable>, name: string) {
+    const found = wrapper.findAllComponents({ name });
+    return found.length > 0 ? found[0] : null;
+  }
+
+  function imageSceneRefs() {
+    return createTableStoreRefs({
+      scenes: ref([{ _id: 'scene-2', type: 'image', name: 'Handout' }]),
+      activeSceneId: ref('scene-2'),
+      activeScene: ref({ _id: 'scene-2', type: 'image', name: 'Handout' }),
+    });
+  }
+
+  it('esconde turno, rail e medições no desktop e passa imageOnly ao tabuleiro', async () => {
+    tableStoreStub.__refs = imageSceneRefs();
+    const wrapper = mountTable();
+    await flushPromises();
+
+    expect(wrapper.find('.turn-bar').exists()).toBe(false);
+    expect(wrapper.find('.tool-rail').exists()).toBe(false);
+
+    const viewport = findStub(wrapper, 'MapViewport');
+    expect(viewport).toBeTruthy();
+    expect(viewport!.props('imageOnly')).toBe(true);
+    expect(viewport!.props('isMeasuring')).toBe(false);
+
+    // O resto do cockpit continua: cena, fichas, painel e chamada.
+    expect(wrapper.find('.scene-switch').exists()).toBe(true);
+    expect(wrapper.find('.topbar-sheets-btn').exists()).toBe(true);
+    expect(findStub(wrapper, 'DMPanel')).toBeTruthy();
+    expect(findStub(wrapper, 'MediaDock')).toBeTruthy();
+    wrapper.unmount();
+  });
+
+  it('esconde Ferramentas e o botão de token no mobile', async () => {
+    tableStoreStub.__refs = imageSceneRefs();
+    mockMatchMedia(true);
+    const wrapper = mountTable();
+    await flushPromises();
+
+    expect(wrapper.find('.mobile-bar').exists()).toBe(true);
+    expect(wrapper.find('.mobile-bar').text()).not.toContain('Ferramentas');
+    expect(wrapper.find('.mobile-fab').exists()).toBe(false);
+    expect(findStub(wrapper, 'MapViewport')!.props('imageOnly')).toBe(true);
+    wrapper.unmount();
+    mockMatchMedia(false);
+  });
+
+  it('no battlemap volta a mostrar turno, rail e grade', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    expect(wrapper.find('.turn-bar').exists()).toBe(true);
+    expect(wrapper.find('.tool-rail').exists()).toBe(true);
+    expect(findStub(wrapper, 'MapViewport')!.props('imageOnly')).toBe(false);
     wrapper.unmount();
   });
 });

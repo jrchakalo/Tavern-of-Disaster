@@ -157,7 +157,12 @@ function tokenOwnerName(token: TokenInfo): string {
           <span>{{ tab.label }}</span>
         </button>
       </div>
-      <button type="button" class="btn btn-sm dm-panel__add" @click="emit('add-token')">
+      <button
+        v-if="isBattlemap"
+        type="button"
+        class="btn btn-sm dm-panel__add"
+        @click="emit('add-token')"
+      >
         ＋ Token
       </button>
     </header>

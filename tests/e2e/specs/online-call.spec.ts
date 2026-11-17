@@ -317,6 +317,17 @@ async function joinCall(page: Page): Promise<void> {
   }
   await expect(mediaDock(page)).toBeVisible({ timeout: UI_TIMEOUT_MS });
   await mediaDock(page).getByRole('button', { name: 'Entrar na chamada', exact: true }).click();
+  // O DM confirma a entrada numa pré-chamada (permissão de mic/câmera) antes
+  // de o navegador pedir acesso. Se a pílula voltar a entrar direto, o helper
+  // segue sem quebrar.
+  const preCall = page.getByRole('dialog', { name: 'Entrar na chamada' });
+  const hasPreCall = await preCall
+    .waitFor({ state: 'visible', timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (hasPreCall) {
+    await preCall.getByRole('button', { name: 'Entrar com microfone', exact: true }).click();
+  }
   await expect(mediaDock(page).locator('.media-dock__label').first()).toHaveText('Na chamada', {
     timeout: MEDIA_TIMEOUT_MS,
   });
