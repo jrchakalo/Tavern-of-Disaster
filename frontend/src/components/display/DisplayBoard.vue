@@ -148,7 +148,7 @@ const pingList = computed(() => {
         v-for="entry in entries"
         :key="entry.token._id"
         class="display-board__token"
-        :class="{ 'is-current-turn': entry.token._id === currentTurnTokenId }"
+        :class="{ 'is-current-turn': entry.token._id === currentTurnTokenId, 'is-top-row': entry.row === 0 }"
         :style="tokenStyle(entry, boardSize.squareSize)"
         :title="entry.token.name"
       >
@@ -346,6 +346,12 @@ const pingList = computed(() => {
 .display-board__token.is-current-turn {
   border-color: var(--manila);
   box-shadow: inset 0 0 0 2px var(--manila);
+}
+
+/* Token na primeira linha: o rótulo desce para não invadir a barra da TV. */
+.display-board__token.is-top-row .display-board__label {
+  top: calc(100% + 4px);
+  bottom: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
