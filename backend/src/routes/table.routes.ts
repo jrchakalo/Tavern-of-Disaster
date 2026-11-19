@@ -367,6 +367,13 @@ router.put('/:tableId/system', authMiddleware, (async (req: AuthRequest, res) =>
     }
     assertUserIsDM(userId, table);
 
+    // O sistema define fichas e presets de dados; trocá-lo no meio da sessão
+    // quebraria fichas em uso. Só é permitido enquanto a mesa está em Preparando.
+    if (table.status !== 'PREPARING') {
+      res.status(409).json({ message: 'O sistema só pode ser alterado enquanto a mesa está em Preparando.' });
+      return;
+    }
+
     const wantsClear = systemId === null || systemKey === null;
     if (wantsClear) {
       (table as any).systemId = null;

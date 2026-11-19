@@ -155,7 +155,7 @@ describe('SceneManager — cena em um passo', () => {
     wrapper.unmount();
   });
 
-  it('não aplica ao digitar; avisa tokens fora e clampa no submit', async () => {
+  it('não aplica ao digitar; avisa tokens fora de grade válida e recusa entrada inválida', async () => {
     const { wrapper, updateScene } = mountManager({
       tokensOnMap: [
         { _id: 'token-1', name: 'Ghoul', squareId: 'sq-500', ownerId: null, color: '#fff' },
@@ -167,17 +167,85 @@ describe('SceneManager — cena em um passo', () => {
     expect(updateScene).not.toHaveBeenCalled();
     expect(wrapper.get('.scene-warning').text()).toContain('1 token(s)');
 
+    // 0 colunas é inválido: o aviso de tokens dá lugar ao erro do campo.
     await wrapper.get('#scene-current-columns').setValue(0);
-    await wrapper.get('#scene-current-rows').setValue(999);
-    await wrapper.get('#scene-current-scale').setValue(999);
+    expect(wrapper.find('.scene-warning').exists()).toBe(false);
+
     await wrapper.get('form.scene-edit').trigger('submit');
     await flushPromises();
 
-    expect(updateScene).toHaveBeenCalledWith('scene-1', {
+    expect(updateScene).not.toHaveBeenCalled();
+    const error = wrapper.get('#scene-editor-error');
+    expect(error.text()).toBe('As colunas precisam estar entre 1 e 200.');
+    const columns = wrapper.get('#scene-current-columns');
+    expect(columns.attributes('aria-invalid')).toBe('true');
+    expect(columns.attributes('aria-describedby')).toBe('scene-editor-error');
+    expect((columns.element as HTMLInputElement).value).toBe('0');
+    wrapper.unmount();
+  });
+
+  it('recusa colunas, linhas e metros fora da faixa sem chamar a API', async () => {
+    const cases = [
+      {
+        field: '#scene-current-columns',
+        value: 0,
+        message: 'As colunas precisam estar entre 1 e 200.',
+      },
+      {
+        field: '#scene-current-rows',
+        value: 201,
+        message: 'As linhas precisam estar entre 1 e 200.',
+      },
+      {
+        field: '#scene-current-scale',
+        value: 0,
+        message: 'Os metros por quadrado precisam estar entre 0,1 e 50.',
+      },
+      {
+        field: '#scene-current-scale',
+        value: 51,
+        message: 'Os metros por quadrado precisam estar entre 0,1 e 50.',
+      },
+    ];
+
+    for (const testCase of cases) {
+      const { wrapper, updateScene } = mountManager();
+      await wrapper.get(testCase.field).setValue(testCase.value);
+      await wrapper.get('form.scene-edit').trigger('submit');
+      await flushPromises();
+
+      expect(updateScene).not.toHaveBeenCalled();
+      expect(wrapper.get('#scene-editor-error').text()).toBe(testCase.message);
+      expect(wrapper.get(testCase.field).attributes('aria-invalid')).toBe('true');
+      wrapper.unmount();
+    }
+  });
+
+  it('aceita os limites de grade 1/200/0,1/50', async () => {
+    const { wrapper, updateScene } = mountManager();
+    await wrapper.get('#scene-current-columns').setValue(1);
+    await wrapper.get('#scene-current-rows').setValue(200);
+    await wrapper.get('#scene-current-scale').setValue(0.1);
+
+    await wrapper.get('form.scene-edit').trigger('submit');
+    await flushPromises();
+
+    expect(updateScene).toHaveBeenLastCalledWith('scene-1', {
+      gridWidth: 1,
+      gridHeight: 200,
+      metersPerSquare: 0.1,
+    });
+
+    await wrapper.get('#scene-current-scale').setValue(50);
+    await wrapper.get('form.scene-edit').trigger('submit');
+    await flushPromises();
+
+    expect(updateScene).toHaveBeenLastCalledWith('scene-1', {
       gridWidth: 1,
       gridHeight: 200,
       metersPerSquare: 50,
     });
+    expect(wrapper.find('#scene-editor-error').exists()).toBe(false);
     wrapper.unmount();
   });
 
@@ -286,22 +354,30 @@ describe('SceneManager — cena em um passo', () => {
     wrapper.unmount();
   });
 
-  it('clampa colunas, linhas e escala para os limites válidos', async () => {
+  it('recusa grade inválida na criação sem clampar e mantém o valor digitado', async () => {
     const { wrapper, createScene } = mountManager();
     await openCreateDialog(wrapper);
     await wrapper.get('#scene-name').setValue('Limites');
     await wrapper.get('#scene-columns').setValue(0);
-    await wrapper.get('#scene-rows').setValue(999);
-    await wrapper.get('#scene-scale').setValue(999);
 
     await wrapper.get('form.create-scene-form').trigger('submit');
     await flushPromises();
 
-    expect(createScene).toHaveBeenCalledWith(expect.objectContaining({
-      gridWidth: 1,
-      gridHeight: 200,
-      metersPerSquare: 50,
-    }));
+    expect(createScene).not.toHaveBeenCalled();
+    const columns = wrapper.get('#scene-columns');
+    expect(columns.attributes('aria-invalid')).toBe('true');
+    expect(columns.attributes('aria-describedby')).toBe('scene-create-error');
+    expect((columns.element as HTMLInputElement).value).toBe('0');
+    expect(wrapper.get('#scene-create-error').text()).toBe('As colunas precisam estar entre 1 e 200.');
+    expect(dialogByTitle(wrapper, 'Nova cena')?.props('open')).toBe(true);
+
+    await wrapper.get('#scene-columns').setValue(200);
+    await wrapper.get('#scene-rows').setValue(999);
+    await wrapper.get('form.create-scene-form').trigger('submit');
+    await flushPromises();
+
+    expect(createScene).not.toHaveBeenCalled();
+    expect(wrapper.get('#scene-create-error').text()).toBe('As linhas precisam estar entre 1 e 200.');
     wrapper.unmount();
   });
 

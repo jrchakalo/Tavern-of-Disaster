@@ -42,6 +42,7 @@ const leaveBusy = ref(false)
 const leaveError = ref('')
 
 const isDm = computed(() => isTableDm(props.table, props.currentUserId))
+const canChangeSystem = computed(() => props.table?.status === 'PREPARING')
 const currentSystemName = computed(() => {
   if (!props.table?.systemId) return 'Sem sistema definido'
   const system = props.systems.find((entry) => entry._id === props.table?.systemId)
@@ -120,7 +121,7 @@ async function saveName() {
 }
 
 async function saveSystem() {
-  if (!props.table || systemSaving.value) return
+  if (!props.table || systemSaving.value || !canChangeSystem.value) return
   systemSaving.value = true
   systemError.value = ''
   try {
@@ -222,18 +223,27 @@ async function leaveTable() {
         <form v-if="isDm" class="settings__inline" @submit.prevent="saveSystem">
           <div class="field-group settings__grow">
             <label for="settings-table-system">Sistema usado nesta mesa</label>
-            <select id="settings-table-system" v-model="systemId" :disabled="systemSaving">
+            <select
+              id="settings-table-system"
+              v-model="systemId"
+              :disabled="systemSaving || !canChangeSystem"
+              :aria-describedby="!canChangeSystem ? 'settings-system-lock' : undefined"
+            >
               <option value="">Sem sistema definido</option>
               <option v-for="system in systems" :key="system._id" :value="system._id">
                 {{ systemDisplayName(system) }}
               </option>
             </select>
           </div>
-          <button type="submit" class="btn btn-sm" :disabled="systemSaving">
+          <button type="submit" class="btn btn-sm" :disabled="systemSaving || !canChangeSystem">
             {{ systemSaving ? 'Salvando…' : 'Salvar sistema' }}
           </button>
         </form>
         <p v-else class="settings__readonly">{{ currentSystemName }}</p>
+        <p v-if="isDm && !canChangeSystem" class="settings__readonly">{{ currentSystemName }}</p>
+        <p v-if="isDm && !canChangeSystem" id="settings-system-lock" class="settings__hint">
+          O sistema só pode ser alterado enquanto a mesa está em Preparando.
+        </p>
         <p class="settings__hint">
           Fichas já criadas mantêm o sistema delas; trocar aqui define o padrão das próximas.
         </p>

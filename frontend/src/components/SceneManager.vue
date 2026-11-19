@@ -29,6 +29,18 @@ const MIN_GRID = 1;
 const MAX_GRID = 200;
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 50;
+const GRID_ERROR_MESSAGES = [
+  'As colunas precisam estar entre 1 e 200.',
+  'As linhas precisam estar entre 1 e 200.',
+  'Os metros por quadrado precisam estar entre 0,1 e 50.',
+];
+
+type GridField = 'columns' | 'rows' | 'scale';
+type GridFieldFlags = Record<GridField, boolean>;
+
+function emptyGridFlags(): GridFieldFlags {
+  return { columns: false, rows: false, scale: false };
+}
 
 const props = withDefaults(defineProps<{
   scenes: IScene[];
@@ -67,6 +79,7 @@ const editRows = ref(30);
 const editScale = ref(1.5);
 const editorPending = ref(false);
 const editorError = ref('');
+const editorInvalid = ref<GridFieldFlags>(emptyGridFlags());
 const editorStatus = ref('');
 let hydratedSceneId = '';
 
@@ -86,6 +99,7 @@ const dragActive = ref(false);
 const pending = ref(false);
 const progress = ref(0);
 const formError = ref('');
+const formInvalid = ref<GridFieldFlags>(emptyGridFlags());
 const retryPayload = ref<SceneCreatePayload | null>(null);
 const nameInputRef = ref<HTMLInputElement | null>(null);
 
@@ -134,6 +148,30 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
   return Math.max(min, Math.min(max, parsed));
 }
 
+/**
+ * Valida o que o Mestre digitou nos campos de grade, sem clampar.
+ * O valor inválido fica no campo para ele corrigir; a grade só é aplicada
+ * depois que os três valores passam.
+ */
+function validateGridFields(columnsValue: unknown, rowsValue: unknown, scaleValue: unknown) {
+  const column = Number(columnsValue);
+  const row = Number(rowsValue);
+  const perSquare = Number(scaleValue);
+  const invalid: GridFieldFlags = {
+    columns: !Number.isInteger(column) || column < MIN_GRID || column > MAX_GRID,
+    rows: !Number.isInteger(row) || row < MIN_GRID || row > MAX_GRID,
+    scale: !Number.isFinite(perSquare) || perSquare < MIN_SCALE || perSquare > MAX_SCALE,
+  };
+  const message = invalid.columns
+    ? GRID_ERROR_MESSAGES[0]!
+    : invalid.rows
+      ? GRID_ERROR_MESSAGES[1]!
+      : invalid.scale
+        ? GRID_ERROR_MESSAGES[2]!
+        : '';
+  return { valid: !message, invalid, message };
+}
+
 function sceneGrid(scene: IScene | null) {
   return {
     width: clampInt(scene?.gridWidth, MIN_GRID, MAX_GRID, 30),
@@ -143,6 +181,7 @@ function sceneGrid(scene: IScene | null) {
 }
 
 function hydrateEditor() {
+  editorInvalid.value = emptyGridFlags();
   const scene = activeScene.value;
   if (!scene) {
     editName.value = '';
@@ -181,27 +220,39 @@ watch(
   { immediate: true },
 );
 
+// A grade some no modo imagem; ao voltar, nenhum aviso antigo fica pendurado.
+watch(editType, (value) => {
+  if (value !== 'image') return;
+  editorInvalid.value = emptyGridFlags();
+  if (GRID_ERROR_MESSAGES.includes(editorError.value)) editorError.value = '';
+});
+
 const editDirty = computed(() => {
   const scene = activeScene.value;
   if (!scene) return false;
   if (editName.value.trim() !== scene.name) return true;
   if (editType.value !== (scene.type === 'image' ? 'image' : 'battlemap')) return true;
   if (editType.value === 'image') return false;
+  // Entrada inválida continua "suja" para o submit mostrar o erro do campo.
+  if (!validateGridFields(editColumns.value, editRows.value, editScale.value).valid) return true;
   const grid = sceneGrid(scene);
   return (
-    clampInt(editColumns.value, MIN_GRID, MAX_GRID, grid.width) !== grid.width ||
-    clampInt(editRows.value, MIN_GRID, MAX_GRID, grid.height) !== grid.height ||
-    Math.abs(clampNumber(editScale.value, MIN_SCALE, MAX_SCALE, grid.scale) - grid.scale) > 0.0001
+    Number(editColumns.value) !== grid.width ||
+    Number(editRows.value) !== grid.height ||
+    Math.abs(Number(editScale.value) - grid.scale) > 0.0001
   );
 });
 
 const editorTokensOutside = computed(() => {
   const scene = activeScene.value;
   if (!scene || scene.type === 'image' || editType.value === 'image') return 0;
+  // Entrada inválida ainda não é uma grade: o aviso de tokens fica quieto
+  // para não encobrir o erro de validação do campo.
+  if (!validateGridFields(editColumns.value, editRows.value, editScale.value).valid) return 0;
   const currentWidth = clampInt(scene.gridWidth, MIN_GRID, MAX_GRID, 30);
   const currentHeight = clampInt(scene.gridHeight, MIN_GRID, MAX_GRID, 30);
-  const targetWidth = clampInt(editColumns.value, MIN_GRID, MAX_GRID, currentWidth);
-  const targetHeight = clampInt(editRows.value, MIN_GRID, MAX_GRID, currentHeight);
+  const targetWidth = Number(editColumns.value);
+  const targetHeight = Number(editRows.value);
   if (targetWidth >= currentWidth && targetHeight >= currentHeight) {
     return 0;
   }
@@ -212,6 +263,34 @@ const editorTokensOutside = computed(() => {
     return index % currentWidth >= targetWidth || Math.floor(index / currentWidth) >= targetHeight;
   }).length;
 });
+
+/** Ao corrigir um campo, o erro de grade some/atualiza sem esperar o submit. */
+function onEditorGridInput() {
+  if (!editorInvalid.value.columns && !editorInvalid.value.rows && !editorInvalid.value.scale) {
+    return;
+  }
+  const validation = validateGridFields(editColumns.value, editRows.value, editScale.value);
+  editorInvalid.value = validation.invalid;
+  if (validation.valid) {
+    editorError.value = '';
+  } else if (GRID_ERROR_MESSAGES.includes(editorError.value)) {
+    editorError.value = validation.message;
+  }
+}
+
+/** Mesmo comportamento no formulário de criação. */
+function onFormGridInput() {
+  if (!formInvalid.value.columns && !formInvalid.value.rows && !formInvalid.value.scale) {
+    return;
+  }
+  const validation = validateGridFields(columns.value, rows.value, scale.value);
+  formInvalid.value = validation.invalid;
+  if (validation.valid) {
+    if (GRID_ERROR_MESSAGES.includes(formError.value)) formError.value = '';
+  } else if (GRID_ERROR_MESSAGES.includes(formError.value)) {
+    formError.value = validation.message;
+  }
+}
 
 /** Próxima cena da lista, voltando à primeira depois da última. */
 const nextScene = computed<IScene | null>(() => {
@@ -332,6 +411,7 @@ function resetForm() {
   progress.value = 0;
   retryPayload.value = null;
   formError.value = '';
+  formInvalid.value = emptyGridFlags();
 }
 
 function openCreate() {
@@ -352,6 +432,7 @@ function errorMessage(error: unknown, fallback: string): string {
 async function handleSubmit() {
   if (pending.value) return;
   formError.value = '';
+  formInvalid.value = emptyGridFlags();
 
   const trimmedName = name.value.trim();
   if (!trimmedName) {
@@ -360,9 +441,24 @@ async function handleSubmit() {
     return;
   }
 
-  const width = clampInt(columns.value, MIN_GRID, MAX_GRID, 30);
-  const height = clampInt(rows.value, MIN_GRID, MAX_GRID, 30);
-  const perSquare = clampNumber(scale.value, MIN_SCALE, MAX_SCALE, 1.5);
+  if (isCreateBattlemap.value) {
+    const validation = validateGridFields(columns.value, rows.value, scale.value);
+    if (!validation.valid) {
+      formInvalid.value = validation.invalid;
+      formError.value = validation.message;
+      return;
+    }
+  }
+
+  const width = isCreateBattlemap.value
+    ? Number(columns.value)
+    : clampInt(columns.value, MIN_GRID, MAX_GRID, 30);
+  const height = isCreateBattlemap.value
+    ? Number(rows.value)
+    : clampInt(rows.value, MIN_GRID, MAX_GRID, 30);
+  const perSquare = isCreateBattlemap.value
+    ? Number(scale.value)
+    : clampNumber(scale.value, MIN_SCALE, MAX_SCALE, 1.5);
   columns.value = width;
   rows.value = height;
   scale.value = perSquare;
@@ -425,6 +521,7 @@ async function applyChanges() {
   if (!scene || editorPending.value) return;
   editorError.value = '';
   editorStatus.value = '';
+  editorInvalid.value = emptyGridFlags();
 
   const trimmedName = editName.value.trim();
   if (!trimmedName) {
@@ -439,10 +536,18 @@ async function applyChanges() {
   if (editType.value !== currentType) patch.type = editType.value;
 
   if (editType.value === 'battlemap') {
+    // Valida o texto cru antes de qualquer clamp: 0 colunas não pode virar 1
+    // silenciosamente nem disparar o aviso de tokens.
+    const validation = validateGridFields(editColumns.value, editRows.value, editScale.value);
+    if (!validation.valid) {
+      editorInvalid.value = validation.invalid;
+      editorError.value = validation.message;
+      return;
+    }
     const grid = sceneGrid(scene);
-    const width = clampInt(editColumns.value, MIN_GRID, MAX_GRID, grid.width);
-    const height = clampInt(editRows.value, MIN_GRID, MAX_GRID, grid.height);
-    const perSquare = clampNumber(editScale.value, MIN_SCALE, MAX_SCALE, grid.scale);
+    const width = Number(editColumns.value);
+    const height = Number(editRows.value);
+    const perSquare = Number(editScale.value);
     editColumns.value = width;
     editRows.value = height;
     editScale.value = perSquare;
@@ -703,7 +808,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <form class="scene-edit" @submit.prevent="applyChanges">
+      <form class="scene-edit" novalidate @submit.prevent="applyChanges">
         <div class="scene-field">
           <label for="scene-current-name">Nome da cena</label>
           <input
@@ -752,6 +857,9 @@ onBeforeUnmount(() => {
               max="200"
               step="1"
               :disabled="editorPending"
+              :aria-invalid="editorInvalid.columns ? 'true' : undefined"
+              :aria-describedby="editorInvalid.columns ? 'scene-editor-error' : undefined"
+              @input="onEditorGridInput"
             />
           </div>
           <div class="scene-field">
@@ -766,6 +874,9 @@ onBeforeUnmount(() => {
               max="200"
               step="1"
               :disabled="editorPending"
+              :aria-invalid="editorInvalid.rows ? 'true' : undefined"
+              :aria-describedby="editorInvalid.rows ? 'scene-editor-error' : undefined"
+              @input="onEditorGridInput"
             />
           </div>
           <div class="scene-field">
@@ -780,6 +891,9 @@ onBeforeUnmount(() => {
               max="50"
               step="0.1"
               :disabled="editorPending"
+              :aria-invalid="editorInvalid.scale ? 'true' : undefined"
+              :aria-describedby="editorInvalid.scale ? 'scene-editor-error' : undefined"
+              @input="onEditorGridInput"
             />
           </div>
         </div>
@@ -793,7 +907,7 @@ onBeforeUnmount(() => {
           da nova grade e podem perder a posição.
         </p>
 
-        <p v-if="editorError" class="upload-error" role="alert">{{ editorError }}</p>
+        <p v-if="editorError" id="scene-editor-error" class="upload-error" role="alert">{{ editorError }}</p>
         <p v-if="editorStatus" class="scene-status" role="status">{{ editorStatus }}</p>
 
         <div class="scene-form-actions">
@@ -948,7 +1062,7 @@ onBeforeUnmount(() => {
       @update:open="(open) => { if (!open) closeCreate(); }"
       @close="closeCreate"
     >
-      <form id="create-scene-form" class="create-scene-form" @submit.prevent="handleSubmit">
+      <form id="create-scene-form" class="create-scene-form" novalidate @submit.prevent="handleSubmit">
         <p class="scene-form-hint">
           Escolha a imagem, confira a grade e crie. A cena entra ativa por padrão.
         </p>
@@ -1054,6 +1168,9 @@ onBeforeUnmount(() => {
               max="200"
               step="1"
               :disabled="pending"
+              :aria-invalid="formInvalid.columns ? 'true' : undefined"
+              :aria-describedby="formInvalid.columns ? 'scene-create-error' : undefined"
+              @input="onFormGridInput"
             />
           </div>
           <div class="scene-field">
@@ -1068,6 +1185,9 @@ onBeforeUnmount(() => {
               max="200"
               step="1"
               :disabled="pending"
+              :aria-invalid="formInvalid.rows ? 'true' : undefined"
+              :aria-describedby="formInvalid.rows ? 'scene-create-error' : undefined"
+              @input="onFormGridInput"
             />
           </div>
           <div class="scene-field">
@@ -1082,6 +1202,9 @@ onBeforeUnmount(() => {
               max="50"
               step="0.1"
               :disabled="pending"
+              :aria-invalid="formInvalid.scale ? 'true' : undefined"
+              :aria-describedby="formInvalid.scale ? 'scene-create-error' : undefined"
+              @input="onFormGridInput"
             />
           </div>
         </div>
@@ -1112,7 +1235,7 @@ onBeforeUnmount(() => {
           <span class="upload-progress__label">{{ displayProgress }}%</span>
         </div>
 
-        <p v-if="formError" class="upload-error" role="alert">{{ formError }}</p>
+        <p v-if="formError" id="scene-create-error" class="upload-error" role="alert">{{ formError }}</p>
 
         <div v-if="usage" class="usage-info">
           <small class="usage-summary" :class="{ low: lowSpace }">
