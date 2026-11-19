@@ -105,4 +105,70 @@ describe('system routes', () => {
     const clearedTable = await Table.findById(table._id);
     expect(clearedTable?.systemId).toBeFalsy();
   });
+
+  it('keeps a missing system as 400 in a table that is still preparing', async () => {
+    const dmId = new Types.ObjectId();
+    const table = await Table.create({
+      name: 'Mesa Sem Sistema',
+      dm: dmId,
+      players: [dmId],
+      inviteCode: 'SYS-EMPTY',
+      scenes: [],
+    });
+    const dmToken = jwt.sign({ user: { id: dmId.toString(), username: 'DM' } }, jwtSecret);
+
+    const response = await request(buildApp())
+      .put(`/api/tables/${table._id}/system`)
+      .set('Authorization', `Bearer ${dmToken}`)
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe('Informe systemId ou systemKey.');
+  });
+
+  it('rejects system changes once the table left PREPARING', async () => {
+    const dmId = new Types.ObjectId();
+    const system = await System.create({ key: 'gurps-live', name: 'GURPS Live' });
+    const systemId = (system._id as Types.ObjectId).toString();
+    const dmToken = jwt.sign({ user: { id: dmId.toString(), username: 'DM' } }, jwtSecret);
+    const app = buildApp();
+
+    const statuses = ['LIVE', 'PAUSED', 'ENDED'] as const;
+    const tables = await Promise.all(
+      statuses.map((status, index) =>
+        Table.create({
+          name: `Mesa ${status}`,
+          dm: dmId,
+          players: [dmId],
+          inviteCode: `SYS-${status}`,
+          status,
+          scenes: [],
+          ...(index === 0 ? { systemId: system._id } : {}),
+        }),
+      ),
+    );
+
+    for (const [index, table] of tables.entries()) {
+      const response = await request(app)
+        .put(`/api/tables/${table._id}/system`)
+        .set('Authorization', `Bearer ${dmToken}`)
+        .send({ systemId });
+
+      expect(response.status).toBe(409);
+      expect(response.body.message).toBe(
+        'O sistema só pode ser alterado enquanto a mesa está em Preparando.',
+      );
+      const unchanged = await Table.findById(table._id);
+      expect(unchanged?.systemId?.toString() ?? null).toBe(index === 0 ? systemId : null);
+      expect(unchanged?.status).toBe(statuses[index]);
+    }
+
+    const clearResponse = await request(app)
+      .put(`/api/tables/${tables[0]!._id}/system`)
+      .set('Authorization', `Bearer ${dmToken}`)
+      .send({ systemId: null });
+    expect(clearResponse.status).toBe(409);
+    const stillSet = await Table.findById(tables[0]!._id);
+    expect(stillSet?.systemId?.toString()).toBe(systemId);
+  });
 });
