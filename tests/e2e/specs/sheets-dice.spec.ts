@@ -1265,8 +1265,23 @@ test('troca para Cyberpunk RED: preset 1d10! rola e explosão é comprovada', as
   requirePhase3();
   const w = world!;
 
+  // O sistema só pode ser trocado em PREPARING; a mesa está LIVE desde o setup.
+  expectAckOk(
+    await emitWithAck(w.dmSocket, 'requestUpdateSessionStatus', {
+      tableId: w.table._id,
+      newStatus: 'PREPARING',
+    }),
+    'requestUpdateSessionStatus(PREPARING)',
+  );
   const switchStatus = await setTableSystem(api, w.dm, w.table._id, 'cyberpunk-red');
   expect(switchStatus, 'PUT /api/tables/:id/system precisa aceitar "cyberpunk-red".').toBe(200);
+  expectAckOk(
+    await emitWithAck(w.dmSocket, 'requestUpdateSessionStatus', {
+      tableId: w.table._id,
+      newStatus: 'LIVE',
+    }),
+    'requestUpdateSessionStatus(LIVE)',
+  );
 
   const cyberpunk = await fetchSystem(api, 'cyberpunk-red');
   expect(cyberpunk?.dicePresets?.some((preset) => preset.expression === '1d10!')).toBe(true);
