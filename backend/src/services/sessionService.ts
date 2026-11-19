@@ -13,6 +13,7 @@ import {
   mapAura,
 } from '../dto/sessionAssembler';
 import { listTableRolls, ROLL_LOG_LIMIT } from './rollService';
+import { listTableActions, ACTION_LOG_LIMIT } from './sessionActionService';
 import Character, { ICharacter } from '../models/Character.model';
 import Token from '../models/Token.model';
 import { getRevision } from './revisionService';
@@ -92,10 +93,13 @@ export async function loadSessionState(tableId: string): Promise<SessionStateBun
   const characters = buildCharacterSummaries(characterDocs, tokenLinks);
   const characterByTokenId = buildCharacterByTokenId(tokens as any[], characterDocs);
 
-  const recentRolls = await listTableRolls(tableId, {
-    limit: ROLL_LOG_LIMIT,
-    fallbackRevision: tableDoc.revision ?? 0,
-  });
+  const [recentRolls, recentActions] = await Promise.all([
+    listTableRolls(tableId, {
+      limit: ROLL_LOG_LIMIT,
+      fallbackRevision: tableDoc.revision ?? 0,
+    }),
+    listTableActions(tableId, ACTION_LOG_LIMIT),
+  ]);
 
   const state = assembleSessionState(
     tableDoc,
@@ -107,6 +111,7 @@ export async function loadSessionState(tableId: string): Promise<SessionStateBun
     auras as any,
     characters,
     recentRolls,
+    recentActions,
     characterByTokenId
   );
   return {

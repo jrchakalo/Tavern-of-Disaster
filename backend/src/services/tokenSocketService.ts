@@ -196,5 +196,6 @@ export async function deleteTokenForTable(userId: string, data: { tableId: strin
     sceneId: scene._id.toString(),
     initiative,
     removedEntryId,
+    tokenName: token.name,
   };
 }

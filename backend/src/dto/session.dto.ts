@@ -127,6 +127,17 @@ export interface AuraDTO {
   difficultTerrain?: boolean;
 }
 
+/** Ação canônica do Histórico (aba Ações), persistida no servidor. */
+export interface SessionActionDTO {
+  id: string;
+  type: 'system' | 'movement';
+  content: string;
+  authorId?: string | null;
+  authorName?: string | null;
+  revision?: number | null;
+  createdAt: string;
+}
+
 export interface SessionStateDTO {
   table: TableInfoDTO;
   activeScene: SceneDTO | null;
@@ -137,6 +148,8 @@ export interface SessionStateDTO {
   auras: AuraDTO[];
   characters: CharacterSummaryDTO[];
   recentRolls: DiceRolledPayload[];
+  /** Últimas 50 ações da sessão, em ordem cronológica (mais antiga primeiro). */
+  recentActions: SessionActionDTO[];
 }
 
 // --- Protocolo realtime (Fase 1) -----------------------------------------

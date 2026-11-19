@@ -333,10 +333,8 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         const userId = socket.data.user?.id;
         assertCondition(!!userId, 'Usuário não autenticado.', 401);
         const data = validate(zDeleteTokenPayload, payload) as { tableId: string; tokenId: string };
-        const { tokenId, tableId, sceneId, initiative, removedEntryId } = await deleteTokenForTable(
-          userId!,
-          data
-        );
+        const { tokenId, tableId, sceneId, initiative, removedEntryId, tokenName } =
+          await deleteTokenForTable(userId!, data);
         const revision = await bumpRevision(tableId);
 
         io.to(tableId).emit('tokenRemoved', { tokenId, revision });
@@ -354,7 +352,7 @@ export function registerTokenHandlers(io: Server, socket: Socket) {
         if (removedEntryId) {
           changes.initiative = initiative.map(mapInitiativeEntry);
         }
-        return { tableId, revision, changes };
+        return { tableId, revision, changes, actionMeta: { tokenName } };
       },
     });
   };

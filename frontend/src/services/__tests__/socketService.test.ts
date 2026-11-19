@@ -263,6 +263,29 @@ describe('socketService — transporte, acks e resync', () => {
     socketService.disconnect();
   });
 
+  it('sessionAction chega ao Histórico do store e deduplica por id', async () => {
+    const store = useTableStore();
+    store.clearLogs();
+    socketService.connect('table-1');
+
+    const action = {
+      id: 'act-1',
+      type: 'system',
+      content: 'Cena ativa: Floresta',
+      authorId: 'user-1',
+      authorName: 'Tester',
+      revision: 4,
+      createdAt: new Date().toISOString(),
+    };
+    emitToSocket('sessionAction', action);
+    emitToSocket('sessionAction', action);
+
+    expect(store.logs).toHaveLength(1);
+    expect(store.logs[0].id).toBe('act-1');
+    expect(store.logs[0].content).toBe('Cena ativa: Floresta');
+    socketService.disconnect();
+  });
+
   it('connect_error TOKEN_EXPIRED renova a sessão uma única vez', async () => {
     authState.refreshToken.mockResolvedValue('novo-token');
     socketService.connect('table-1');

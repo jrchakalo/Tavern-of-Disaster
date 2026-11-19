@@ -436,6 +436,21 @@ export interface SessionStateDTO {
   initiative: InitiativeEntryDTO[];
   measurements: MeasurementDTO[];
   auras: AuraDTO[];
+  /** Rolagens canônicas do snapshot (mais recente primeiro). */
+  recentRolls?: RollLogEntryDTO[];
+  /** Ações canônicas do Histórico (mais antiga primeiro, máx. 50). */
+  recentActions?: SessionActionDTO[];
+}
+
+/** Ação canônica do Histórico (aba Ações), persistida no servidor. */
+export interface SessionActionDTO {
+  id: string;
+  type: 'system' | 'movement';
+  content: string;
+  authorId?: string | null;
+  authorName?: string | null;
+  revision?: number | null;
+  createdAt: string;
 }
 
 /** Pedido de teste por passo (OP2): atributo + perícia, RA/RB e pavor. */
@@ -538,6 +553,8 @@ export interface TableRollParams extends DiceRollBaseParams {
 export type RollDiceParams = ExpressionRollParams | StepRollParams | TableRollParams;
 
 export interface DiceRolledPayload {
+  /** Id canônico da rolagem persistida (snapshot/histórico). */
+  id?: string;
   tableId: string;
   expression: string;
   /** Testes de passo marcam o papel de cada dado; expressões comuns não. */
@@ -642,6 +659,8 @@ export interface SessionSnapshot {
   auras: AuraDTO[];
   characters?: CharacterSummaryDTO[];
   recentRolls?: RollLogEntryDTO[];
+  /** Últimas 50 ações da sessão, em ordem cronológica. */
+  recentActions?: SessionActionDTO[];
 }
 
 export interface TokenUpdateDTO {
