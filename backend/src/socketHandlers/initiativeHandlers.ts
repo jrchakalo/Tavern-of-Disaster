@@ -141,6 +141,8 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         assertUserInTable(userId, table);
         await assertExpectedRevision(data.tableId, data.expectedRevision);
 
+        const previousCurrentTurnId =
+          scene.initiative.find((entry) => entry.isCurrentTurn)?._id?.toString() ?? null;
         const result = await advanceTurn(table, scene, userId);
         const revision = await bumpRevision(data.tableId);
 
@@ -171,7 +173,12 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
           changes.measurements = [];
         }
 
-        return { tableId: data.tableId, revision, changes };
+        return {
+          tableId: data.tableId,
+          revision,
+          changes,
+          actionMeta: { previousCurrentTurnId },
+        };
       },
     });
   };
@@ -233,9 +240,13 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         const data = validate(zRemoveInitiativeEntryPayload, payload);
         const userId = socket.data.user?.id;
         assertCondition(!!userId, 'Usuário não autenticado.', 401);
-        const { scene, table } = await loadInitiativeContext(data.sceneId, data.initiativeEntryId);
+        const { scene, table, entry } = await loadInitiativeContext(
+          data.sceneId,
+          data.initiativeEntryId
+        );
         assertEntityBelongsToTable(table._id.toString(), data.tableId);
         assertUserIsDM(userId, table);
+        const entryName = entry.characterName;
 
         const { initiative } = await removeInitiativeEntry(
           scene._id.toString(),
@@ -253,7 +264,12 @@ export function registerInitiativeHandlers(io: Server, socket: Socket) {
         });
 
         const changes: SessionPatchChanges = { initiative: initiative.map(mapInitiativeEntry) };
-        return { tableId: data.tableId, revision, changes };
+        return {
+          tableId: data.tableId,
+          revision,
+          changes,
+          actionMeta: { entryName },
+        };
       },
     });
   };

@@ -21,6 +21,7 @@ import type {
   PresenceEntry,
   SessionSnapshot,
   SessionPatch,
+  SessionActionDTO,
   CharacterDTO,
   CharacterSummaryDTO,
   ChatMessage,
@@ -619,6 +620,9 @@ class SocketService {
     socket.on('sessionTransition', (data: { durationMs: number }) => { this.store.transitionMs = data.durationMs || 3000; this.store.transitionAt = Date.now(); });
     socket.on('mapUpdated', (data: { mapUrl: string }) => { this.store.currentMapUrl = data.mapUrl; });
     socket.on('diceRolled', this.handleDiceRolled);
+    // Ação canônica da sessão (Histórico): persistida pelo servidor e emitida
+    // para a sala inteira, inclusive o autor. Dedupe por id no store.
+    socket.on('sessionAction', this.handleSessionAction);
     // Fichas: eventos legados (o canônico é `sessionPatch.changes.characters*`).
     // Atualizam o resumo no tableStore e avisam o characterStore para manter a
     // ficha completa em cache quando o payload trouxer a ficha inteira.
@@ -1080,6 +1084,10 @@ class SocketService {
 
   private handleDiceRolled = (payload: DiceRolledPayload) => {
     this.store.handleDiceRoll(payload);
+  };
+
+  private handleSessionAction = (action: SessionActionDTO) => {
+    this.store.handleSessionAction(action);
   };
 
   private handleDiceRollError = (error: { message?: string }) => {

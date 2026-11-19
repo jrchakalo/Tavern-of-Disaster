@@ -455,6 +455,44 @@ describe('realtime integration (2+ clients)', () => {
     expect(snapshot.revision).toBe(1);
   });
 
+  it('8b. sessionAction canônico chega aos 2 clientes e entra no snapshot/resync', async () => {
+    const dm = await createUser('dm-history');
+    const player = await createUser('player-history');
+    const { table } = await createTableWithScene(dm._id, [player._id]);
+
+    const dmClient = await connectClient(signToken(dm));
+    const playerClient = await connectClient(signToken(player));
+    await joinTable(dmClient, table._id.toString());
+    await joinTable(playerClient, table._id.toString());
+
+    const dmAction = onceEvent(dmClient, 'sessionAction');
+    const playerAction = onceEvent(playerClient, 'sessionAction');
+    const ack = await emitAck(dmClient, 'requestUpdateSessionStatus', {
+      tableId: table._id.toString(),
+      newStatus: 'PAUSED',
+    });
+    expect(ack.ok).toBe(true);
+
+    const [dmPayload, playerPayload] = await Promise.all([dmAction, playerAction]);
+    expect(dmPayload.content).toBe('Sessão: Pausado');
+    expect(playerPayload.content).toBe('Sessão: Pausado');
+    expect(dmPayload.authorName).toBe(dm.username);
+    expect(playerPayload.id).toBe(dmPayload.id);
+
+    // Snapshot autoritativo (resync) hidrata o Histórico mesmo para quem
+    // entrou depois: a ação persistida precisa vir em `recentActions`.
+    const snapshotPromise = onceEvent(playerClient, 'sessionSnapshot');
+    const resyncAck = await emitAck(playerClient, 'requestResync', {
+      tableId: table._id.toString(),
+      sinceRevision: 0,
+    });
+    const snapshot = await snapshotPromise;
+    expect(resyncAck.ok).toBe(true);
+    expect(snapshot.recentActions.map((action: { content: string }) => action.content)).toContain(
+      'Sessão: Pausado'
+    );
+  });
+
   it('9. POST /api/auth/refresh devolve token utilizável', async () => {
     await createUser('refresh-user', 'senha123');
 

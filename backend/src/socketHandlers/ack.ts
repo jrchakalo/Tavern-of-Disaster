@@ -10,6 +10,12 @@ import {
 } from '../dto/session.dto';
 import { emitSessionPatch } from '../services/sessionService';
 import { getRevisionSafe } from '../services/revisionService';
+import {
+  deriveAndDedupeActions,
+  recordSessionAction,
+  SessionActionMeta,
+  SessionActionOutcome,
+} from '../services/sessionActionService';
 
 export type AckCallback = (ack: Ack) => void;
 
@@ -77,6 +83,11 @@ export type ActionOutcome = {
   tableId: string;
   revision: number;
   changes?: SessionPatchChanges;
+  /**
+   * Contexto capturado antes da mutação para o log canônico (nomes que somem
+   * depois do delete/remoção e turno anterior).
+   */
+  actionMeta?: SessionActionMeta;
 };
 
 export type RunActionParams = {
@@ -137,6 +148,7 @@ export async function runAction(params: RunActionParams): Promise<void> {
     if (outcome.changes && Object.keys(outcome.changes).length > 0) {
       emitSessionPatch(io, outcome.tableId, outcome.revision, outcome.changes);
     }
+    await recordOutcomeActions(io, socket, event, outcome, log);
     respondOk(outcome.revision);
   } catch (error) {
     log.error({ err: error, event, tableId: tableIdHint }, 'Ação realtime falhou');
@@ -144,6 +156,44 @@ export async function runAction(params: RunActionParams): Promise<void> {
     // Nunca devolver a revisão de uma mesa que o usuário não pode acessar.
     const revision = errorBody.code === 'FORBIDDEN' ? 0 : await getRevisionSafe(tableIdHint);
     respondError(revision, errorBody);
+  }
+}
+
+/**
+ * Persiste as ações derivadas do outcome e transmite cada uma para a sala
+ * inteira (inclusive o autor), depois do `sessionPatch`. Falha de logging
+ * NUNCA transforma uma mutação bem-sucedida em erro para o usuário.
+ */
+async function recordOutcomeActions(
+  io: Server,
+  socket: Socket,
+  event: string,
+  outcome: ActionOutcome,
+  log: Logger
+): Promise<void> {
+  try {
+    const actor = socket.data?.user as { id?: string; username?: string } | undefined;
+    const actions = await deriveAndDedupeActions({
+      event,
+      socket,
+      outcome: outcome as SessionActionOutcome,
+    });
+    for (const action of actions) {
+      const saved = await recordSessionAction({
+        tableId: outcome.tableId,
+        type: action.type,
+        content: action.content,
+        authorId: actor?.id ?? null,
+        authorName: actor?.username ?? null,
+        revision: outcome.revision,
+      });
+      if (saved) io.to(outcome.tableId).emit('sessionAction', saved);
+    }
+  } catch (error) {
+    log.error(
+      { err: error, event, tableId: outcome.tableId },
+      'Falha ao registrar ação da sessão (mutação mantida)'
+    );
   }
 }
 

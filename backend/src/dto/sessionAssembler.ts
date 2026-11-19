@@ -10,6 +10,7 @@ import {
   InitiativeEntryDTO,
   MeasurementDTO,
   SceneDTO,
+  SessionActionDTO,
   SessionStateDTO,
   TableInfoDTO,
   TokenDTO,
@@ -183,6 +184,7 @@ export function buildSessionState(
   auras: Aura[],
   characters: CharacterSummaryDTO[] = [],
   recentRolls: DiceRolledPayload[] = [],
+  recentActions: SessionActionDTO[] = [],
   characterByTokenId: Map<string, ICharacter> = new Map(),
 ): SessionStateDTO {
   return {
@@ -195,5 +197,6 @@ export function buildSessionState(
     auras: auras.map(mapAura),
     characters,
     recentRolls,
+    recentActions,
   };
 }
