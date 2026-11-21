@@ -156,6 +156,20 @@ type SessionSnapshot = {
   initiative: InitiativeEntryDTO[];
   measurements: MeasurementDTO[];
   auras: AuraDTO[];
+  /** Últimas rolagens persistidas (retenção 7 dias). */
+  recentRolls: RollLogEntryDTO[];
+  /** Últimas ações de sessão persistidas, no máximo 50, mais antigas primeiro. */
+  recentActions: SessionActionDTO[];
+};
+
+type SessionActionDTO = {
+  id: string;
+  type: 'system' | 'movement';
+  content: string;
+  authorId?: string;
+  authorName?: string;
+  revision?: number;
+  createdAt: string;
 };
 
 type PresenceEntry = {
@@ -263,6 +277,7 @@ Todos aceitam ack e `expectedRevision?` quando fazem sentido.
 |---|---|---|
 | `sessionSnapshot` | join, resync, troca grande | `SessionSnapshot` |
 | `sessionPatch` | toda mutação de estado | `SessionPatch` |
+| `sessionAction` | ação de sessão registrada (cena, status, movimento, turno, ficha, remoção) | `SessionActionDTO` |
 | `actionError` | ação sem ack falhou | `{ event, error, revision, serverNowMs }` |
 | `presenceUpdated` | entra/sai socket | `{ tableId, presence, revision }` |
 | `diceRolled` | rolagem | payload atual + `revision` |
@@ -316,6 +331,10 @@ enumeração.
 
 ## 11. Turnos
 
+- O servidor registra a ação de sessão após emitir o `sessionPatch` e transmite
+  `sessionAction` para a sala inteira. O snapshot seguinte traz `recentActions`
+  (máx. 50, mais antigas primeiro) além de `recentRolls`; o cliente substitui o
+  histórico local pelo canônico no join/resync, sem duplicar.
 - Exatamente uma entrada com `isCurrentTurn: true` ou nenhuma.
 - `Scene.turnVersion` (novo, default 0) serve de CAS para avanço.
 - `requestNextTurn`:

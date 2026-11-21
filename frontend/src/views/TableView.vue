@@ -2831,13 +2831,12 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             class="log-toggle-btn dm-panel__dock-item"
             :class="{ open: showActionLog }"
             type="button"
-            aria-label="Alternar histórico"
-            :aria-expanded="showActionLog"
+                :aria-expanded="showActionLog"
             @click="toggleActionLog"
           >
             <Icon name="book" :size="16" aria-hidden="true" />
             <span class="dm-panel__dock-label">{{ showActionLog ? 'Fechar histórico' : 'Histórico' }}</span>
-            <span v-if="logCount" class="log-badge">{{ logCount }}</span>
+            <span v-if="logCount" class="log-badge" aria-hidden="true">{{ logCount }}</span>
           </button>
         </div>
       </aside>
@@ -2873,13 +2872,12 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         class="log-toggle-btn"
         :class="{ open: showActionLog }"
         type="button"
-        aria-label="Alternar histórico"
         :aria-expanded="showActionLog"
         @click="toggleActionLog"
       >
         <Icon name="book" :size="16" aria-hidden="true" />
         <span>{{ showActionLog ? 'Fechar histórico' : 'Histórico' }}</span>
-        <span v-if="logCount" class="log-badge">{{ logCount }}</span>
+        <span v-if="logCount" class="log-badge" aria-hidden="true">{{ logCount }}</span>
       </button>
     </div>
 
@@ -2912,13 +2910,12 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
         class="log-toggle-btn mobile-bar__item"
         :class="{ open: showActionLog }"
         type="button"
-        aria-label="Alternar histórico"
         :aria-expanded="showActionLog"
         @click="toggleActionLog"
       >
         <Icon name="book" :size="20" aria-hidden="true" />
         <span>Histórico</span>
-        <span v-if="logCount" class="log-badge">{{ logCount }}</span>
+        <span v-if="logCount" class="log-badge" aria-hidden="true">{{ logCount }}</span>
       </button>
     </nav>
 
