@@ -27,11 +27,25 @@ const emit = defineEmits<{
 const name = ref('')
 const selectedKey = ref('dnd5e')
 const nameError = ref('')
+/** Uma escolha explícita do usuário nunca é sobrescrita pela lista que chega depois. */
+const userPickedSystem = ref(false)
 
 const selectedSystem = computed(
   () => props.systems.find((system) => system.key === selectedKey.value) ?? null,
 )
 const isDefaultSystem = computed(() => selectedKey.value === 'dnd5e')
+
+function applyDefaultSystem() {
+  const fallback = props.defaultSystemKey || 'dnd5e'
+  if (props.systems.some((system) => system.key === fallback)) {
+    selectedKey.value = fallback
+    return
+  }
+  // A lista carregou mas não tem a preferência: mantém a escolha atual se ela
+  // existe; caso contrário usa o primeiro sistema disponível.
+  if (props.systems.some((system) => system.key === selectedKey.value)) return
+  selectedKey.value = props.systems[0]?.key ?? 'dnd5e'
+}
 
 watch(
   () => props.open,
@@ -39,12 +53,25 @@ watch(
     if (!open) return
     name.value = ''
     nameError.value = ''
-    const fallback = props.defaultSystemKey || 'dnd5e'
-    selectedKey.value = props.systems.some((system) => system.key === fallback)
-      ? fallback
-      : (props.systems[0]?.key ?? 'dnd5e')
+    userPickedSystem.value = false
+    applyDefaultSystem()
   },
 )
+
+// O diálogo pode abrir antes de `/api/systems` responder. Quando a lista chega,
+// seleciona D&D 5e (ou a preferência do perfil) sem atropelar o usuário.
+watch(
+  [() => props.systems, () => props.defaultSystemKey],
+  () => {
+    if (!props.open || userPickedSystem.value) return
+    applyDefaultSystem()
+  },
+  { deep: false },
+)
+
+function onSystemChange() {
+  userPickedSystem.value = true
+}
 
 function close() {
   emit('update:open', false)
@@ -106,6 +133,7 @@ function submit() {
           v-model="selectedKey"
           :disabled="submitting"
           aria-describedby="create-table-system-hint"
+          @change="onSystemChange"
         >
           <option v-if="!systems.length" value="dnd5e">D&amp;D 5e</option>
           <option v-for="system in systems" :key="system._id" :value="system.key">

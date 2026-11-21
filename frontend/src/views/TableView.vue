@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { storeToRefs } from 'pinia';
 import { authToken, currentUser } from '../services/authService';
@@ -49,6 +49,7 @@ type MiddleClickHandler = ((event: MouseEvent) => void) & { lastTriggerTs?: numb
 const isMeasurementTool = (tool: ToolMode): tool is MeasurementTool => tool !== 'select' && tool !== 'none';
 
 const route = useRoute();
+const router = useRouter();
 const tableId = Array.isArray(route.params.tableId) ? route.params.tableId[0] : route.params.tableId;
 const showAssignMenu = ref(false);
 const assignMenuPosition = ref({ x: 0, y: 0 });
@@ -180,6 +181,34 @@ const {
   logs,
   characters: characterSummaries,
 } = storeToRefs(tableStore);
+
+/**
+ * `/table/:id` é o cockpit do Mestre. Um jogador só pode ver o produto de
+ * jogador (`/play/:id`); enquanto a mesa carrega, não renderizamos o cockpit.
+ * A autorização real continua no servidor — isto é correção de produto.
+ */
+const accessRedirecting = ref(false);
+const isAuthenticated = computed(() => Boolean(authToken.value));
+function guardViewerRole() {
+  if (!isAuthenticated.value) {
+    accessRedirecting.value = true;
+    void router.replace({ name: 'login', query: { redirect: route.fullPath } });
+    return;
+  }
+  if (!currentTable.value) return;
+  if (isDM.value) {
+    accessRedirecting.value = false;
+    return;
+  }
+  accessRedirecting.value = true;
+  toast.info('Esta mesa é do Mestre; abrindo o modo jogador.');
+  void router.replace({ name: 'play', params: { tableId } });
+}
+watch(
+  [() => currentTable.value?._id, () => currentUser.value?.id, isDM, isAuthenticated],
+  guardViewerRole,
+  { immediate: true },
+);
 
 const characterFetchScope = ref<'player' | 'dm'>('player');
 // O DM precisa de TODAS as fichas da mesa para abrir qualquer ficha pela
@@ -2419,7 +2448,17 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 </script>
 
 <template>
+  <div v-if="accessRedirecting" class="table-access-guard" role="status" aria-live="polite">
+    <p>
+      {{
+        isAuthenticated
+          ? 'Esta mesa é do Mestre; abrindo o modo jogador…'
+          : 'Redirecionando para o login…'
+      }}
+    </p>
+  </div>
   <div
+    v-else
     class="table-view-layout"
     :class="{
       'is-mobile': isMobileLayout,
@@ -3252,6 +3291,23 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 /* --------------------------------------------------------------------------
    Cockpit DM — 3 zonas: rail, tabuleiro + turn bar, painel dockado.
    -------------------------------------------------------------------------- */
+
+.table-access-guard {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--s-6);
+  background: var(--ink-0);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  text-align: center;
+}
+
+.table-access-guard p {
+  margin: 0;
+}
 
 .table-view-layout {
   --dm-panel-w: clamp(380px, 26vw, 420px);

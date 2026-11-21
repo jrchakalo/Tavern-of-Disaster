@@ -157,14 +157,22 @@ async function handleCreate(payload: { name: string; systemId: string; systemKey
         'Content-Type': 'application/json',
         Authorization: `Bearer ${authToken.value}`,
       },
-      body: JSON.stringify({ name: payload.name }),
+      // A chave identifica o sistema mesmo quando a lista ainda não chegou ao
+      // diálogo; o backend resolve key/id e grava a mesa já vinculada.
+      body: JSON.stringify({
+        name: payload.name,
+        systemKey: payload.systemKey,
+        systemId: payload.systemId || undefined,
+      }),
     })
     const data = (await response.json().catch(() => null)) as (ITable & { message?: string }) | null
     if (!response.ok || !data?._id) {
       throw new Error(data?.message || 'Não foi possível criar a mesa.')
     }
 
-    if (payload.systemId) {
+    // Fallback legado: se por algum motivo o create não devolveu o sistema,
+    // aplica pelo endpoint dedicado. Caminho normal não faz segunda request.
+    if (!data.systemId && payload.systemId) {
       try {
         await assignSystem(data._id, payload.systemId)
         data.systemId = payload.systemId

@@ -28,7 +28,7 @@ const router = useRouter()
 const { profile, isLoading: profileLoading } = storeToRefs(userStore)
 const { systems, isLoading: systemsLoading, isLoaded: systemsLoaded } = storeToRefs(systemStore)
 
-const form = reactive<ProfileForm>(profileFormFromProfile(null))
+const form = reactive<ProfileForm>(profileFormFromProfile(profile.value))
 const errors = ref<ProfileErrors>({})
 const formError = ref('')
 const loadError = ref('')
@@ -44,12 +44,24 @@ let leaveAllowed = false
 
 const hasChanges = computed(() => isProfileDirty(form, profile.value))
 const isUploading = computed(() => uploadProgress.value !== null)
+/**
+ * O primeiro render acontece antes do `onMounted` disparar o fetch. Sem este
+ * estado, o formulário vazio (e o “?” do avatar) pisca antes do perfil chegar.
+ */
+const showLoadingSkeleton = computed(() => !profile.value && !loadError.value)
+const isLoadingProfile = computed(() => profileLoading.value || showLoadingSkeleton.value)
 const avatarPreview = computed(() => form.avatarUrl.trim())
 const avatarInitial = computed(() => {
-  const base = form.displayName.trim() || profile.value?.username || '?'
+  const base =
+    form.displayName.trim() ||
+    profile.value?.displayName?.trim() ||
+    profile.value?.username ||
+    '—'
   return base.slice(0, 1).toUpperCase()
 })
-const canSave = computed(() => hasChanges.value && !saving.value && !isUploading.value)
+const canSave = computed(
+  () => hasChanges.value && !saving.value && !isUploading.value && !isLoadingProfile.value,
+)
 
 function applyProfile() {
   Object.assign(form, profileFormFromProfile(profile.value))
@@ -268,7 +280,44 @@ function cancelLeave() {
       </p>
     </header>
 
-    <p v-if="profileLoading && !profile" class="profile-status" role="status">Carregando perfil…</p>
+    <div
+      v-if="showLoadingSkeleton"
+      class="profile-skeleton"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <span class="sr-only">Carregando perfil…</span>
+      <div class="profile-skeleton__grid" aria-hidden="true">
+        <div class="profile-skeleton__panel">
+          <span class="skeleton-line skeleton-line--eyebrow" />
+          <span class="skeleton-line skeleton-line--title" />
+          <span class="skeleton-line" />
+          <div class="profile-skeleton__avatar-row">
+            <span class="skeleton-avatar" />
+            <div class="profile-skeleton__avatar-lines">
+              <span class="skeleton-line" />
+              <span class="skeleton-line skeleton-line--short" />
+            </div>
+          </div>
+          <span class="skeleton-field" />
+          <span class="skeleton-field" />
+          <span class="skeleton-field skeleton-field--tall" />
+        </div>
+        <div class="profile-skeleton__side">
+          <div class="profile-skeleton__panel">
+            <span class="skeleton-line skeleton-line--title" />
+            <span class="skeleton-field" />
+            <span class="skeleton-field" />
+          </div>
+          <div class="profile-skeleton__panel">
+            <span class="skeleton-line skeleton-line--title" />
+            <span class="skeleton-line" />
+            <span class="skeleton-line skeleton-line--short" />
+          </div>
+        </div>
+      </div>
+    </div>
 
     <EmptyState
       v-else-if="loadError && !profile"
@@ -567,12 +616,17 @@ function cancelLeave() {
           <button
             type="button"
             class="btn btn-sm ghost"
-            :disabled="!hasChanges || saving"
+            :disabled="!hasChanges || saving || isLoadingProfile"
             @click="reset"
           >
             Descartar
           </button>
-          <button type="button" class="btn" :disabled="!canSave" @click="save">
+          <button
+            type="button"
+            class="btn"
+            :disabled="!canSave || isLoadingProfile"
+            @click="save"
+          >
             {{ saving ? 'Salvando…' : 'Salvar alterações' }}
           </button>
         </div>
@@ -647,6 +701,89 @@ function cancelLeave() {
   margin: var(--s-6) 0 0;
   color: var(--text-muted);
   font-size: var(--text-md);
+}
+
+.profile-skeleton {
+  margin-top: var(--s-6);
+}
+
+.profile-skeleton__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--s-6);
+  align-items: start;
+}
+
+.profile-skeleton__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+}
+
+.profile-skeleton__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-6);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.profile-skeleton__avatar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+}
+
+.profile-skeleton__avatar-lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.skeleton-avatar {
+  flex: none;
+  inline-size: 96px;
+  block-size: 96px;
+  border-radius: var(--radius-pill);
+  background: var(--raised);
+}
+
+.skeleton-line {
+  display: block;
+  inline-size: 100%;
+  block-size: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--raised);
+}
+
+.skeleton-line--eyebrow {
+  inline-size: 64px;
+  block-size: 8px;
+}
+
+.skeleton-line--title {
+  inline-size: 45%;
+  block-size: 16px;
+}
+
+.skeleton-line--short {
+  inline-size: 60%;
+}
+
+.skeleton-field {
+  display: block;
+  block-size: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--ink-0);
+}
+
+.skeleton-field--tall {
+  block-size: 96px;
 }
 
 .profile-alert {
@@ -971,9 +1108,7 @@ function cancelLeave() {
 }
 
 .save-bar {
-  position: sticky;
-  bottom: var(--s-5);
-  z-index: 20;
+  /* Fica no fim do formulário, nunca por cima dos campos (1440 e 390). */
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1014,7 +1149,8 @@ function cancelLeave() {
 }
 
 @media (max-width: 900px) {
-  .profile-grid {
+  .profile-grid,
+  .profile-skeleton__grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -1029,7 +1165,6 @@ function cancelLeave() {
   }
 
   .save-bar {
-    bottom: var(--s-3);
     padding: var(--s-3);
   }
 
