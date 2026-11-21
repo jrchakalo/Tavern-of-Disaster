@@ -575,7 +575,7 @@ watch(measurementColor, (c) => {
 });
 
 async function fetchCharactersForTable() {
-  if (!tableId) return;
+  if (!tableId || !tableReady.value) return;
   try {
     return await characterStore.fetchForTable(tableId, { scope: characterFetchScope.value });
   } catch (error) {
@@ -750,7 +750,7 @@ function handleCreateTokenForCharacter(characterId: string) {
   startTokenPlacement();
 }
 
-watch(characterFetchScope, () => {
+watch([characterFetchScope, tableReady], () => {
   fetchCharactersForTable();
 }, { immediate: true });
 

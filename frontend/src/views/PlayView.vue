@@ -1311,9 +1311,11 @@ onBeforeUnmount(() => {
         <div class="session-overlay__card">
           <p class="session-overlay__state" aria-live="polite">{{ statusLabel }}</p>
           <h2>{{ sessionOverlayTitle }}</h2>
-          <p v-if="!tableReady || myToken || !canWrite">{{ sessionOverlayText }}</p>
+          <p v-if="!tableReady || myToken || !canWrite || sessionStatus !== 'PREPARING'">
+            {{ sessionOverlayText }}
+          </p>
           <PlayerEmptyActions
-            v-if="tableReady && !myToken && canWrite"
+            v-if="tableReady && sessionStatus === 'PREPARING' && !myToken && canWrite"
             class="session-overlay__empty"
             :has-character="Boolean(myCharacter)"
             :free-token-count="freeTokens.length"
