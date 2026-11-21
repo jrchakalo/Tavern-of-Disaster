@@ -15,8 +15,9 @@ vi.mock('pinia', async () => {
 import TableView from '../TableView.vue';
 import { useMediaStore } from '../../stores/mediaStore';
 
-const mockRoute = { params: { tableId: 'table-1' } };
-vi.mock('vue-router', () => ({ useRoute: () => mockRoute }));
+const mockRoute = { params: { tableId: 'table-1' }, fullPath: '/table/table-1' };
+const routerMock = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }));
+vi.mock('vue-router', () => ({ useRoute: () => mockRoute, useRouter: () => routerMock }));
 
 const socketServiceMock = vi.hoisted(() => new Proxy({}, {
   get: (target, prop: string) => {
@@ -166,6 +167,11 @@ const usageFixture = {
 
 beforeEach(() => {
   tableStoreStub.__refs = createTableStoreRefs();
+  authState.authToken.value = 'token';
+  authState.currentUser.value = { id: 'user-1', username: 'Tester' };
+  routerMock.replace.mockReset();
+  routerMock.push.mockReset();
+  toastMock.info.mockReset();
   characterStoreStub.createCharacter.mockReset();
   storageMocks.fetchAssetUsage.mockReset();
   storageMocks.fetchAssetUsage.mockResolvedValue(usageFixture);
@@ -174,6 +180,56 @@ beforeEach(() => {
   (socketServiceMock.updateSceneScale as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, revision: 2 });
   (socketServiceMock.reorderScenes as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, revision: 2 });
   mockMatchMedia(false);
+});
+
+describe('TableView route role guard', () => {
+  function mountTable() {
+    return shallowMount(TableView, {
+      global: { stubs: { teleport: true, Transition: false } },
+    });
+  }
+
+  it('keeps the DM in the cockpit without redirecting', async () => {
+    const wrapper = mountTable();
+    await flushPromises();
+
+    expect(routerMock.replace).not.toHaveBeenCalled();
+    expect(wrapper.find('.table-view-layout').exists()).toBe(true);
+    expect(wrapper.find('.table-access-guard').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('redirects a player to /play/:id instead of rendering the DM shell', async () => {
+    tableStoreStub.__refs = createTableStoreRefs({ isDM: ref(false) });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    expect(routerMock.replace).toHaveBeenCalledWith({
+      name: 'play',
+      params: { tableId: 'table-1' },
+    });
+    expect(toastMock.info).toHaveBeenCalledWith(
+      'Esta mesa é do Mestre; abrindo o modo jogador.',
+    );
+    expect(wrapper.find('.table-access-guard').exists()).toBe(true);
+    expect(wrapper.find('.table-view-layout').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('redirects an unauthenticated visitor to login with the original route', async () => {
+    authState.authToken.value = null;
+    authState.currentUser.value = null;
+    tableStoreStub.__refs = createTableStoreRefs({ isDM: ref(false) });
+    const wrapper = mountTable();
+    await flushPromises();
+
+    expect(routerMock.replace).toHaveBeenCalledWith({
+      name: 'login',
+      query: { redirect: '/table/table-1' },
+    });
+    expect(wrapper.find('.table-view-layout').exists()).toBe(false);
+    wrapper.unmount();
+  });
 });
 
 describe('TableView subpanels', () => {
@@ -193,7 +249,7 @@ describe('TableView subpanels', () => {
     wrapper.unmount();
   });
 
-  it('renders player initiative bottom sheet for players on mobile battlemap', async () => {
+  it('não entrega o cockpit mobile a um jogador (redireciona para /play)', async () => {
     tableStoreStub.__refs = createTableStoreRefs({
       isDM: ref(false),
       sessionStatus: ref('LIVE'),
@@ -209,7 +265,11 @@ describe('TableView subpanels', () => {
       },
     });
     await flushPromises();
-    expect(wrapper.find('.player-initiative-wrapper.bottom-sheet').exists()).toBe(true);
+    expect(wrapper.find('.player-initiative-wrapper.bottom-sheet').exists()).toBe(false);
+    expect(routerMock.replace).toHaveBeenCalledWith({
+      name: 'play',
+      params: { tableId: 'table-1' },
+    });
     wrapper.unmount();
   });
 });

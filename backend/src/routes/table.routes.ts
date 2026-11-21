@@ -22,7 +22,7 @@ const log = createLogger({ scope: 'table-routes' });
 // Rota para criar uma nova mesa.
 router.post('/create', authMiddleware, limitCreate, (async (req: AuthRequest, res) => {
   try {
-    const { name } = req.body;
+    const { name, systemKey, systemId } = req.body || {};
     const dmId = req.user?.id; // Pegamos o ID do usuário que o middleware decodificou do token
 
     if (!name) {
@@ -34,12 +34,34 @@ router.post('/create', authMiddleware, limitCreate, (async (req: AuthRequest, re
       return;
     }
 
+    // O sistema é resolvido antes de criar a mesa e persiste junto com ela.
+    // Sem escolha explícita, a plataforma usa D&D 5e (sistema padrão).
+    const requestedKey =
+      typeof systemKey === 'string' && systemKey.trim() ? systemKey.trim() : null;
+    const requestedId =
+      typeof systemId === 'string' && systemId.trim() ? systemId.trim() : null;
+
+    if (requestedId && !Types.ObjectId.isValid(requestedId)) {
+      res.status(400).json({ message: 'Sistema não encontrado.' });
+      return;
+    }
+
+    const system = requestedId
+      ? await System.findById(requestedId)
+      : await System.findOne({ key: requestedKey || 'dnd5e' });
+
+    if (!system) {
+      res.status(400).json({ message: 'Sistema não encontrado.' });
+      return;
+    }
+
     const newTable = new Table({
       name,
       dm: dmId,
       players: [dmId],
       inviteCode: randomId(8),
       scenes: [],
+      systemId: system._id,
     });
 
     await newTable.save();
