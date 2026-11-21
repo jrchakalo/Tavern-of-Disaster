@@ -128,6 +128,7 @@ function createRefs(overrides: Record<string, unknown> = {}) {
     myActiveToken: ref(null),
     connectionStatus: ref('connected'),
     sessionStatus: ref<'PREPARING' | 'LIVE' | 'PAUSED' | 'ENDED'>('LIVE'),
+    pauseUntil: ref<Date | null>(null),
     squares: ref([]),
     gridWidth: ref(20),
     gridHeight: ref(20),
@@ -827,6 +828,49 @@ describe('PlayView — momento assinatura do dado', () => {
     await flushPromises();
 
     expect(wrapper.find('.dice-moment').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('não mostra “Preparando” enquanto o snapshot da mesa não chegou', async () => {
+    tableStoreStub.__refs = createRefs({
+      currentTable: ref(null),
+      sessionStatus: ref('PREPARING'),
+    });
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Carregando a mesa…');
+    expect(wrapper.text()).not.toContain('O Mestre está preparando a mesa');
+    expect(wrapper.find('.player-empty').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('mostra o tempo restante da pausa no celular do jogador', async () => {
+    tableStoreStub.__refs = createRefs({
+      sessionStatus: ref('PAUSED'),
+      pauseUntil: ref(new Date(Date.now() + 125_000)),
+      myActiveToken: ref(baseToken),
+    });
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    expect(wrapper.get('.session-overlay').text()).toMatch(/retoma em 2:0[45]/i);
+    wrapper.unmount();
+  });
+
+  it('pede resync quando conecta mas o snapshot não chegou', async () => {
+    vi.useFakeTimers();
+    tableStoreStub.__refs = createRefs({ currentTable: ref(null) });
+    const wrapper = mountPlay();
+    await flushPromises();
+
+    vi.advanceTimersByTime(2600);
+    expect(socketServiceMock.requestResync).toHaveBeenCalledWith({
+      tableId: 'table-1',
+      sinceRevision: 0,
+    });
+
+    vi.useRealTimers();
     wrapper.unmount();
   });
 });

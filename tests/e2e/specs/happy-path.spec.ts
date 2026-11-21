@@ -253,6 +253,28 @@ test('DM e jogador percorrem o fluxo principal no redesign', async ({ browser, r
     'Movimento do token precisa aparecer em Ações após recarregar.',
   ).toBeVisible({ timeout: 30_000 });
 
+  // Regressão: sair de uma mesa ao vivo e voltar pelo código não pode deixar
+  // o jogador numa tela falsa de “Preparando / rev 0”.
+  await playerPage.getByRole('button', { name: 'Mais opções da mesa' }).click();
+  await playerPage.getByRole('menuitem', { name: 'Sair da mesa' }).click();
+  await playerPage
+    .getByRole('dialog', { name: 'Sair da mesa' })
+    .getByRole('button', { name: 'Sair da mesa', exact: true })
+    .click();
+  await playerPage.waitForURL('**/tables', { timeout: 30_000 });
+
+  await playerPage.getByRole('button', { name: 'Entrar com código' }).first().click();
+  const rejoinDialog = playerPage.getByRole('dialog', { name: 'Entrar com código' });
+  await rejoinDialog.locator('#join-table-code').fill(table.inviteCode);
+  await rejoinDialog.getByRole('button', { name: 'Entrar na mesa' }).click();
+  await playerPage.waitForURL(`**/play/${table._id}`, { timeout: 30_000 });
+
+  await expect(playerPage.locator('.play-header__title')).toHaveText(tableName, { timeout: 30_000 });
+  await expect(playerPage.locator('.play-header__status')).toContainText('Ao vivo', {
+    timeout: 30_000,
+  });
+  await expect(playerPage.locator('.grid-square').first()).toBeVisible({ timeout: 30_000 });
+
   await dmContext.close();
   await playerContext.close();
 });

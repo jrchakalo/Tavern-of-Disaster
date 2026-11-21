@@ -62,6 +62,7 @@ const {
   myActiveToken,
   connectionStatus,
   sessionStatus,
+  pauseUntil,
   squares,
   gridWidth,
   gridHeight,
@@ -278,7 +279,13 @@ const sceneName = computed(() => activeScene.value?.name ?? 'Nenhuma cena ativa'
  * Trocar de volta para uma cena de batalha restaura o tabuleiro inteiro.
  */
 const isImageScene = computed(() => activeScene.value?.type === 'image');
-const isLive = computed(() => sessionStatus.value === 'LIVE');
+/**
+ * O snapshot desta mesa já chegou? Evita mostrar “Preparando” falso quando o
+ * jogador entra por código logo depois de sair de outra mesa: nesse intervalo
+ * a store ainda não tem a mesa (ou tem a anterior) e a tela mentiria o estado.
+ */
+const tableReady = computed(() => currentTable.value?._id === tableId);
+const isLive = computed(() => tableReady.value && sessionStatus.value === 'LIVE');
 const isMyTurn = computed(() => isLive.value && Boolean(myActiveToken.value));
 const isOffline = computed(() => connectionStatus.value !== 'connected');
 const canMove = computed(
@@ -334,7 +341,25 @@ const offlineBannerLabel = computed(() =>
   connectionStatus.value === 'reconnecting' ? 'Reconectando…' : 'Sem conexão — tentando de novo…',
 );
 
+const nowTick = ref(Date.now());
+let pauseTimer: ReturnType<typeof setInterval> | null = null;
+let readinessTimer: ReturnType<typeof setInterval> | null = null;
+let resyncAttempts = 0;
+
+const pauseRemaining = computed(() => {
+  if (sessionStatus.value !== 'PAUSED' || !pauseUntil.value) return 0;
+  const diff = pauseUntil.value.getTime() - nowTick.value;
+  return diff > 0 ? Math.ceil(diff / 1000) : 0;
+});
+const pauseCountdown = computed(() => {
+  const total = pauseRemaining.value;
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+});
+
 const sessionOverlayTitle = computed(() => {
+  if (!tableReady.value) {
+    return connectionStatus.value === 'connected' ? 'Carregando a mesa…' : 'Conectando à mesa…';
+  }
   switch (sessionStatus.value) {
     case 'PREPARING':
       return 'Aguardando o Mestre';
@@ -348,11 +373,18 @@ const sessionOverlayTitle = computed(() => {
 });
 
 const sessionOverlayText = computed(() => {
+  if (!tableReady.value) {
+    return connectionStatus.value === 'connected'
+      ? 'Buscando o estado atual da sessão com o servidor.'
+      : 'Assim que a conexão abrir, o tabuleiro aparece aqui.';
+  }
   switch (sessionStatus.value) {
     case 'PREPARING':
       return 'O Mestre está preparando a mesa. O tabuleiro abre assim que a sessão começar.';
     case 'PAUSED':
-      return 'Hora de respirar. A mesa retoma em breve.';
+      return pauseRemaining.value > 0
+        ? `Hora de respirar. A mesa retoma em ${pauseCountdown.value}.`
+        : 'Hora de respirar. A mesa retoma em breve.';
     case 'ENDED':
       return 'Por enquanto, as histórias ficam na memória.';
     default:
@@ -1070,10 +1102,29 @@ async function bootstrap() {
 onMounted(() => {
   mediaStore.init();
   void bootstrap();
+  pauseTimer = setInterval(() => {
+    nowTick.value = Date.now();
+  }, 1000);
+  // Watchdog de entrada: se o snapshot não chegou (join por código logo após
+  // sair de outra mesa, cold start do Render), pede resync em vez de exibir
+  // “Preparando” para uma mesa que já está ao vivo.
+  readinessTimer = setInterval(() => {
+    if (tableReady.value) {
+      resyncAttempts = 0;
+      return;
+    }
+    if (connectionStatus.value !== 'connected' || resyncAttempts >= 3) return;
+    resyncAttempts += 1;
+    void socketService.requestResync({ tableId, sinceRevision: 0 });
+  }, 2500);
 });
 
 onBeforeUnmount(() => {
   clearUndo();
+  if (pauseTimer) clearInterval(pauseTimer);
+  if (readinessTimer) clearInterval(readinessTimer);
+  pauseTimer = null;
+  readinessTimer = null;
   // Fecha a chamada antes de derrubar o socket (o emit de leave é síncrono).
   void mediaStore.leave();
   const socket = readSocket();
@@ -1260,9 +1311,9 @@ onBeforeUnmount(() => {
         <div class="session-overlay__card">
           <p class="session-overlay__state" aria-live="polite">{{ statusLabel }}</p>
           <h2>{{ sessionOverlayTitle }}</h2>
-          <p v-if="myToken || !canWrite">{{ sessionOverlayText }}</p>
+          <p v-if="!tableReady || myToken || !canWrite">{{ sessionOverlayText }}</p>
           <PlayerEmptyActions
-            v-if="!myToken && canWrite"
+            v-if="tableReady && !myToken && canWrite"
             class="session-overlay__empty"
             :has-character="Boolean(myCharacter)"
             :free-token-count="freeTokens.length"

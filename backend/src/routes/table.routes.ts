@@ -103,6 +103,9 @@ router.post('/join', authMiddleware, (async (req: AuthRequest, res) => {
     res.json({ message: `Você entrou na mesa "${table.name}" com sucesso!`, table });
 
   } catch (error) {
+    if (error instanceof ServiceError) {
+      return res.status(error.status).json({ message: error.message, details: error.details });
+    }
     log.error({ err: error }, 'Erro ao entrar na mesa');
     res.status(500).json({ message: 'Erro interno ao entrar na mesa.' });
   }

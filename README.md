@@ -14,7 +14,7 @@
     <img alt="Backend" src="https://img.shields.io/badge/backend-268%20testes-7FB6C9?style=flat-square" />
     <img alt="Frontend" src="https://img.shields.io/badge/frontend-559%20testes-7FB6C9?style=flat-square" />
     <img alt="E2E" src="https://img.shields.io/badge/E2E-80%2F80-7FB6C9?style=flat-square" />
-    <img alt="axe" src="https://img.shields.io/badge/axe-8%2F8%20AA-7FB6C9?style=flat-square" />
+    <img alt="axe" src="https://img.shields.io/badge/axe-11%2F11%20AA-7FB6C9?style=flat-square" />
   </p>
 
   <p>
@@ -76,6 +76,7 @@ O servidor é a fonte da verdade. Toda mutação de estado passa por revisão, a
 - Ack/erro em toda mutação, reconexão com ressincronização e broadcast canônico para todos, inclusive quem originou a ação.
 - Coordenadas normalizadas de grade; tabuleiro DOM/SVG (sem PixiJS) com medições, pings, auras e tokens multi-célula.
 - Autorização por entidade e proteção contra IDOR entre mesas.
+- Até **8 jogadores por mesa**; o nono convite é recusado com `409` e mensagem clara.
 
 ### Mestre
 - Cockpit em **3 zonas**: rail de ferramentas, tabuleiro + barra de turno, painel dockado com **Cena · Iniciativa · Sessão · Convidar**.
@@ -84,8 +85,8 @@ O servidor é a fonte da verdade. Toda mutação de estado passa por revisão, a
 - Tokens: criar por toque, inspetor, dono, ficha vinculada, aura, reset de movimento e exclusão confirmada.
 - Iniciativa não destrutiva: remover do turno **não apaga o token**; exclusão é ação separada.
 - Fichas: criar, listar, abrir, vincular a token e excluir com confirmação.
-- Histórico único com **Tudo · Rolagens · Ações**; Ações registra cena, sessão, movimento, turno, ficha e remoções.
-- Convite por link/QR, código, Web Share e link da TV com aviso antes de rotacionar.
+- Histórico único com **Tudo · Rolagens · Ações**, persistido no servidor (retenção de 7 dias) e hidratado no join/resync: Ações registra cena, sessão, movimento, turno, ficha e remoções, e nada se perde ao recarregar.
+- Convite por link/QR, código, Web Share onde o navegador suporta e link da TV com aviso antes de rotacionar.
 - Sessão: Preparando → Ao vivo → Pausado → Encerrado, com confirmação para encerrar.
 - Pré-chamada com “Entrar com microfone”, “Entrar mudo” e explicação de permissão.
 
@@ -95,27 +96,27 @@ O servidor é a fonte da verdade. Toda mutação de estado passa por revisão, a
 - Turno visível, movimento restante e “Encerrar turno”; sem telemetria de `rev`/role na interface.
 - **Régua e ping:** medir dois quadrados, distância em metros e ping compartilhado com a mesa.
 - Ficha com criação real, abas fixas e salvamento com guarda de alterações.
-- Dados com presets da ficha/sistema, vantagem/desvantagem e últimas rolagens.
+- Dados com presets do sistema, rolagens salvas, vantagem/desvantagem e últimas rolagens.
 - Chat com menções, não lidas e retry; chamada em sheet com dispositivos, mute, câmera e tela.
 - Onboarding sem beco sem saída: criar ficha, vincular token ou pedir ao Mestre.
 
 ### TV
 - Três zonas: tabuleiro, iniciativa e ticker de rolagens; tipografia legível a 3 m.
 - Autenticação por token de display em fragmento, somente leitura, sem chat/chamada/controles.
-- **Cenas de imagem** aparecem como handout limpo: só a imagem, sem grade, tokens, iniciativa ou turno.
+- **Cenas de imagem** aparecem como handout limpo: sem grade, tokens, iniciativa ou turno; restam apenas o cabeçalho da mesa e a imagem.
 - Dado assinatura em ficha de papel com carimbo “REGISTRADO”, SVG real de d4–d20 e respeito a `prefers-reduced-motion`.
 - Sem `rev`, role ou debug visível.
 
 ### Online e mídia
-- Chamada WebRTC em malha com STUN/TURN, mute/deafen, câmera e compartilhamento de tela; o backend já suporta moderação da chamada.
+- Chamada WebRTC em malha com STUN/TURN, mute/deafen, câmera e compartilhamento de tela onde o navegador suporta (Mestre e jogador); o backend já suporta moderação da chamada.
 - Chat persistido, menções e mensagens de sistema.
 - Fichas e tokens sincronizados; alterações de PV/CA feitas por outro cliente chegam à ficha aberta.
 - Upload de mapas, tokens e avatares com quota por mesa e limpeza de assets órfãos.
 
 ### Design e acessibilidade
 - Direção **“Arquivo Morto”**: dossiê de investigação, grafite frio, azul-tinta, papel como exceção, Spectral + IBM Plex Sans/Mono.
-- Sem roxo/lavanda na interface, gradientes, glassmorphism, emojis como ícone ou microtexto em caixa alta.
-- Contraste AA verificado por script (`npm run check:contrast`), foco visível, alvos ≥44 px, `prefers-reduced-motion`, `lang="pt-BR"`, títulos por rota.
+- A identidade não usa roxo/lavanda, gradientes, glassmorphism, emojis como ícone nem microtexto em caixa alta. Roxo aparece **apenas** como uma das cores de régua que o usuário pode escolher no Perfil.
+- Contraste AA verificado por script (`npm run check:contrast`), foco visível, alvos ≥44 px nas ações principais, `prefers-reduced-motion`, `lang="pt-BR"`, títulos por rota.
 - Assets otimizados: `frontend/public` caiu de ~18 MB para menos de 1 MB.
 
 ## Começando
@@ -234,7 +235,7 @@ cd tests/e2e && node chaos/run.mjs
 | Backend | **268/268** |
 | Frontend | **559/559** |
 | E2E | **80/80** |
-| axe (8 rotas) | **0 critical/serious** |
+| axe (11 rotas, inclui `/profile` e `/play` a 320 px) | **0 critical/serious** |
 | Caos (6 clientes) | **PASS** |
 | CI (GitHub Actions) | **verde** |
 | Contraste | **45/45 AA** |
@@ -245,10 +246,10 @@ de keep-alive mantém o free tier do Render acordado.
 ## Deploy
 
 - **Frontend:** Vercel — https://tavernofdisaster.vercel.app
-- **API:** Render — https://tavern-of-disaster-api.onrender.com
+- **API:** Render — https://tavern-of-disaster-api.onrender.com (free tier hiberna; o primeiro acesso pode levar ~20 s, mitigado pelo workflow `keepalive.yml`)
 - **Banco:** MongoDB Atlas M0
 - **Storage:** driver `local` por padrão; Supabase Storage opcional
-- **Voz/vídeo:** STUN + TURN (Metered Open Relay) opcional; sem TURN funciona em LAN/STUN
+- **Voz/vídeo:** STUN + TURN (Metered Open Relay) opcional; a produção atual usa STUN e a interface avisa quando não há TURN configurado
 
 O passo a passo, secrets, backup/restore e smoke estão em
 [`docs/OPERATIONS.md`](./docs/OPERATIONS.md). A aplicação não commita PDFs de

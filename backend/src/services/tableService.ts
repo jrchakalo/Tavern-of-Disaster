@@ -44,11 +44,19 @@ export function isUserDM(userId: string | undefined, table: ITable) {
   return table.dm.toString() === userId;
 }
 
+/** Limite de jogadores anunciado na Home e no README. */
+export const MAX_PLAYERS_PER_TABLE = 8;
+
 export async function addPlayerToTable(table: HydratedTable, playerId: string): Promise<ITable> {
   const alreadyInTable = table.players.some((id) => id.toString() === playerId) || table.dm.toString() === playerId;
   if (alreadyInTable) {
     return table;
   }
+  assertCondition(
+    table.players.length < MAX_PLAYERS_PER_TABLE,
+    `Esta mesa já tem ${MAX_PLAYERS_PER_TABLE} jogadores.`,
+    409
+  );
   table.players.push(new Types.ObjectId(playerId));
   await table.save();
   return table;
