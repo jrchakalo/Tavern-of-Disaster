@@ -189,6 +189,8 @@ const {
  */
 const accessRedirecting = ref(false);
 const isAuthenticated = computed(() => Boolean(authToken.value));
+/** A mesa certa já chegou? Evita “preparando” falso enquanto o snapshot não vem. */
+const tableReady = computed(() => currentTable.value?._id === tableId);
 function guardViewerRole() {
   if (!isAuthenticated.value) {
     accessRedirecting.value = true;
@@ -2257,9 +2259,21 @@ watch([selectedPersistentId, () => persistentMeasurements.value.length], ([id]) 
   if (!stillExists) selectedPersistentId.value = null;
 });
 
+let readinessTimer: number | null = null;
+let readinessAttempts = 0;
+
 onMounted(() => {
   socketService.connect(tableId);
   mediaStore.init();
+  readinessTimer = window.setInterval(() => {
+    if (tableReady.value) {
+      readinessAttempts = 0;
+      return;
+    }
+    if (connectionStatus.value !== 'connected' || readinessAttempts >= 3) return;
+    readinessAttempts += 1;
+    void socketService.requestResync({ tableId, sinceRevision: 0 });
+  }, 2500);
   // Resize janela -> recalcula dimensões imagem
   window.addEventListener('resize', updateImageDimensions);
   window.addEventListener('keydown', handleGlobalKeydown);
@@ -2272,6 +2286,8 @@ onMounted(() => {
 onUnmounted(() => {
   // Encerra tracks/PCs e avisa a sala antes de derrubar o socket.
   void mediaStore.leave();
+  if (readinessTimer) window.clearInterval(readinessTimer);
+  readinessTimer = null;
   socketService.disconnect();
   window.removeEventListener('resize', updateImageDimensions);
   window.removeEventListener('keydown', handleGlobalKeydown);
@@ -2632,7 +2648,7 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
 
         <div class="board-wrap">
           <MapViewport
-            v-if="canUseMap"
+            v-if="tableReady && canUseMap"
             :is-measuring="isImageScene ? false : isMeasuring"
             :image-only="isImageScene"
             :view-transform="viewTransform"
@@ -2685,6 +2701,23 @@ function calculateSquareArea(originId: string, sideMeters: number): string[] {
             :on-close-assign-menu="closeAssignMenu"
             :on-open-character-from-token="handleOpenCharacterFromToken"
           />
+          <div
+            v-if="!tableReady"
+            class="session-overlay mode-preparing"
+            role="region"
+            aria-label="Carregando a mesa"
+          >
+            <div class="overlay-card surface">
+              <h2>
+                {{
+                  connectionStatus === 'connected'
+                    ? 'Carregando a mesa…'
+                    : 'Conectando à mesa…'
+                }}
+              </h2>
+              <p>Buscando o estado atual da sessão com o servidor.</p>
+            </div>
+          </div>
           <div
             v-else-if="!isDM && (sessionStatus === 'PREPARING' || sessionStatus === 'PAUSED' || sessionStatus === 'ENDED')"
             class="session-overlay"
