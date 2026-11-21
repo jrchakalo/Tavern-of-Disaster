@@ -575,7 +575,9 @@ watch(measurementColor, (c) => {
 });
 
 async function fetchCharactersForTable() {
-  if (!tableId || !tableReady.value) return;
+  // `/table` é o cockpit do Mestre; durante o redirecionamento do jogador não
+  // dispara REST que seria abortada no unmount.
+  if (!tableId || !tableReady.value || !isDM.value) return;
   try {
     return await characterStore.fetchForTable(tableId, { scope: characterFetchScope.value });
   } catch (error) {
@@ -750,7 +752,7 @@ function handleCreateTokenForCharacter(characterId: string) {
   startTokenPlacement();
 }
 
-watch([characterFetchScope, tableReady], () => {
+watch([characterFetchScope, tableReady, isDM], () => {
   fetchCharactersForTable();
 }, { immediate: true });
 
