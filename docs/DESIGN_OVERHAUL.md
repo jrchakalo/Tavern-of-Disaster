@@ -233,11 +233,11 @@ final antes do deploy:
 | CSS gz | ≤30 KB |
 | LCP/CLS/INP | ≤2,5 s / ≤0,05 / ≤200 ms |
 | Lighthouse a11y | 100 (mín. 98) |
-| axe serious+ | 0 nas 8 rotas + estados |
+| axe serious+ | 0 nas 11 rotas + estados |
 
 Estado após a otimização (`coder/assets`, `4c0f64b`): logo 45 KB PNG +
 `logo-256.webp`/`.avif` ~19 KB; favicons 2,9–60 KB; vídeos 118–384 KB com
-posters JPG. `frontend/public` caiu de ~18 MB para 1,6 MB. As telas novas devem
+posters JPG. `frontend/public` caiu de ~18 MB para menos de 1 MB. As telas novas devem
 usar `/logo-256.webp`, `<video preload="none" poster="/media/x.jpg">` e nunca
 autoplay infinito sem `prefers-reduced-motion`.
 
@@ -275,22 +275,22 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
 - [x] TV legível a 3 m, sem debug; dado aparece na TV/jogador.
 - [x] Contraste AA, teclado, foco, labels, toasts, 44 px, 320 px, reduced motion.
       (guard `npm run check:contrast`; auditoria axe final em D6a.)
-- [x] E2E (80/80), caos, axe (8/8 rotas), unitários e build verdes.
+- [x] E2E (83/83), caos, axe (11/11 rotas), unitários e build verdes.
 - [x] Deploy Render/Vercel e smoke de produção (2026-11-17).
 
-### 8.1 Resultados dos gates (2026-11-17)
+### 8.1 Resultados dos gates (2026-11-21)
 
 | Gate | Resultado |
 |---|---|
-| Backend (Jest) | **268/268** |
-| Frontend (Vitest) | **559/559** |
+| Backend (Jest) | **296/296** |
+| Frontend (Vitest) | **577/577** |
 | Type-check + build | verdes |
 | ESLint (frontend) | 0 erros |
 | Contraste (`check:contrast`) | 45/45 pares AA |
-| E2E (Playwright, Chrome) | **80/80** |
-| axe (8 rotas) | **0 critical/serious** |
+| E2E (Playwright, Chrome) | **83/83** |
+| axe (11 rotas) | **0 critical/serious** |
 | Caos (6 clientes) | **PASS** |
-| Assets públicos | 1,6 MB (logo 45 KB, vídeos 118–384 KB) |
+| Assets públicos | 256 KB |
 | Produção | frontend Vercel + API Render no ar; login por identificador validado |
 
 ## 8.2 Correções pós-beta (feedback do PO)
@@ -310,6 +310,13 @@ do PO e merge `--no-ff`. A produção só é atualizada após a onda D6.
   “Ativar ao criar”; “Próxima cena” ao lado de “Criar cena”.
 - Pós-beta: régua/ping no celular, pré-chamada no cockpit, Histórico › Ações
   populado, prévia de cena de imagem no DM e nome de preset em diálogo.
+- Avaliação independente (2026-11-21): histórico canônico no servidor com
+  `recentActions`/`sessionAction` e retenção de 7 dias; axe em 11 rotas;
+  alvos de 44 px; foco preso em diálogos; validação inline de grade; sistema
+  travado fora de Preparando; sistema padrão D&D 5e na criação; jogador
+  redirecionado de `/table`; contagem de pausa no celular; perfil sem estado
+  fantasma; limite de 8 jogadores no backend; bootstrap de entrada por código
+  com “Carregando a mesa…” e resync automático.
 
 ## 9. Invariantes
 

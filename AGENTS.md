@@ -22,7 +22,7 @@ Vue 3 + Vite + TypeScript + Pinia no frontend.
   `design/overhaul-v1`: Home/Lobby, auth por usuário ou e-mail, cockpit DM de
   3 zonas, jogador mobile com bottom nav, TV em 3 zonas e dado assinatura.
   Fonte da verdade: `docs/DESIGN_OVERHAUL.md` (tokens, IA, ondas e gates).
-  Gates: 268 testes backend, 559 frontend, 80 E2E, axe 8/8, caos PASS.
+  Gates: 296 testes backend, 577 frontend, 83 E2E, axe 11/11, caos PASS.
 - **D&D 5e é o sistema padrão da plataforma.** OP2 e OPSH têm o mesmo peso;
   Cyberpunk RED é secundário; Call of Cthulhu é futuro.
 - Contratos: `docs/REALTIME_PROTOCOL.md` (tempo real), `docs/TABLE_MODE.md`

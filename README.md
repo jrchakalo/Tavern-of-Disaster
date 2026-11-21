@@ -6,14 +6,14 @@
 
   <p>
     <a href="https://tavernofdisaster.vercel.app"><img alt="Produção" src="https://img.shields.io/badge/produção-online-5C9B85?style=flat-square" /></a>
-    <img alt="Versão" src="https://img.shields.io/badge/versão-v1.1.3--design-D9B45B?style=flat-square" />
+    <img alt="Versão" src="https://img.shields.io/badge/versão-v1.1.4--design-D9B45B?style=flat-square" />
     <a href="https://github.com/jrchakalo/Tavern-of-Disaster/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/badge/CI-passing-5C9B85?style=flat-square&logo=github" /></a>
     <img alt="Licença" src="https://img.shields.io/badge/licença-MIT-2F6C84?style=flat-square" />
   </p>
   <p>
-    <img alt="Backend" src="https://img.shields.io/badge/backend-268%20testes-7FB6C9?style=flat-square" />
-    <img alt="Frontend" src="https://img.shields.io/badge/frontend-559%20testes-7FB6C9?style=flat-square" />
-    <img alt="E2E" src="https://img.shields.io/badge/E2E-80%2F80-7FB6C9?style=flat-square" />
+    <img alt="Backend" src="https://img.shields.io/badge/backend-296%20testes-7FB6C9?style=flat-square" />
+    <img alt="Frontend" src="https://img.shields.io/badge/frontend-577%20testes-7FB6C9?style=flat-square" />
+    <img alt="E2E" src="https://img.shields.io/badge/E2E-83%2F83-7FB6C9?style=flat-square" />
     <img alt="axe" src="https://img.shields.io/badge/axe-11%2F11%20AA-7FB6C9?style=flat-square" />
   </p>
 
@@ -232,9 +232,9 @@ cd tests/e2e && node chaos/run.mjs
 
 | Gate | Resultado atual |
 |---|---|
-| Backend | **268/268** |
-| Frontend | **559/559** |
-| E2E | **80/80** |
+| Backend | **296/296** |
+| Frontend | **577/577** |
+| E2E | **83/83** |
 | axe (11 rotas, inclui `/profile` e `/play` a 320 px) | **0 critical/serious** |
 | Caos (6 clientes) | **PASS** |
 | CI (GitHub Actions) | **verde** |
