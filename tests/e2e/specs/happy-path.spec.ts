@@ -239,6 +239,20 @@ test('DM e jogador percorrem o fluxo principal no redesign', async ({ browser, r
   await expect(playerPage.locator('.dice-moment')).toBeVisible({ timeout: 20_000 });
   await expect(playerPage.locator('.dice-slip__total-value')).not.toBeEmpty();
 
+  // Histórico canônico: rolagens e ações da sessão sobrevivem ao reload.
+  await dmPage.reload({ waitUntil: 'domcontentloaded' });
+  await expect(dmPage.locator('.cockpit-topbar')).toBeVisible({ timeout: 30_000 });
+  await dmPage.locator('.log-toggle-btn').click();
+  await expect(
+    dmPage.locator('.log-entry[data-type="roll"]', { hasText: dmExpression }),
+    'Rolagem anterior precisa reaparecer no Histórico após recarregar.',
+  ).toBeVisible({ timeout: 30_000 });
+  await dmPage.locator('.history-drawer__tab', { hasText: 'Ações' }).click();
+  await expect(
+    dmPage.locator('.log-entry[data-type="movement"]', { hasText: tokenName }),
+    'Movimento do token precisa aparecer em Ações após recarregar.',
+  ).toBeVisible({ timeout: 30_000 });
+
   await dmContext.close();
   await playerContext.close();
 });
