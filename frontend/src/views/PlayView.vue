@@ -1123,7 +1123,7 @@ onBeforeUnmount(() => {
         v-if="mediaStore.joined"
         type="button"
         class="play-header__call"
-        :aria-label="`Chamada ativa com ${mediaStore.participantCount} participantes. Abrir chamada.`"
+        :aria-label="`Chamada ativa com ${mediaStore.participantCount} ${mediaStore.participantCount === 1 ? 'participante' : 'participantes'}. Abrir chamada.`"
         @click="selectTab('chamada')"
       >
         <span class="play-header__call-dot" aria-hidden="true"></span>
@@ -1146,8 +1146,8 @@ onBeforeUnmount(() => {
         </svg>
       </button>
 
-      <span class="play-header__revision sr-only" :title="`Revisão ${revision}`">rev {{ revision }}</span>
-      <span class="play-header__role sr-only">{{ roleLabel }}</span>
+      <span class="play-header__revision sr-only" aria-hidden="true" :title="`Revisão ${revision}`">rev {{ revision }}</span>
+      <span class="play-header__role sr-only" aria-hidden="true">{{ roleLabel }}</span>
 
       <div v-if="menuOpen" ref="menuRef" class="play-menu" role="menu" aria-label="Opções da mesa">
         <p class="play-menu__meta">{{ presenceCount }} na mesa · {{ sceneName }}</p>
@@ -1239,6 +1239,8 @@ onBeforeUnmount(() => {
         v-if="canWrite && !isImageScene"
         type="button"
         class="board-tools-btn"
+        aria-label="Ferramentas"
+        title="Ferramentas"
         :aria-expanded="toolsOpen"
         aria-haspopup="dialog"
         @click="openTools"

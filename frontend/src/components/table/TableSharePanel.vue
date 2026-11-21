@@ -115,7 +115,9 @@ async function rehydrateDisplay() {
   if (!stored) return;
   displayUrl.value = toAbsoluteUrl(stored);
   displayConfigured.value = true;
-  showDisplayLink.value = false;
+  // O link já existe nesta sessão: mostre-o de imediato, read-only, em vez de
+  // prometer um link que só apareceria depois de gerar/rotacionar.
+  showDisplayLink.value = true;
 }
 
 watch(

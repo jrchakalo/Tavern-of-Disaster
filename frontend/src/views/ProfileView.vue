@@ -318,6 +318,7 @@ function cancelLeave() {
                 type="file"
                 accept="image/*"
                 class="sr-only"
+                aria-label="Enviar imagem de avatar"
                 @change="handleAvatarFile"
               />
               <p class="field-hint">

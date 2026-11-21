@@ -241,8 +241,10 @@ describe('PlayView — shell do jogador', () => {
     const revision = wrapper.get('.play-header__revision');
     expect(revision.text()).toBe('rev 7');
     expect(revision.classes()).toContain('sr-only');
+    expect(revision.attributes('aria-hidden')).toBe('true');
     const role = wrapper.get('.play-header__role');
     expect(role.classes()).toContain('sr-only');
+    expect(role.attributes('aria-hidden')).toBe('true');
     expect(role.text()).toBe('Jogador');
     wrapper.unmount();
   });

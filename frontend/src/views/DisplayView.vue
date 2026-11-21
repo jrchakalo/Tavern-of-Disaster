@@ -557,9 +557,9 @@ onBeforeUnmount(() => {
             <span>{{ isFullscreen ? 'Sair da tela cheia' : 'Tela cheia' }}</span>
           </button>
 
-          <!-- Hooks de E2E/telemetria: presentes no DOM, invisíveis na TV. -->
-          <span class="sr-only display-header__revision">rev {{ revision }}</span>
-          <span class="sr-only display-header__role">TV</span>
+          <!-- Hooks de E2E/telemetria: presentes no DOM, invisíveis na TV e para leitores de tela. -->
+          <span class="sr-only display-header__revision" aria-hidden="true">rev {{ revision }}</span>
+          <span class="sr-only display-header__role" aria-hidden="true">TV</span>
         </div>
       </header>
 

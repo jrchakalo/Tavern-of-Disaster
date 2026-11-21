@@ -419,11 +419,11 @@ function roll() {
           :key="preset.key"
           type="button"
           class="system-preset-btn"
-          :aria-label="`Preset ${preset.label}: ${preset.expression}`"
+          :aria-label="`${preset.label} ${preset.expression} — rolar`"
           @click="applySystemPreset(preset)"
         >
           <span>{{ preset.label }}</span>
-          <small>{{ preset.expression }}</small>
+          <small>&nbsp;{{ preset.expression }}</small>
         </button>
       </div>
     </div>

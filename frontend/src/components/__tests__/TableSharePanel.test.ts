@@ -146,7 +146,7 @@ describe('TableSharePanel — TV segura', () => {
     wrapper.unmount();
   });
 
-  it('após reload mostra “TV configurada” e “Reexibir link” sem rotacionar', async () => {
+  it('após reload mostra o link existente read-only com “Copiar link” sem rotacionar', async () => {
     window.sessionStorage.setItem(displayKey, displayUrl);
     accessMock.createDisplayToken.mockResolvedValue({ token: 'novo', displayUrl });
 
@@ -154,16 +154,12 @@ describe('TableSharePanel — TV segura', () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain('TV configurada');
-    expect(findButton(wrapper, 'Reexibir link')).toBeTruthy();
+    expect(wrapper.find('.share-display').exists()).toBe(true);
+    expect(wrapper.get('.share-display a').attributes('href')).toBe(displayUrl);
+    expect(findButton(wrapper, 'Copiar link')).toBeTruthy();
     expect(findButton(wrapper, 'Gerar link da TV')).toBeUndefined();
     expect(accessMock.createDisplayToken).not.toHaveBeenCalled();
-    expect(wrapper.find('.share-display').exists()).toBe(false);
-
-    await findButton(wrapper, 'Reexibir link')!.trigger('click');
-    await flushPromises();
-    expect(wrapper.find('.share-display').exists()).toBe(true);
-    expect(wrapper.text()).toContain(displayUrl);
-    expect(accessMock.createDisplayToken).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem(displayKey)).toBe(displayUrl);
     wrapper.unmount();
   });
 

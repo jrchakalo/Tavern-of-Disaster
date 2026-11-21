@@ -70,4 +70,75 @@ describe('BaseDialog', () => {
 
     trigger.remove();
   });
+
+  it('prende o Tab dentro do painel (ida e volta)', async () => {
+    const wrapper = mount(BaseDialog, {
+      attachTo: document.body,
+      props: { open: true, title: 'Renomear mesa' },
+      global: { stubs: { teleport: true } },
+      slots: {
+        default:
+          '<button type="button" data-testid="primeiro">Primeiro</button>' +
+          '<button type="button" data-testid="ultimo">Último</button>',
+      },
+    });
+    mounted.push(wrapper);
+    await nextTick();
+    await nextTick();
+
+    const first = wrapper.get('.base-dialog__close').element as HTMLElement;
+    const last = wrapper.get('[data-testid="ultimo"]').element as HTMLElement;
+
+    // Tab no último controle volta ao primeiro (o “Fechar” do cabeçalho).
+    last.focus();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    expect(document.activeElement).toBe(first);
+
+    // Shift+Tab no primeiro volta ao último.
+    first.focus();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }),
+    );
+    expect(document.activeElement).toBe(last);
+  });
+
+  it('não prende o Tab quando outro diálogo está por cima', async () => {
+    const wrapper = mountDialog();
+    mounted.push(wrapper);
+    await nextTick();
+    await nextTick();
+
+    const nested = document.createElement('dialog');
+    nested.setAttribute('open', '');
+    document.body.appendChild(nested);
+    const nestedButton = document.createElement('button');
+    nestedButton.textContent = 'Ajustes';
+    nested.appendChild(nestedButton);
+    nestedButton.focus();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    expect(document.activeElement).toBe(nestedButton);
+
+    nested.remove();
+  });
+
+  it('traz o foco de volta ao painel se ele escapar', async () => {
+    const outsider = document.createElement('button');
+    outsider.textContent = 'Fora';
+    document.body.appendChild(outsider);
+    outsider.focus();
+
+    const wrapper = mountDialog();
+    mounted.push(wrapper);
+    await nextTick();
+    await nextTick();
+
+    outsider.focus();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+
+    const panel = wrapper.get('.base-dialog__panel').element;
+    expect(panel.contains(document.activeElement)).toBe(true);
+
+    outsider.remove();
+  });
 });

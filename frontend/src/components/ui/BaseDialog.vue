@@ -63,25 +63,77 @@ function unlockPage() {
   document.documentElement.classList.remove('has-open-dialog');
 }
 
-function focusInitial() {
-  const el = dialogEl.value;
-  if (!el) return;
+function focusableElements(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return [];
   const selector = [
     'button:not([disabled])',
     'a[href]',
     'input:not([disabled]):not([type="hidden"])',
     'select:not([disabled])',
     'textarea:not([disabled])',
+    'audio[controls]',
+    'video[controls]',
+    '[contenteditable="true"]',
     '[tabindex]:not([tabindex="-1"])',
   ].join(',');
+  return Array.from(root.querySelectorAll<HTMLElement>(selector)).filter((element) => {
+    if (element.hidden || element.getAttribute('aria-hidden') === 'true') return false;
+    const style = window.getComputedStyle(element);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  });
+}
+
+function focusInitial() {
+  const el = dialogEl.value;
+  if (!el) return;
   const body = el.querySelector<HTMLElement>('.base-dialog__body');
   const target =
     el.querySelector<HTMLElement>('[data-autofocus], [autofocus]') ??
-    body?.querySelector<HTMLElement>(selector) ??
-    el.querySelector<HTMLElement>(selector) ??
+    focusableElements(body)[0] ??
+    focusableElements(el)[0] ??
     panelEl.value ??
     el;
   target.focus();
+}
+
+/**
+ * Prende o Tab dentro do painel. O `<dialog>` nativo já isola o resto da
+ * página em navegadores modernos, mas o fallback sem `showModal` (e alguns
+ * WebViews) deixa o foco escapar; o ciclo explícito cobre os dois casos.
+ */
+function isTopmostDialog(): boolean {
+  const dialogs = Array.from(document.querySelectorAll<HTMLDialogElement>('dialog[open]'));
+  return dialogs.length === 0 || dialogs[dialogs.length - 1] === dialogEl.value;
+}
+
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (!isOpen || event.key !== 'Tab') return;
+  // Diálogo empilhado (ex.: Ajustes dentro da Chamada): só o do topo prende
+  // o Tab; os de baixo voltam a valer quando o topo fechar.
+  if (!isTopmostDialog()) return;
+  const panel = panelEl.value;
+  if (!panel) return;
+  const list = focusableElements(panel);
+  if (!list.length) {
+    event.preventDefault();
+    panel.focus();
+    return;
+  }
+  const first = list[0];
+  const last = list[list.length - 1];
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !panel.contains(active)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+    return;
+  }
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function restoreFocus() {
@@ -112,6 +164,7 @@ async function showDialog() {
   }
 
   lockPage();
+  document.addEventListener('keydown', onDocumentKeydown, true);
   await nextTick();
   if (isOpen) focusInitial();
 }
@@ -128,11 +181,13 @@ function closeDialog(restoreFocusToTrigger = true) {
     el.removeAttribute('open');
   }
   unlockPage();
+  document.removeEventListener('keydown', onDocumentKeydown, true);
   if (restoreFocusToTrigger) restoreFocus();
 }
 
 function onDialogClosed() {
   unlockPage();
+  document.removeEventListener('keydown', onDocumentKeydown, true);
   // Fechamento iniciado pelo próprio componente: o estado já está sincronizado.
   if (selfClosed) {
     selfClosed = false;
@@ -186,6 +241,7 @@ onBeforeUnmount(() => {
     isOpen = false;
   }
   unlockPage();
+  document.removeEventListener('keydown', onDocumentKeydown, true);
 });
 </script>
 

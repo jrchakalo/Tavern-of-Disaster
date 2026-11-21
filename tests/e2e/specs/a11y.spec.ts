@@ -197,6 +197,17 @@ for (const route of [
   });
 }
 
+test('axe: /tables (lobby) a 390×844', async ({ browser }) => {
+  await audit(browser, '/tables (lobby) 390×844', '/tables', '.tables-page', {
+    user: world.dm,
+    viewport: { width: 390, height: 844 },
+  });
+});
+
+test('axe: /profile (Mestre)', async ({ browser }) => {
+  await audit(browser, '/profile', '/profile', '.profile-page', { user: world.dm });
+});
+
 test('axe: /table/:id (Mestre)', async ({ browser }) => {
   await audit(browser, '/table/:id', `/table/${world.tableId}`, '.cockpit-topbar', {
     user: world.dm,
@@ -208,6 +219,20 @@ test('axe: /play/:id (Jogador)', async ({ browser }) => {
     user: world.player,
     viewport: { width: 390, height: 844 },
   });
+});
+
+test('axe: /play/:id a 320×640 sem scroll horizontal', async ({ browser }) => {
+  const page = await newPage(browser, world.player, { width: 320, height: 640 });
+  try {
+    await gotoReady(page, `/play/${world.tableId}`, '.play-header');
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, 'a tela de jogador não pode rolar na horizontal a 320 px.').toBeLessThanOrEqual(1);
+    await analyze(page, '/play/:id 320×640');
+  } finally {
+    await page.context().close();
+  }
 });
 
 test('axe: /display/:id (TV)', async ({ browser }) => {

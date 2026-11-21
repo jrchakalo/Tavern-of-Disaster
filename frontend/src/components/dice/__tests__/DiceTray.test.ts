@@ -15,6 +15,20 @@ const authMock = vi.hoisted(() => ({
 }));
 vi.mock('../../../services/authService', () => authMock);
 
+const tableState = vi.hoisted(() => ({
+  currentTable: null as Record<string, unknown> | null,
+  system: null as Record<string, unknown> | null,
+}));
+vi.mock('../../../stores/tableStore', () => ({
+  useTableStore: () => ({ currentTable: tableState.currentTable }),
+}));
+vi.mock('../../../stores/systemStore', () => ({
+  useSystemStore: () => ({
+    currentSystemForTable: () => tableState.system,
+    fetchAll: async () => undefined,
+  }),
+}));
+
 function mountTray(overrides: Record<string, unknown> = {}) {
   return mount(DiceTray, {
     props: {
@@ -164,6 +178,22 @@ describe('DiceTray', () => {
 
     expect(wrapper.findAll('.dice-tray__die')).toHaveLength(7);
     expect(wrapper.find('select').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('nomeia o preset do sistema começando pelo texto visível', () => {
+    tableState.currentTable = { _id: 'table-1', systemId: 'sys-1', systemKey: 'dnd5e' };
+    tableState.system = {
+      dicePresets: [{ key: 'atr', label: 'Teste de atributo', expression: 'd20' }],
+    };
+    const wrapper = mountTray();
+
+    const button = wrapper.get('.system-preset-btn');
+    expect(button.attributes('aria-label')).toBe('Teste de atributo d20 — rolar');
+    expect(button.text().replace(/\s+/g, ' ').trim()).toBe('Teste de atributo d20');
+
+    tableState.currentTable = null;
+    tableState.system = null;
     wrapper.unmount();
   });
 });
