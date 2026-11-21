@@ -103,6 +103,10 @@
   --s-9: 64px;
   --s-10: 96px;
 
+  /* Alvo mínimo de toque/clique (WCAG 2.5.5). Botões e controles densos nunca
+     ficam menores que isto, mesmo quando o texto é curto. */
+  --target-min: 44px;
+
   /* Aliases legados de espaço */
   --space-1: var(--s-2);
   --space-2: var(--s-3);
@@ -497,7 +501,7 @@ select.input-xs {
   align-items: center;
   justify-content: center;
   gap: var(--s-3);
-  min-height: 40px;
+  min-height: var(--target-min);
   padding: 0 var(--s-5);
   border: 1px solid var(--btn-border);
   border-radius: var(--radius-sm);
@@ -590,7 +594,7 @@ select.input-xs {
 }
 
 .btn-sm {
-  min-height: 32px;
+  min-height: var(--target-min);
   padding: 0 var(--s-4);
   font-size: var(--text-sm);
 }
@@ -604,8 +608,8 @@ select.input-xs {
 
 .btn.icon,
 .btn-icon {
-  inline-size: 40px;
-  block-size: 40px;
+  inline-size: var(--target-min);
+  block-size: var(--target-min);
   min-height: 0;
   padding: 0;
 }
@@ -843,6 +847,9 @@ select.input-xs {
   top: var(--s-3);
   left: var(--s-3);
   z-index: 4000;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
   transform: translateY(-200%);
   padding: var(--s-3) var(--s-4);
   border-radius: var(--radius-sm);
@@ -1095,7 +1102,7 @@ footer.site-footer {
 
   .btn-sm,
   .btn-xs {
-    min-height: 40px;
+    min-height: var(--target-min);
   }
 
   .btn.icon,

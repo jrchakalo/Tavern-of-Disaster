@@ -13,7 +13,9 @@ import {
   computeReachableSquares,
   pingCenterPixels,
   squareIndex,
+  TOKEN_HIT_MIN_PX,
   tokenEntries,
+  tokenHitStyle,
   tokenStyle,
   type BoardPing,
   type BoardTokenEntry,
@@ -31,7 +33,6 @@ import {
 
 const LONG_PRESS_MS = 500;
 const TAP_TOLERANCE_PX = 12;
-const TOKEN_HIT_MIN_PX = 44;
 
 const props = withDefaults(
   defineProps<{
@@ -697,6 +698,19 @@ const pingList = computed(() => {
           aria-hidden="true"
         ></div>
 
+        <!--
+          Alvo de toque de 44×44 px (invisível). Fica no DOM para garantir o
+          tamanho mínimo mesmo quando a célula é menor; o desenho do token
+          abaixo mantém o tamanho da célula.
+        -->
+        <div
+          v-for="entry in entries"
+          :key="`hit-${entry.token._id}`"
+          class="board-token-hit"
+          :style="tokenHitStyle(entry, boardSize.squareSize)"
+          aria-hidden="true"
+        ></div>
+
         <div
           v-for="entry in entries"
           :key="entry.token._id"
@@ -908,6 +922,11 @@ const pingList = computed(() => {
     transform: scale(1.7);
     opacity: 0;
   }
+}
+
+.board-token-hit {
+  position: absolute;
+  z-index: 3;
 }
 
 .board-token {

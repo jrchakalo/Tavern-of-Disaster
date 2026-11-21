@@ -229,7 +229,10 @@ async function submit() {
         <span class="player-chat__status" :class="{ 'is-offline': isOffline }">
           {{ isOffline ? 'Sem conexão' : 'Conectado' }}
         </span>
-        <span class="player-chat__meta">{{ store.messages.length }} mensagens</span>
+        <span class="player-chat__meta">
+          {{ store.messages.length }}
+          {{ store.messages.length === 1 ? 'mensagem' : 'mensagens' }}
+        </span>
       </div>
 
       <p v-if="isOffline" class="player-chat__notice" role="status">

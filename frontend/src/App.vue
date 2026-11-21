@@ -294,7 +294,7 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: var(--s-2);
-  min-height: 40px;
+  min-height: var(--target-min);
   padding: 0 var(--s-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);

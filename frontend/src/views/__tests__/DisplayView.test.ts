@@ -302,7 +302,9 @@ describe('DisplayView', () => {
     await flushPromises();
 
     expect(wrapper.get('.display-header__revision').classes()).toContain('sr-only');
+    expect(wrapper.get('.display-header__revision').attributes('aria-hidden')).toBe('true');
     expect(wrapper.get('.display-header__role').classes()).toContain('sr-only');
+    expect(wrapper.get('.display-header__role').attributes('aria-hidden')).toBe('true');
     expect(wrapper.get('.display-header__role').text()).toBe('TV');
 
     const clone = wrapper.element.cloneNode(true) as HTMLElement;

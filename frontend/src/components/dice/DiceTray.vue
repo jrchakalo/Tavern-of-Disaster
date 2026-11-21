@@ -477,11 +477,11 @@ function formatRollDice(payload: DiceRolledPayload): string {
           :key="preset.key"
           type="button"
           class="dice-tray__preset"
-          :aria-label="`${preset.label}: ${preset.expression}`"
+          :aria-label="`${preset.label} ${preset.expression} — rolar`"
           @click="applyPreset(preset.expression)"
         >
           <span>{{ preset.label }}</span>
-          <small>{{ preset.expression }}</small>
+          <small>&nbsp;{{ preset.expression }}</small>
         </button>
       </div>
     </div>
@@ -494,11 +494,11 @@ function formatRollDice(payload: DiceRolledPayload): string {
           :key="preset.key"
           type="button"
           class="dice-tray__preset system-preset-btn"
-          :aria-label="`${preset.label}: ${preset.expression}`"
+          :aria-label="`${preset.label} ${preset.expression} — rolar`"
           @click="applyPreset(preset.expression)"
         >
           <span>{{ preset.label }}</span>
-          <small>{{ preset.expression }}</small>
+          <small>&nbsp;{{ preset.expression }}</small>
         </button>
       </div>
     </div>

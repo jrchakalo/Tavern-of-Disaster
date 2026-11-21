@@ -68,6 +68,11 @@ describe('DiceRoller', () => {
     });
 
     await wrapper.get('.system-preset-btn').trigger('click');
+    const button = wrapper.get('.system-preset-btn');
+    // O nome acessível começa pelo texto visível (label + expressão), sem
+    // trocar a ordem — exigência da regra label-content-name-mismatch.
+    expect(button.attributes('aria-label')).toBe('Ataque 1d20+5 — rolar');
+    expect(button.text().replace(/\s+/g, ' ').trim()).toBe('Ataque 1d20+5');
     const inputEl = wrapper.get('#dice-expression').element as HTMLInputElement;
     expect(inputEl.value).toBe('1d20+5');
   });

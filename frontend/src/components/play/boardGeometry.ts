@@ -46,6 +46,29 @@ export function tokenStyle(entry: BoardTokenEntry, squareSize: number): Record<s
   };
 }
 
+/**
+ * Alvo mínimo de toque do token, em pixels de tela. O tabuleiro usa zoom
+ * mínimo 1×, então 44 px locais equivalem a 44 px de tela.
+ */
+export const TOKEN_HIT_MIN_PX = 44;
+
+/**
+ * Caixa de toque invisível, centrada no token. Não altera o desenho (o token
+ * visual continua no tamanho da célula), só garante um alvo de 44×44 px mesmo
+ * quando a célula renderizada é menor que isso.
+ */
+export function tokenHitStyle(entry: BoardTokenEntry, squareSize: number): Record<string, string> {
+  const hit = Math.max(entry.footprint * squareSize, TOKEN_HIT_MIN_PX);
+  const centerX = (entry.col + entry.footprint / 2) * squareSize;
+  const centerY = (entry.row + entry.footprint / 2) * squareSize;
+  return {
+    left: `${centerX - hit / 2}px`,
+    top: `${centerY - hit / 2}px`,
+    width: `${hit}px`,
+    height: `${hit}px`,
+  };
+}
+
 export function hexToRgba(hex: string, alpha: number): string {
   let normalized = hex.replace('#', '');
   if (normalized.length === 3) {
